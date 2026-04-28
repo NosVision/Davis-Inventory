@@ -1,0 +1,1510 @@
+'use client';
+
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { createClient } from '@/lib/supabase/client';
+import { useAuthStore } from '@/stores/auth-store';
+import { useAppStore } from '@/stores/app-store';
+import {
+  Button,
+  Badge,
+  Card,
+  Modal,
+  ModalFooter,
+  Input,
+  Textarea,
+  EmptyState,
+  PhotoUpload,
+  toast,
+} from '@/components/ui';
+import { formatThaiDateTime, formatNumber } from '@/lib/utils/format';
+import { DEPOSIT_STATUS_LABELS, WITHDRAWAL_STATUS_LABELS } from '@/lib/utils/constants';
+import { logAudit, AUDIT_ACTIONS } from '@/lib/audit';
+import { sendNotification } from '@/lib/notifications/client';
+import { notifyChatDepositConfirmed, syncChatActionCardStatus } from '@/lib/chat/bot-client';
+import { TableCardGrid, type TableCardItem } from '@/components/deposit/table-card-grid';
+import { useRealtime } from '@/hooks/use-realtime';
+import { cn } from '@/lib/utils/cn';
+import { useTranslations } from 'next-intl';
+import {
+  CheckCircle,
+  XCircle,
+  Wine,
+  Package,
+  Clock,
+  User,
+  Loader2,
+  Inbox,
+  RefreshCw,
+  Camera,
+  Image as ImageIcon,
+  Hash,
+  MessageSquare,
+  MapPin,
+  LayoutGrid,
+  List,
+} from 'lucide-react';
+import { StockCountBanner } from '@/components/stock/stock-count-banner';
+import { ExpiredDepositsBanner } from '@/components/deposit/expired-deposits-banner';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+type TabType = 'deposit' | 'withdrawal';
+
+interface DepositRow {
+  id: string;
+  deposit_code: string;
+  store_id: string;
+  customer_id: string | null;
+  line_user_id: string | null;
+  customer_name: string;
+  product_name: string;
+  category: string | null;
+  quantity: number;
+  remaining_qty: number;
+  remaining_percent: number;
+  table_number: string | null;
+  status: string;
+  notes: string | null;
+  customer_photo_url: string | null;
+  received_photo_url: string | null;
+  received_by: string | null;
+  created_at: string;
+  // joined profile
+  received_by_profile?: { display_name: string | null } | null;
+}
+
+interface WithdrawalRow {
+  id: string;
+  deposit_id: string;
+  store_id: string;
+  customer_id: string | null;
+  line_user_id: string | null;
+  customer_name: string | null;
+  product_name: string | null;
+  requested_qty: number | null;
+  actual_qty: number | null;
+  table_number: string | null;
+  status: string;
+  notes: string | null;
+  photo_url: string | null;
+  created_at: string;
+  /** When set, the withdrawal targets a specific bottle. Approving the
+   *  request marks that deposit_bottles row as `consumed`. */
+  bottle_id: string | null;
+  // joined deposit for context
+  deposits?: {
+    id: string;
+    deposit_code: string;
+    remaining_qty: number;
+    status: string;
+  } | null;
+}
+
+// ---------------------------------------------------------------------------
+// Confirm deposit modal state
+// ---------------------------------------------------------------------------
+
+interface ConfirmDepositState {
+  deposit: DepositRow;
+  photoUrl: string | null;
+  notes: string;
+  /**
+   * Per-bottle remaining percent: { bottle_no → percent (0-100, '' while
+   * editing) }. Initialized to 100 for every bottle when modal opens.
+   * Bar can override per bottle (e.g. one bottle is opened at 80%, others
+   * are sealed at 100).
+   */
+  bottlePercents: Record<number, number | ''>;
+}
+
+// ---------------------------------------------------------------------------
+// Reject deposit modal state
+// ---------------------------------------------------------------------------
+
+interface RejectDepositState {
+  deposit: DepositRow;
+  reason: string;
+}
+
+// ---------------------------------------------------------------------------
+// Complete withdrawal modal state
+// ---------------------------------------------------------------------------
+
+interface CompleteWithdrawalState {
+  withdrawal: WithdrawalRow;
+  actualQty: string;
+  photoUrl: string | null;
+  notes: string;
+}
+
+// ---------------------------------------------------------------------------
+// Reject withdrawal modal state
+// ---------------------------------------------------------------------------
+
+interface RejectWithdrawalState {
+  withdrawal: WithdrawalRow;
+  reason: string;
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
+export default function BarApprovalPage() {
+  const { user } = useAuthStore();
+  const { currentStoreId } = useAppStore();
+  const t = useTranslations('barApproval');
+
+  const [activeTab, setActiveTab] = useState<TabType>('deposit');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Data
+  const [deposits, setDeposits] = useState<DepositRow[]>([]);
+  const [withdrawals, setWithdrawals] = useState<WithdrawalRow[]>([]);
+
+  // Modal states
+  const [confirmDeposit, setConfirmDeposit] = useState<ConfirmDepositState | null>(null);
+  const [rejectDeposit, setRejectDeposit] = useState<RejectDepositState | null>(null);
+  const [completeWithdrawal, setCompleteWithdrawal] = useState<CompleteWithdrawalState | null>(null);
+  const [rejectWithdrawal, setRejectWithdrawal] = useState<RejectWithdrawalState | null>(null);
+
+  // Expanded photo state - which deposit id has its photo expanded
+  const [expandedPhoto, setExpandedPhoto] = useState<string | null>(null);
+
+  // Ref to track mounted state for safe async setState
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  // -----------------------------------------------------------------------
+  // Data fetching
+  // -----------------------------------------------------------------------
+
+  const loadDeposits = useCallback(async () => {
+    if (!currentStoreId) return;
+    const supabase = createClient();
+
+    const { data, error } = await supabase
+      .from('deposits')
+      .select('id, deposit_code, store_id, customer_id, line_user_id, customer_name, product_name, category, quantity, remaining_qty, remaining_percent, table_number, status, notes, customer_photo_url, received_photo_url, received_by, created_at, received_by_profile:profiles!deposits_received_by_fkey(display_name)')
+      .eq('store_id', currentStoreId)
+      .eq('status', 'pending_confirm')
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Failed to load deposits:', error);
+      // Try simpler query without join if foreign key doesn't exist
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('deposits')
+        .select('*')
+        .eq('store_id', currentStoreId)
+        .eq('status', 'pending_confirm')
+        .order('created_at', { ascending: true });
+
+      if (fallbackError) {
+        toast({ type: 'error', title: t('loadError'), message: t('loadDepositError') });
+        return;
+      }
+      setDeposits((fallbackData ?? []) as unknown as DepositRow[]);
+      return;
+    }
+
+    // Supabase may return joined fields as arrays; normalize to single objects
+    const normalized = (data ?? []).map((row: Record<string, unknown>) => {
+      const profile = Array.isArray(row.received_by_profile)
+        ? row.received_by_profile[0] ?? null
+        : row.received_by_profile ?? null;
+      return { ...row, received_by_profile: profile };
+    });
+    setDeposits(normalized as unknown as DepositRow[]);
+  }, [currentStoreId]);
+
+  const loadWithdrawals = useCallback(async () => {
+    if (!currentStoreId) return;
+    const supabase = createClient();
+
+    const { data, error } = await supabase
+      .from('withdrawals')
+      .select('id, deposit_id, store_id, customer_id, line_user_id, customer_name, product_name, requested_qty, actual_qty, table_number, status, notes, photo_url, created_at, bottle_id, deposits(id, deposit_code, remaining_qty, status)')
+      .eq('store_id', currentStoreId)
+      .in('status', ['pending', 'approved'])
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Failed to load withdrawals:', error);
+      // Fallback without join
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('withdrawals')
+        .select('*')
+        .eq('store_id', currentStoreId)
+        .in('status', ['pending', 'approved'])
+        .order('created_at', { ascending: true });
+
+      if (fallbackError) {
+        toast({ type: 'error', title: t('loadError'), message: t('loadWithdrawalError') });
+        return;
+      }
+      setWithdrawals((fallbackData ?? []) as unknown as WithdrawalRow[]);
+      return;
+    }
+
+    // Supabase may return joined deposit as array; normalize to single object
+    const normalized = (data ?? []).map((row: Record<string, unknown>) => {
+      const dep = Array.isArray(row.deposits)
+        ? row.deposits[0] ?? null
+        : row.deposits ?? null;
+      return { ...row, deposits: dep };
+    });
+    setWithdrawals(normalized as unknown as WithdrawalRow[]);
+  }, [currentStoreId]);
+
+  const loadAll = useCallback(async () => {
+    if (!mountedRef.current) return;
+    setIsLoading(true);
+    await Promise.all([loadDeposits(), loadWithdrawals()]);
+    if (mountedRef.current) setIsLoading(false);
+  }, [loadDeposits, loadWithdrawals]);
+
+  useEffect(() => {
+    loadAll();
+  }, [loadAll]);
+
+  // Realtime updates
+  useRealtime({
+    table: 'deposits',
+    filter: `store_id=eq.${currentStoreId}`,
+    onInsert: () => loadAll(),
+    onUpdate: () => loadAll(),
+    enabled: !!currentStoreId,
+  });
+
+  useRealtime({
+    table: 'withdrawals',
+    filter: `store_id=eq.${currentStoreId}`,
+    onInsert: () => loadAll(),
+    onUpdate: () => loadAll(),
+    enabled: !!currentStoreId,
+  });
+
+  // -----------------------------------------------------------------------
+  // Deposit: confirm
+  // -----------------------------------------------------------------------
+
+  const handleConfirmDeposit = async () => {
+    if (!confirmDeposit || !user) return;
+
+    // Validate per-bottle percents
+    const bottleEntries = Object.entries(confirmDeposit.bottlePercents);
+    for (const [bn, p] of bottleEntries) {
+      if (p === '' || isNaN(Number(p)) || Number(p) < 0 || Number(p) > 100) {
+        toast({
+          type: 'warning',
+          title: t('error'),
+          message: `ขวดที่ ${bn}: % ต้องอยู่ระหว่าง 0–100`,
+        });
+        return;
+      }
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const supabase = createClient();
+      const { deposit, photoUrl, notes, bottlePercents } = confirmDeposit;
+
+      // Aggregate average for the legacy deposits.remaining_percent column
+      const percents = Object.values(bottlePercents).map((v) => Number(v));
+      const avgPercent =
+        percents.length > 0
+          ? Math.round((percents.reduce((s, v) => s + v, 0) / percents.length) * 100) / 100
+          : 100;
+
+      const { error } = await supabase
+        .from('deposits')
+        .update({
+          status: 'in_store',
+          confirm_photo_url: photoUrl,
+          remaining_percent: avgPercent,
+          notes: notes
+            ? deposit.notes
+              ? `${deposit.notes}\n[บาร์ยืนยัน] ${notes}`
+              : `[บาร์ยืนยัน] ${notes}`
+            : deposit.notes,
+        })
+        .eq('id', deposit.id);
+
+      if (error) throw error;
+
+      // Update each deposit_bottles row with the bar's per-bottle percent.
+      // 'opened' if < 100, else 'sealed' (still untouched).
+      await Promise.all(
+        Object.entries(bottlePercents).map(([bn, p]) => {
+          const pct = Number(p);
+          return supabase
+            .from('deposit_bottles')
+            .update({
+              remaining_percent: pct,
+              status: pct < 100 ? 'opened' : 'sealed',
+              opened_at: pct < 100 ? new Date().toISOString() : null,
+              opened_by: pct < 100 ? user.id : null,
+            })
+            .eq('deposit_id', deposit.id)
+            .eq('bottle_no', Number(bn));
+        }),
+      );
+
+      await logAudit({
+        store_id: currentStoreId,
+        action_type: AUDIT_ACTIONS.DEPOSIT_BAR_CONFIRMED,
+        table_name: 'deposits',
+        record_id: deposit.id,
+        old_value: { status: 'pending_confirm' },
+        new_value: {
+          status: 'in_store',
+          confirm_photo_url: photoUrl,
+          deposit_code: deposit.deposit_code,
+          customer_name: deposit.customer_name,
+          product_name: deposit.product_name,
+          quantity: deposit.quantity,
+        },
+        changed_by: user.id,
+      });
+
+      toast({ type: 'success', title: t('confirmSuccess'), message: t('confirmSuccessMsg', { product: deposit.product_name }) });
+
+      // ส่ง system message เข้าห้องแชทสาขา
+      notifyChatDepositConfirmed(deposit.store_id, {
+        deposit_code: deposit.deposit_code,
+        customer_name: deposit.customer_name,
+        product_name: deposit.product_name,
+        quantity: deposit.quantity,
+        confirmed_by_name: user.displayName || user.username || 'พนักงาน',
+      });
+
+      // Sync action card ในแชทให้เป็น completed
+      syncChatActionCardStatus({
+        storeId: deposit.store_id,
+        referenceId: deposit.deposit_code,
+        actionType: 'deposit_claim',
+        newStatus: 'completed',
+        completedBy: user.id,
+        completedByName: user.displayName || user.username || 'พนักงาน',
+      });
+
+      // Notify the customer that their deposit has been confirmed
+      if (deposit.customer_id) {
+        sendNotification({
+          userId: deposit.customer_id,
+          storeId: deposit.store_id,
+          type: 'deposit_confirmed',
+          title: t('depositConfirmedNotifTitle'),
+          body: `${deposit.product_name} (${deposit.deposit_code}) ได้รับการยืนยัน`,
+          data: { deposit_id: deposit.id, deposit_code: deposit.deposit_code },
+          lineUserId: deposit.line_user_id ?? undefined,
+        });
+      }
+
+      setConfirmDeposit(null);
+      await loadAll();
+    } catch (err) {
+      console.error('Confirm deposit error:', err);
+      toast({ type: 'error', title: t('error'), message: t('confirmError') });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // -----------------------------------------------------------------------
+  // Deposit: reject (use status='expired' as workaround)
+  // -----------------------------------------------------------------------
+
+  const handleRejectDeposit = async () => {
+    if (!rejectDeposit || !user) return;
+    if (!rejectDeposit.reason.trim()) {
+      toast({ type: 'warning', title: t('rejectReasonRequired'), message: t('rejectReasonRequiredMsg') });
+      return;
+    }
+    setIsSubmitting(true);
+
+    try {
+      const supabase = createClient();
+      const { deposit, reason } = rejectDeposit;
+
+      const rejectNote = `บาร์ปฏิเสธ: ${reason.trim()}`;
+      const updatedNotes = deposit.notes ? `${deposit.notes}\n${rejectNote}` : rejectNote;
+
+      const { error } = await supabase
+        .from('deposits')
+        .update({
+          status: 'expired',
+          remaining_qty: 0,
+          notes: updatedNotes,
+        })
+        .eq('id', deposit.id);
+
+      if (error) throw error;
+
+      await logAudit({
+        store_id: currentStoreId,
+        action_type: AUDIT_ACTIONS.DEPOSIT_BAR_REJECTED,
+        table_name: 'deposits',
+        record_id: deposit.id,
+        old_value: { status: 'pending_confirm' },
+        new_value: {
+          status: 'expired',
+          reason: reason.trim(),
+          deposit_code: deposit.deposit_code,
+          customer_name: deposit.customer_name,
+          product_name: deposit.product_name,
+        },
+        changed_by: user.id,
+      });
+
+      toast({ type: 'success', title: t('rejectSuccess'), message: t('rejectSuccessMsg', { product: deposit.product_name }) });
+
+      // Notify the customer that their deposit has been rejected
+      if (deposit.customer_id) {
+        sendNotification({
+          userId: deposit.customer_id,
+          storeId: deposit.store_id,
+          type: 'deposit_confirmed',
+          title: t('depositRejectedNotifTitle'),
+          body: `${deposit.product_name} (${deposit.deposit_code}) ไม่ได้รับการยืนยัน`,
+          data: { deposit_id: deposit.id, deposit_code: deposit.deposit_code },
+          lineUserId: deposit.line_user_id ?? undefined,
+        });
+      }
+
+      setRejectDeposit(null);
+      await loadAll();
+    } catch (err) {
+      console.error('Reject deposit error:', err);
+      toast({ type: 'error', title: t('error'), message: t('rejectError') });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // -----------------------------------------------------------------------
+  // Withdrawal: complete
+  // -----------------------------------------------------------------------
+
+  const handleCompleteWithdrawal = async () => {
+    if (!completeWithdrawal || !user) return;
+
+    const actualQty = parseInt(completeWithdrawal.actualQty, 10);
+    if (isNaN(actualQty) || actualQty <= 0) {
+      toast({ type: 'warning', title: t('invalidQty'), message: t('invalidQtyMsg') });
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const supabase = createClient();
+      const { withdrawal, photoUrl, notes } = completeWithdrawal;
+
+      // Update withdrawal
+      const { error: wError } = await supabase
+        .from('withdrawals')
+        .update({
+          status: 'completed',
+          actual_qty: actualQty,
+          processed_by: user.id,
+          photo_url: photoUrl,
+          notes: notes
+            ? withdrawal.notes
+              ? `${withdrawal.notes}\n[บาร์ดำเนินการ] ${notes}`
+              : `[บาร์ดำเนินการ] ${notes}`
+            : withdrawal.notes,
+        })
+        .eq('id', withdrawal.id);
+
+      if (wError) throw wError;
+
+      // Mark the specific bottle as consumed when the request targets one.
+      if (withdrawal.bottle_id) {
+        const { error: bError } = await supabase
+          .from('deposit_bottles')
+          .update({
+            status: 'consumed',
+            remaining_percent: 0,
+            consumed_at: new Date().toISOString(),
+            consumed_by: user.id,
+          })
+          .eq('id', withdrawal.bottle_id);
+        if (bError) console.error('Failed to mark bottle consumed:', bError);
+      }
+
+      // Update deposit remaining_qty. When approving the LAST pending
+      // withdrawal for this deposit we flip status back to in_store /
+      // withdrawn; otherwise stay in pending_withdrawal so the bar
+      // page still surfaces the remaining requests.
+      if (withdrawal.deposit_id) {
+        const { data: depositData } = await supabase
+          .from('deposits')
+          .select('remaining_qty')
+          .eq('id', withdrawal.deposit_id)
+          .single();
+        const { count: stillPending } = await supabase
+          .from('withdrawals')
+          .select('id', { count: 'exact', head: true })
+          .eq('deposit_id', withdrawal.deposit_id)
+          .eq('status', 'pending');
+
+        if (depositData) {
+          const newRemaining = Math.max(0, depositData.remaining_qty - actualQty);
+          const newStatus = newRemaining <= 0
+            ? 'withdrawn'
+            : (stillPending && stillPending > 0 ? 'pending_withdrawal' : 'in_store');
+
+          const { error: dError } = await supabase
+            .from('deposits')
+            .update({
+              remaining_qty: newRemaining,
+              status: newStatus,
+            })
+            .eq('id', withdrawal.deposit_id);
+
+          if (dError) {
+            console.error('Failed to update deposit remaining qty:', dError);
+          }
+        }
+      }
+
+      await logAudit({
+        store_id: currentStoreId,
+        action_type: AUDIT_ACTIONS.WITHDRAWAL_COMPLETED,
+        table_name: 'withdrawals',
+        record_id: withdrawal.id,
+        old_value: { status: withdrawal.status, requested_qty: withdrawal.requested_qty },
+        new_value: {
+          status: 'completed',
+          actual_qty: actualQty,
+          photo_url: photoUrl,
+          customer_name: withdrawal.customer_name,
+          product_name: withdrawal.product_name,
+          deposit_code: withdrawal.deposits?.deposit_code,
+        },
+        changed_by: user.id,
+      });
+
+      toast({ type: 'success', title: t('withdrawalSuccess'), message: t('withdrawalSuccessMsg', { product: withdrawal.product_name || '', qty: formatNumber(actualQty) }) });
+
+      // Notify the customer that their withdrawal has been completed
+      if (withdrawal.customer_id) {
+        sendNotification({
+          userId: withdrawal.customer_id,
+          storeId: withdrawal.store_id,
+          type: 'withdrawal_completed',
+          title: t('withdrawalCompletedNotifTitle'),
+          body: `${withdrawal.product_name} จำนวน ${formatNumber(actualQty)}`,
+          data: { withdrawal_id: withdrawal.id, deposit_id: withdrawal.deposit_id },
+          lineUserId: withdrawal.line_user_id ?? undefined,
+        });
+      }
+
+      setCompleteWithdrawal(null);
+      await loadAll();
+    } catch (err) {
+      console.error('Complete withdrawal error:', err);
+      toast({ type: 'error', title: t('error'), message: t('withdrawalError') });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // -----------------------------------------------------------------------
+  // Withdrawal: reject
+  // -----------------------------------------------------------------------
+
+  const handleRejectWithdrawal = async () => {
+    if (!rejectWithdrawal || !user) return;
+    if (!rejectWithdrawal.reason.trim()) {
+      toast({ type: 'warning', title: t('rejectReasonRequired'), message: t('rejectReasonRequiredMsg') });
+      return;
+    }
+    setIsSubmitting(true);
+
+    try {
+      const supabase = createClient();
+      const { withdrawal, reason } = rejectWithdrawal;
+
+      const rejectNote = `บาร์ปฏิเสธ: ${reason.trim()}`;
+      const updatedNotes = withdrawal.notes ? `${withdrawal.notes}\n${rejectNote}` : rejectNote;
+
+      // Update withdrawal to rejected
+      const { error: wError } = await supabase
+        .from('withdrawals')
+        .update({
+          status: 'rejected',
+          processed_by: user.id,
+          notes: updatedNotes,
+        })
+        .eq('id', withdrawal.id);
+
+      if (wError) throw wError;
+
+      // Reset deposit status from pending_withdrawal back to in_store —
+      // but only if there are no other pending withdrawals queued for
+      // the same deposit (multi-bottle requests create N rows).
+      if (withdrawal.deposit_id) {
+        const { count: stillPending } = await supabase
+          .from('withdrawals')
+          .select('id', { count: 'exact', head: true })
+          .eq('deposit_id', withdrawal.deposit_id)
+          .eq('status', 'pending');
+        if (!stillPending || stillPending === 0) {
+          const { error: dError } = await supabase
+            .from('deposits')
+            .update({ status: 'in_store' })
+            .eq('id', withdrawal.deposit_id)
+            .eq('status', 'pending_withdrawal');
+          if (dError) console.error('Failed to reset deposit status:', dError);
+        }
+      }
+
+      await logAudit({
+        store_id: currentStoreId,
+        action_type: AUDIT_ACTIONS.WITHDRAWAL_REJECTED,
+        table_name: 'withdrawals',
+        record_id: withdrawal.id,
+        old_value: { status: withdrawal.status },
+        new_value: {
+          status: 'rejected',
+          reason: reason.trim(),
+          customer_name: withdrawal.customer_name,
+          product_name: withdrawal.product_name,
+          deposit_code: withdrawal.deposits?.deposit_code,
+        },
+        changed_by: user.id,
+      });
+
+      toast({ type: 'success', title: t('rejectWithdrawalSuccess'), message: t('rejectWithdrawalSuccessMsg', { product: withdrawal.product_name || '' }) });
+
+      // Notify the customer that their withdrawal has been rejected
+      if (withdrawal.customer_id) {
+        sendNotification({
+          userId: withdrawal.customer_id,
+          storeId: withdrawal.store_id,
+          type: 'withdrawal_completed',
+          title: t('withdrawalRejectedNotifTitle'),
+          body: `${withdrawal.product_name} - การเบิกถูกปฏิเสธ`,
+          data: { withdrawal_id: withdrawal.id, deposit_id: withdrawal.deposit_id },
+          lineUserId: withdrawal.line_user_id ?? undefined,
+        });
+      }
+
+      // Send LINE Flex card to the customer so the cancellation
+      // matches the deposit-rejected / withdrawal-completed UX.
+      if (withdrawal.deposit_id) {
+        fetch('/api/line/notify-deposit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'withdrawal_rejected',
+            deposit_id: withdrawal.deposit_id,
+            reason: reason.trim(),
+          }),
+        }).catch(() => {});
+      }
+
+      setRejectWithdrawal(null);
+      await loadAll();
+    } catch (err) {
+      console.error('Reject withdrawal error:', err);
+      toast({ type: 'error', title: t('error'), message: t('rejectWithdrawalError') });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // -----------------------------------------------------------------------
+  // Grid view data mapping
+  // -----------------------------------------------------------------------
+
+  // Map deposits to TableCardItem for grid view
+  const depositGridItems = useMemo<TableCardItem[]>(() => deposits.map((d) => ({
+    id: d.id,
+    type: 'deposit' as const,
+    tableNumber: d.table_number,
+    customerName: d.customer_name,
+    customerPhone: null,
+    productName: d.product_name,
+    quantity: d.quantity,
+    status: d.status,
+    notes: d.notes,
+    photoUrl: d.customer_photo_url || d.received_photo_url,
+    createdAt: d.created_at,
+    depositCode: d.deposit_code,
+    storeId: d.store_id,
+    rawData: d as unknown as Record<string, unknown>,
+  })), [deposits]);
+
+  const withdrawalGridItems = useMemo<TableCardItem[]>(() => withdrawals.map((w) => ({
+    id: w.id,
+    type: 'withdrawal' as const,
+    tableNumber: w.table_number,
+    customerName: w.customer_name || t('customer'),
+    productName: w.product_name,
+    quantity: w.requested_qty,
+    status: w.status,
+    notes: w.notes,
+    photoUrl: w.photo_url,
+    createdAt: w.created_at,
+    depositCode: w.deposits?.deposit_code,
+    depositId: w.deposit_id,
+    storeId: w.store_id,
+    rawData: w as unknown as Record<string, unknown>,
+  })), [withdrawals]);
+
+  // -----------------------------------------------------------------------
+  // Grid item click handler
+  // -----------------------------------------------------------------------
+
+  const handleGridItemClick = useCallback((item: TableCardItem) => {
+    if (item.type === 'deposit') {
+      const deposit = deposits.find((d) => d.id === item.id);
+      if (deposit) {
+        const initBottles: Record<number, number | ''> = {};
+        for (let n = 1; n <= Math.max(1, Math.floor(deposit.quantity)); n++) {
+          initBottles[n] = 100;
+        }
+        setConfirmDeposit({ deposit, photoUrl: null, notes: '', bottlePercents: initBottles });
+      }
+    } else {
+      const withdrawal = withdrawals.find((w) => w.id === item.id);
+      if (withdrawal) {
+        setCompleteWithdrawal({
+          withdrawal,
+          actualQty: String(withdrawal.requested_qty ?? 1),
+          photoUrl: null,
+          notes: '',
+        });
+      }
+    }
+  }, [deposits, withdrawals]);
+
+  // -----------------------------------------------------------------------
+  // Counts
+  // -----------------------------------------------------------------------
+
+  const depositCount = deposits.length;
+  const withdrawalCount = withdrawals.length;
+
+  // -----------------------------------------------------------------------
+  // Render
+  // -----------------------------------------------------------------------
+
+  return (
+    <div className="space-y-4">
+      {/* Page Header */}
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-gray-900 dark:text-white">
+            {t('title')}
+          </h1>
+          <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
+            {t('subtitle')}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {/* View toggle */}
+          <div className="flex rounded-lg bg-gray-100 p-0.5 dark:bg-gray-800">
+            <button
+              onClick={() => setViewMode('grid')}
+              className={cn(
+                'rounded-md p-1.5 transition-colors',
+                viewMode === 'grid'
+                  ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white'
+                  : 'text-gray-400'
+              )}
+            >
+              <LayoutGrid className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={cn(
+                'rounded-md p-1.5 transition-colors',
+                viewMode === 'list'
+                  ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white'
+                  : 'text-gray-400'
+              )}
+            >
+              <List className="h-4 w-4" />
+            </button>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            icon={<RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />}
+            onClick={loadAll}
+            disabled={isLoading}
+          >
+            {t('refresh')}
+          </Button>
+        </div>
+      </div>
+
+      {/* Stock Count Banner */}
+      <StockCountBanner />
+
+      {/* Expired Deposits Banner */}
+      <ExpiredDepositsBanner />
+
+      {/* Summary Counts */}
+      <div className="grid grid-cols-2 gap-3">
+        <button
+          onClick={() => setActiveTab('deposit')}
+          className={cn(
+            'rounded-xl p-4 text-left transition-all',
+            activeTab === 'deposit'
+              ? 'bg-amber-100 ring-2 ring-amber-400 dark:bg-amber-900/40 dark:ring-amber-500'
+              : 'bg-amber-50 dark:bg-amber-900/20'
+          )}
+        >
+          <div className="flex items-center gap-2">
+            <Wine className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+            <span className="text-sm text-amber-700 dark:text-amber-300">
+              {t('depositTab')}
+            </span>
+          </div>
+          <p className="mt-1 text-2xl font-bold text-amber-800 dark:text-amber-200">
+            {depositCount}
+          </p>
+        </button>
+        <button
+          onClick={() => setActiveTab('withdrawal')}
+          className={cn(
+            'rounded-xl p-4 text-left transition-all',
+            activeTab === 'withdrawal'
+              ? 'bg-blue-100 ring-2 ring-blue-400 dark:bg-blue-900/40 dark:ring-blue-500'
+              : 'bg-blue-50 dark:bg-blue-900/20'
+          )}
+        >
+          <div className="flex items-center gap-2">
+            <Package className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+            <span className="text-sm text-blue-700 dark:text-blue-300">
+              {t('withdrawalTab')}
+            </span>
+          </div>
+          <p className="mt-1 text-2xl font-bold text-blue-800 dark:text-blue-200">
+            {withdrawalCount}
+          </p>
+        </button>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex rounded-xl bg-gray-100 p-1 dark:bg-gray-800">
+        <button
+          onClick={() => setActiveTab('deposit')}
+          className={cn(
+            'flex flex-1 items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium transition-colors',
+            activeTab === 'deposit'
+              ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white'
+              : 'text-gray-500 dark:text-gray-400'
+          )}
+        >
+          <Wine className="h-4 w-4" />
+          {t('depositTab')}
+          {depositCount > 0 && (
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+              {depositCount}
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('withdrawal')}
+          className={cn(
+            'flex flex-1 items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium transition-colors',
+            activeTab === 'withdrawal'
+              ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white'
+              : 'text-gray-500 dark:text-gray-400'
+          )}
+        >
+          <Package className="h-4 w-4" />
+          {t('withdrawalTab')}
+          {withdrawalCount > 0 && (
+            <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+              {withdrawalCount}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* Content */}
+      {isLoading ? (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+        </div>
+      ) : viewMode === 'grid' ? (
+        // GRID VIEW
+        <TableCardGrid
+          items={activeTab === 'deposit' ? depositGridItems : withdrawalGridItems}
+          onItemClick={handleGridItemClick}
+          isLoading={isLoading}
+          emptyMessage={
+            activeTab === 'deposit'
+              ? t('noDeposits')
+              : t('noWithdrawals')
+          }
+        />
+      ) : activeTab === 'deposit' ? (
+        /* ================================================================
+         *  DEPOSITS TAB
+         * ================================================================ */
+        <div className="space-y-3">
+          {deposits.length === 0 ? (
+            <EmptyState
+              icon={Inbox}
+              title={t('noDeposits')}
+              description={t('noDepositsDesc')}
+            />
+          ) : (
+            deposits.map((deposit) => {
+              const staffName =
+                deposit.received_by_profile?.display_name || t('unspecifiedStaff');
+
+              return (
+                <Card key={deposit.id} padding="none">
+                  <div className="p-4">
+                    {/* Product + status */}
+                    <div className="mb-3 flex items-start justify-between">
+                      <div className="min-w-0 flex-1">
+                        <h3 className="font-semibold text-gray-900 dark:text-white">
+                          {deposit.product_name}
+                        </h3>
+                        {deposit.category && (
+                          <p className="text-xs text-gray-400 dark:text-gray-500">
+                            {deposit.category}
+                          </p>
+                        )}
+                      </div>
+                      <Badge variant="warning" size="sm">
+                        {DEPOSIT_STATUS_LABELS[deposit.status] || deposit.status}
+                      </Badge>
+                    </div>
+
+                    {/* Info rows */}
+                    <div className="mb-3 space-y-1.5 text-sm">
+                      <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300">
+                        <User className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                        <span>{deposit.customer_name}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300">
+                        <Hash className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                        <span>{t('quantity', { count: formatNumber(deposit.quantity) })}{deposit.remaining_percent != null ? ` (${deposit.remaining_percent}%)` : ''}</span>
+                      </div>
+                      {deposit.table_number && (
+                        <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300">
+                          <MapPin className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                          <span>{deposit.table_number}</span>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300">
+                        <User className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                        <span className="text-gray-400 dark:text-gray-500">{t('receiver')}</span>
+                        <span>{staffName}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300">
+                        <Clock className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                        <span>{formatThaiDateTime(deposit.created_at)}</span>
+                      </div>
+                      {deposit.notes && (
+                        <div className="flex items-start gap-2 text-gray-600 dark:text-gray-300">
+                          <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-400" />
+                          <span>{deposit.notes}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Customer photo thumbnail */}
+                    {deposit.customer_photo_url && (
+                      <div className="mb-3">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedPhoto(
+                              expandedPhoto === deposit.id ? null : deposit.id
+                            )
+                          }
+                          className="flex items-center gap-1.5 text-xs text-indigo-600 dark:text-indigo-400"
+                        >
+                          <ImageIcon className="h-3.5 w-3.5" />
+                          {expandedPhoto === deposit.id ? t('hideCustomerPhoto') : t('viewCustomerPhoto')}
+                        </button>
+                        {expandedPhoto === deposit.id && (
+                          <img
+                            src={deposit.customer_photo_url}
+                            alt={t('customerPhotoAlt')}
+                            className="mt-2 max-h-48 w-full rounded-lg object-cover"
+                          />
+                        )}
+                      </div>
+                    )}
+
+                    {/* Received photo thumbnail */}
+                    {deposit.received_photo_url && !deposit.customer_photo_url && (
+                      <div className="mb-3">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedPhoto(
+                              expandedPhoto === `recv-${deposit.id}` ? null : `recv-${deposit.id}`
+                            )
+                          }
+                          className="flex items-center gap-1.5 text-xs text-indigo-600 dark:text-indigo-400"
+                        >
+                          <Camera className="h-3.5 w-3.5" />
+                          {expandedPhoto === `recv-${deposit.id}` ? t('hideReceivedPhoto') : t('viewReceivedPhoto')}
+                        </button>
+                        {expandedPhoto === `recv-${deposit.id}` && (
+                          <img
+                            src={deposit.received_photo_url}
+                            alt={t('receivedPhotoAlt')}
+                            className="mt-2 max-h-48 w-full rounded-lg object-cover"
+                          />
+                        )}
+                      </div>
+                    )}
+
+                    {/* Action buttons */}
+                    <div className="flex gap-2">
+                      <Button
+                        className="min-h-[44px] flex-1"
+                        variant="primary"
+                        icon={<CheckCircle className="h-4 w-4" />}
+                        onClick={() => {
+                          const initBottles: Record<number, number | ''> = {};
+                          for (let n = 1; n <= Math.max(1, Math.floor(deposit.quantity)); n++) {
+                            initBottles[n] = 100;
+                          }
+                          setConfirmDeposit({
+                            deposit,
+                            photoUrl: null,
+                            notes: '',
+                            bottlePercents: initBottles,
+                          });
+                        }}
+                      >
+                        {t('confirmReceive')}
+                      </Button>
+                      <Button
+                        className="min-h-[44px] flex-1"
+                        variant="danger"
+                        icon={<XCircle className="h-4 w-4" />}
+                        onClick={() =>
+                          setRejectDeposit({
+                            deposit,
+                            reason: '',
+                          })
+                        }
+                      >
+                        {t('rejectBtn')}
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              );
+            })
+          )}
+        </div>
+      ) : (
+        /* ================================================================
+         *  WITHDRAWALS TAB
+         * ================================================================ */
+        <div className="space-y-3">
+          {withdrawals.length === 0 ? (
+            <EmptyState
+              icon={Inbox}
+              title={t('noWithdrawals')}
+              description={t('noWithdrawalsDesc')}
+            />
+          ) : (
+            withdrawals.map((withdrawal) => {
+              const depositCode = withdrawal.deposits?.deposit_code;
+              const statusVariant: 'warning' | 'info' =
+                withdrawal.status === 'pending' ? 'warning' : 'info';
+
+              return (
+                <Card key={withdrawal.id} padding="none">
+                  <div className="p-4">
+                    {/* Product + status */}
+                    <div className="mb-3 flex items-start justify-between">
+                      <div className="min-w-0 flex-1">
+                        <h3 className="font-semibold text-gray-900 dark:text-white">
+                          {withdrawal.product_name || t('unspecifiedProduct')}
+                        </h3>
+                        {depositCode && (
+                          <p className="text-xs font-mono text-indigo-600 dark:text-indigo-400">
+                            {depositCode}
+                          </p>
+                        )}
+                      </div>
+                      <Badge variant={statusVariant} size="sm">
+                        {WITHDRAWAL_STATUS_LABELS[withdrawal.status] || withdrawal.status}
+                      </Badge>
+                    </div>
+
+                    {/* Info rows */}
+                    <div className="mb-3 space-y-1.5 text-sm">
+                      {withdrawal.customer_name && (
+                        <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300">
+                          <User className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                          <span>{withdrawal.customer_name}</span>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300">
+                        <Hash className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                        <span>{t('requestedQty', { count: withdrawal.requested_qty != null ? formatNumber(withdrawal.requested_qty) : '-' })}</span>
+                      </div>
+                      {withdrawal.table_number && (
+                        <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300">
+                          <MapPin className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                          <span>{withdrawal.table_number}</span>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300">
+                        <Clock className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                        <span>{formatThaiDateTime(withdrawal.created_at)}</span>
+                      </div>
+                      {withdrawal.notes && (
+                        <div className="flex items-start gap-2 text-gray-600 dark:text-gray-300">
+                          <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-400" />
+                          <span>{withdrawal.notes}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Action buttons */}
+                    <div className="flex gap-2">
+                      <Button
+                        className="min-h-[44px] flex-1"
+                        variant="primary"
+                        icon={<CheckCircle className="h-4 w-4" />}
+                        onClick={() =>
+                          setCompleteWithdrawal({
+                            withdrawal,
+                            actualQty: String(withdrawal.requested_qty ?? 1),
+                            photoUrl: null,
+                            notes: '',
+                          })
+                        }
+                      >
+                        {t('processBtn')}
+                      </Button>
+                      <Button
+                        className="min-h-[44px] flex-1"
+                        variant="danger"
+                        icon={<XCircle className="h-4 w-4" />}
+                        onClick={() =>
+                          setRejectWithdrawal({
+                            withdrawal,
+                            reason: '',
+                          })
+                        }
+                      >
+                        {t('rejectBtn')}
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {/* ==================================================================
+       *  MODAL: Confirm Deposit
+       * ================================================================== */}
+      <Modal
+        isOpen={!!confirmDeposit}
+        onClose={() => !isSubmitting && setConfirmDeposit(null)}
+        title={t('confirmDepositTitle')}
+        description={confirmDeposit ? `${confirmDeposit.deposit.product_name} - ${confirmDeposit.deposit.customer_name}` : undefined}
+        size="md"
+      >
+        {confirmDeposit && (
+          <div className="space-y-4">
+            <PhotoUpload
+              value={confirmDeposit.photoUrl}
+              onChange={(url) =>
+                setConfirmDeposit((prev) =>
+                  prev ? { ...prev, photoUrl: url } : null
+                )
+              }
+              folder="deposits"
+              label={t('confirmPhoto')}
+              compact={false}
+            />
+
+            {/* Per-bottle remaining-% inputs */}
+            <div>
+              <p className="mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                ปริมาณคงเหลือในแต่ละขวด ({Object.keys(confirmDeposit.bottlePercents).length} ขวด)
+              </p>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {Object.entries(confirmDeposit.bottlePercents)
+                  .sort(([a], [b]) => Number(a) - Number(b))
+                  .map(([bn, val]) => (
+                    <div key={bn} className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 dark:border-gray-700 dark:bg-gray-800">
+                      <span className="text-xs font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">
+                        ขวดที่ {bn}/{Object.keys(confirmDeposit.bottlePercents).length}
+                      </span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={val}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          const next: number | '' = raw === '' ? '' : Math.min(100, Math.max(0, Number(raw)));
+                          setConfirmDeposit((prev) =>
+                            prev
+                              ? {
+                                  ...prev,
+                                  bottlePercents: { ...prev.bottlePercents, [Number(bn)]: next },
+                                }
+                              : null,
+                          );
+                        }}
+                        className="w-14 rounded-md border border-gray-300 bg-white px-2 py-1 text-right text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+                      />
+                      <span className="text-xs text-gray-400">%</span>
+                    </div>
+                  ))}
+              </div>
+              <div className="mt-2 flex gap-2">
+                <button
+                  type="button"
+                  className="rounded-md bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400"
+                  onClick={() =>
+                    setConfirmDeposit((prev) => {
+                      if (!prev) return null;
+                      const all100: Record<number, number | ''> = {};
+                      for (const k of Object.keys(prev.bottlePercents)) all100[Number(k)] = 100;
+                      return { ...prev, bottlePercents: all100 };
+                    })
+                  }
+                >
+                  ตั้งทุกขวด 100%
+                </button>
+              </div>
+            </div>
+
+            <Textarea
+              label={t('notesOptional')}
+              placeholder={t('notesPlaceholderDeposit')}
+              rows={3}
+              value={confirmDeposit.notes}
+              onChange={(e) =>
+                setConfirmDeposit((prev) =>
+                  prev ? { ...prev, notes: e.target.value } : null
+                )
+              }
+              disabled={isSubmitting}
+            />
+
+            <ModalFooter className="px-0 pb-0 border-t-0">
+              <Button
+                variant="outline"
+                onClick={() => setConfirmDeposit(null)}
+                disabled={isSubmitting}
+                className="min-h-[44px]"
+              >
+                {t('cancel')}
+              </Button>
+              <Button
+                variant="primary"
+                onClick={handleConfirmDeposit}
+                isLoading={isSubmitting}
+                icon={<CheckCircle className="h-4 w-4" />}
+                className="min-h-[44px]"
+              >
+                {t('confirmReceive')}
+              </Button>
+            </ModalFooter>
+          </div>
+        )}
+      </Modal>
+
+      {/* ==================================================================
+       *  MODAL: Reject Deposit
+       * ================================================================== */}
+      <Modal
+        isOpen={!!rejectDeposit}
+        onClose={() => !isSubmitting && setRejectDeposit(null)}
+        title={t('rejectDepositTitle')}
+        description={rejectDeposit ? `${rejectDeposit.deposit.product_name} - ${rejectDeposit.deposit.customer_name}` : undefined}
+        size="md"
+      >
+        {rejectDeposit && (
+          <div className="space-y-4">
+            <Textarea
+              label={t('rejectReasonLabel')}
+              placeholder={t('rejectReasonPlaceholder')}
+              rows={3}
+              value={rejectDeposit.reason}
+              onChange={(e) =>
+                setRejectDeposit((prev) =>
+                  prev ? { ...prev, reason: e.target.value } : null
+                )
+              }
+              disabled={isSubmitting}
+              error={rejectDeposit.reason.trim() === '' ? undefined : undefined}
+            />
+
+            <ModalFooter className="px-0 pb-0 border-t-0">
+              <Button
+                variant="outline"
+                onClick={() => setRejectDeposit(null)}
+                disabled={isSubmitting}
+                className="min-h-[44px]"
+              >
+                {t('cancel')}
+              </Button>
+              <Button
+                variant="danger"
+                onClick={handleRejectDeposit}
+                isLoading={isSubmitting}
+                icon={<XCircle className="h-4 w-4" />}
+                className="min-h-[44px]"
+              >
+                {t('rejectBtn')}
+              </Button>
+            </ModalFooter>
+          </div>
+        )}
+      </Modal>
+
+      {/* ==================================================================
+       *  MODAL: Complete Withdrawal
+       * ================================================================== */}
+      <Modal
+        isOpen={!!completeWithdrawal}
+        onClose={() => !isSubmitting && setCompleteWithdrawal(null)}
+        title={t('completeWithdrawalTitle')}
+        description={completeWithdrawal ? `${completeWithdrawal.withdrawal.product_name} - ${completeWithdrawal.withdrawal.customer_name}` : undefined}
+        size="md"
+      >
+        {completeWithdrawal && (
+          <div className="space-y-4">
+            <Input
+              label={t('actualQty')}
+              type="number"
+              min={1}
+              value={completeWithdrawal.actualQty}
+              onChange={(e) =>
+                setCompleteWithdrawal((prev) =>
+                  prev ? { ...prev, actualQty: e.target.value } : null
+                )
+              }
+              disabled={isSubmitting}
+              hint={t('actualQtyHint', { count: String(completeWithdrawal.withdrawal.requested_qty ?? '-') })}
+            />
+
+            <PhotoUpload
+              value={completeWithdrawal.photoUrl}
+              onChange={(url) =>
+                setCompleteWithdrawal((prev) =>
+                  prev ? { ...prev, photoUrl: url } : null
+                )
+              }
+              folder="withdrawals"
+              label={t('withdrawalPhoto')}
+              compact
+            />
+
+            <Textarea
+              label={t('notesOptional')}
+              placeholder={t('withdrawalNotesPlaceholder')}
+              rows={2}
+              value={completeWithdrawal.notes}
+              onChange={(e) =>
+                setCompleteWithdrawal((prev) =>
+                  prev ? { ...prev, notes: e.target.value } : null
+                )
+              }
+              disabled={isSubmitting}
+            />
+
+            <ModalFooter className="px-0 pb-0 border-t-0">
+              <Button
+                variant="outline"
+                onClick={() => setCompleteWithdrawal(null)}
+                disabled={isSubmitting}
+                className="min-h-[44px]"
+              >
+                {t('cancel')}
+              </Button>
+              <Button
+                variant="primary"
+                onClick={handleCompleteWithdrawal}
+                isLoading={isSubmitting}
+                icon={<CheckCircle className="h-4 w-4" />}
+                className="min-h-[44px]"
+              >
+                {t('completeBtn')}
+              </Button>
+            </ModalFooter>
+          </div>
+        )}
+      </Modal>
+
+      {/* ==================================================================
+       *  MODAL: Reject Withdrawal
+       * ================================================================== */}
+      <Modal
+        isOpen={!!rejectWithdrawal}
+        onClose={() => !isSubmitting && setRejectWithdrawal(null)}
+        title={t('rejectWithdrawalTitle')}
+        description={rejectWithdrawal ? `${rejectWithdrawal.withdrawal.product_name} - ${rejectWithdrawal.withdrawal.customer_name}` : undefined}
+        size="md"
+      >
+        {rejectWithdrawal && (
+          <div className="space-y-4">
+            <Textarea
+              label={t('rejectReasonLabel')}
+              placeholder={t('rejectWithdrawalPlaceholder')}
+              rows={3}
+              value={rejectWithdrawal.reason}
+              onChange={(e) =>
+                setRejectWithdrawal((prev) =>
+                  prev ? { ...prev, reason: e.target.value } : null
+                )
+              }
+              disabled={isSubmitting}
+            />
+
+            <ModalFooter className="px-0 pb-0 border-t-0">
+              <Button
+                variant="outline"
+                onClick={() => setRejectWithdrawal(null)}
+                disabled={isSubmitting}
+                className="min-h-[44px]"
+              >
+                {t('cancel')}
+              </Button>
+              <Button
+                variant="danger"
+                onClick={handleRejectWithdrawal}
+                isLoading={isSubmitting}
+                icon={<XCircle className="h-4 w-4" />}
+                className="min-h-[44px]"
+              >
+                {t('rejectBtn')}
+              </Button>
+            </ModalFooter>
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+}
