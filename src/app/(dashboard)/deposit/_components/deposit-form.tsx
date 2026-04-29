@@ -1004,17 +1004,12 @@ export function DepositForm({ onBack, onSuccess, pendingDeposit }: DepositFormPr
                     label={t("form.storageDays")}
                     type="number"
                     value={expiryDays}
-                    onChange={(e) => {
-                      setExpiryDays(e.target.value);
-                      if (errors.expiryDays) setErrors((prev) => ({ ...prev, expiryDays: '' }));
-                    }}
+                    readOnly
                     placeholder="30"
-                    hint={
-                      expiryDays && parseInt(expiryDays) > 0
-                        ? t('form.expiryApprox', { date: formatThaiDate(new Date(Date.now() + parseInt(expiryDays) * 86400000)) })
-                        : t("form.storageDaysHint")
-                    }
-                    error={errors.expiryDays}
+                    hint={t('form.expiryApprox', {
+                      date: formatThaiDate(new Date(Date.now() + parseInt(expiryDays) * 86400000)),
+                    })}
+                    className="cursor-not-allowed bg-gray-100 dark:bg-gray-800"
                   />
                 )}
               </>
