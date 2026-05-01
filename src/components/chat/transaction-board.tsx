@@ -115,6 +115,7 @@ export function TransactionBoard({ roomId, storeId, currentUserId, currentUserNa
       return isActionTypeVisibleToRole(
         meta.action_type as string,
         currentUserRole as UserRole | undefined,
+        meta.status as string | undefined,
       );
     });
   }, [messages, currentUserRole]);
