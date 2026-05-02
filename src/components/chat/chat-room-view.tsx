@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import { createPortal } from 'react-dom';
 import { createClient } from '@/lib/supabase/client';
 import { broadcastToChannel } from '@/lib/supabase/broadcast';
 import { useChatMessages } from '@/hooks/use-chat-messages';
@@ -67,18 +68,44 @@ export function ChatRoomView({ roomId }: ChatRoomViewProps) {
   // Image lightbox
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
-  // Header overflow menu (kebab) — keeps the top bar from wrapping on phones
-  const [showMoreMenu, setShowMoreMenu] = useState(false);
-  const moreMenuRef = useRef<HTMLDivElement>(null);
+  // Header overflow menu (kebab) — keeps the top bar from wrapping on phones.
+  // Rendered via portal so it floats above sibling stacking contexts like
+  // the date-filter strip's backdrop-blur, which otherwise covers it.
+  const [moreMenuAnchor, setMoreMenuAnchor] = useState<{ top: number; right: number } | null>(null);
+  const moreMenuBtnRef = useRef<HTMLButtonElement>(null);
+  const moreMenuPanelRef = useRef<HTMLDivElement>(null);
+  const showMoreMenu = moreMenuAnchor !== null;
+  const closeMoreMenu = useCallback(() => setMoreMenuAnchor(null), []);
+  const toggleMoreMenu = useCallback(() => {
+    const btn = moreMenuBtnRef.current;
+    if (!btn) return;
+    if (moreMenuAnchor) {
+      setMoreMenuAnchor(null);
+      return;
+    }
+    const rect = btn.getBoundingClientRect();
+    setMoreMenuAnchor({
+      top: rect.bottom + 8,
+      right: Math.max(8, window.innerWidth - rect.right),
+    });
+  }, [moreMenuAnchor]);
+
   useEffect(() => {
     if (!showMoreMenu) return;
     const handler = (e: PointerEvent | MouseEvent) => {
-      if (moreMenuRef.current?.contains(e.target as Node)) return;
-      setShowMoreMenu(false);
+      const target = e.target as Node;
+      if (moreMenuPanelRef.current?.contains(target)) return;
+      if (moreMenuBtnRef.current?.contains(target)) return;
+      closeMoreMenu();
     };
     document.addEventListener('pointerdown', handler);
     return () => document.removeEventListener('pointerdown', handler);
-  }, [showMoreMenu]);
+  }, [showMoreMenu, closeMoreMenu]);
+
+  // Albums panel can open directly into create-mode (when triggered from
+  // the chat-input attachment menu). State lives here because the panel
+  // is owned by the room view.
+  const [albumPanelStartCreating, setAlbumPanelStartCreating] = useState(false);
 
   // Reactions
   useChatReactions(roomId);
@@ -570,65 +597,23 @@ export function ChatRoomView({ roomId }: ChatRoomViewProps) {
               {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
             </button>
 
-            {/* Overflow / "more" menu — gallery, albums, settings */}
-            <div className="relative" ref={moreMenuRef}>
-              <button
-                onClick={() => setShowMoreMenu((v) => !v)}
-                className={cn(
-                  'flex h-8 w-8 items-center justify-center rounded-lg transition-all sm:h-9 sm:w-9',
-                  showMoreMenu
-                    ? 'bg-white/15 text-white'
-                    : 'text-white/70 hover:bg-white/10 hover:text-white',
-                )}
-                title="เพิ่มเติม"
-                aria-haspopup="menu"
-                aria-expanded={showMoreMenu}
-              >
-                <MoreVertical className="h-4 w-4" />
-              </button>
-
-              {showMoreMenu && (
-                <div
-                  className="absolute right-0 top-full z-40 mt-1.5 w-52 origin-top-right animate-in fade-in zoom-in-95 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl dark:border-gray-700 dark:bg-gray-800"
-                  role="menu"
-                >
-                  <button
-                    onClick={() => {
-                      setShowMoreMenu(false);
-                      setShowGallery(true);
-                    }}
-                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-700"
-                    role="menuitem"
-                  >
-                    <ImageLucide className="h-4 w-4 text-indigo-500" />
-                    คลังรูปภาพ
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowMoreMenu(false);
-                      setShowAlbums(true);
-                    }}
-                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-700"
-                    role="menuitem"
-                  >
-                    <FolderOpen className="h-4 w-4 text-indigo-500" />
-                    อัลบั้ม
-                  </button>
-                  <div className="my-1 h-px bg-gray-100 dark:bg-gray-700" />
-                  <button
-                    onClick={() => {
-                      setShowMoreMenu(false);
-                      setShowSettings(true);
-                    }}
-                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-700"
-                    role="menuitem"
-                  >
-                    <Settings className="h-4 w-4 text-indigo-500" />
-                    ตั้งค่าห้อง
-                  </button>
-                </div>
+            {/* Overflow / "more" menu — gallery, albums, settings.
+                The dropdown itself is rendered via portal further below. */}
+            <button
+              ref={moreMenuBtnRef}
+              onClick={toggleMoreMenu}
+              className={cn(
+                'flex h-8 w-8 items-center justify-center rounded-lg transition-all sm:h-9 sm:w-9',
+                showMoreMenu
+                  ? 'bg-white/15 text-white'
+                  : 'text-white/70 hover:bg-white/10 hover:text-white',
               )}
-            </div>
+              title="เพิ่มเติม"
+              aria-haspopup="menu"
+              aria-expanded={showMoreMenu}
+            >
+              <MoreVertical className="h-4 w-4" />
+            </button>
           </div>
         </div>
 
@@ -804,7 +789,15 @@ export function ChatRoomView({ roomId }: ChatRoomViewProps) {
       </div>
 
       {/* Input */}
-      <ChatInput roomId={roomId} replyTo={replyTo} onClearReply={() => setReplyTo(null)} />
+      <ChatInput
+        roomId={roomId}
+        replyTo={replyTo}
+        onClearReply={() => setReplyTo(null)}
+        onCreateAlbum={() => {
+          setAlbumPanelStartCreating(true);
+          setShowAlbums(true);
+        }}
+      />
       </>
       )}
 
@@ -915,9 +908,12 @@ export function ChatRoomView({ roomId }: ChatRoomViewProps) {
           onClose={() => {
             setShowAlbums(false);
             setPendingAlbumId(null);
+            setAlbumPanelStartCreating(false);
           }}
           initialAlbumId={pendingAlbumId}
           onConsumeInitial={() => setPendingAlbumId(null)}
+          initialCreating={albumPanelStartCreating}
+          onConsumeInitialCreating={() => setAlbumPanelStartCreating(false)}
         />
       )}
 
@@ -927,6 +923,55 @@ export function ChatRoomView({ roomId }: ChatRoomViewProps) {
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
       />
+
+      {/* Header overflow menu — portaled so it always stacks above the
+          chat content (the date filter's backdrop-blur was painting over
+          a non-portaled dropdown). */}
+      {showMoreMenu && moreMenuAnchor && typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            ref={moreMenuPanelRef}
+            className="fixed z-[60] w-52 origin-top-right animate-in fade-in zoom-in-95 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl dark:border-gray-700 dark:bg-gray-800"
+            style={{ top: moreMenuAnchor.top, right: moreMenuAnchor.right }}
+            role="menu"
+          >
+            <button
+              onClick={() => {
+                closeMoreMenu();
+                setShowGallery(true);
+              }}
+              className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-700"
+              role="menuitem"
+            >
+              <ImageLucide className="h-4 w-4 text-indigo-500" />
+              คลังรูปภาพ
+            </button>
+            <button
+              onClick={() => {
+                closeMoreMenu();
+                setShowAlbums(true);
+              }}
+              className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-700"
+              role="menuitem"
+            >
+              <FolderOpen className="h-4 w-4 text-indigo-500" />
+              อัลบั้ม
+            </button>
+            <div className="my-1 h-px bg-gray-100 dark:bg-gray-700" />
+            <button
+              onClick={() => {
+                closeMoreMenu();
+                setShowSettings(true);
+              }}
+              className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-700"
+              role="menuitem"
+            >
+              <Settings className="h-4 w-4 text-indigo-500" />
+              ตั้งค่าห้อง
+            </button>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
