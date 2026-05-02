@@ -65,6 +65,15 @@ export function useChatRealtime(roomId: string | null) {
           removePinnedMessage(data.message_id);
         }
       })
+      .on('broadcast', { event: 'reaction_changed' }, (payload) => {
+        const data = payload.payload as ChatBroadcastPayload;
+        if (!data.message_id || !data.reactions) return;
+        // Pull current state via getState so we don't re-subscribe on every render
+        const current = useChatStore.getState().messages.find((m) => m.id === data.message_id);
+        if (current) {
+          updateMessage({ ...current, reactions: data.reactions });
+        }
+      })
       .on('presence', { event: 'sync' }, () => {
         // Presence sync — สามารถใช้สำหรับ typing indicator
       })
