@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client';
 import { broadcastToChannel } from '@/lib/supabase/broadcast';
 import { useChatMessages } from '@/hooks/use-chat-messages';
 import { useChatRealtime } from '@/hooks/use-chat-realtime';
+import { useChatReactions, useToggleReaction, QUICK_REACTIONS } from '@/hooks/use-chat-reactions';
 import { useChatStore } from '@/stores/chat-store';
 import { useAuthStore } from '@/stores/auth-store';
 import { ChatMessageBubble } from './chat-message-bubble';
@@ -15,7 +16,11 @@ import { ChatRoomSettings } from './chat-room-settings';
 import { TransactionBoard } from './transaction-board';
 import { MyTasksBoard } from './my-tasks-board';
 import { CompactActionCard } from './compact-action-card';
-import { ArrowLeft, Loader2, Settings, Volume2, VolumeX, Pin, Reply, MessageSquare, ClipboardList, UserCircle, Users, ChevronLeft, CalendarDays } from 'lucide-react';
+import { ImageLightbox, type LightboxImage } from './image-lightbox';
+import { ChatSearchPanel } from './chat-search-panel';
+import { ChatGalleryPanel } from './chat-gallery-panel';
+import { ChatAlbumsPanel } from './chat-albums-panel';
+import { Loader2, Settings, Volume2, VolumeX, Pin, Reply, MessageSquare, ClipboardList, UserCircle, Users, ChevronLeft, CalendarDays, Search, Image as ImageLucide, FolderOpen, Smile } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { ChatNotificationToggle } from './chat-notification-toggle';
 import { isActionTypeVisibleToRole } from '@/lib/role-task-visibility';
@@ -40,6 +45,7 @@ export function ChatRoomView({ roomId }: ChatRoomViewProps) {
   const setPinnedMessages = useChatStore((s) => s.setPinnedMessages);
   const addPinnedMessage = useChatStore((s) => s.addPinnedMessage);
   const removePinnedMessage = useChatStore((s) => s.removePinnedMessage);
+  const scrollToBottomNonce = useChatStore((s) => s.scrollToBottomNonce);
   const { messages, hasMore, isLoadingMessages, loadMore } = useChatMessages(roomId);
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -51,6 +57,19 @@ export function ChatRoomView({ roomId }: ChatRoomViewProps) {
   const [contextMenu, setContextMenu] = useState<{ messageId: string; x: number; y: number } | null>(null);
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  // Overlay panels
+  const [showSearch, setShowSearch] = useState(false);
+  const [showGallery, setShowGallery] = useState(false);
+  const [showAlbums, setShowAlbums] = useState(false);
+  const [pendingAlbumId, setPendingAlbumId] = useState<string | null>(null);
+
+  // Image lightbox
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+
+  // Reactions
+  useChatReactions(roomId);
+  const toggleReaction = useToggleReaction();
 
   // Chat date filter with localStorage persistence
   const [chatDateFilter, setChatDateFilter] = useState<'all' | 'today' | 'yesterday'>(() => {
@@ -151,6 +170,17 @@ export function ChatRoomView({ roomId }: ChatRoomViewProps) {
       toastTimerRef.current = setTimeout(() => setShowNewMessageToast(false), 3000);
     }
   }, [messages, user?.id]);
+
+  // Force scroll-to-bottom when explicitly requested (e.g. user posted an
+  // album action via the album panel — system messages have sender_id=null
+  // so the standard "is it own?" check above doesn't fire).
+  useEffect(() => {
+    if (scrollToBottomNonce === 0) return;
+    const id = requestAnimationFrame(() => {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [scrollToBottomNonce]);
 
   // Cleanup toast timer
   useEffect(() => {
@@ -276,6 +306,49 @@ export function ChatRoomView({ roomId }: ChatRoomViewProps) {
     setContextMenu(null);
   }, []);
 
+  // ----- Image gallery flat list (for lightbox prev/next within thread) -----
+  const imageMessages = useMemo(
+    () => messages.filter((m) => m.type === 'image' && m.content),
+    [messages],
+  );
+
+  const imageGalleryForLightbox: LightboxImage[] = useMemo(
+    () =>
+      imageMessages.map((m) => ({
+        url: m.content || '',
+        sender: m.sender?.display_name || m.sender?.username || null,
+        timestamp: new Date(m.created_at).toLocaleString('th-TH', {
+          day: 'numeric',
+          month: 'short',
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+      })),
+    [imageMessages],
+  );
+
+  const handleOpenImage = useCallback(
+    (messageId: string) => {
+      const idx = imageMessages.findIndex((m) => m.id === messageId);
+      if (idx >= 0) setLightboxIndex(idx);
+    },
+    [imageMessages],
+  );
+
+  // Reaction click on a pill below bubble (toggle)
+  const handleReactionClick = useCallback(
+    (messageId: string, emoji: string) => {
+      toggleReaction(messageId, emoji);
+    },
+    [toggleReaction],
+  );
+
+  // Album card tap → open albums panel deep-linked to album id
+  const handleOpenAlbum = useCallback((albumId: string) => {
+    setPendingAlbumId(albumId);
+    setShowAlbums(true);
+  }, []);
+
   // Tap handler for messages — show context menu with quote/pin options
   const handleMessageTap = useCallback(
     (msg: ChatMessage, e: React.MouseEvent | React.TouchEvent) => {
@@ -391,15 +464,28 @@ export function ChatRoomView({ roomId }: ChatRoomViewProps) {
   const isPinnedMessage = (messageId: string) =>
     pinnedMessages.some((p) => p.message_id === messageId);
 
-  // Scroll to a specific message (used by pinned banner)
+  // Scroll to a specific message (used by pinned banner / reply quote tap / search picks)
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const handleScrollToMessage = useCallback((messageId: string) => {
+    // Close any open overlays so the chat is visible
+    setShowSearch(false);
     const el = document.getElementById(`msg-${messageId}`);
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       setHighlightId(messageId);
       setTimeout(() => setHighlightId(null), 1500);
+      return;
     }
+    // Message not in view (probably older + paginated out) — fall back to date filter all
+    setChatDateFilter('all');
+    requestAnimationFrame(() => {
+      const el2 = document.getElementById(`msg-${messageId}`);
+      if (el2) {
+        el2.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setHighlightId(messageId);
+        setTimeout(() => setHighlightId(null), 1500);
+      }
+    });
   }, []);
 
   return (
@@ -449,6 +535,27 @@ export function ChatRoomView({ roomId }: ChatRoomViewProps) {
 
           {/* Action buttons group */}
           <div className="flex items-center gap-0.5 rounded-xl bg-white/8 p-0.5 backdrop-blur-sm dark:bg-white/5 sm:gap-1 sm:p-1">
+            <button
+              onClick={() => setShowSearch(true)}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-white/70 transition-all hover:bg-white/10 hover:text-white sm:h-9 sm:w-9"
+              title="ค้นหาในห้อง"
+            >
+              <Search className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setShowGallery(true)}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-white/70 transition-all hover:bg-white/10 hover:text-white sm:h-9 sm:w-9"
+              title="คลังรูปภาพ"
+            >
+              <ImageLucide className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setShowAlbums(true)}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-white/70 transition-all hover:bg-white/10 hover:text-white sm:h-9 sm:w-9"
+              title="อัลบั้ม"
+            >
+              <FolderOpen className="h-4 w-4" />
+            </button>
             <ChatNotificationToggle />
             <button
               onClick={handleToggleMute}
@@ -618,6 +725,10 @@ export function ChatRoomView({ roomId }: ChatRoomViewProps) {
                       message={msg}
                       isOwn={msg.sender_id === user?.id}
                       showSender={showSender}
+                      onImageClick={handleOpenImage}
+                      onReplyTap={handleScrollToMessage}
+                      onReactionClick={handleReactionClick}
+                      onAlbumOpen={handleOpenAlbum}
                     />
                   </div>
                 )}
@@ -644,18 +755,40 @@ export function ChatRoomView({ roomId }: ChatRoomViewProps) {
       </>
       )}
 
-      {/* Context menu for quote/pin */}
+      {/* Context menu for emoji react / quote / pin */}
       {contextMenu && (
         <div
           ref={contextMenuRef}
           className="fixed z-50 animate-in fade-in zoom-in-95 rounded-xl border border-gray-200 bg-white py-1 shadow-xl dark:border-gray-700 dark:bg-gray-800"
           style={{
-            left: Math.min(contextMenu.x, window.innerWidth - 180),
-            top: Math.min(contextMenu.y, window.innerHeight - 100),
+            left: Math.min(contextMenu.x, window.innerWidth - 240),
+            top: Math.min(contextMenu.y, window.innerHeight - 160),
           }}
           onClick={(e) => e.stopPropagation()}
           onTouchStart={(e) => e.stopPropagation()}
         >
+          {/* Emoji quick-react row */}
+          <div className="flex items-center gap-1 border-b border-gray-100 px-2 py-1.5 dark:border-gray-700">
+            <Smile className="ml-1 h-3.5 w-3.5 text-gray-400" />
+            {QUICK_REACTIONS.map((emoji) => (
+              <button
+                key={emoji}
+                onClick={() => {
+                  toggleReaction(contextMenu.messageId, emoji);
+                  setContextMenu(null);
+                }}
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  toggleReaction(contextMenu.messageId, emoji);
+                  setContextMenu(null);
+                }}
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-lg transition-all hover:bg-gray-100 active:scale-110 dark:hover:bg-gray-700"
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+
           {/* Quote/Reply — for everyone */}
           <button
             onTouchEnd={(e) => {
@@ -694,6 +827,45 @@ export function ChatRoomView({ roomId }: ChatRoomViewProps) {
             </button>
           )}
         </div>
+      )}
+
+      {/* Image lightbox (fullscreen viewer) */}
+      {lightboxIndex !== null && (
+        <ImageLightbox
+          images={imageGalleryForLightbox}
+          initialIndex={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+        />
+      )}
+
+      {/* Search panel — mounted only while open so internal state resets */}
+      {showSearch && (
+        <ChatSearchPanel
+          roomId={roomId}
+          onClose={() => setShowSearch(false)}
+          onPick={(messageId) => {
+            setShowSearch(false);
+            handleScrollToMessage(messageId);
+          }}
+        />
+      )}
+
+      {/* Image gallery panel */}
+      {showGallery && (
+        <ChatGalleryPanel roomId={roomId} onClose={() => setShowGallery(false)} />
+      )}
+
+      {/* Albums panel */}
+      {showAlbums && (
+        <ChatAlbumsPanel
+          roomId={roomId}
+          onClose={() => {
+            setShowAlbums(false);
+            setPendingAlbumId(null);
+          }}
+          initialAlbumId={pendingAlbumId}
+          onConsumeInitial={() => setPendingAlbumId(null)}
+        />
       )}
 
       {/* Room settings */}
