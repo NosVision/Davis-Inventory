@@ -17,6 +17,10 @@ interface ChatAlbumsPanelProps {
   initialAlbumId?: string | null;
   /** Reset signal when initialAlbumId is consumed */
   onConsumeInitial?: () => void;
+  /** When true, the create-album form opens automatically on mount */
+  initialCreating?: boolean;
+  /** Reset signal when initialCreating is consumed */
+  onConsumeInitialCreating?: () => void;
 }
 
 export function ChatAlbumsPanel({
@@ -24,6 +28,8 @@ export function ChatAlbumsPanel({
   onClose,
   initialAlbumId,
   onConsumeInitial,
+  initialCreating,
+  onConsumeInitialCreating,
 }: ChatAlbumsPanelProps) {
   const { user } = useAuthStore();
   const [albums, setAlbums] = useState<ChatAlbum[]>([]);
@@ -97,6 +103,14 @@ export function ChatAlbumsPanel({
       onConsumeInitial?.();
     }
   }, [initialAlbumId, albums, onConsumeInitial]);
+
+  // Open the create-album form on mount when requested by the caller
+  // (e.g. user picked "สร้างอัลบั้ม" from the chat-input attachment menu)
+  useEffect(() => {
+    if (!initialCreating) return;
+    setCreating(true);
+    onConsumeInitialCreating?.();
+  }, [initialCreating, onConsumeInitialCreating]);
 
   const handleCreate = async () => {
     if (!user) return;
