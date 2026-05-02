@@ -424,6 +424,8 @@ function AlbumDetail({ album, onBack, onClose, onPhotoCountChange }: AlbumDetail
 
   const handleDeletePhoto = async (photoId: string) => {
     if (!user) return;
+    if (!window.confirm('ลบรูปนี้ออกจากอัลบั้ม?')) return;
+
     const supabase = createClient();
     const { error } = await supabase.from('chat_album_photos').delete().eq('id', photoId);
     if (error) {
@@ -442,6 +444,16 @@ function AlbumDetail({ album, onBack, onClose, onPhotoCountChange }: AlbumDetail
       actor_name: user.displayName || user.username,
       photo_count: 1,
     });
+  };
+
+  // A photo is deletable by its uploader, the album creator, or any
+  // global admin (matches the RLS DELETE policy on chat_album_photos).
+  const canDelete = (photo: ChatAlbumPhoto): boolean => {
+    if (!user) return false;
+    if (photo.uploaded_by === user.id) return true;
+    if (album.created_by === user.id) return true;
+    if (user.role === 'owner' || user.role === 'manager') return true;
+    return false;
   };
 
   const lightboxImages: LightboxImage[] = photos.map((p) => ({
@@ -523,7 +535,7 @@ function AlbumDetail({ album, onBack, onClose, onPhotoCountChange }: AlbumDetail
 
           <div className="grid grid-cols-3 gap-1">
             {photos.map((p, i) => (
-              <div key={p.id} className="group relative aspect-square overflow-hidden rounded-md bg-gray-100 dark:bg-gray-800">
+              <div key={p.id} className="relative aspect-square overflow-hidden rounded-md bg-gray-100 dark:bg-gray-800">
                 <button
                   type="button"
                   onClick={() => setViewerIndex(i)}
@@ -536,11 +548,14 @@ function AlbumDetail({ album, onBack, onClose, onPhotoCountChange }: AlbumDetail
                     className="h-full w-full object-cover transition-transform active:scale-95"
                   />
                 </button>
-                {(p.uploaded_by === user?.id || user?.role === 'owner' || user?.role === 'manager') && (
+                {canDelete(p) && (
                   <button
                     type="button"
-                    onClick={() => handleDeletePhoto(p.id)}
-                    className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100 group-active:opacity-100"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeletePhoto(p.id);
+                    }}
+                    className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-black/70 text-white shadow-md ring-1 ring-white/20 transition-all active:scale-90"
                     aria-label="ลบรูป"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
