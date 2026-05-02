@@ -146,10 +146,13 @@ export interface MentionMetadata {
 
 // system message that announces album activity in the chat feed
 export interface AlbumCardMetadata {
-  kind: 'album_created' | 'album_upload';
+  kind: 'album_created' | 'album_upload' | 'album_remove';
   album_id: string;
   album_name: string;
   cover_url?: string | null;
+  // person who triggered this activity (uploader / remover / creator)
+  actor_name?: string;
+  /** @deprecated kept for backward compat with already-stored messages */
   uploaded_by_name?: string;
   photo_count?: number;
 }

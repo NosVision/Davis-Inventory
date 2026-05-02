@@ -45,6 +45,7 @@ export function ChatRoomView({ roomId }: ChatRoomViewProps) {
   const setPinnedMessages = useChatStore((s) => s.setPinnedMessages);
   const addPinnedMessage = useChatStore((s) => s.addPinnedMessage);
   const removePinnedMessage = useChatStore((s) => s.removePinnedMessage);
+  const scrollToBottomNonce = useChatStore((s) => s.scrollToBottomNonce);
   const { messages, hasMore, isLoadingMessages, loadMore } = useChatMessages(roomId);
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -169,6 +170,17 @@ export function ChatRoomView({ roomId }: ChatRoomViewProps) {
       toastTimerRef.current = setTimeout(() => setShowNewMessageToast(false), 3000);
     }
   }, [messages, user?.id]);
+
+  // Force scroll-to-bottom when explicitly requested (e.g. user posted an
+  // album action via the album panel — system messages have sender_id=null
+  // so the standard "is it own?" check above doesn't fire).
+  useEffect(() => {
+    if (scrollToBottomNonce === 0) return;
+    const id = requestAnimationFrame(() => {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [scrollToBottomNonce]);
 
   // Cleanup toast timer
   useEffect(() => {

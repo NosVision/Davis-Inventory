@@ -133,7 +133,7 @@ export function ChatAlbumsPanel({
       kind: 'album_created',
       album_id: album.id,
       album_name: album.name,
-      uploaded_by_name: user.displayName || user.username,
+      actor_name: user.displayName || user.username,
     });
 
     toast.success(`สร้างอัลบั้ม "${name}" แล้ว`);
@@ -405,13 +405,14 @@ function AlbumDetail({ album, onBack, onClose, onPhotoCountChange }: AlbumDetail
       setPhotos((arr) => [...inserted, ...arr]);
       onPhotoCountChange(inserted.length, inserted[0]?.url);
 
-      // Post one consolidated chat notification
+      // Post one consolidated chat notification — bumps album activity to
+      // the bottom of the chat feed (LINE-style "latest action")
       await postAlbumSystemMessage(album.room_id, user.id, {
         kind: 'album_upload',
         album_id: album.id,
         album_name: album.name,
         cover_url: album.cover_url || inserted[0].url,
-        uploaded_by_name: user.displayName || user.username,
+        actor_name: user.displayName || user.username,
         photo_count: inserted.length,
       });
 
@@ -422,6 +423,7 @@ function AlbumDetail({ album, onBack, onClose, onPhotoCountChange }: AlbumDetail
   };
 
   const handleDeletePhoto = async (photoId: string) => {
+    if (!user) return;
     const supabase = createClient();
     const { error } = await supabase.from('chat_album_photos').delete().eq('id', photoId);
     if (error) {
@@ -430,6 +432,16 @@ function AlbumDetail({ album, onBack, onClose, onPhotoCountChange }: AlbumDetail
     }
     setPhotos((arr) => arr.filter((p) => p.id !== photoId));
     onPhotoCountChange(-1);
+
+    // Bump album activity to the bottom of the chat feed
+    await postAlbumSystemMessage(album.room_id, user.id, {
+      kind: 'album_remove',
+      album_id: album.id,
+      album_name: album.name,
+      cover_url: album.cover_url,
+      actor_name: user.displayName || user.username,
+      photo_count: 1,
+    });
   };
 
   const lightboxImages: LightboxImage[] = photos.map((p) => ({
@@ -564,10 +576,14 @@ async function postAlbumSystemMessage(
 ) {
   const supabase = createClient();
 
+  const actor = meta.actor_name || meta.uploaded_by_name || 'มีคน';
+  const count = meta.photo_count ?? 1;
   const summary =
     meta.kind === 'album_upload'
-      ? `${meta.uploaded_by_name || 'มีคน'} เพิ่ม ${meta.photo_count ?? 1} รูปใน "${meta.album_name}"`
-      : `สร้างอัลบั้มใหม่: ${meta.album_name}`;
+      ? `${actor} เพิ่ม ${count} รูปใน "${meta.album_name}"`
+      : meta.kind === 'album_remove'
+        ? `${actor} ลบ ${count} รูปจาก "${meta.album_name}"`
+        : `สร้างอัลบั้มใหม่: ${meta.album_name}`;
 
   // Use the bot/system insert RPC (bypasses RLS since sender_id is null)
   const { data, error } = await supabase.rpc('insert_bot_message', {
@@ -604,8 +620,11 @@ async function postAlbumSystemMessage(
     : null;
 
   if (message) {
-    // Optimistically add to local store so the sender sees it immediately
+    // Optimistically add to local store so the sender sees it immediately,
+    // then force scroll to bottom — this is the LINE-style behaviour where
+    // any of MY actions on a shared album bump the chat view to the latest.
     useChatStore.getState().addMessage(message);
+    useChatStore.getState().bumpScrollToBottom();
 
     // Broadcast to room
     broadcastToChannel(supabase, `chat:room:${roomId}`, 'new_message', {

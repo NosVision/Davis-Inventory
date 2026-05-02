@@ -2,7 +2,7 @@
 
 import { memo } from 'react';
 import { cn } from '@/lib/utils/cn';
-import { Bot as BotIcon, User as UserIcon, FolderOpen, ImagePlus } from 'lucide-react';
+import { Bot as BotIcon, User as UserIcon, FolderOpen, ImagePlus, ImageMinus } from 'lucide-react';
 import type { ChatMessage, ReplyMetadata, ReactionSummary, AlbumCardMetadata } from '@/types/chat';
 import { DailySummaryCard } from './daily-summary-card';
 import type { DailySummaryData } from './daily-summary-card';
@@ -125,11 +125,20 @@ function AlbumCard({
   time: string;
   onOpen?: () => void;
 }) {
-  const isUpload = meta.kind === 'album_upload';
-  const Icon = isUpload ? ImagePlus : FolderOpen;
-  const title = isUpload
-    ? `${meta.uploaded_by_name || 'มีคน'} เพิ่ม ${meta.photo_count ?? 1} รูปในอัลบั้ม`
-    : `อัลบั้มใหม่ — ${meta.album_name}`;
+  const actor = meta.actor_name || meta.uploaded_by_name || 'มีคน';
+  const count = meta.photo_count ?? 1;
+  const Icon =
+    meta.kind === 'album_upload'
+      ? ImagePlus
+      : meta.kind === 'album_remove'
+        ? ImageMinus
+        : FolderOpen;
+  const title =
+    meta.kind === 'album_upload'
+      ? `${actor} เพิ่ม ${count} รูปในอัลบั้ม`
+      : meta.kind === 'album_remove'
+        ? `${actor} ลบ ${count} รูปจากอัลบั้ม`
+        : `อัลบั้มใหม่ — ${meta.album_name}`;
 
   return (
     <div className="flex justify-center" data-chat-bubble>
@@ -196,7 +205,9 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
     isSystem &&
     meta &&
     typeof meta.kind === 'string' &&
-    (meta.kind === 'album_upload' || meta.kind === 'album_created')
+    (meta.kind === 'album_upload' ||
+      meta.kind === 'album_created' ||
+      meta.kind === 'album_remove')
   ) {
     const albumMeta = meta as unknown as AlbumCardMetadata;
     return (

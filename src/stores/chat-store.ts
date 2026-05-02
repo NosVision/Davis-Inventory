@@ -24,6 +24,12 @@ interface ChatState {
   // active tab (แชท vs รายการงาน vs งานของฉัน)
   activeTab: 'chat' | 'tasks' | 'my-tasks';
 
+  // Bumped to force the chat view to scroll to the latest message regardless
+  // of scroll position. Used by panels (e.g. albums) that post chat activity
+  // on behalf of the current user — without this, those messages have
+  // sender_id = null and would be treated as "from someone else".
+  scrollToBottomNonce: number;
+
   // actions
   setRooms: (rooms: ChatRoom[]) => void;
   setActiveRoomId: (roomId: string | null) => void;
@@ -41,6 +47,7 @@ interface ChatState {
   removePinnedMessage: (messageId: string) => void;
   setIsMuted: (muted: boolean) => void;
   setActiveTab: (tab: 'chat' | 'tasks' | 'my-tasks') => void;
+  bumpScrollToBottom: () => void;
 }
 
 export const useChatStore = create<ChatState>((set) => ({
@@ -54,6 +61,7 @@ export const useChatStore = create<ChatState>((set) => ({
   pinnedMessages: [],
   isMuted: false,
   activeTab: 'chat',
+  scrollToBottomNonce: 0,
 
   setRooms: (rooms) => set({ rooms }),
 
@@ -116,4 +124,5 @@ export const useChatStore = create<ChatState>((set) => ({
 
   setIsMuted: (isMuted) => set({ isMuted }),
   setActiveTab: (activeTab) => set({ activeTab }),
+  bumpScrollToBottom: () => set((s) => ({ scrollToBottomNonce: s.scrollToBottomNonce + 1 })),
 }));
