@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ChatRoom, ChatMessage, ChatPinnedMessage } from '@/types/chat';
+import type { ChatRoom, ChatMessage, ChatPinnedMessage, UnreadBadgePayload } from '@/types/chat';
 
 interface ChatState {
   // ห้องแชท
@@ -42,6 +42,11 @@ interface ChatState {
   setUnreadCounts: (counts: Record<string, number>) => void;
   incrementUnread: (roomId: string) => void;
   clearUnread: (roomId: string) => void;
+  /** Patch a room's last_message + re-sort using a synthetic message
+   *  built from the badge broadcast payload. Lets the chat list page
+   *  (/chat) reflect the latest preview/time/order in real time without
+   *  re-fetching from DB. */
+  applyBadgeToRoomList: (payload: UnreadBadgePayload) => void;
   setPinnedMessages: (msgs: ChatPinnedMessage[]) => void;
   addPinnedMessage: (msg: ChatPinnedMessage) => void;
   removePinnedMessage: (messageId: string) => void;
@@ -106,6 +111,41 @@ export const useChatStore = create<ChatState>((set) => ({
     set((s) => {
       const counts = { ...s.unreadCounts, [roomId]: 0 };
       return { unreadCounts: counts, totalUnread: Object.values(counts).reduce((a, b) => a + b, 0) };
+    }),
+
+  applyBadgeToRoomList: (payload) =>
+    set((s) => {
+      const idx = s.rooms.findIndex((r) => r.id === payload.room_id);
+      if (idx < 0) return s;
+      const isBot = !payload.sender_id || payload.sender_id === 'bot';
+      const synthetic: ChatMessage = {
+        id: `badge-${payload.room_id}-${Date.now()}`,
+        room_id: payload.room_id,
+        sender_id: isBot ? null : payload.sender_id,
+        type: payload.type,
+        content: payload.preview,
+        metadata: null,
+        created_at: new Date().toISOString(),
+        archived_at: null,
+        sender: isBot
+          ? null
+          : {
+              id: payload.sender_id,
+              username: payload.sender_name,
+              display_name: payload.sender_name,
+              avatar_url: null,
+              role: '',
+            },
+      };
+      const next = [...s.rooms];
+      next[idx] = { ...next[idx], last_message: synthetic };
+      // Match useChatRooms sort: latest activity first.
+      next.sort((a, b) => {
+        const aTime = a.last_message?.created_at || a.created_at;
+        const bTime = b.last_message?.created_at || b.created_at;
+        return new Date(bTime).getTime() - new Date(aTime).getTime();
+      });
+      return { rooms: next };
     }),
 
   setPinnedMessages: (pinnedMessages) => set({ pinnedMessages }),
