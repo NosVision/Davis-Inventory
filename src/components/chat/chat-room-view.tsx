@@ -20,7 +20,7 @@ import { ImageLightbox, type LightboxImage } from './image-lightbox';
 import { ChatSearchPanel } from './chat-search-panel';
 import { ChatGalleryPanel } from './chat-gallery-panel';
 import { ChatAlbumsPanel } from './chat-albums-panel';
-import { Loader2, Settings, Volume2, VolumeX, Pin, Reply, MessageSquare, ClipboardList, UserCircle, Users, ChevronLeft, CalendarDays, Search, Image as ImageLucide, FolderOpen, Smile } from 'lucide-react';
+import { Loader2, Settings, Volume2, VolumeX, Pin, Reply, MessageSquare, ClipboardList, UserCircle, Users, ChevronLeft, CalendarDays, Search, Image as ImageLucide, FolderOpen, Smile, MoreVertical } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { ChatNotificationToggle } from './chat-notification-toggle';
 import { isActionTypeVisibleToRole } from '@/lib/role-task-visibility';
@@ -66,6 +66,19 @@ export function ChatRoomView({ roomId }: ChatRoomViewProps) {
 
   // Image lightbox
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+
+  // Header overflow menu (kebab) — keeps the top bar from wrapping on phones
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showMoreMenu) return;
+    const handler = (e: PointerEvent | MouseEvent) => {
+      if (moreMenuRef.current?.contains(e.target as Node)) return;
+      setShowMoreMenu(false);
+    };
+    document.addEventListener('pointerdown', handler);
+    return () => document.removeEventListener('pointerdown', handler);
+  }, [showMoreMenu]);
 
   // Reactions
   useChatReactions(roomId);
@@ -524,8 +537,9 @@ export function ChatRoomView({ roomId }: ChatRoomViewProps) {
             <h2 className="truncate text-sm font-bold leading-tight text-white sm:text-base">
               {roomName}
             </h2>
-            <div className="mt-0.5 flex items-center gap-1.5">
-              <span className="inline-flex items-center gap-1 rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] font-medium text-white/70 backdrop-blur-sm dark:bg-white/5 sm:text-[11px]">
+            {/* Hide subtype pill on phones — saves a row of vertical space */}
+            <div className="mt-0.5 hidden items-center gap-1.5 sm:flex">
+              <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-white/10 px-1.5 py-0.5 text-[11px] font-medium text-white/70 backdrop-blur-sm dark:bg-white/5">
                 {room?.type === 'store' ? (
                   <><Users className="h-2.5 w-2.5" /> แชทสาขา</>
                 ) : 'แชท'}
@@ -533,7 +547,7 @@ export function ChatRoomView({ roomId }: ChatRoomViewProps) {
             </div>
           </div>
 
-          {/* Action buttons group */}
+          {/* Action buttons — primary stays visible, secondary goes into kebab */}
           <div className="flex items-center gap-0.5 rounded-xl bg-white/8 p-0.5 backdrop-blur-sm dark:bg-white/5 sm:gap-1 sm:p-1">
             <button
               onClick={() => setShowSearch(true)}
@@ -542,20 +556,6 @@ export function ChatRoomView({ roomId }: ChatRoomViewProps) {
             >
               <Search className="h-4 w-4" />
             </button>
-            <button
-              onClick={() => setShowGallery(true)}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-white/70 transition-all hover:bg-white/10 hover:text-white sm:h-9 sm:w-9"
-              title="คลังรูปภาพ"
-            >
-              <ImageLucide className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => setShowAlbums(true)}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-white/70 transition-all hover:bg-white/10 hover:text-white sm:h-9 sm:w-9"
-              title="อัลบั้ม"
-            >
-              <FolderOpen className="h-4 w-4" />
-            </button>
             <ChatNotificationToggle />
             <button
               onClick={handleToggleMute}
@@ -563,19 +563,72 @@ export function ChatRoomView({ roomId }: ChatRoomViewProps) {
                 'flex h-8 w-8 items-center justify-center rounded-lg transition-all sm:h-9 sm:w-9',
                 isMuted
                   ? 'bg-white/10 text-white/40'
-                  : 'text-white/70 hover:bg-white/10 hover:text-white'
+                  : 'text-white/70 hover:bg-white/10 hover:text-white',
               )}
               title={isMuted ? 'เปิดเสียง' : 'ปิดเสียง'}
             >
               {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
             </button>
-            <button
-              onClick={() => setShowSettings(true)}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-white/70 transition-all hover:bg-white/10 hover:text-white sm:h-9 sm:w-9"
-              title="ตั้งค่า"
-            >
-              <Settings className="h-4 w-4" />
-            </button>
+
+            {/* Overflow / "more" menu — gallery, albums, settings */}
+            <div className="relative" ref={moreMenuRef}>
+              <button
+                onClick={() => setShowMoreMenu((v) => !v)}
+                className={cn(
+                  'flex h-8 w-8 items-center justify-center rounded-lg transition-all sm:h-9 sm:w-9',
+                  showMoreMenu
+                    ? 'bg-white/15 text-white'
+                    : 'text-white/70 hover:bg-white/10 hover:text-white',
+                )}
+                title="เพิ่มเติม"
+                aria-haspopup="menu"
+                aria-expanded={showMoreMenu}
+              >
+                <MoreVertical className="h-4 w-4" />
+              </button>
+
+              {showMoreMenu && (
+                <div
+                  className="absolute right-0 top-full z-40 mt-1.5 w-52 origin-top-right animate-in fade-in zoom-in-95 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl dark:border-gray-700 dark:bg-gray-800"
+                  role="menu"
+                >
+                  <button
+                    onClick={() => {
+                      setShowMoreMenu(false);
+                      setShowGallery(true);
+                    }}
+                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-700"
+                    role="menuitem"
+                  >
+                    <ImageLucide className="h-4 w-4 text-indigo-500" />
+                    คลังรูปภาพ
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowMoreMenu(false);
+                      setShowAlbums(true);
+                    }}
+                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-700"
+                    role="menuitem"
+                  >
+                    <FolderOpen className="h-4 w-4 text-indigo-500" />
+                    อัลบั้ม
+                  </button>
+                  <div className="my-1 h-px bg-gray-100 dark:bg-gray-700" />
+                  <button
+                    onClick={() => {
+                      setShowMoreMenu(false);
+                      setShowSettings(true);
+                    }}
+                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-700"
+                    role="menuitem"
+                  >
+                    <Settings className="h-4 w-4 text-indigo-500" />
+                    ตั้งค่าห้อง
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
