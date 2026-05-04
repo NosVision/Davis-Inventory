@@ -544,50 +544,101 @@ export default function InboxPage() {
               />
             </div>
 
-            {/* Per-store breakdown — same KPI columns but per branch */}
+            {/* Per-store breakdown — table on lg screens, stacked
+                cards on mobile so the 8 KPI columns don't run off the
+                edge of the viewport. */}
             {summary.perStore.length > 1 && (
-              <div className="mt-4 -mx-4 sm:-mx-5 overflow-x-auto">
-                <table className="w-full min-w-[640px] text-xs">
-                  <thead>
-                    <tr className="border-y border-gray-100 bg-gray-50/50 text-left text-gray-500 dark:border-gray-700 dark:bg-gray-800/30 dark:text-gray-400">
-                      <th className="px-3 py-2 font-medium">{t('inbox.colStore')}</th>
-                      <th className="px-2 py-2 text-right font-medium">{t('inbox.kpiNewDeposits')}</th>
-                      <th className="px-2 py-2 text-right font-medium">{t('inbox.kpiCompletedWithdrawals')}</th>
-                      <th className="px-2 py-2 text-right font-medium">{t('inbox.kpiActiveDeposits')}</th>
-                      <th className="px-2 py-2 text-right font-medium">{t('inbox.kpiExpiringSoon')}</th>
-                      <th className="px-2 py-2 text-right font-medium">{t('inbox.kpiNewBorrows')}</th>
-                      <th className="px-2 py-2 text-right font-medium">{t('inbox.kpiPendingExplanations')}</th>
-                      <th className="px-2 py-2 text-right font-medium">{t('inbox.kpiCommissionMonth')}</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100 text-gray-700 dark:divide-gray-700 dark:text-gray-300">
-                    {summary.perStore.map((s) => (
-                      <tr key={s.store_id}>
-                        <td className="px-3 py-2 font-medium text-gray-900 dark:text-white">{s.store_name}</td>
-                        <td className="px-2 py-2 text-right">{s.newDeposits.toLocaleString('th-TH')}</td>
-                        <td className="px-2 py-2 text-right">{s.completedWithdrawals.toLocaleString('th-TH')}</td>
-                        <td className="px-2 py-2 text-right">{s.activeDeposits.toLocaleString('th-TH')}</td>
-                        <td className={cn('px-2 py-2 text-right', s.expiringSoon > 0 && 'font-medium text-amber-600 dark:text-amber-400')}>{s.expiringSoon.toLocaleString('th-TH')}</td>
-                        <td className="px-2 py-2 text-right">{s.newBorrows.toLocaleString('th-TH')}</td>
-                        <td className={cn('px-2 py-2 text-right', s.pendingExplanations > 0 && 'font-medium text-amber-600 dark:text-amber-400')}>{s.pendingExplanations.toLocaleString('th-TH')}</td>
-                        <td className="px-2 py-2 text-right">{s.commissionAmount.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</td>
+              <>
+                <div className="mt-4 -mx-3 hidden sm:-mx-5 lg:block lg:overflow-x-auto">
+                  <table className="w-full min-w-[640px] text-xs">
+                    <thead>
+                      <tr className="border-y border-gray-100 bg-gray-50/50 text-left text-gray-500 dark:border-gray-700 dark:bg-gray-800/30 dark:text-gray-400">
+                        <th className="px-3 py-2 font-medium">{t('inbox.colStore')}</th>
+                        <th className="px-2 py-2 text-right font-medium">{t('inbox.kpiNewDeposits')}</th>
+                        <th className="px-2 py-2 text-right font-medium">{t('inbox.kpiCompletedWithdrawals')}</th>
+                        <th className="px-2 py-2 text-right font-medium">{t('inbox.kpiActiveDeposits')}</th>
+                        <th className="px-2 py-2 text-right font-medium">{t('inbox.kpiExpiringSoon')}</th>
+                        <th className="px-2 py-2 text-right font-medium">{t('inbox.kpiNewBorrows')}</th>
+                        <th className="px-2 py-2 text-right font-medium">{t('inbox.kpiPendingExplanations')}</th>
+                        <th className="px-2 py-2 text-right font-medium">{t('inbox.kpiCommissionMonth')}</th>
                       </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t-2 border-gray-200 bg-gray-50/50 font-bold text-gray-900 dark:border-gray-600 dark:bg-gray-800/30 dark:text-white">
-                      <td className="px-3 py-2">{t('inbox.colTotal')}</td>
-                      <td className="px-2 py-2 text-right">{summary.newDeposits.toLocaleString('th-TH')}</td>
-                      <td className="px-2 py-2 text-right">{summary.completedWithdrawals.toLocaleString('th-TH')}</td>
-                      <td className="px-2 py-2 text-right">{summary.activeDeposits.toLocaleString('th-TH')}</td>
-                      <td className="px-2 py-2 text-right">{summary.expiringSoon.toLocaleString('th-TH')}</td>
-                      <td className="px-2 py-2 text-right">{summary.newBorrows.toLocaleString('th-TH')}</td>
-                      <td className="px-2 py-2 text-right">{summary.pendingExplanations.toLocaleString('th-TH')}</td>
-                      <td className="px-2 py-2 text-right">{summary.commissionAmount.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 text-gray-700 dark:divide-gray-700 dark:text-gray-300">
+                      {summary.perStore.map((s) => (
+                        <tr key={s.store_id}>
+                          <td className="px-3 py-2 font-medium text-gray-900 dark:text-white">{s.store_name}</td>
+                          <td className="px-2 py-2 text-right">{s.newDeposits.toLocaleString('th-TH')}</td>
+                          <td className="px-2 py-2 text-right">{s.completedWithdrawals.toLocaleString('th-TH')}</td>
+                          <td className="px-2 py-2 text-right">{s.activeDeposits.toLocaleString('th-TH')}</td>
+                          <td className={cn('px-2 py-2 text-right', s.expiringSoon > 0 && 'font-medium text-amber-600 dark:text-amber-400')}>{s.expiringSoon.toLocaleString('th-TH')}</td>
+                          <td className="px-2 py-2 text-right">{s.newBorrows.toLocaleString('th-TH')}</td>
+                          <td className={cn('px-2 py-2 text-right', s.pendingExplanations > 0 && 'font-medium text-amber-600 dark:text-amber-400')}>{s.pendingExplanations.toLocaleString('th-TH')}</td>
+                          <td className="px-2 py-2 text-right">{s.commissionAmount.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-gray-200 bg-gray-50/50 font-bold text-gray-900 dark:border-gray-600 dark:bg-gray-800/30 dark:text-white">
+                        <td className="px-3 py-2">{t('inbox.colTotal')}</td>
+                        <td className="px-2 py-2 text-right">{summary.newDeposits.toLocaleString('th-TH')}</td>
+                        <td className="px-2 py-2 text-right">{summary.completedWithdrawals.toLocaleString('th-TH')}</td>
+                        <td className="px-2 py-2 text-right">{summary.activeDeposits.toLocaleString('th-TH')}</td>
+                        <td className="px-2 py-2 text-right">{summary.expiringSoon.toLocaleString('th-TH')}</td>
+                        <td className="px-2 py-2 text-right">{summary.newBorrows.toLocaleString('th-TH')}</td>
+                        <td className="px-2 py-2 text-right">{summary.pendingExplanations.toLocaleString('th-TH')}</td>
+                        <td className="px-2 py-2 text-right">{summary.commissionAmount.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                {/* Mobile stacked cards — each store renders its KPIs as
+                    a 2×3 grid below its name so the long Thai labels
+                    have room to breathe. */}
+                <div className="mt-4 space-y-2 lg:hidden">
+                  {summary.perStore.map((s) => (
+                    <div
+                      key={s.store_id}
+                      className="rounded-lg border border-gray-100 bg-gray-50/50 p-3 dark:border-gray-700 dark:bg-gray-800/30"
+                    >
+                      <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                        {s.store_name}
+                      </p>
+                      <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+                        <PerStoreKpiCell label={t('inbox.kpiNewDeposits')} value={s.newDeposits} />
+                        <PerStoreKpiCell label={t('inbox.kpiCompletedWithdrawals')} value={s.completedWithdrawals} />
+                        <PerStoreKpiCell label={t('inbox.kpiActiveDeposits')} value={s.activeDeposits} />
+                        <PerStoreKpiCell
+                          label={t('inbox.kpiExpiringSoon')}
+                          value={s.expiringSoon}
+                          highlight={s.expiringSoon > 0 ? 'amber' : undefined}
+                        />
+                        <PerStoreKpiCell label={t('inbox.kpiNewBorrows')} value={s.newBorrows} />
+                        <PerStoreKpiCell
+                          label={t('inbox.kpiPendingExplanations')}
+                          value={s.pendingExplanations}
+                          highlight={s.pendingExplanations > 0 ? 'amber' : undefined}
+                        />
+                        <PerStoreKpiCell label={t('inbox.kpiCommissionMonth')} value={s.commissionAmount} format="currency" />
+                      </div>
+                    </div>
+                  ))}
+                  <div className="rounded-lg border-2 border-gray-200 bg-gray-100/60 p-3 dark:border-gray-600 dark:bg-gray-700/40">
+                    <p className="text-sm font-bold text-gray-900 dark:text-white">
+                      {t('inbox.colTotal')}
+                    </p>
+                    <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+                      <PerStoreKpiCell label={t('inbox.kpiNewDeposits')} value={summary.newDeposits} bold />
+                      <PerStoreKpiCell label={t('inbox.kpiCompletedWithdrawals')} value={summary.completedWithdrawals} bold />
+                      <PerStoreKpiCell label={t('inbox.kpiActiveDeposits')} value={summary.activeDeposits} bold />
+                      <PerStoreKpiCell label={t('inbox.kpiExpiringSoon')} value={summary.expiringSoon} bold />
+                      <PerStoreKpiCell label={t('inbox.kpiNewBorrows')} value={summary.newBorrows} bold />
+                      <PerStoreKpiCell label={t('inbox.kpiPendingExplanations')} value={summary.pendingExplanations} bold />
+                      <PerStoreKpiCell label={t('inbox.kpiCommissionMonth')} value={summary.commissionAmount} format="currency" bold />
+                    </div>
+                  </div>
+                </div>
+              </>
             )}
           </CardContent>
         </Card>
@@ -720,6 +771,32 @@ interface KpiTileProps {
   label: string;
   value: number;
   format?: 'count' | 'currency';
+}
+
+interface PerStoreKpiCellProps {
+  label: string;
+  value: number;
+  format?: 'count' | 'currency';
+  highlight?: 'amber';
+  bold?: boolean;
+}
+
+function PerStoreKpiCell({ label, value, format = 'count', highlight, bold }: PerStoreKpiCellProps) {
+  const display = format === 'currency'
+    ? value.toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+    : value.toLocaleString('th-TH');
+  const valueClass =
+    highlight === 'amber'
+      ? 'text-amber-600 dark:text-amber-400'
+      : 'text-gray-900 dark:text-white';
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="truncate text-gray-500 dark:text-gray-400">{label}</span>
+      <span className={cn('shrink-0 tabular-nums', bold ? 'font-bold' : 'font-medium', valueClass)}>
+        {display}
+      </span>
+    </div>
+  );
 }
 
 function KpiTile({ color, icon: Icon, label, value, format = 'count' }: KpiTileProps) {
