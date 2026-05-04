@@ -817,8 +817,9 @@ export default function DailyCheckPage() {
                   </div>
                   <input
                     type="number"
-                    inputMode="numeric"
+                    inputMode="decimal"
                     min="0"
+                    step="0.01"
                     placeholder="0"
                     value={
                       supplementaryCounts[item.product_code]?.count_quantity ??
@@ -1030,8 +1031,9 @@ export default function DailyCheckPage() {
                   <div className="flex shrink-0 items-center gap-2">
                     <input
                       type="number"
-                      inputMode="numeric"
+                      inputMode="decimal"
                       min="0"
+                      step="0.01"
                       placeholder="0"
                       value={entry?.count_quantity ?? ''}
                       onChange={(e) =>
