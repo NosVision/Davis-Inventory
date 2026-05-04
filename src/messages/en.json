@@ -3223,7 +3223,7 @@
       "lockedSaved": "Saved — read only",
       "lockedCompared": "Compared — read only",
       "lockedComparedBannerTitle": "Today's count has already been compared",
-      "lockedComparedBannerHint": "Items with a saved count and a generated comparison are locked to keep explanation / approval data consistent — use the comparison page to write explanations or override.",
+      "lockedComparedBannerHint": "Tap “Show only remaining” to count what's left — to revise an already-saved count, write the explanation on the comparison page instead.",
       "lockedComparedBannerCta": "Go to comparison",
       "zeroQtyIconTooltip": "Count is 0 — please confirm before saving",
       "zeroQtyCounter": "{count} items counted as 0",
