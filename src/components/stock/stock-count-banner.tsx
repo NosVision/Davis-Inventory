@@ -6,13 +6,18 @@ import { createClient } from '@/lib/supabase/client';
 import { useAppStore } from '@/stores/app-store';
 import { yesterdayBangkok, dayOfWeekBangkok } from '@/lib/utils/date';
 import { cn } from '@/lib/utils/cn';
-import { ClipboardCheck, ClipboardList, CalendarOff } from 'lucide-react';
+import { ClipboardCheck, ClipboardList, CalendarOff, AlertTriangle } from 'lucide-react';
 
 type BannerState =
   | { type: 'loading' }
   | { type: 'not_counting_day' }
-  | { type: 'not_counted'; totalProducts: number }
-  | { type: 'counted'; countedItems: number; totalProducts: number }
+  | { type: 'not_counted'; totalProducts: number; supplementary: number }
+  | {
+      type: 'counted';
+      countedItems: number;
+      totalProducts: number;
+      supplementary: number;
+    }
   | { type: 'no_settings' };
 
 export function StockCountBanner() {
@@ -65,10 +70,27 @@ export function StockCountBanner() {
     const total = totalProducts ?? 0;
     const counted = countedItems ?? 0;
 
+    // 4. Count POS-only items still waiting for a manual count (supplementary).
+    //    A row in `comparisons` with manual_quantity IS NULL means POS has
+    //    qty but staff never recorded one for this product on that date.
+    const { count: supplementaryCount } = await supabase
+      .from('comparisons')
+      .select('*', { count: 'exact', head: true })
+      .eq('store_id', currentStoreId)
+      .eq('comp_date', businessDate)
+      .is('manual_quantity', null);
+
+    const supplementary = supplementaryCount ?? 0;
+
     if (counted === 0) {
-      setState({ type: 'not_counted', totalProducts: total });
+      setState({ type: 'not_counted', totalProducts: total, supplementary });
     } else {
-      setState({ type: 'counted', countedItems: counted, totalProducts: total });
+      setState({
+        type: 'counted',
+        countedItems: counted,
+        totalProducts: total,
+        supplementary,
+      });
     }
   }, [currentStoreId]);
 
@@ -97,29 +119,32 @@ export function StockCountBanner() {
 
   if (state.type === 'not_counted') {
     return (
-      <a
-        href="/stock/daily-check"
-        className={cn(
-          'flex items-center gap-3 rounded-xl border px-4 py-3 transition-colors',
-          'border-amber-200 bg-amber-50 hover:bg-amber-100',
-          'dark:border-amber-800 dark:bg-amber-900/20 dark:hover:bg-amber-900/30',
-        )}
-      >
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/40">
-          <ClipboardList className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">
-            {t('banner.notCounted')}
-          </p>
-          <p className="text-xs text-amber-600 dark:text-amber-400">
-            {t('banner.periodNotCounted', { date: businessDate, count: state.totalProducts })}
-          </p>
-        </div>
-        <span className="text-xs font-medium text-amber-700 dark:text-amber-300">
-          {t('banner.countNow')} &rarr;
-        </span>
-      </a>
+      <div className="space-y-2">
+        <a
+          href="/stock/daily-check"
+          className={cn(
+            'flex items-center gap-3 rounded-xl border px-4 py-3 transition-colors',
+            'border-amber-200 bg-amber-50 hover:bg-amber-100',
+            'dark:border-amber-800 dark:bg-amber-900/20 dark:hover:bg-amber-900/30',
+          )}
+        >
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/40">
+            <ClipboardList className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">
+              {t('banner.notCounted')}
+            </p>
+            <p className="text-xs text-amber-600 dark:text-amber-400">
+              {t('banner.periodNotCounted', { date: businessDate, count: state.totalProducts })}
+            </p>
+          </div>
+          <span className="text-xs font-medium text-amber-700 dark:text-amber-300">
+            {t('banner.countNow')} &rarr;
+          </span>
+        </a>
+        {state.supplementary > 0 && <SupplementaryAlert count={state.supplementary} />}
+      </div>
     );
   }
 
@@ -127,63 +152,96 @@ export function StockCountBanner() {
   const isComplete = state.countedItems >= state.totalProducts && state.totalProducts > 0;
 
   return (
+    <div className="space-y-2">
+      <a
+        href="/stock/daily-check"
+        className={cn(
+          'flex items-center gap-3 rounded-xl border px-4 py-3 transition-colors',
+          isComplete
+            ? 'border-emerald-200 bg-emerald-50 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/30'
+            : 'border-blue-200 bg-blue-50 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/20 dark:hover:bg-blue-900/30',
+        )}
+      >
+        <div
+          className={cn(
+            'flex h-10 w-10 shrink-0 items-center justify-center rounded-full',
+            isComplete
+              ? 'bg-emerald-100 dark:bg-emerald-900/40'
+              : 'bg-blue-100 dark:bg-blue-900/40',
+          )}
+        >
+          <ClipboardCheck
+            className={cn(
+              'h-5 w-5',
+              isComplete
+                ? 'text-emerald-600 dark:text-emerald-400'
+                : 'text-blue-600 dark:text-blue-400',
+            )}
+          />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p
+            className={cn(
+              'text-sm font-semibold',
+              isComplete
+                ? 'text-emerald-800 dark:text-emerald-200'
+                : 'text-blue-800 dark:text-blue-200',
+            )}
+          >
+            {isComplete ? t('banner.countComplete') : t('banner.counting')}
+          </p>
+          <p
+            className={cn(
+              'text-xs',
+              isComplete
+                ? 'text-emerald-600 dark:text-emerald-400'
+                : 'text-blue-600 dark:text-blue-400',
+            )}
+          >
+            {t('banner.periodCounted', { date: businessDate, counted: state.countedItems, total: state.totalProducts })}
+          </p>
+        </div>
+        <span
+          className={cn(
+            'text-xs font-medium',
+            isComplete
+              ? 'text-emerald-700 dark:text-emerald-300'
+              : 'text-blue-700 dark:text-blue-300',
+          )}
+        >
+          {t('banner.viewDetails')} &rarr;
+        </span>
+      </a>
+      {state.supplementary > 0 && <SupplementaryAlert count={state.supplementary} />}
+    </div>
+  );
+}
+
+/**
+ * Compact alert that surfaces POS-only items the staff still need to
+ * count. Click-through goes to /stock/daily-check where the dedicated
+ * supplementary section lets the bar fill them in.
+ */
+function SupplementaryAlert({ count }: { count: number }) {
+  const t = useTranslations('stock');
+  return (
     <a
       href="/stock/daily-check"
-      className={cn(
-        'flex items-center gap-3 rounded-xl border px-4 py-3 transition-colors',
-        isComplete
-          ? 'border-emerald-200 bg-emerald-50 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/30'
-          : 'border-blue-200 bg-blue-50 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/20 dark:hover:bg-blue-900/30',
-      )}
+      className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 transition-colors hover:bg-red-100 dark:border-red-800 dark:bg-red-900/20 dark:hover:bg-red-900/30"
     >
-      <div
-        className={cn(
-          'flex h-10 w-10 shrink-0 items-center justify-center rounded-full',
-          isComplete
-            ? 'bg-emerald-100 dark:bg-emerald-900/40'
-            : 'bg-blue-100 dark:bg-blue-900/40',
-        )}
-      >
-        <ClipboardCheck
-          className={cn(
-            'h-5 w-5',
-            isComplete
-              ? 'text-emerald-600 dark:text-emerald-400'
-              : 'text-blue-600 dark:text-blue-400',
-          )}
-        />
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/40">
+        <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400" />
       </div>
       <div className="min-w-0 flex-1">
-        <p
-          className={cn(
-            'text-sm font-semibold',
-            isComplete
-              ? 'text-emerald-800 dark:text-emerald-200'
-              : 'text-blue-800 dark:text-blue-200',
-          )}
-        >
-          {isComplete ? t('banner.countComplete') : t('banner.counting')}
+        <p className="text-sm font-semibold text-red-800 dark:text-red-200">
+          {t('banner.supplementaryTitle', { count })}
         </p>
-        <p
-          className={cn(
-            'text-xs',
-            isComplete
-              ? 'text-emerald-600 dark:text-emerald-400'
-              : 'text-blue-600 dark:text-blue-400',
-          )}
-        >
-          {t('banner.periodCounted', { date: businessDate, counted: state.countedItems, total: state.totalProducts })}
+        <p className="text-xs text-red-600 dark:text-red-400">
+          {t('banner.supplementaryHint')}
         </p>
       </div>
-      <span
-        className={cn(
-          'text-xs font-medium',
-          isComplete
-            ? 'text-emerald-700 dark:text-emerald-300'
-            : 'text-blue-700 dark:text-blue-300',
-        )}
-      >
-        {t('banner.viewDetails')} &rarr;
+      <span className="text-xs font-medium text-red-700 dark:text-red-300">
+        {t('banner.countNow')} &rarr;
       </span>
     </a>
   );

@@ -74,6 +74,10 @@ export default function DailyCheckPage() {
   const [showZeroConfirm, setShowZeroConfirm] = useState(false);
   const [savingItem, setSavingItem] = useState<string | null>(null);
   const [savedItems, setSavedItems] = useState<Set<string>>(new Set());
+  // "Show only items I still need to count" — when on, the product list
+  // hides everything that already has a saved manual count so the bar can
+  // tunnel-vision on what's left (incl. supplementary POS-only items).
+  const [showOnlyUncounted, setShowOnlyUncounted] = useState(false);
 
   // Auto-compare state
   const [comparing, setComparing] = useState(false);
@@ -459,6 +463,11 @@ export default function DailyCheckPage() {
     if (activeCategory !== 'all') {
       filtered = filtered.filter((p) => p.category === activeCategory);
     }
+    if (showOnlyUncounted) {
+      filtered = filtered.filter(
+        (p) => existingCounts[p.product_code] === undefined,
+      );
+    }
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(
@@ -468,7 +477,21 @@ export default function DailyCheckPage() {
       );
     }
     return filtered;
-  }, [products, activeCategory, searchQuery]);
+  }, [products, activeCategory, searchQuery, showOnlyUncounted, existingCounts]);
+
+  // Items the user still has to count: regular products without a saved
+  // manual_count + the supplementary POS-only items we surfaced.
+  const remainingCount = useMemo(() => {
+    const uncountedProducts = products.filter(
+      (p) => existingCounts[p.product_code] === undefined,
+    ).length;
+    return uncountedProducts + supplementaryItems.length;
+  }, [products, existingCounts, supplementaryItems]);
+
+  // Bar role can record fresh counts but must not overwrite a count that
+  // someone (incl. themselves) already saved for the day — keeps the
+  // closing audit trail clean. Owners / managers / accountants can edit.
+  const isBar = user?.role === 'bar';
 
   // ── Handlers ──
   const handleCountChange = (productCode: string, value: string) => {
@@ -788,6 +811,38 @@ export default function DailyCheckPage() {
         </span>
       </div>
 
+      {/* "ต้องนับเพิ่ม" prominent counter — opens with a one-tap filter
+          to hide everything that's already saved. */}
+      {remainingCount > 0 && (
+        <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800 dark:bg-amber-900/20">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/40">
+            <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">
+              {t('dailyCheck.remainingTitle', { count: remainingCount })}
+            </p>
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              {t('dailyCheck.remainingHint')}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowOnlyUncounted((v) => !v)}
+            className={cn(
+              'shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors',
+              showOnlyUncounted
+                ? 'bg-amber-600 text-white hover:bg-amber-700'
+                : 'bg-white text-amber-700 ring-1 ring-amber-300 hover:bg-amber-100 dark:bg-amber-900/40 dark:text-amber-200 dark:ring-amber-700',
+            )}
+          >
+            {showOnlyUncounted
+              ? t('dailyCheck.showAll')
+              : t('dailyCheck.showRemainingOnly')}
+          </button>
+        </div>
+      )}
+
       {/* ── Supplementary Count Section (ด้านบนสุด — ต้องนับเพิ่ม) ── */}
       {supplementaryItems.length > 0 && (
         <Card>
@@ -986,12 +1041,19 @@ export default function DailyCheckPage() {
             const isZero = entry?.count_quantity === 0;
             const isSaving = savingItem === product.product_code;
             const justSaved = savedItems.has(product.product_code);
+            // Bar may not edit a count that's already on the books; the
+            // input is locked and the row dims to make the read-only
+            // state obvious.
+            const lockedForBar = isBar && hasExisting;
 
             return (
               <div
                 key={product.id}
                 className={cn(
                   'rounded-xl bg-white p-4 shadow-sm ring-1 transition-colors dark:bg-gray-800',
+                  lockedForBar
+                    ? 'opacity-75'
+                    : '',
                   isZero
                     ? 'ring-amber-300 dark:ring-amber-700'
                     : isFilled
@@ -1024,6 +1086,11 @@ export default function DailyCheckPage() {
                       {product.category && <span>{product.category}</span>}
                       {product.size && <span>{product.size}</span>}
                       {product.unit && <span>({product.unit})</span>}
+                      {lockedForBar && (
+                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+                          {t('dailyCheck.lockedSaved')}
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -1036,6 +1103,8 @@ export default function DailyCheckPage() {
                       step="0.01"
                       placeholder="0"
                       value={entry?.count_quantity ?? ''}
+                      readOnly={lockedForBar}
+                      disabled={lockedForBar}
                       onChange={(e) =>
                         handleCountChange(product.product_code, e.target.value)
                       }
@@ -1044,11 +1113,13 @@ export default function DailyCheckPage() {
                         'w-20 rounded-lg border bg-white px-3 py-2 text-center text-sm font-medium outline-none transition-colors',
                         'focus:ring-2 focus:ring-offset-0',
                         'dark:bg-gray-800 dark:text-white',
-                        isZero
-                          ? 'border-amber-300 focus:border-amber-500 focus:ring-amber-500/20 dark:border-amber-700'
-                          : isFilled
-                            ? 'border-emerald-300 focus:border-emerald-500 focus:ring-emerald-500/20 dark:border-emerald-700'
-                            : 'border-gray-300 focus:border-indigo-500 focus:ring-indigo-500/20 dark:border-gray-600',
+                        lockedForBar
+                          ? 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-500 dark:border-gray-700 dark:bg-gray-700/50 dark:text-gray-400'
+                          : isZero
+                            ? 'border-amber-300 focus:border-amber-500 focus:ring-amber-500/20 dark:border-amber-700'
+                            : isFilled
+                              ? 'border-emerald-300 focus:border-emerald-500 focus:ring-emerald-500/20 dark:border-emerald-700'
+                              : 'border-gray-300 focus:border-indigo-500 focus:ring-indigo-500/20 dark:border-gray-600',
                       )}
                     />
                     <span className="text-xs text-gray-400 dark:text-gray-500">
@@ -1064,11 +1135,18 @@ export default function DailyCheckPage() {
                       type="text"
                       placeholder={t('dailyCheck.notesPlaceholder')}
                       value={entry?.notes || ''}
+                      readOnly={lockedForBar}
+                      disabled={lockedForBar}
                       onChange={(e) =>
                         handleNotesChange(product.product_code, e.target.value)
                       }
                       onBlur={() => handleNotesBlur(product.product_code)}
-                      className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-gray-700 outline-none transition-colors placeholder:text-gray-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:placeholder:text-gray-500"
+                      className={cn(
+                        'w-full rounded-lg border bg-gray-50 px-3 py-1.5 text-xs outline-none transition-colors placeholder:text-gray-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 dark:bg-gray-700 dark:placeholder:text-gray-500',
+                        lockedForBar
+                          ? 'cursor-not-allowed border-gray-200 text-gray-500 dark:border-gray-700 dark:text-gray-400'
+                          : 'border-gray-200 text-gray-700 dark:border-gray-600 dark:text-gray-300',
+                      )}
                     />
                   </div>
                 )}

@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils/cn';
 import { useAuthStore } from '@/stores/auth-store';
 import { useAppStore } from '@/stores/app-store';
 import { Button, Input, Badge, Card, CardHeader, Tabs, EmptyState, Textarea, toast } from '@/components/ui';
-import { formatThaiDate, formatNumber, formatPercent } from '@/lib/utils/format';
+import { formatThaiDate, formatNumber, formatPercent, formatQty, formatSignedQty } from '@/lib/utils/format';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/audit';
 import { notifyOwners } from '@/lib/notifications/client';
 import { notifyChatExplanationSubmitted } from '@/lib/chat/bot-client';
@@ -478,9 +478,7 @@ export default function ExplanationPage() {
                   <div className="text-center">
                     <p className="text-[10px] text-gray-400 dark:text-gray-500">POS</p>
                     <p className="text-sm font-medium text-gray-900 dark:text-white">
-                      {item.pos_quantity !== null
-                        ? formatNumber(item.pos_quantity)
-                        : '-'}
+                      {formatQty(item.pos_quantity)}
                     </p>
                   </div>
                   <div className="text-center">
@@ -488,9 +486,7 @@ export default function ExplanationPage() {
                       {t('explanation.manualCount')}
                     </p>
                     <p className="text-sm font-medium text-gray-900 dark:text-white">
-                      {item.manual_quantity !== null
-                        ? formatNumber(item.manual_quantity)
-                        : '-'}
+                      {formatQty(item.manual_quantity)}
                     </p>
                   </div>
                   <div className="flex-1" />
@@ -512,10 +508,7 @@ export default function ExplanationPage() {
                             : 'text-yellow-600 dark:text-yellow-400'
                         )}
                       >
-                        {item.difference !== null
-                          ? (item.difference > 0 ? '+' : '') +
-                            formatNumber(item.difference)
-                          : '-'}
+                        {formatSignedQty(item.difference)}
                       </p>
                       <p
                         className={cn(

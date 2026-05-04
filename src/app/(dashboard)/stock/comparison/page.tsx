@@ -9,7 +9,7 @@ import { useAuthStore } from '@/stores/auth-store';
 import { useAppStore } from '@/stores/app-store';
 import { Button, Input, Badge, Card, CardHeader, Tabs, EmptyState, toast, Modal } from '@/components/ui';
 import { nowBangkok } from '@/lib/utils/date';
-import { formatThaiDate, formatThaiShortDate, formatNumber, formatPercent } from '@/lib/utils/format';
+import { formatThaiDate, formatThaiShortDate, formatNumber, formatPercent, formatQty, formatSignedQty } from '@/lib/utils/format';
 import type { Comparison, ComparisonStatus } from '@/types/database';
 import {
   ArrowLeft,
@@ -76,8 +76,14 @@ function getStatusConfig(status: ComparisonStatus, t?: (key: string) => string) 
   }
 }
 
+// Treat anything below the column's 0.01 resolution as an exact match —
+// avoids labelling 8.50 vs 8.50 (= 0.000001 due to FP arithmetic) as a
+// discrepancy in the colour swatch / hint chip.
+const isEffectivelyZero = (n: number | null) =>
+  n === null || Math.abs(n) < 0.005;
+
 function getDiffColor(difference: number | null, diffPercent: number | null) {
-  if (difference === null || difference === 0) {
+  if (isEffectivelyZero(difference)) {
     return {
       bg: 'bg-emerald-50 dark:bg-emerald-900/20',
       text: 'text-emerald-700 dark:text-emerald-400',
@@ -333,19 +339,15 @@ export default function ComparisonPage() {
       : comparisons;
 
     const total = dateItems.length;
-    const match = dateItems.filter(
-      (c) => c.difference === 0 || c.difference === null
-    ).length;
+    const match = dateItems.filter((c) => isEffectivelyZero(c.difference)).length;
     const withinTolerance = dateItems.filter(
       (c) =>
-        c.difference !== 0 &&
-        c.difference !== null &&
+        !isEffectivelyZero(c.difference) &&
         Math.abs(c.diff_percent || 0) <= 5
     ).length;
     const overTolerance = dateItems.filter(
       (c) =>
-        c.difference !== 0 &&
-        c.difference !== null &&
+        !isEffectivelyZero(c.difference) &&
         Math.abs(c.diff_percent || 0) > 5
     ).length;
 
@@ -369,19 +371,15 @@ export default function ComparisonPage() {
       result.push({
         date,
         total: items.length,
-        match: items.filter(
-          (i) => i.difference === 0 || i.difference === null,
-        ).length,
+        match: items.filter((i) => isEffectivelyZero(i.difference)).length,
         withinTolerance: items.filter(
           (i) =>
-            i.difference !== 0 &&
-            i.difference !== null &&
+            !isEffectivelyZero(i.difference) &&
             Math.abs(i.diff_percent || 0) <= 5,
         ).length,
         overTolerance: items.filter(
           (i) =>
-            i.difference !== 0 &&
-            i.difference !== null &&
+            !isEffectivelyZero(i.difference) &&
             Math.abs(i.diff_percent || 0) > 5,
         ).length,
         pending: items.filter((i) => i.status === 'pending').length,
@@ -423,12 +421,12 @@ export default function ComparisonPage() {
         date,
         label: date.slice(8, 10),
         total: items.length,
-        match: items.filter((i) => i.difference === 0 || i.difference === null).length,
+        match: items.filter((i) => isEffectivelyZero(i.difference)).length,
         withinTolerance: items.filter(
-          (i) => i.difference !== 0 && i.difference !== null && Math.abs(i.diff_percent || 0) <= 5,
+          (i) => !isEffectivelyZero(i.difference) && Math.abs(i.diff_percent || 0) <= 5,
         ).length,
         overTolerance: items.filter(
-          (i) => i.difference !== 0 && i.difference !== null && Math.abs(i.diff_percent || 0) > 5,
+          (i) => !isEffectivelyZero(i.difference) && Math.abs(i.diff_percent || 0) > 5,
         ).length,
       });
     }
@@ -483,7 +481,7 @@ export default function ComparisonPage() {
         manual_qty: c.manual_quantity,
         status: c.status,
       });
-      if (c.difference !== null && c.difference !== 0 && Math.abs(c.diff_percent || 0) > 5) {
+      if (!isEffectivelyZero(c.difference) && Math.abs(c.diff_percent || 0) > 5) {
         p.totalOverTolerance++;
       }
     }
@@ -975,14 +973,15 @@ export default function ComparisonPage() {
                           );
                         }
                         const diff = day.difference;
+                        const isMatch = isEffectivelyZero(diff);
                         let cellBg = 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400';
-                        if (diff !== null && diff !== 0) {
+                        if (!isMatch) {
                           cellBg = 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400';
                         }
                         return (
                           <td key={date} className="px-2 py-2 text-center">
                             <span className={cn('inline-block min-w-[32px] rounded-md px-1.5 py-0.5 text-[11px] font-bold', cellBg)}>
-                              {diff === null ? '✓' : diff === 0 ? '✓' : (diff > 0 ? '+' : '') + diff}
+                              {isMatch ? '✓' : formatSignedQty(diff)}
                             </span>
                           </td>
                         );
@@ -1094,21 +1093,24 @@ export default function ComparisonPage() {
                       <div className="mt-2 grid grid-cols-4 gap-2 text-xs">
                         <div>
                           <span className="text-gray-400">POS: </span>
-                          <span className="font-medium">{item.pos_quantity !== null ? formatNumber(item.pos_quantity) : '-'}</span>
+                          <span className="font-medium">{formatQty(item.pos_quantity)}</span>
                         </div>
                         <div>
                           <span className="text-gray-400">{t('comparison.countShort')}: </span>
-                          <span className="font-medium">{item.manual_quantity !== null ? formatNumber(item.manual_quantity) : '-'}</span>
+                          <span className="font-medium">{formatQty(item.manual_quantity)}</span>
                         </div>
                         <div>
                           <span className="text-gray-400">{t('comparison.diffShort')}: </span>
                           <span className={cn('font-bold', diffColor.text)}>
-                            {item.difference !== null ? (item.difference > 0 ? '+' : '') + formatNumber(item.difference) : '-'}
+                            {formatSignedQty(item.difference)}
                           </span>
                         </div>
                         <div>
                           <span className={cn('rounded-full px-1.5 py-0.5 text-[10px] font-semibold', diffColor.bg, diffColor.text)}>
                             {t(diffColor.labelKey)}
+                            {!isEffectivelyZero(item.difference) && item.diff_percent !== null
+                              ? ` (${formatPercent(item.diff_percent)})`
+                              : ''}
                           </span>
                         </div>
                       </div>
@@ -1157,10 +1159,17 @@ export default function ComparisonPage() {
         <>
           {/* Desktop Table */}
           <div className="hidden overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700 md:block">
-            <div className="overflow-x-auto">
+            {/* Inner wrapper owns the scroll (both axes) so the sticky
+                thead can pin against it as the user scans long lists. */}
+            <div className="max-h-[70vh] overflow-auto">
               <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-100 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/80">
+                {/* Sticky head — long lists previously scrolled the head
+                    out of view, leaving the user without column labels.
+                    `sticky top-0` pins it to the viewport while the
+                    page scrolls; the explicit bg keeps rows from
+                    bleeding through the translucent layer. */}
+                <thead className="sticky top-0 z-10 bg-gray-50 dark:bg-gray-800/95">
+                  <tr className="border-b border-gray-100 dark:border-gray-700">
                     <th className="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400">
                       {t('comparison.product')}
                     </th>
@@ -1205,14 +1214,10 @@ export default function ComparisonPage() {
                           </p>
                         </td>
                         <td className="px-4 py-3 text-right font-medium text-gray-900 dark:text-white">
-                          {item.pos_quantity !== null
-                            ? formatNumber(item.pos_quantity)
-                            : '-'}
+                          {formatQty(item.pos_quantity)}
                         </td>
                         <td className="px-4 py-3 text-right font-medium text-gray-900 dark:text-white">
-                          {item.manual_quantity !== null
-                            ? formatNumber(item.manual_quantity)
-                            : '-'}
+                          {formatQty(item.manual_quantity)}
                         </td>
                         <td
                           className={cn(
@@ -1220,10 +1225,7 @@ export default function ComparisonPage() {
                             diffColor.text
                           )}
                         >
-                          {item.difference !== null
-                            ? (item.difference > 0 ? '+' : '') +
-                              formatNumber(item.difference)
-                            : '-'}
+                          {formatSignedQty(item.difference)}
                         </td>
                         <td
                           className={cn(
@@ -1267,12 +1269,11 @@ export default function ComparisonPage() {
                 item.diff_percent
               );
               const statusConfig = getStatusConfig(item.status, t);
-              const DiffIcon =
-                item.difference === null || item.difference === 0
-                  ? Minus
-                  : item.difference > 0
-                    ? TrendingUp
-                    : TrendingDown;
+              const DiffIcon = isEffectivelyZero(item.difference)
+                ? Minus
+                : (item.difference as number) > 0
+                  ? TrendingUp
+                  : TrendingDown;
 
               return (
                 <div
@@ -1300,9 +1301,7 @@ export default function ComparisonPage() {
                         POS
                       </p>
                       <p className="text-sm font-medium text-gray-900 dark:text-white">
-                        {item.pos_quantity !== null
-                          ? formatNumber(item.pos_quantity)
-                          : '-'}
+                        {formatQty(item.pos_quantity)}
                       </p>
                     </div>
                     <div>
@@ -1310,9 +1309,7 @@ export default function ComparisonPage() {
                         {t('comparison.manualCount')}
                       </p>
                       <p className="text-sm font-medium text-gray-900 dark:text-white">
-                        {item.manual_quantity !== null
-                          ? formatNumber(item.manual_quantity)
-                          : '-'}
+                        {formatQty(item.manual_quantity)}
                       </p>
                     </div>
                     <div>
@@ -1324,10 +1321,7 @@ export default function ComparisonPage() {
                           className={cn('h-3.5 w-3.5', diffColor.text)}
                         />
                         <p className={cn('text-sm font-bold', diffColor.text)}>
-                          {item.difference !== null
-                            ? (item.difference > 0 ? '+' : '') +
-                              formatNumber(item.difference)
-                            : '-'}
+                          {formatSignedQty(item.difference)}
                         </p>
                       </div>
                     </div>
@@ -1342,7 +1336,8 @@ export default function ComparisonPage() {
                       )}
                     >
                       {t(diffColor.labelKey)}
-                      {item.diff_percent !== null &&
+                      {!isEffectivelyZero(item.difference) &&
+                        item.diff_percent !== null &&
                         ` (${formatPercent(item.diff_percent)})`}
                     </span>
                     {item.explanation && (
@@ -1406,6 +1401,7 @@ export default function ComparisonPage() {
             {detailItems.map((item) => {
               const diffColor = getDiffColor(item.difference, item.diff_percent);
               const statusConfig = getStatusConfig(item.status, t);
+              const matchHere = isEffectivelyZero(item.difference);
               return (
                 <div
                   key={item.id}
@@ -1429,26 +1425,19 @@ export default function ComparisonPage() {
                     <div>
                       <span className="text-gray-400">POS: </span>
                       <span className="font-medium text-gray-700 dark:text-gray-200">
-                        {item.pos_quantity !== null
-                          ? formatNumber(item.pos_quantity)
-                          : '-'}
+                        {formatQty(item.pos_quantity)}
                       </span>
                     </div>
                     <div>
                       <span className="text-gray-400">{t('comparison.countShort')}: </span>
                       <span className="font-medium text-gray-700 dark:text-gray-200">
-                        {item.manual_quantity !== null
-                          ? formatNumber(item.manual_quantity)
-                          : '-'}
+                        {formatQty(item.manual_quantity)}
                       </span>
                     </div>
                     <div>
                       <span className="text-gray-400">{t('comparison.diffShort')}: </span>
                       <span className={cn('font-bold', diffColor.text)}>
-                        {item.difference !== null
-                          ? (item.difference > 0 ? '+' : '') +
-                            formatNumber(item.difference)
-                          : '-'}
+                        {formatSignedQty(item.difference)}
                       </span>
                     </div>
                     <div>
@@ -1460,6 +1449,9 @@ export default function ComparisonPage() {
                         )}
                       >
                         {t(diffColor.labelKey)}
+                        {!matchHere && item.diff_percent !== null
+                          ? ` (${formatPercent(item.diff_percent)})`
+                          : ''}
                       </span>
                     </div>
                   </div>
