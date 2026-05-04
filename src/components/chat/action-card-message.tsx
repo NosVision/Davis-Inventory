@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { broadcastToChannel } from '@/lib/supabase/broadcast';
 import { useChatStore } from '@/stores/chat-store';
-import { Button, PhotoUpload } from '@/components/ui';
+import { Button, Modal, ModalFooter, PhotoUpload } from '@/components/ui';
 import {
   Hand,
   CheckCircle,
@@ -24,6 +24,7 @@ import {
   Minus,
   Plus,
   Printer,
+  Tag,
   Ban,
   ChevronDown,
   ChevronUp,
@@ -131,6 +132,17 @@ export const ActionCardMessage = memo(function ActionCardMessage({ message, curr
   const [showRejectConfirm, setShowRejectConfirm] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+  // Print-options modal — opens after bar confirms a deposit so the
+  // user can choose which slips to print. Both default to on; the
+  // confirm button enqueues only the selected job types.
+  const [showPrintOptionsModal, setShowPrintOptionsModal] = useState(false);
+  const [printOptReceipt, setPrintOptReceipt] = useState(true);
+  const [printOptLabel, setPrintOptLabel] = useState(true);
+  const [pendingPrintData, setPendingPrintData] = useState<{
+    deposit_id: string;
+    payload: Record<string, unknown>;
+    label_copies: number;
+  } | null>(null);
   const { updateMessage } = useChatStore();
   const router = useRouter();
   const meta = message.metadata as ActionCardMetadata | null;
@@ -734,30 +746,19 @@ export const ActionCardMessage = memo(function ActionCardMessage({ message, curr
                 const labelBottles = newBottleRows
                   .filter((b) => b.status !== 'consumed')
                   .map((b) => ({ bottle_no: b.bottle_no, remaining_percent: b.remaining_percent, status: b.status }));
-                await Promise.all([
-                  // One receipt total — when there are multiple bottles
-                  // the renderer lists each bottle's %, so we don't
-                  // print N separate slips. Each bottle still gets its
-                  // own LABEL sticker (copies = bottle count below).
-                  supabase.from('print_queue').insert({
-                    store_id: storeId,
-                    deposit_id: depositRow.id,
-                    job_type: 'receipt',
-                    status: 'pending',
-                    copies: 1,
-                    payload: { ...printPayloadBase, bottles: labelBottles },
-                    requested_by: currentUserId,
-                  }),
-                  supabase.from('print_queue').insert({
-                    store_id: storeId,
-                    deposit_id: depositRow.id,
-                    job_type: 'label',
-                    status: 'pending',
-                    copies: labelBottles.length || validQty,
-                    payload: { ...printPayloadBase, bottles: labelBottles },
-                    requested_by: currentUserId,
-                  }),
-                ]);
+                // Stash the print payload + open the print-options
+                // modal so the bar can pick which slips to print.
+                // Both default to on, so the typical flow matches the
+                // previous auto-print behaviour without forcing the
+                // bar to print every time.
+                setPendingPrintData({
+                  deposit_id: depositRow.id,
+                  payload: { ...printPayloadBase, bottles: labelBottles },
+                  label_copies: labelBottles.length || validQty,
+                });
+                setPrintOptReceipt(true);
+                setPrintOptLabel(true);
+                setShowPrintOptionsModal(true);
               }
             }
 
@@ -882,6 +883,48 @@ export const ActionCardMessage = memo(function ActionCardMessage({ message, curr
     } finally {
       setLoading(false);
     }
+  };
+
+  // Enqueue selected print jobs (1 receipt total + N labels, one per
+  // non-consumed bottle). Skipped slips aren't enqueued — the bar can
+  // still print later via the manual buttons on the deposit detail page.
+  const handleEnqueuePrints = async () => {
+    if (!pendingPrintData || !storeId) {
+      setShowPrintOptionsModal(false);
+      setPendingPrintData(null);
+      return;
+    }
+    const supabase = createClient();
+    const inserts = [];
+    if (printOptReceipt) {
+      inserts.push(
+        supabase.from('print_queue').insert({
+          store_id: storeId,
+          deposit_id: pendingPrintData.deposit_id,
+          job_type: 'receipt',
+          status: 'pending',
+          copies: 1,
+          payload: pendingPrintData.payload,
+          requested_by: currentUserId,
+        }),
+      );
+    }
+    if (printOptLabel) {
+      inserts.push(
+        supabase.from('print_queue').insert({
+          store_id: storeId,
+          deposit_id: pendingPrintData.deposit_id,
+          job_type: 'label',
+          status: 'pending',
+          copies: pendingPrintData.label_copies,
+          payload: pendingPrintData.payload,
+          requested_by: currentUserId,
+        }),
+      );
+    }
+    if (inserts.length > 0) await Promise.all(inserts);
+    setShowPrintOptionsModal(false);
+    setPendingPrintData(null);
   };
 
   // Bar step: claim pending_bar → sets _bar_step flag
@@ -1234,6 +1277,7 @@ export const ActionCardMessage = memo(function ActionCardMessage({ message, curr
     : null;
 
   return (
+    <>
     <div className={cn('flex justify-center', isCompleted ? 'my-1' : 'my-2')}>
       <div
         className={cn(
@@ -2289,6 +2333,73 @@ export const ActionCardMessage = memo(function ActionCardMessage({ message, curr
         )}
       </div>
     </div>
+
+    {/* Print Options Modal — opens after bar confirms a deposit so the
+        user can choose which slips to print. Both default to on. */}
+    <Modal
+      isOpen={showPrintOptionsModal}
+      onClose={() => {
+        setShowPrintOptionsModal(false);
+        setPendingPrintData(null);
+      }}
+      title="เลือกใบที่จะพิมพ์"
+      description="เลือกเอกสารที่ต้องการพิมพ์หลังบาร์ยืนยันรับฝาก"
+      size="sm"
+    >
+      <div className="space-y-3">
+        <label className="flex items-center gap-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+          <input
+            type="checkbox"
+            checked={printOptReceipt}
+            onChange={(e) => setPrintOptReceipt(e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+          />
+          <div className="flex items-center gap-2">
+            <Printer className="h-4 w-4 text-indigo-500" />
+            <div>
+              <p className="text-sm font-medium text-gray-900 dark:text-white">ใบรับฝากเหล้า</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">พิมพ์ 1 ใบสำหรับลูกค้า</p>
+            </div>
+          </div>
+        </label>
+        <label className="flex items-center gap-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+          <input
+            type="checkbox"
+            checked={printOptLabel}
+            onChange={(e) => setPrintOptLabel(e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+          />
+          <div className="flex items-center gap-2">
+            <Tag className="h-4 w-4 text-indigo-500" />
+            <div>
+              <p className="text-sm font-medium text-gray-900 dark:text-white">ใบแปะขวด</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                พิมพ์ {pendingPrintData?.label_copies ?? 1} ใบ (1 ใบต่อ 1 ขวด)
+              </p>
+            </div>
+          </div>
+        </label>
+      </div>
+      <ModalFooter>
+        <Button
+          variant="outline"
+          onClick={() => {
+            setShowPrintOptionsModal(false);
+            setPendingPrintData(null);
+          }}
+        >
+          ไม่พิมพ์
+        </Button>
+        <Button
+          onClick={handleEnqueuePrints}
+          disabled={!printOptReceipt && !printOptLabel}
+          icon={<Printer className="h-4 w-4" />}
+        >
+          พิมพ์
+        </Button>
+      </ModalFooter>
+    </Modal>
+    </>
   );
 });
 

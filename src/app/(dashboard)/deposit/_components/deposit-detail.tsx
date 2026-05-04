@@ -200,6 +200,17 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
   const [barConfirmQty, setBarConfirmQty] = useState('');
   const [barConfirmPhoto, setBarConfirmPhoto] = useState<string | null>(null);
 
+  // Print-options modal — opens after bar confirms so the user can pick
+  // which slips to print (receipt / bottle label). Both default to on.
+  const [showPrintOptionsModal, setShowPrintOptionsModal] = useState(false);
+  const [printOptReceipt, setPrintOptReceipt] = useState(true);
+  const [printOptLabel, setPrintOptLabel] = useState(true);
+  const [pendingPrintData, setPendingPrintData] = useState<{
+    deposit_id: string;
+    payload: Record<string, unknown>;
+    label_copies: number;
+  } | null>(null);
+
   // Edit-info modal — same form layout as bar-confirm, but pre-populated
   // from the deposit's current data so users can correct mistakes.
   const [showEditModal, setShowEditModal] = useState(false);
@@ -499,11 +510,11 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
       body: JSON.stringify({ type: 'confirmed', deposit_id: deposit.id }),
     }).catch(() => {});
 
-    // Auto-enqueue print: 1 receipt + N labels (one per bottle).
-    // The print server reads `bottles[]` from the payload and renders
-    // bottle_no/total + per-bottle remaining_percent on each label,
-    // so the staff doesn't have to remember to hit the print buttons
-    // after every confirmation.
+    // Stash the print payload + open the print-options modal. Bar can
+    // pick which slips to print (receipt / label). Both default to on,
+    // so confirming the modal matches the previous auto-print behaviour;
+    // unchecking gives the bar a way to skip print without leaving the
+    // page or wasting paper.
     const newBottlesForPrint = newBottleRows
       .filter((b) => b.status !== 'consumed')
       .map((b) => ({ bottle_no: b.bottle_no, remaining_percent: b.remaining_percent, status: b.status }));
@@ -523,29 +534,14 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
       qr_code_image_url: receiptSettings?.qr_code_image_url ?? null,
       line_oa_id: receiptSettings?.line_oa_id ?? null,
     };
-    await Promise.all([
-      // One receipt total — the renderer prints each bottle's % in a
-      // small per-bottle table inside the slip. Labels still print
-      // one per bottle.
-      supabase.from('print_queue').insert({
-        store_id: currentStoreId,
-        deposit_id: deposit.id,
-        job_type: 'receipt',
-        status: 'pending',
-        copies: 1,
-        payload: { ...printPayloadBase, bottles: newBottlesForPrint },
-        requested_by: user.id,
-      }),
-      supabase.from('print_queue').insert({
-        store_id: currentStoreId,
-        deposit_id: deposit.id,
-        job_type: 'label',
-        status: 'pending',
-        copies: newBottlesForPrint.length || qty,
-        payload: { ...printPayloadBase, bottles: newBottlesForPrint },
-        requested_by: user.id,
-      }),
-    ]);
+    setPendingPrintData({
+      deposit_id: deposit.id,
+      payload: { ...printPayloadBase, bottles: newBottlesForPrint },
+      label_copies: newBottlesForPrint.length || qty,
+    });
+    setPrintOptReceipt(true);
+    setPrintOptLabel(true);
+    setShowPrintOptionsModal(true);
 
     toast({ type: 'success', title: t('detail.confirmSuccess') });
     setShowBarConfirmModal(false);
@@ -556,6 +552,48 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
     refreshDeposit();
     loadBottles();
     loadStaffNames();
+  };
+
+  // Enqueue selected print jobs (1 receipt total + N labels, one per
+  // non-consumed bottle). Skipped slips are simply not enqueued — the
+  // staff can still trigger them later via the manual Print buttons.
+  const handleEnqueuePrints = async () => {
+    if (!pendingPrintData || !currentStoreId || !user) {
+      setShowPrintOptionsModal(false);
+      setPendingPrintData(null);
+      return;
+    }
+    const supabase = createClient();
+    const inserts = [];
+    if (printOptReceipt) {
+      inserts.push(
+        supabase.from('print_queue').insert({
+          store_id: currentStoreId,
+          deposit_id: pendingPrintData.deposit_id,
+          job_type: 'receipt',
+          status: 'pending',
+          copies: 1,
+          payload: pendingPrintData.payload,
+          requested_by: user.id,
+        }),
+      );
+    }
+    if (printOptLabel) {
+      inserts.push(
+        supabase.from('print_queue').insert({
+          store_id: currentStoreId,
+          deposit_id: pendingPrintData.deposit_id,
+          job_type: 'label',
+          status: 'pending',
+          copies: pendingPrintData.label_copies,
+          payload: pendingPrintData.payload,
+          requested_by: user.id,
+        }),
+      );
+    }
+    if (inserts.length > 0) await Promise.all(inserts);
+    setShowPrintOptionsModal(false);
+    setPendingPrintData(null);
   };
 
   // Open edit modal — pre-fill qty and per-bottle % from current state
@@ -2840,6 +2878,78 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
             icon={<ShieldCheck className="h-4 w-4" />}
           >
             {t("detail.confirmReceive")}
+          </Button>
+        </ModalFooter>
+      </Modal>
+
+      {/* Print Options Modal — opens after bar confirms; lets the user
+          pick which slips to print. Both options default to on. */}
+      <Modal
+        isOpen={showPrintOptionsModal}
+        onClose={() => {
+          setShowPrintOptionsModal(false);
+          setPendingPrintData(null);
+        }}
+        title={t("detail.printOptionsTitle")}
+        description={t("detail.printOptionsDesc")}
+        size="sm"
+      >
+        <div className="space-y-3">
+          <label className="flex items-center gap-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+            <input
+              type="checkbox"
+              checked={printOptReceipt}
+              onChange={(e) => setPrintOptReceipt(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            <div className="flex items-center gap-2">
+              <Printer className="h-4 w-4 text-indigo-500" />
+              <div>
+                <p className="text-sm font-medium text-gray-900 dark:text-white">
+                  {t("detail.printOptionReceipt")}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {t("detail.printOptionReceiptDesc")}
+                </p>
+              </div>
+            </div>
+          </label>
+          <label className="flex items-center gap-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+            <input
+              type="checkbox"
+              checked={printOptLabel}
+              onChange={(e) => setPrintOptLabel(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            <div className="flex items-center gap-2">
+              <Tag className="h-4 w-4 text-indigo-500" />
+              <div>
+                <p className="text-sm font-medium text-gray-900 dark:text-white">
+                  {t("detail.printOptionLabel")}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {t("detail.printOptionLabelDesc", { count: pendingPrintData?.label_copies ?? 1 })}
+                </p>
+              </div>
+            </div>
+          </label>
+        </div>
+        <ModalFooter>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setShowPrintOptionsModal(false);
+              setPendingPrintData(null);
+            }}
+          >
+            {t("detail.printOptionsSkip")}
+          </Button>
+          <Button
+            onClick={handleEnqueuePrints}
+            disabled={!printOptReceipt && !printOptLabel}
+            icon={<Printer className="h-4 w-4" />}
+          >
+            {t("detail.printOptionsConfirm")}
           </Button>
         </ModalFooter>
       </Modal>
