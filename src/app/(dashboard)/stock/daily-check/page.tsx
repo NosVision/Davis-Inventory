@@ -74,6 +74,11 @@ export default function DailyCheckPage() {
   const [showZeroConfirm, setShowZeroConfirm] = useState(false);
   const [savingItem, setSavingItem] = useState<string | null>(null);
   const [savedItems, setSavedItems] = useState<Set<string>>(new Set());
+  // Product codes that already have a comparison row for the current
+  // business date. Once a comparison exists for an item, editing the
+  // count silently desyncs it from any explanation/approval that's
+  // already happened on /stock/comparison — so we lock the input.
+  const [comparedCodes, setComparedCodes] = useState<Set<string>>(new Set());
   // "Show only items I still need to count" — when on, the product list
   // hides everything that already has a saved manual count so the bar can
   // tunnel-vision on what's left (incl. supplementary POS-only items).
@@ -364,6 +369,16 @@ export default function DailyCheckPage() {
         );
       }
 
+      // Check which products already have a comparison row for today.
+      const { data: compRows } = await supabase
+        .from('comparisons')
+        .select('product_code')
+        .eq('store_id', currentStoreId)
+        .eq('comp_date', businessDate);
+      setComparedCodes(
+        new Set((compRows || []).map((r) => r.product_code as string)),
+      );
+
       setCounts(initialCounts);
     } catch (error) {
       console.error('Error fetching products:', error);
@@ -585,6 +600,17 @@ export default function DailyCheckPage() {
         setCompareResult(result);
 
         if (result.compared) {
+          // Refresh the locked-codes set so the inputs immediately
+          // become read-only without a page reload.
+          const { data: compRows } = await supabase
+            .from('comparisons')
+            .select('product_code')
+            .eq('store_id', currentStoreId)
+            .eq('comp_date', businessDate);
+          setComparedCodes(
+            new Set((compRows || []).map((r) => r.product_code as string)),
+          );
+
           toast({
             type: 'success',
             title: t('dailyCheck.autoCompareSuccess'),
@@ -731,11 +757,45 @@ export default function DailyCheckPage() {
       setSupplementaryItems([]);
       setSupplementaryCounts({});
 
+      // Re-run auto-compare so the new manual counts are reflected in
+      // /stock/comparison + /stock/explanation (supplementary items
+      // would otherwise stay flagged as POS-only). Surface the result
+      // explicitly — silent compare here used to confuse users into
+      // thinking nothing happened.
       try {
         const result = await runAutoCompare(currentStoreId, businessDate);
         setCompareResult(result);
-      } catch {
-        // Non-fatal
+        if (result.compared) {
+          const { data: compRows } = await supabase
+            .from('comparisons')
+            .select('product_code')
+            .eq('store_id', currentStoreId)
+            .eq('comp_date', businessDate);
+          setComparedCodes(
+            new Set((compRows || []).map((r) => r.product_code as string)),
+          );
+          toast({
+            type: 'success',
+            title: t('dailyCheck.autoCompareSuccess'),
+            message: t('dailyCheck.autoCompareMsg', {
+              match: result.summary?.match || 0,
+              overTolerance: result.summary?.over_tolerance || 0,
+            }),
+          });
+        } else if (result.reason === 'no_pos') {
+          toast({
+            type: 'info',
+            title: t('dailyCheck.waitingPosTitle'),
+            message: t('dailyCheck.waitingPosMsg'),
+          });
+        }
+      } catch (err) {
+        console.error('Auto-compare after supplementary save failed:', err);
+        toast({
+          type: 'warning',
+          title: t('dailyCheck.autoCompareFailed'),
+          message: t('dailyCheck.autoCompareFailedMsg'),
+        });
       }
     } catch (error) {
       console.error('Error saving supplementary counts:', error);
@@ -810,6 +870,32 @@ export default function DailyCheckPage() {
           {t('dailyCheck.countDateInfo')}
         </span>
       </div>
+
+      {/* Locked-after-compare banner — surfaces the read-only state at
+          the top of the page so staff don't waste time hunting for an
+          input that won't accept changes. */}
+      {comparedCodes.size > 0 && (
+        <div className="flex flex-col gap-3 rounded-xl border border-gray-300 bg-gray-50 p-3 sm:flex-row sm:items-center sm:justify-between dark:border-gray-700 dark:bg-gray-800/50">
+          <div className="flex items-start gap-2">
+            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-gray-500 dark:text-gray-400" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                {t('dailyCheck.lockedComparedBannerTitle')}
+              </p>
+              <p className="mt-0.5 text-xs text-gray-600 dark:text-gray-400">
+                {t('dailyCheck.lockedComparedBannerHint')}
+              </p>
+            </div>
+          </div>
+          <a
+            href={`/stock/comparison?date=${businessDate}`}
+            className="inline-flex items-center justify-center gap-1 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100 sm:shrink-0 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
+          >
+            {t('dailyCheck.lockedComparedBannerCta')}
+            <ArrowRight className="h-3.5 w-3.5" />
+          </a>
+        </div>
+      )}
 
       {/* "ต้องนับเพิ่ม" prominent counter — opens with a one-tap filter
           to hide everything that's already saved. */}
@@ -1041,19 +1127,26 @@ export default function DailyCheckPage() {
             const isZero = entry?.count_quantity === 0;
             const isSaving = savingItem === product.product_code;
             const justSaved = savedItems.has(product.product_code);
-            // Bar may not edit a count that's already on the books; the
-            // input is locked and the row dims to make the read-only
-            // state obvious.
+            // Two reasons we'd lock an input:
+            //   1. Bar staff editing a count that's already been saved
+            //      for the day — only owners/managers/accountants can
+            //      revise an existing count.
+            //   2. The item already has a comparison row, regardless of
+            //      role — editing here would silently desync from any
+            //      explanation/approval already on /stock/comparison.
             const lockedForBar = isBar && hasExisting;
+            const lockedAfterCompare = comparedCodes.has(product.product_code) && hasExisting;
+            const locked = lockedForBar || lockedAfterCompare;
+            const lockReasonKey = lockedAfterCompare
+              ? 'dailyCheck.lockedCompared'
+              : 'dailyCheck.lockedSaved';
 
             return (
               <div
                 key={product.id}
                 className={cn(
                   'rounded-xl bg-white p-4 shadow-sm ring-1 transition-colors dark:bg-gray-800',
-                  lockedForBar
-                    ? 'opacity-75'
-                    : '',
+                  locked ? 'opacity-75' : '',
                   isZero
                     ? 'ring-amber-300 dark:ring-amber-700'
                     : isFilled
@@ -1078,7 +1171,13 @@ export default function DailyCheckPage() {
                         <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
                       )}
                       {isZero && (
-                        <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span
+                          title={t('dailyCheck.zeroQtyIconTooltip')}
+                          aria-label={t('dailyCheck.zeroQtyIconTooltip')}
+                          className="inline-flex"
+                        >
+                          <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
+                        </span>
                       )}
                     </div>
                     <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-gray-400 dark:text-gray-500">
@@ -1086,9 +1185,9 @@ export default function DailyCheckPage() {
                       {product.category && <span>{product.category}</span>}
                       {product.size && <span>{product.size}</span>}
                       {product.unit && <span>({product.unit})</span>}
-                      {lockedForBar && (
+                      {locked && (
                         <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-gray-700 dark:text-gray-400">
-                          {t('dailyCheck.lockedSaved')}
+                          {t(lockReasonKey)}
                         </span>
                       )}
                     </div>
@@ -1103,8 +1202,8 @@ export default function DailyCheckPage() {
                       step="0.01"
                       placeholder="0"
                       value={entry?.count_quantity ?? ''}
-                      readOnly={lockedForBar}
-                      disabled={lockedForBar}
+                      readOnly={locked}
+                      disabled={locked}
                       onChange={(e) =>
                         handleCountChange(product.product_code, e.target.value)
                       }
@@ -1113,7 +1212,7 @@ export default function DailyCheckPage() {
                         'w-20 rounded-lg border bg-white px-3 py-2 text-center text-sm font-medium outline-none transition-colors',
                         'focus:ring-2 focus:ring-offset-0',
                         'dark:bg-gray-800 dark:text-white',
-                        lockedForBar
+                        locked
                           ? 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-500 dark:border-gray-700 dark:bg-gray-700/50 dark:text-gray-400'
                           : isZero
                             ? 'border-amber-300 focus:border-amber-500 focus:ring-amber-500/20 dark:border-amber-700'
@@ -1135,15 +1234,15 @@ export default function DailyCheckPage() {
                       type="text"
                       placeholder={t('dailyCheck.notesPlaceholder')}
                       value={entry?.notes || ''}
-                      readOnly={lockedForBar}
-                      disabled={lockedForBar}
+                      readOnly={locked}
+                      disabled={locked}
                       onChange={(e) =>
                         handleNotesChange(product.product_code, e.target.value)
                       }
                       onBlur={() => handleNotesBlur(product.product_code)}
                       className={cn(
                         'w-full rounded-lg border bg-gray-50 px-3 py-1.5 text-xs outline-none transition-colors placeholder:text-gray-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 dark:bg-gray-700 dark:placeholder:text-gray-500',
-                        lockedForBar
+                        locked
                           ? 'cursor-not-allowed border-gray-200 text-gray-500 dark:border-gray-700 dark:text-gray-400'
                           : 'border-gray-200 text-gray-700 dark:border-gray-600 dark:text-gray-300',
                       )}
@@ -1166,8 +1265,11 @@ export default function DailyCheckPage() {
               </span>{' '}
               / {products.length} {t('dailyCheck.itemsLabel')}
               {zeroQtyCount > 0 && (
-                <span className="ml-2 text-amber-500">
-                  ({zeroQtyCount} = 0)
+                <span
+                  className="ml-2 text-amber-500"
+                  title={t('dailyCheck.zeroQtyIconTooltip')}
+                >
+                  ({t('dailyCheck.zeroQtyCounter', { count: zeroQtyCount })})
                 </span>
               )}
             </div>

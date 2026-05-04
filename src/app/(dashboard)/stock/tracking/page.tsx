@@ -22,6 +22,7 @@ import {
   History,
   ChevronLeft,
   ChevronRight,
+  ArrowLeft,
 } from 'lucide-react';
 
 const TRACKING_ROLES = ['owner', 'accountant', 'manager', 'hq'];
@@ -644,10 +645,19 @@ export default function StockTrackingPage() {
       {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-xl font-bold text-gray-900 sm:text-2xl dark:text-white">
-            ติดตามผลต่างสต๊อก
-          </h1>
-          <p className="mt-0.5 text-xs text-gray-500 sm:text-sm dark:text-gray-400">
+          <div className="flex items-center gap-2">
+            <a
+              href="/stock"
+              className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-700 dark:hover:text-gray-300"
+              aria-label="กลับหน้าสต๊อก"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </a>
+            <h1 className="text-xl font-bold text-gray-900 sm:text-2xl dark:text-white">
+              ติดตามผลต่างสต๊อก
+            </h1>
+          </div>
+          <p className="mt-0.5 ml-9 text-xs text-gray-500 sm:text-sm dark:text-gray-400">
             ตารางมุมมองรายสินค้าข้ามวัน + ปักหมุดสินค้าที่จับตา (เดือน {monthLabel})
           </p>
         </div>

@@ -6,6 +6,7 @@
  */
 
 import type { ActionCardMetadata } from '@/types/chat';
+import { formatThaiDate } from '@/lib/utils/format';
 
 const BOT_API_URL = `${process.env.NEXT_PUBLIC_APP_URL}/api/chat/bot-message`;
 
@@ -187,7 +188,7 @@ export function buildStockExplainActionCard(comparison: {
 
   return {
     type: 'action_card',
-    content: `สต๊อกไม่ตรง ${comparison.discrepancy_count} รายการ — วันที่ ${comparison.comp_date}`,
+    content: `สต๊อกไม่ตรง ${comparison.discrepancy_count} รายการ — วันที่ ${formatThaiDate(comparison.comp_date)}`,
     metadata: meta,
   };
 }
@@ -224,7 +225,7 @@ export function buildStockSupplementaryActionCard(input: {
 
   return {
     type: 'action_card',
-    content: `📋 มี ${input.pending_count} รายการต้องนับเพิ่ม — วันที่ ${input.comp_date}`,
+    content: `📋 มี ${input.pending_count} รายการต้องนับเพิ่ม — วันที่ ${formatThaiDate(input.comp_date)}`,
     metadata: meta,
   };
 }
@@ -262,7 +263,7 @@ export function buildStockApproveActionCard(input: {
 
   return {
     type: 'action_card',
-    content: `✋ คำชี้แจงสต๊อก ${input.explained_count} รายการ รออนุมัติ — วันที่ ${input.comp_date}`,
+    content: `✋ คำชี้แจงสต๊อก ${input.explained_count} รายการ รออนุมัติ — วันที่ ${formatThaiDate(input.comp_date)}`,
     metadata: meta,
   };
 }

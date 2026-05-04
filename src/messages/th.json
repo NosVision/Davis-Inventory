@@ -3212,6 +3212,12 @@
       "showRemainingOnly": "แสดงเฉพาะที่ต้องนับ",
       "showAll": "แสดงทั้งหมด",
       "lockedSaved": "บันทึกแล้ว — แก้ไขไม่ได้",
+      "lockedCompared": "เปรียบเทียบแล้ว — แก้ไขไม่ได้",
+      "lockedComparedBannerTitle": "การนับวันนี้เปรียบเทียบไปแล้ว",
+      "lockedComparedBannerHint": "รายการที่มีคำนับและสร้าง comparison แล้วถูกล็อก เพื่อไม่ให้ตัวเลขชี้แจง/อนุมัติเพี้ยน — ถ้าต้องแก้ ให้ใช้ระบบชี้แจงในหน้าผลเปรียบเทียบ",
+      "lockedComparedBannerCta": "ไปหน้าผลเปรียบเทียบ",
+      "zeroQtyIconTooltip": "นับได้ 0 — กรุณายืนยันก่อนบันทึก",
+      "zeroQtyCounter": "{count} รายการนับเป็น 0",
       "zeroQtyWarning": "มี {count} รายการที่จำนวน = 0",
       "zeroQtyConfirmMsg": "ยืนยันการบันทึกการนับ รวมรายการที่จำนวน 0 ด้วยหรือไม่?",
       "finish": "บันทึก {filled}/{total}"

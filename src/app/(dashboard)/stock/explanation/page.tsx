@@ -76,6 +76,12 @@ export default function ExplanationPage() {
         .eq('store_id', currentStoreId)
         .in('status', ['pending', 'explained'])
         .neq('difference', 0)
+        // Hide POS-only rows. They share status='pending' with real
+        // over-tolerance rows but represent "staff hasn't counted yet"
+        // — there's no story to write here. They show up on
+        // /stock/comparison under the "รอนับเพิ่ม" tab + the
+        // /stock/daily-check supplementary section instead.
+        .not('manual_quantity', 'is', null)
         .order('comp_date', { ascending: false })
         .order('product_name', { ascending: true });
 

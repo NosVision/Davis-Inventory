@@ -17,9 +17,12 @@ import {
   ClipboardList,
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
+import { formatThaiDate } from '@/lib/utils/format';
 import { useChatStore } from '@/stores/chat-store';
 import type { ChatMessage, ActionCardMetadata } from '@/types/chat';
 import type { TransferCardMetadata } from '@/types/transfer-chat';
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 interface CompactActionCardProps {
   message: ChatMessage;
@@ -96,7 +99,18 @@ function extractCardInfo(meta: Record<string, unknown>) {
   // the full card if they need it. Other action types still show the
   // short ref so users can spot duplicate notifications quickly.
   if (a.reference_id && actionType !== 'deposit_claim') {
-    summaryParts.push(`#${a.reference_id.slice(-8)}`);
+    // Stock cards (stock_explain / stock_supplementary / stock_approve)
+    // use the comparison date as reference_id, so a raw "#26-05-03"
+    // slice is meaningless. Render those as the system's Thai date
+    // ("3 พ.ค. 2569") to match every other date in the app.
+    const compDateRaw =
+      (summary?.comp_date as string | undefined)
+        ?? (ISO_DATE_RE.test(a.reference_id) ? a.reference_id : null);
+    if (compDateRaw && ISO_DATE_RE.test(compDateRaw)) {
+      summaryParts.push(formatThaiDate(compDateRaw));
+    } else {
+      summaryParts.push(`#${a.reference_id.slice(-8)}`);
+    }
   }
   if (a.summary?.customer) summaryParts.push(a.summary.customer);
   // For customer-LIFF deposit_claim the `items` slot is the placeholder
