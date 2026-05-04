@@ -134,7 +134,7 @@ class SupabaseConnector {
       .eq('store_id', this.config.STORE_ID)
       .eq('status', 'pending')
       .order('created_at', { ascending: true })
-      .limit(10);
+      .limit(500);
 
     if (error) throw error;
     return data || [];

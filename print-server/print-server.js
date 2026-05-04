@@ -98,6 +98,16 @@ async function main() {
     // 7. Start working hours check
     startWorkingHoursMonitor();
 
+    // 8. Periodic catch-up — realtime only fires for INSERTs, so any job
+    // that lands while the server is restarting / offline / sleeping
+    // outside working hours gets stranded as 'pending' forever. Sweep
+    // the queue every 2 minutes to pick those up.
+    setInterval(() => {
+      if (workingHours.isWithinWorkingHours()) {
+        catchUpPendingJobs();
+      }
+    }, 2 * 60 * 1000);
+
     console.log('');
     console.log('==========================================');
     console.log('  Print Server is running!');
@@ -225,9 +235,11 @@ function startHeartbeat() {
   const interval = CONFIG.HEARTBEAT_INTERVAL || 60000;
 
   const send = async () => {
-    if (!workingHours.isWithinWorkingHours()) return;
+    // Always send heartbeat so the dashboard knows the PC is alive.
+    // Outside working hours we're online-but-idle, not offline.
+    const within = workingHours.isWithinWorkingHours();
     await connector.sendHeartbeat({
-      status: 'ready',
+      status: within ? 'ready' : 'idle',
       jobsToday: processor.getJobsToday(),
     });
     // Piggy-back the settings refresh on the same interval — one
