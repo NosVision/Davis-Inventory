@@ -153,4 +153,8 @@ export interface UnreadBadgePayload {
   sender_name: string;
   preview: string;
   type: ChatMessageType;
+  // ใช้ sync last_message ในหน้ารายการห้อง (chat list)
+  message_id?: string;
+  created_at?: string;
+  metadata?: ChatMessage['metadata'];
 }

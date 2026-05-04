@@ -123,6 +123,9 @@ export async function POST(request: Request) {
         sender_name: 'Bot',
         preview: content?.slice(0, 100) || 'Action Card ใหม่',
         type: type || 'text',
+        message_id: messageId,
+        created_at: message.created_at,
+        metadata: metadata || null,
       };
 
       await broadcastToMany(

@@ -36,6 +36,7 @@ interface ChatState {
   setUnreadCounts: (counts: Record<string, number>) => void;
   incrementUnread: (roomId: string) => void;
   clearUnread: (roomId: string) => void;
+  updateRoomLastMessage: (roomId: string, message: ChatMessage) => void;
   setPinnedMessages: (msgs: ChatPinnedMessage[]) => void;
   addPinnedMessage: (msg: ChatPinnedMessage) => void;
   removePinnedMessage: (messageId: string) => void;
@@ -98,6 +99,22 @@ export const useChatStore = create<ChatState>((set) => ({
     set((s) => {
       const counts = { ...s.unreadCounts, [roomId]: 0 };
       return { unreadCounts: counts, totalUnread: Object.values(counts).reduce((a, b) => a + b, 0) };
+    }),
+
+  updateRoomLastMessage: (roomId, message) =>
+    set((s) => {
+      const existing = s.rooms.find((r) => r.id === roomId);
+      // ข้ามถ้าห้องนั้นมีข้อความใหม่กว่าอยู่แล้ว (กัน race จาก broadcast/badge มาช้า)
+      if (existing?.last_message?.created_at && message.created_at) {
+        if (new Date(message.created_at).getTime() <= new Date(existing.last_message.created_at).getTime()) {
+          return s;
+        }
+      }
+      return {
+        rooms: s.rooms.map((r) =>
+          r.id === roomId ? { ...r, last_message: message } : r
+        ),
+      };
     }),
 
   setPinnedMessages: (pinnedMessages) => set({ pinnedMessages }),

@@ -88,7 +88,7 @@ export function useChatRealtime(roomId: string | null) {
  */
 export function useChatBadge() {
   const { user } = useAuthStore();
-  const { activeRoomId, incrementUnread } = useChatStore();
+  const { activeRoomId, incrementUnread, updateRoomLastMessage } = useChatStore();
   const { playMessageSound, playMentionSound, playTaskSound } = useChatSound();
 
   useEffect(() => {
@@ -100,6 +100,31 @@ export function useChatBadge() {
       .channel(`chat:badge:${user.id}`)
       .on('broadcast', { event: 'new_message_badge' }, (payload) => {
         const data = payload.payload as UnreadBadgePayload;
+
+        // อัพเดท last_message ของห้อง เพื่อให้หน้ารายการ /chat โชว์ข้อความล่าสุด+เวลา+sort ได้แบบ realtime
+        // (ทำเสมอ ไม่ขึ้นกับ activeRoomId หรือ sender — เพื่อให้ใช้ได้เมื่อส่งจากอุปกรณ์อื่นด้วย)
+        const synthetic: ChatMessage = {
+          id: data.message_id || `badge-${data.room_id}-${Date.now()}`,
+          room_id: data.room_id,
+          sender_id: data.sender_id === 'bot' ? null : data.sender_id,
+          type: data.type,
+          content: data.preview || '',
+          metadata: data.metadata ?? null,
+          created_at: data.created_at || new Date().toISOString(),
+          archived_at: null,
+          sender:
+            data.sender_id === 'bot'
+              ? null
+              : {
+                  id: data.sender_id,
+                  username: data.sender_name,
+                  display_name: data.sender_name,
+                  avatar_url: null,
+                  role: 'staff',
+                },
+        };
+        updateRoomLastMessage(data.room_id, synthetic);
+
         // ไม่ increment ถ้ากำลังดูห้องนั้นอยู่
         if (data.room_id !== activeRoomId && data.sender_id !== user.id) {
           incrementUnread(data.room_id);
@@ -129,7 +154,7 @@ export function useChatBadge() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, activeRoomId, incrementUnread, playMessageSound, playMentionSound, playTaskSound]);
+  }, [user, activeRoomId, incrementUnread, updateRoomLastMessage, playMessageSound, playMentionSound, playTaskSound]);
 }
 
 // ==========================================
@@ -264,6 +289,9 @@ async function broadcastAndNotify(
       sender_name: senderInfo.display_name || senderInfo.username,
       preview: preview.slice(0, 100),
       type: message.type as 'text' | 'image',
+      message_id: message.id,
+      created_at: message.created_at,
+      metadata: message.metadata ?? null,
     };
 
     await broadcastToMany(
