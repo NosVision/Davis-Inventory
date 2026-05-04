@@ -3088,7 +3088,11 @@
       "counting": "Counting stock",
       "notCounted": "Stock not counted today",
       "notCountingDay": "Not a stock counting day",
-      "viewDetails": "View Details"
+      "viewDetails": "View Details",
+      "periodNotCounted": "{date} — {count} items not counted",
+      "periodCounted": "{date} — {counted}/{total} items counted",
+      "supplementaryTitle": "{count} items still need counting",
+      "supplementaryHint": "POS shows quantity but no manual count yet — please count to enable comparison"
     },
     "comparison": {
       "all": "All",
@@ -3194,6 +3198,11 @@
       "countedProgress": "Counted {filled}/{total} items",
       "supplementaryTitle": "Supplementary Items ({count})",
       "supplementaryWarning": "Found {count} items from POS that staff haven't counted yet — please count",
+      "remainingTitle": "{count} items left to count",
+      "remainingHint": "Filter to only show items that still need a count to work through them faster",
+      "showRemainingOnly": "Show only remaining",
+      "showAll": "Show all",
+      "lockedSaved": "Saved — read only",
       "zeroQtyWarning": "{count} items have 0 quantity",
       "finish": "Save {filled}/{total}"
     },

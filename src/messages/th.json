@@ -3090,7 +3090,11 @@
       "countNow": "นับสต๊อกเลย",
       "notCounted": "ยังไม่ได้นับสต๊อกวันนี้",
       "notCountingDay": "วันนี้ไม่ใช่วันนับสต๊อก",
-      "viewDetails": "ดูรายละเอียด"
+      "viewDetails": "ดูรายละเอียด",
+      "periodNotCounted": "{date} — ยังไม่ได้นับ {count} รายการ",
+      "periodCounted": "{date} — นับแล้ว {counted}/{total} รายการ",
+      "supplementaryTitle": "มี {count} รายการต้องนับเพิ่ม",
+      "supplementaryHint": "POS มียอดแต่ยังไม่มีนับมือ — กรุณานับเพิ่มเพื่อให้ระบบเปรียบเทียบได้"
     },
     "comparison": {
       "all": "ทั้งหมด",
@@ -3195,6 +3199,11 @@
       "countedProgress": "นับแล้ว {filled}/{total} รายการ",
       "supplementaryTitle": "รายการเพิ่มเติม ({count})",
       "supplementaryWarning": "พบ {count} รายการจาก POS ที่พนักงานยังไม่ได้นับ — กรุณานับเพิ่ม",
+      "remainingTitle": "เหลือ {count} รายการที่ต้องนับ",
+      "remainingHint": "กรองรายการให้เห็นเฉพาะที่ยังไม่ได้นับเพื่อทำงานต่อได้เร็วขึ้น",
+      "showRemainingOnly": "แสดงเฉพาะที่ต้องนับ",
+      "showAll": "แสดงทั้งหมด",
+      "lockedSaved": "บันทึกแล้ว — แก้ไขไม่ได้",
       "zeroQtyWarning": "มี {count} รายการที่จำนวน = 0",
       "zeroQtyConfirmMsg": "ยืนยันการบันทึกการนับ รวมรายการที่จำนวน 0 ด้วยหรือไม่?",
       "finish": "บันทึก {filled}/{total}"

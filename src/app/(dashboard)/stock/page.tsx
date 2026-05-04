@@ -31,6 +31,7 @@ import {
   Info,
   Pin,
 } from 'lucide-react';
+import { StockCountBanner } from '@/components/stock/stock-count-banner';
 import {
   BarChart,
   Bar,
@@ -562,6 +563,11 @@ export default function StockOverviewPage() {
           </Button>
         </div>
       </div>
+
+      {/* Stock counting status / supplementary alerts — surfaced at the
+          top so staff opening this page see "you still need to count X
+          items" before scrolling past summary cards. */}
+      <StockCountBanner />
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">

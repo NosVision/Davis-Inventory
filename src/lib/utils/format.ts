@@ -49,6 +49,39 @@ export function formatNumber(num: number, decimals = 0): string {
   });
 }
 
+/**
+ * Format a stock quantity / difference. Shows up to 2 decimals when the
+ * value has a fractional part, otherwise renders as an integer.
+ *
+ * Stock columns are NUMERIC(10,2), so a value like 0.5 (POS) vs 0 (manual)
+ * is real data — formatting it as "0" with formatNumber hides the
+ * difference and makes "POS 0 / นับจริง 0 / -0 / -100%" rows look like a
+ * bug to staff. Showing 2 decimals reveals the actual numbers ("0.5 vs 0").
+ *
+ * Tolerates floating-point dust under 0.005 by snapping to 0.
+ */
+export function formatQty(num: number | null | undefined): string {
+  if (num === null || num === undefined) return '-';
+  if (!Number.isFinite(num)) return '-';
+  if (Math.abs(num) < 0.005) return formatNumber(0);
+  const rounded = Math.round(num);
+  if (Math.abs(num - rounded) < 0.005) return formatNumber(rounded);
+  return formatNumber(num, 2);
+}
+
+/**
+ * Format a signed difference with a leading '+' when positive, '-' when
+ * negative, '0' when within rounding noise. Used by the comparison /
+ * explanation pages so a 0.5 shortage doesn't render as "-0".
+ */
+export function formatSignedQty(num: number | null | undefined): string {
+  if (num === null || num === undefined) return '-';
+  if (!Number.isFinite(num)) return '-';
+  if (Math.abs(num) < 0.005) return formatNumber(0);
+  const formatted = formatQty(Math.abs(num));
+  return num > 0 ? `+${formatted}` : `-${formatted}`;
+}
+
 export function formatCurrency(amount: number): string {
   return `฿${formatNumber(amount, 2)}`;
 }

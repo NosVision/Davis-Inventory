@@ -172,13 +172,32 @@ export async function POST(request: NextRequest) {
       if (manualQty !== null && posQty !== null) {
         difference = manualQty - posQty;
 
-        if (posQty !== 0) {
+        // Snap floating-point dust to a clean zero so a stored 8.50 - 8.50
+        // doesn't end up as 0.000000001 → "+0" / over-tolerance noise.
+        // NUMERIC(10,2) means anything below 0.005 is below the column's
+        // resolution and should be treated as an exact match.
+        if (Math.abs(difference) < 0.005) {
+          difference = 0;
+          diffPercent = 0;
+        } else if (posQty !== 0) {
           diffPercent = (difference / posQty) * 100;
+        } else {
+          // POS qty is exactly 0 but manual recorded a real value:
+          // surplus appears as +∞%. Cap at +100% so the row still
+          // routes to over-tolerance instead of being shown as a match.
+          diffPercent = manualQty > 0 ? 100 : -100;
         }
       } else if (isPosOnly && posQty !== null) {
-        // POS has qty but manual count is missing → treat as shortage
+        // POS has qty but manual count is missing → treat as shortage.
+        // When posQty is 0 the diff is also 0 — leave diffPercent at 0
+        // so the row isn't surfaced on the explanation page (which
+        // filters difference != 0).
         difference = 0 - posQty;
-        diffPercent = -100;
+        if (posQty === 0) {
+          diffPercent = 0;
+        } else {
+          diffPercent = -100;
+        }
       }
 
       // Determine status
