@@ -3,7 +3,6 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { notifyBorrowWatchers, notifyStoreStaff } from '@/lib/notifications/service';
 import {
   sendBotMessage,
-  buildStockExplainActionCard,
   buildStockSupplementaryActionCard,
 } from '@/lib/chat/bot';
 
@@ -38,7 +37,7 @@ export async function POST(request: NextRequest) {
         .limit(1),
       supabase
         .from('store_settings')
-        .select('diff_tolerance')
+        .select('diff_tolerance, diff_tolerance_unit')
         .eq('store_id', store_id)
         .single(),
     ]);
@@ -61,6 +60,7 @@ export async function POST(request: NextRequest) {
     const manualCounts = manualResult.data;
     const latestOcrLogId = ocrLogResult.data?.[0]?.id ?? null;
     const diffTolerance = settingsResult.data?.diff_tolerance ?? 5;
+    const diffToleranceUnit = settingsResult.data?.diff_tolerance_unit ?? 0.4;
 
     // Fetch OCR items (depends on ocrLogResult)
     let ocrItems: Array<{ product_code: string; qty_ocr: number }> = [];
@@ -217,10 +217,11 @@ export async function POST(request: NextRequest) {
         status = 'approved';
         matchCount++;
       } else if (
-        diffPercent !== null &&
-        Math.abs(diffPercent) <= diffTolerance
+        Math.abs(difference) <= diffToleranceUnit ||
+        (diffPercent !== null && Math.abs(diffPercent) <= diffTolerance)
       ) {
-        // Within tolerance
+        // Within tolerance — either small absolute units (rounding noise on
+        // low-volume items) or small percentage (rounding noise on high-volume).
         status = 'approved';
         withinToleranceCount++;
       } else {
@@ -295,9 +296,14 @@ export async function POST(request: NextRequest) {
       changed_by: null, // system action
     });
 
-    // 9. Notify owners if there are items over tolerance
+    // 9. Notify owners if there are items over tolerance.
+    // The chat action card was removed by request — owners track daily
+    // variances on /stock/tracking now, and the in-app/PWA notification
+    // below is enough to surface "needs explanation" rows. The
+    // supplementary-count card (next block) is still sent because that
+    // flow targets staff and is "you have work to do" rather than
+    // "owner please review".
     if (overToleranceCount > 0) {
-      // 3. แจ้งเตือน In-App + PWA ไปยัง Owner/Manager ตามที่ตั้งค่าไว้
       try {
         await notifyBorrowWatchers({
           storeId: store_id,
@@ -308,27 +314,6 @@ export async function POST(request: NextRequest) {
         });
       } catch (err) {
         console.error('[StockCompare] Failed to notify watchers:', err);
-      }
-
-      // ส่ง Action Card เข้าแชทสาขา
-      try {
-        const overItems = comparisonRows
-          .filter((r) => r.status === 'pending')
-          .slice(0, 3)
-          .map((r) => r.product_name)
-          .join(', ');
-        const preview = overItems + (overToleranceCount > 3 ? ` +${overToleranceCount - 3} อื่นๆ` : '');
-
-        const actionCard = buildStockExplainActionCard({
-          comp_date,
-          store_id,
-          discrepancy_count: overToleranceCount,
-          items_preview: preview,
-        });
-
-        await sendBotMessage({ storeId: store_id, ...actionCard });
-      } catch (chatErr) {
-        console.error('[Compare] Failed to send chat action card:', chatErr);
       }
     }
 

@@ -75,6 +75,7 @@ interface StoreSettingsData {
   notify_time_daily: string | null;
   notify_days: string[] | null;
   diff_tolerance: number;
+  diff_tolerance_unit: number;
   customer_notify_expiry_enabled: boolean;
   customer_notify_expiry_days: number;
   customer_notify_withdrawal_enabled: boolean;
@@ -91,6 +92,7 @@ const settingsDefaults: StoreSettingsData = {
   notify_time_daily: '09:00',
   notify_days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
   diff_tolerance: 5,
+  diff_tolerance_unit: 0.4,
   customer_notify_expiry_enabled: true,
   customer_notify_expiry_days: 7,
   customer_notify_withdrawal_enabled: true,
@@ -170,6 +172,7 @@ export default function StoreDetailSettingsPage() {
     'Sun',
   ]);
   const [diffTolerance, setDiffTolerance] = useState('5');
+  const [diffToleranceUnit, setDiffToleranceUnit] = useState('0.4');
   const [dailyReminderEnabled, setDailyReminderEnabled] = useState(true);
   const [followUpEnabled, setFollowUpEnabled] = useState(true);
 
@@ -255,6 +258,7 @@ export default function StoreDetailSettingsPage() {
       setNotifyTime(settings.notify_time_daily || '09:00');
       setNotifyDays(settings.notify_days || settingsDefaults.notify_days!);
       setDiffTolerance(String(settings.diff_tolerance ?? 5));
+      setDiffToleranceUnit(String(settings.diff_tolerance_unit ?? 0.4));
       setCustomerExpiryEnabled(settings.customer_notify_expiry_enabled ?? true);
       setCustomerExpiryDays(String(settings.customer_notify_expiry_days ?? 7));
       setCustomerWithdrawalEnabled(settings.customer_notify_withdrawal_enabled ?? true);
@@ -563,6 +567,7 @@ export default function StoreDetailSettingsPage() {
           notify_time_daily: notifyTime,
           notify_days: notifyDays,
           diff_tolerance: parseFloat(diffTolerance) || 5,
+          diff_tolerance_unit: parseFloat(diffToleranceUnit) || 0.4,
           customer_notify_expiry_enabled: customerExpiryEnabled,
           customer_notify_expiry_days: parseInt(customerExpiryDays) || 7,
           customer_notify_withdrawal_enabled: customerWithdrawalEnabled,
@@ -1196,7 +1201,7 @@ export default function StoreDetailSettingsPage() {
           </div>
           )}
 
-          {/* Diff tolerance */}
+          {/* Diff tolerance (percent) */}
           <Input
             label={t('storeDetail.diffToleranceLabel')}
             type="number"
@@ -1206,6 +1211,18 @@ export default function StoreDetailSettingsPage() {
             hint={t('storeDetail.diffToleranceHint')}
             min={0}
             max={100}
+          />
+
+          {/* Diff tolerance (absolute unit) */}
+          <Input
+            label={t('storeDetail.diffToleranceUnitLabel')}
+            type="number"
+            value={diffToleranceUnit}
+            onChange={(e) => setDiffToleranceUnit(e.target.value)}
+            placeholder="0.4"
+            hint={t('storeDetail.diffToleranceUnitHint')}
+            min={0}
+            step={0.1}
           />
         </CardContent>
       </Card>

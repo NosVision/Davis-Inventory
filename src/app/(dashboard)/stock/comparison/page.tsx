@@ -9,13 +9,12 @@ import { useAuthStore } from '@/stores/auth-store';
 import { useAppStore } from '@/stores/app-store';
 import { Button, Input, Badge, Card, CardHeader, Tabs, EmptyState, toast, Modal } from '@/components/ui';
 import { nowBangkok } from '@/lib/utils/date';
-import { formatThaiDate, formatThaiShortDate, formatNumber, formatPercent, formatQty, formatSignedQty } from '@/lib/utils/format';
+import { formatThaiDate, formatPercent, formatQty, formatSignedQty } from '@/lib/utils/format';
 import type { Comparison, ComparisonStatus } from '@/types/database';
 import {
   ArrowLeft,
   Search,
   Calendar,
-  Filter,
   BarChart3,
   CheckCircle2,
   AlertTriangle,
@@ -30,14 +29,11 @@ import {
   ChevronLeft,
   ChevronRight,
   Eye,
-  Star,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
   BarChart,
   Bar,
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -45,7 +41,18 @@ import {
   Legend,
 } from 'recharts';
 
-type FilterStatus = 'all' | ComparisonStatus;
+// 'pending' is split into two UX-only sub-states. The DB still uses
+// status='pending' for both — we distinguish them client-side because
+// they trigger very different actions:
+//   pending_count   → POS exists but manual_quantity is null → go count
+//   pending_explain → both sides exist, diff over tolerance  → write an
+//                     explanation
+type FilterStatus = 'all' | 'pending_count' | 'pending_explain' | 'explained' | 'approved' | 'rejected';
+
+const isPendingCount = (c: { status: ComparisonStatus; manual_quantity: number | null }) =>
+  c.status === 'pending' && c.manual_quantity === null;
+const isPendingExplain = (c: { status: ComparisonStatus; manual_quantity: number | null }) =>
+  c.status === 'pending' && c.manual_quantity !== null;
 
 function getStatusConfig(status: ComparisonStatus, t?: (key: string) => string) {
   switch (status) {
@@ -138,13 +145,8 @@ export default function ComparisonPage() {
   // Trend always shows the current calendar month — the week/month toggle
   // was confusing (entering on a fresh week showed an empty state) and the
   // month range gives enough resolution for daily-stock workflows.
-  const [productViewSearch, setProductViewSearch] = useState('');
-  const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
-
-  // Bookmarks for the per-product table — pinned product_codes float
-  // to the top so the user can babysit a few problem SKUs. Direct
-  // toggle (no confirm modal) since unpinning is non-destructive.
-  const [bookmarkedCodes, setBookmarkedCodes] = useState<Set<string>>(new Set());
+  // Per-product cross-day view + bookmarks moved to /stock/tracking — that
+  // page is the home for cross-day investigation.
 
   const fetchComparisons = useCallback(async () => {
     if (!currentStoreId) return;
@@ -202,57 +204,6 @@ export default function ComparisonPage() {
   }, [fetchComparisons]);
 
   // Fetch POS file URL for the selected date
-  // Load this user's pinned product_codes for the current store.
-  useEffect(() => {
-    if (!currentStoreId || !user?.id) {
-      setBookmarkedCodes(new Set());
-      return;
-    }
-    const supabase = createClient();
-    supabase
-      .from('comparison_product_bookmarks')
-      .select('product_code')
-      .eq('user_id', user.id)
-      .eq('store_id', currentStoreId)
-      .then(({ data }) => {
-        if (data) setBookmarkedCodes(new Set(data.map((r) => r.product_code as string)));
-      });
-  }, [currentStoreId, user?.id]);
-
-  // Optimistic toggle — flip the local Set first so the star icon
-  // responds instantly, then persist to Supabase. Roll back if the
-  // write fails.
-  const togglePin = useCallback(async (productCode: string) => {
-    if (!user?.id || !currentStoreId) return;
-    const wasPinned = bookmarkedCodes.has(productCode);
-    setBookmarkedCodes((prev) => {
-      const next = new Set(prev);
-      if (wasPinned) next.delete(productCode);
-      else next.add(productCode);
-      return next;
-    });
-    const supabase = createClient();
-    const { error } = wasPinned
-      ? await supabase
-          .from('comparison_product_bookmarks')
-          .delete()
-          .eq('user_id', user.id)
-          .eq('store_id', currentStoreId)
-          .eq('product_code', productCode)
-      : await supabase
-          .from('comparison_product_bookmarks')
-          .upsert({ user_id: user.id, store_id: currentStoreId, product_code: productCode }, { onConflict: 'user_id,store_id,product_code' });
-    if (error) {
-      // Roll back the optimistic flip
-      setBookmarkedCodes((prev) => {
-        const next = new Set(prev);
-        if (wasPinned) next.add(productCode);
-        else next.delete(productCode);
-        return next;
-      });
-    }
-  }, [user?.id, currentStoreId, bookmarkedCodes]);
-
   useEffect(() => {
     if (!currentStoreId || !selectedDate) {
       setPosFileUrl(null);
@@ -274,7 +225,9 @@ export default function ComparisonPage() {
       });
   }, [currentStoreId, selectedDate]);
 
-  // Status filter tabs
+  // Status filter tabs — pending split into "pending_count" (POS-only,
+  // staff still has to physically count) and "pending_explain" (both
+  // sides counted, diff over tolerance, owner needs an explanation).
   const statusTabs = useMemo(() => {
     const dateComparisons = selectedDate
       ? comparisons.filter((c) => c.comp_date === selectedDate)
@@ -283,9 +236,14 @@ export default function ComparisonPage() {
     return [
       { id: 'all', label: t('comparison.all'), count: dateComparisons.length },
       {
-        id: 'pending',
-        label: t('comparison.statusPending'),
-        count: dateComparisons.filter((c) => c.status === 'pending').length,
+        id: 'pending_count',
+        label: t('comparison.statusPendingCount'),
+        count: dateComparisons.filter(isPendingCount).length,
+      },
+      {
+        id: 'pending_explain',
+        label: t('comparison.statusPendingExplain'),
+        count: dateComparisons.filter(isPendingExplain).length,
       },
       {
         id: 'explained',
@@ -303,6 +261,14 @@ export default function ComparisonPage() {
         count: dateComparisons.filter((c) => c.status === 'rejected').length,
       },
     ];
+  }, [comparisons, selectedDate, t]);
+
+  // Standalone count for the banner — only the selected date.
+  const needsCountForSelectedDate = useMemo(() => {
+    if (!selectedDate) return 0;
+    return comparisons.filter(
+      (c) => c.comp_date === selectedDate && isPendingCount(c),
+    ).length;
   }, [comparisons, selectedDate]);
 
   // Filtered data
@@ -314,8 +280,12 @@ export default function ComparisonPage() {
       filtered = filtered.filter((c) => c.comp_date === selectedDate);
     }
 
-    // Filter by status
-    if (filterStatus !== 'all') {
+    // Filter by status (pending split into two UX states)
+    if (filterStatus === 'pending_count') {
+      filtered = filtered.filter(isPendingCount);
+    } else if (filterStatus === 'pending_explain') {
+      filtered = filtered.filter(isPendingExplain);
+    } else if (filterStatus !== 'all') {
       filtered = filtered.filter((c) => c.status === filterStatus);
     }
 
@@ -435,103 +405,9 @@ export default function ComparisonPage() {
     return result;
   }, [comparisons]);
 
-  // ── Per-product cross-day view ──
-  const productCrossDayData = useMemo(() => {
-    // Use same date range as trend (current calendar month)
-    const now = nowBangkok();
-    const startDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-    const endDate = now.toISOString().slice(0, 10);
-    const rangeComps = comparisons.filter((c) => c.comp_date >= startDate && c.comp_date <= endDate);
-
-    // Group by product
-    const productMap = new Map<
-      string,
-      {
-        product_code: string;
-        product_name: string;
-        days: Map<string, { difference: number | null; pos_qty: number | null; manual_qty: number | null; status: string }>;
-        totalOverTolerance: number;
-        avgDiff: number;
-        /** Latest day's diff minus the previous day's diff for this
-         *  product, e.g. -169 → -139 = +30 (less missing, improving).
-         *  Null when fewer than 2 days of data exist. */
-        latestDelta: number | null;
-        latestDeltaDates: { from: string; to: string } | null;
-      }
-    >();
-
-    const allDates = [...new Set(rangeComps.map((c) => c.comp_date))].sort();
-
-    for (const c of rangeComps) {
-      if (!productMap.has(c.product_code)) {
-        productMap.set(c.product_code, {
-          product_code: c.product_code,
-          product_name: c.product_name || c.product_code,
-          days: new Map(),
-          totalOverTolerance: 0,
-          avgDiff: 0,
-          latestDelta: null,
-          latestDeltaDates: null,
-        });
-      }
-      const p = productMap.get(c.product_code)!;
-      p.days.set(c.comp_date, {
-        difference: c.difference,
-        pos_qty: c.pos_quantity,
-        manual_qty: c.manual_quantity,
-        status: c.status,
-      });
-      if (!isEffectivelyZero(c.difference) && Math.abs(c.diff_percent || 0) > 5) {
-        p.totalOverTolerance++;
-      }
-    }
-
-    // Calculate avgDiff + latestDelta (last two days that have a diff)
-    for (const p of productMap.values()) {
-      const diffs = [...p.days.values()].filter((d) => d.difference !== null).map((d) => d.difference!);
-      p.avgDiff = diffs.length > 0 ? diffs.reduce((a, b) => a + b, 0) / diffs.length : 0;
-
-      const datedDiffs = [...p.days.entries()]
-        .filter(([, d]) => d.difference !== null)
-        .map(([date, d]) => ({ date, diff: d.difference as number }))
-        .sort((a, b) => a.date.localeCompare(b.date));
-      if (datedDiffs.length >= 2) {
-        const last = datedDiffs[datedDiffs.length - 1];
-        const prev = datedDiffs[datedDiffs.length - 2];
-        // Round to 2 dp to drop floating-point artefacts like
-        // 3.3599999999999994 → 3.36 in the chip.
-        p.latestDelta = Math.round((last.diff - prev.diff) * 100) / 100;
-        p.latestDeltaDates = { from: prev.date, to: last.date };
-      }
-    }
-
-    // Sort: pinned products first, then most problematic
-    let products = [...productMap.values()].sort((a, b) => {
-      const aPinned = bookmarkedCodes.has(a.product_code) ? 1 : 0;
-      const bPinned = bookmarkedCodes.has(b.product_code) ? 1 : 0;
-      if (aPinned !== bPinned) return bPinned - aPinned;
-      return b.totalOverTolerance - a.totalOverTolerance || Math.abs(b.avgDiff) - Math.abs(a.avgDiff);
-    });
-
-    // Filter by search
-    if (productViewSearch.trim()) {
-      const q = productViewSearch.toLowerCase();
-      products = products.filter(
-        (p) => p.product_name.toLowerCase().includes(q) || p.product_code.toLowerCase().includes(q),
-      );
-    }
-
-    return { products: products.slice(0, 50), allDates };
-  }, [comparisons, productViewSearch, bookmarkedCodes]);
-
-  // ── Selected product history (for modal) ──
-  const selectedProductHistory = useMemo(() => {
-    if (!selectedProduct) return [];
-    return comparisons
-      .filter((c) => c.product_code === selectedProduct)
-      .sort((a, b) => a.comp_date.localeCompare(b.comp_date))
-      .slice(-30); // last 30 entries
-  }, [comparisons, selectedProduct]);
+  // (Per-product cross-day view + selected-product history live in
+  // /stock/tracking now — that page is built for cross-day investigation
+  // and consolidates the "babysit a few problem SKUs" workflow.)
 
   const monthLabel = useMemo(() => {
     const [y, m] = selectedMonth.split('-').map(Number);
@@ -880,254 +756,22 @@ export default function ComparisonPage() {
         )}
       </Card>
 
-      {/* ── Per-Product Cross-Day View ── */}
-      <Card padding="none">
-        <CardHeader
-          title={t('comparison.productView')}
-          description={t('comparison.productViewDesc', { range: t('comparison.thisMonth') })}
-        />
-        <div className="px-4 pb-2">
-          <Input
-            placeholder={t('comparison.searchProduct')}
-            leftIcon={<Search className="h-4 w-4" />}
-            value={productViewSearch}
-            onChange={(e) => setProductViewSearch(e.target.value)}
-          />
-        </div>
-
-        {productCrossDayData.products.length === 0 ? (
-          <div className="px-4 pb-4 text-center text-xs text-gray-400">
-            {t('comparison.noDataThisPeriod')}
-          </div>
-        ) : (
-          <>
-            {/* Date header row */}
-            <div className="overflow-x-auto px-4">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-gray-100 dark:border-gray-700">
-                    <th className="sticky left-0 bg-white py-2 pr-2 text-left font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400" style={{ minWidth: 168 }}>
-                      {t('comparison.product')}
-                    </th>
-                    {productCrossDayData.allDates.map((date) => {
-                      const d = new Date(date);
-                      const dayName = d.toLocaleDateString('th-TH', { weekday: 'short', timeZone: 'Asia/Bangkok' });
-                      const dayNum = date.slice(8, 10);
-                      return (
-                        <th key={date} className="px-2 py-2 text-center font-medium text-gray-500 dark:text-gray-400" style={{ minWidth: 56 }}>
-                          <div>{dayName}</div>
-                          <div className="text-[10px] text-gray-400">{dayNum}</div>
-                        </th>
-                      );
-                    })}
-                    <th className="px-2 py-2 text-center font-medium text-gray-500 dark:text-gray-400" style={{ minWidth: 60 }}>
-                      {t('comparison.delta')}
-                    </th>
-                    <th className="px-2 py-2 text-center font-medium text-gray-500 dark:text-gray-400" style={{ minWidth: 50 }}>
-                      {t('comparison.times')}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
-                  {productCrossDayData.products.map((product) => {
-                    const isPinned = bookmarkedCodes.has(product.product_code);
-                    return (
-                    <tr
-                      key={product.product_code}
-                      onClick={() => setSelectedProduct(product.product_code)}
-                      className="cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/30"
-                    >
-                      <td className="sticky left-0 bg-white py-2 pr-2 dark:bg-gray-800" style={{ minWidth: 168 }}>
-                        <div className="flex items-start gap-1.5">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              togglePin(product.product_code);
-                            }}
-                            aria-label={isPinned ? t('comparison.unpinAria') : t('comparison.pinAria')}
-                            className={cn(
-                              'mt-0.5 shrink-0 rounded p-0.5 transition-colors',
-                              isPinned
-                                ? 'text-amber-500 hover:text-amber-600'
-                                : 'text-gray-300 hover:text-amber-400 dark:text-gray-600 dark:hover:text-amber-400',
-                            )}
-                          >
-                            <Star className={cn('h-3.5 w-3.5', isPinned && 'fill-current')} />
-                          </button>
-                          <div className="min-w-0">
-                            <p className="truncate text-xs font-medium text-gray-900 dark:text-white">
-                              {product.product_name}
-                            </p>
-                            <p className="truncate text-[10px] text-gray-400">{product.product_code}</p>
-                          </div>
-                        </div>
-                      </td>
-                      {productCrossDayData.allDates.map((date) => {
-                        const day = product.days.get(date);
-                        if (!day) {
-                          return (
-                            <td key={date} className="px-2 py-2 text-center text-gray-300 dark:text-gray-600">
-                              —
-                            </td>
-                          );
-                        }
-                        const diff = day.difference;
-                        const isMatch = isEffectivelyZero(diff);
-                        let cellBg = 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400';
-                        if (!isMatch) {
-                          cellBg = 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400';
-                        }
-                        return (
-                          <td key={date} className="px-2 py-2 text-center">
-                            <span className={cn('inline-block min-w-[32px] rounded-md px-1.5 py-0.5 text-[11px] font-bold', cellBg)}>
-                              {isMatch ? '✓' : formatSignedQty(diff)}
-                            </span>
-                          </td>
-                        );
-                      })}
-                      <td className="px-2 py-2 text-center">
-                        {product.latestDelta === null ? (
-                          <span className="text-gray-300 dark:text-gray-600">—</span>
-                        ) : product.latestDelta === 0 ? (
-                          <span className="inline-block rounded-md bg-gray-100 px-1.5 py-0.5 text-[11px] font-bold text-gray-500 dark:bg-gray-700/40 dark:text-gray-400">
-                            0
-                          </span>
-                        ) : (
-                          <span
-                            className={cn(
-                              'inline-block rounded-md px-1.5 py-0.5 text-[11px] font-bold',
-                              product.latestDelta > 0
-                                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400'
-                                : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400',
-                            )}
-                            title={product.latestDeltaDates ? t('comparison.deltaTooltip', { from: product.latestDeltaDates.from.slice(8, 10), to: product.latestDeltaDates.to.slice(8, 10) }) : ''}
-                          >
-                            {product.latestDelta > 0 ? '+' : ''}
-                            {product.latestDelta}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-2 py-2 text-center">
-                        {product.totalOverTolerance > 0 ? (
-                          <span className="inline-block rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700 dark:bg-red-900/40 dark:text-red-400">
-                            {product.totalOverTolerance}
-                          </span>
-                        ) : (
-                          <span className="text-gray-300 dark:text-gray-600">0</span>
-                        )}
-                      </td>
-                    </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <div className="px-4 pb-3 pt-1 text-right text-[10px] text-gray-400">
-              {t('comparison.showingProducts', { count: productCrossDayData.products.length })}
-            </div>
-          </>
-        )}
-      </Card>
-
-      {/* ── Product History Modal ── */}
-      <Modal
-        isOpen={!!selectedProduct}
-        onClose={() => setSelectedProduct(null)}
-        title={
-          selectedProduct
-            ? t('comparison.historyTitle', { name: comparisons.find((c) => c.product_code === selectedProduct)?.product_name || selectedProduct })
-            : ''
-        }
-        size="full"
+      {/* Per-product cross-day grid lives in /stock/tracking — link there
+          for users who used to drill into a single SKU's history. */}
+      <a
+        href="/stock/tracking"
+        className="flex items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700/50"
       >
-        <div className="max-h-[60vh] overflow-y-auto">
-          {selectedProductHistory.length === 0 ? (
-            <p className="py-8 text-center text-sm text-gray-400">{t('comparison.noData')}</p>
-          ) : (
-            <>
-              {/* Mini line chart */}
-              <div className="mb-4">
-                <ResponsiveContainer width="100%" height={160}>
-                  <LineChart data={selectedProductHistory.map((h) => ({
-                    date: h.comp_date,
-                    label: formatThaiShortDate(h.comp_date),
-                    difference: h.difference ?? 0,
-                    pos: h.pos_quantity ?? 0,
-                    manual: h.manual_quantity ?? 0,
-                  }))}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-                    <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-                    <YAxis tick={{ fontSize: 10 }} width={30} />
-                    <Tooltip
-                      contentStyle={{ fontSize: 11, borderRadius: 8 }}
-                      formatter={(value: any, name: any) => {
-                        const labels: Record<string, string> = { difference: t('comparison.difference'), pos: 'POS', manual: t('comparison.manualCount') };
-                        return [value, labels[name] || name];
-                      }}
-                    />
-                    <Legend formatter={(value: any) => {
-                      const labels: Record<string, string> = { difference: t('comparison.difference'), pos: 'POS', manual: t('comparison.manualCount') };
-                      return <span className="text-[10px]">{labels[value] || value}</span>;
-                    }} />
-                    <Line type="monotone" dataKey="pos" stroke="#6366f1" strokeWidth={2} dot={{ r: 3 }} />
-                    <Line type="monotone" dataKey="manual" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} />
-                    <Line type="monotone" dataKey="difference" stroke="#ef4444" strokeWidth={2} dot={{ r: 3 }} strokeDasharray="5 5" />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-
-              {/* History table */}
-              <div className="space-y-2">
-                {selectedProductHistory.map((item) => {
-                  const diffColor = getDiffColor(item.difference, item.diff_percent);
-                  const statusConfig = getStatusConfig(item.status, t);
-                  return (
-                    <div key={item.id} className={cn('rounded-lg border p-3', diffColor.ring)}>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium text-gray-900 dark:text-white">
-                          {formatThaiDate(item.comp_date)}
-                        </span>
-                        <Badge variant={statusConfig.variant}>{statusConfig.label}</Badge>
-                      </div>
-                      <div className="mt-2 grid grid-cols-4 gap-2 text-xs">
-                        <div>
-                          <span className="text-gray-400">POS: </span>
-                          <span className="font-medium">{formatQty(item.pos_quantity)}</span>
-                        </div>
-                        <div>
-                          <span className="text-gray-400">{t('comparison.countShort')}: </span>
-                          <span className="font-medium">{formatQty(item.manual_quantity)}</span>
-                        </div>
-                        <div>
-                          <span className="text-gray-400">{t('comparison.diffShort')}: </span>
-                          <span className={cn('font-bold', diffColor.text)}>
-                            {formatSignedQty(item.difference)}
-                          </span>
-                        </div>
-                        <div>
-                          <span className={cn('rounded-full px-1.5 py-0.5 text-[10px] font-semibold', diffColor.bg, diffColor.text)}>
-                            {t(diffColor.labelKey)}
-                            {!isEffectivelyZero(item.difference) && item.diff_percent !== null
-                              ? ` (${formatPercent(item.diff_percent)})`
-                              : ''}
-                          </span>
-                        </div>
-                      </div>
-                      {item.explanation && (
-                        <div className="mt-2 rounded-lg bg-blue-50 p-2 dark:bg-blue-900/20">
-                          <p className="text-[10px] font-medium text-blue-600 dark:text-blue-400">{t('comparison.explanationLabel')}:</p>
-                          <p className="text-xs text-blue-700 dark:text-blue-300">{item.explanation}</p>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
+        <div>
+          <p className="text-sm font-semibold text-gray-900 dark:text-white">
+            {t('comparison.productView')}
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            {t('comparison.productViewMovedHint')}
+          </p>
         </div>
-      </Modal>
+        <ChevronRight className="h-4 w-4 text-gray-400" />
+      </a>
 
       {/* Search */}
       <Input
@@ -1136,6 +780,32 @@ export default function ComparisonPage() {
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
       />
+
+      {/* Needs-count banner — only when the selected date has POS-only
+          rows. Staff should finish counting before owner reviews
+          variances, so we surface this above the explain tabs. */}
+      {needsCountForSelectedDate > 0 && (
+        <div className="flex flex-col gap-3 rounded-xl border border-amber-300 bg-amber-50 p-3 sm:flex-row sm:items-center sm:justify-between dark:border-amber-700/50 dark:bg-amber-900/20">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                {t('comparison.needsCountBannerTitle', { count: needsCountForSelectedDate })}
+              </p>
+              <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">
+                {t('comparison.needsCountBannerHint')}
+              </p>
+            </div>
+          </div>
+          <a
+            href={`/stock/daily-check?date=${selectedDate}&supplementary=1`}
+            className="inline-flex items-center justify-center gap-1 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-amber-700 sm:shrink-0 dark:bg-amber-500 dark:hover:bg-amber-600"
+          >
+            {t('comparison.needsCountBannerCta')}
+            <ChevronRight className="h-3.5 w-3.5" />
+          </a>
+        </div>
+      )}
 
       {/* Status Filter Tabs */}
       <Tabs
@@ -1195,11 +865,21 @@ export default function ComparisonPage() {
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                   {filteredComparisons.map((item) => {
+                    // POS-only rows render with neutral styling — the
+                    // -100% diff is mathematically real but operationally
+                    // meaningless (staff just hasn't counted yet).
+                    const needsCount = isPendingCount(item);
                     const diffColor = getDiffColor(
                       item.difference,
                       item.diff_percent
                     );
-                    const statusConfig = getStatusConfig(item.status, t);
+                    const statusConfig = needsCount
+                      ? {
+                          label: t('comparison.statusPendingCount'),
+                          variant: 'info' as const,
+                          icon: Clock,
+                        }
+                      : getStatusConfig(item.status, t);
                     return (
                       <tr
                         key={item.id}
@@ -1216,37 +896,46 @@ export default function ComparisonPage() {
                         <td className="px-4 py-3 text-right font-medium text-gray-900 dark:text-white">
                           {formatQty(item.pos_quantity)}
                         </td>
-                        <td className="px-4 py-3 text-right font-medium text-gray-900 dark:text-white">
-                          {formatQty(item.manual_quantity)}
+                        <td className={cn(
+                          'px-4 py-3 text-right font-medium',
+                          needsCount
+                            ? 'text-blue-600 italic dark:text-blue-400'
+                            : 'text-gray-900 dark:text-white',
+                        )}>
+                          {needsCount ? t('comparison.statusPendingCount') : formatQty(item.manual_quantity)}
                         </td>
-                        <td
-                          className={cn(
-                            'px-4 py-3 text-right font-bold',
-                            diffColor.text
-                          )}
-                        >
-                          {formatSignedQty(item.difference)}
+                        <td className={cn(
+                          'px-4 py-3 text-right font-bold',
+                          needsCount ? 'text-gray-300 dark:text-gray-600' : diffColor.text,
+                        )}>
+                          {needsCount ? '—' : formatSignedQty(item.difference)}
                         </td>
-                        <td
-                          className={cn(
-                            'px-4 py-3 text-right text-xs font-medium',
-                            diffColor.text
-                          )}
-                        >
-                          {item.diff_percent !== null
-                            ? formatPercent(item.diff_percent)
-                            : '-'}
+                        <td className={cn(
+                          'px-4 py-3 text-right text-xs font-medium',
+                          needsCount ? 'text-gray-300 dark:text-gray-600' : diffColor.text,
+                        )}>
+                          {needsCount
+                            ? '—'
+                            : item.diff_percent !== null
+                              ? formatPercent(item.diff_percent)
+                              : '-'}
                         </td>
                         <td className="px-4 py-3 text-center">
-                          <span
-                            className={cn(
-                              'inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold',
-                              diffColor.bg,
-                              diffColor.text
-                            )}
-                          >
-                            {t(diffColor.labelKey)}
-                          </span>
+                          {needsCount ? (
+                            <span className="inline-block rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-900/20 dark:text-blue-400">
+                              {t('comparison.statusPendingCount')}
+                            </span>
+                          ) : (
+                            <span
+                              className={cn(
+                                'inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold',
+                                diffColor.bg,
+                                diffColor.text,
+                              )}
+                            >
+                              {t(diffColor.labelKey)}
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-center">
                           <Badge variant={statusConfig.variant}>
@@ -1264,11 +953,18 @@ export default function ComparisonPage() {
           {/* Mobile Card List */}
           <div className="space-y-2 md:hidden">
             {filteredComparisons.map((item) => {
+              const needsCount = isPendingCount(item);
               const diffColor = getDiffColor(
                 item.difference,
                 item.diff_percent
               );
-              const statusConfig = getStatusConfig(item.status, t);
+              const statusConfig = needsCount
+                ? {
+                    label: t('comparison.statusPendingCount'),
+                    variant: 'info' as const,
+                    icon: Clock,
+                  }
+                : getStatusConfig(item.status, t);
               const DiffIcon = isEffectivelyZero(item.difference)
                 ? Minus
                 : (item.difference as number) > 0
@@ -1280,7 +976,9 @@ export default function ComparisonPage() {
                   key={item.id}
                   className={cn(
                     'rounded-xl bg-white p-4 shadow-sm ring-1 dark:bg-gray-800',
-                    diffColor.ring
+                    needsCount
+                      ? 'ring-blue-200 dark:ring-blue-800'
+                      : diffColor.ring,
                   )}
                 >
                   <div className="flex items-start justify-between">
@@ -1308,38 +1006,49 @@ export default function ComparisonPage() {
                       <p className="text-[10px] text-gray-400 dark:text-gray-500">
                         {t('comparison.manualCount')}
                       </p>
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">
-                        {formatQty(item.manual_quantity)}
+                      <p className={cn(
+                        'text-sm font-medium',
+                        needsCount
+                          ? 'italic text-blue-600 dark:text-blue-400'
+                          : 'text-gray-900 dark:text-white',
+                      )}>
+                        {needsCount ? t('comparison.statusPendingCount') : formatQty(item.manual_quantity)}
                       </p>
                     </div>
                     <div>
                       <p className="text-[10px] text-gray-400 dark:text-gray-500">
                         {t('comparison.difference')}
                       </p>
-                      <div className="flex items-center gap-1">
-                        <DiffIcon
-                          className={cn('h-3.5 w-3.5', diffColor.text)}
-                        />
-                        <p className={cn('text-sm font-bold', diffColor.text)}>
-                          {formatSignedQty(item.difference)}
-                        </p>
-                      </div>
+                      {needsCount ? (
+                        <p className="text-sm font-bold text-gray-300 dark:text-gray-600">—</p>
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          <DiffIcon className={cn('h-3.5 w-3.5', diffColor.text)} />
+                          <p className={cn('text-sm font-bold', diffColor.text)}>
+                            {formatSignedQty(item.difference)}
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
 
                   <div className="mt-2 flex items-center justify-between">
-                    <span
-                      className={cn(
+                    {needsCount ? (
+                      <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-900/20 dark:text-blue-400">
+                        {t('comparison.statusPendingCount')}
+                      </span>
+                    ) : (
+                      <span className={cn(
                         'rounded-full px-2 py-0.5 text-[10px] font-semibold',
                         diffColor.bg,
-                        diffColor.text
-                      )}
-                    >
-                      {t(diffColor.labelKey)}
-                      {!isEffectivelyZero(item.difference) &&
-                        item.diff_percent !== null &&
-                        ` (${formatPercent(item.diff_percent)})`}
-                    </span>
+                        diffColor.text,
+                      )}>
+                        {t(diffColor.labelKey)}
+                        {!isEffectivelyZero(item.difference) &&
+                          item.diff_percent !== null &&
+                          ` (${formatPercent(item.diff_percent)})`}
+                      </span>
+                    )}
                     {item.explanation && (
                       <span className="text-[10px] text-gray-400 dark:text-gray-500">
                         {t('comparison.hasExplanation')}
@@ -1399,13 +1108,23 @@ export default function ComparisonPage() {
           {/* Items list */}
           <div className="space-y-2">
             {detailItems.map((item) => {
+              const needsCount = isPendingCount(item);
               const diffColor = getDiffColor(item.difference, item.diff_percent);
-              const statusConfig = getStatusConfig(item.status, t);
+              const statusConfig = needsCount
+                ? {
+                    label: t('comparison.statusPendingCount'),
+                    variant: 'info' as const,
+                    icon: Clock,
+                  }
+                : getStatusConfig(item.status, t);
               const matchHere = isEffectivelyZero(item.difference);
               return (
                 <div
                   key={item.id}
-                  className={cn('rounded-lg border p-3', diffColor.ring)}
+                  className={cn(
+                    'rounded-lg border p-3',
+                    needsCount ? 'ring-blue-200 dark:ring-blue-800' : diffColor.ring,
+                  )}
                 >
                   <div className="flex items-start justify-between">
                     <div>
@@ -1430,29 +1149,41 @@ export default function ComparisonPage() {
                     </div>
                     <div>
                       <span className="text-gray-400">{t('comparison.countShort')}: </span>
-                      <span className="font-medium text-gray-700 dark:text-gray-200">
-                        {formatQty(item.manual_quantity)}
+                      <span className={cn(
+                        'font-medium',
+                        needsCount
+                          ? 'italic text-blue-600 dark:text-blue-400'
+                          : 'text-gray-700 dark:text-gray-200',
+                      )}>
+                        {needsCount ? t('comparison.statusPendingCount') : formatQty(item.manual_quantity)}
                       </span>
                     </div>
                     <div>
                       <span className="text-gray-400">{t('comparison.diffShort')}: </span>
-                      <span className={cn('font-bold', diffColor.text)}>
-                        {formatSignedQty(item.difference)}
+                      <span className={cn(
+                        'font-bold',
+                        needsCount ? 'text-gray-300 dark:text-gray-600' : diffColor.text,
+                      )}>
+                        {needsCount ? '—' : formatSignedQty(item.difference)}
                       </span>
                     </div>
                     <div>
-                      <span
-                        className={cn(
+                      {needsCount ? (
+                        <span className="rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-900/20 dark:text-blue-400">
+                          {t('comparison.statusPendingCount')}
+                        </span>
+                      ) : (
+                        <span className={cn(
                           'rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
                           diffColor.bg,
                           diffColor.text,
-                        )}
-                      >
-                        {t(diffColor.labelKey)}
-                        {!matchHere && item.diff_percent !== null
-                          ? ` (${formatPercent(item.diff_percent)})`
-                          : ''}
-                      </span>
+                        )}>
+                          {t(diffColor.labelKey)}
+                          {!matchHere && item.diff_percent !== null
+                            ? ` (${formatPercent(item.diff_percent)})`
+                            : ''}
+                        </span>
+                      )}
                     </div>
                   </div>
 

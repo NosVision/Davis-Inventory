@@ -93,6 +93,7 @@ export default function CreateStoreWizardPage() {
       notify_time_daily: notifyTime,
       notify_days: notifyDays,
       diff_tolerance: 5,
+      diff_tolerance_unit: 0.4,
     });
 
     // 3. Assign owner to store
