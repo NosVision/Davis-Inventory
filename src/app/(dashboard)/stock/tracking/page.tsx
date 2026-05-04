@@ -86,6 +86,21 @@ type SortBy = 'pinned_first' | 'over_tolerance' | 'recent_pending' | 'slope';
 const isEffectivelyZero = (n: number | null | undefined) =>
   n === null || n === undefined || Math.abs(n) < 0.005;
 
+// Default tolerances — kept in sync with /stock/comparison and the
+// compare API's auto-approve rule. Hard-coded here because we don't
+// pass per-store store_settings into the page; if any store ever
+// diverges we'll thread the live values through.
+const PERCENT_TOLERANCE = 5;
+const UNIT_TOLERANCE = 0.4;
+
+const isWithinTolerance = (difference: number | null, diffPercent: number | null) => {
+  if (difference === null) return false;
+  return (
+    Math.abs(difference) <= UNIT_TOLERANCE ||
+    Math.abs(diffPercent || 0) <= PERCENT_TOLERANCE
+  );
+};
+
 function classifyTrend(slope: number): 'worsening' | 'improving' | 'stable' {
   if (slope > 0.05) return 'worsening';
   if (slope < -0.05) return 'improving';
@@ -279,7 +294,7 @@ export default function StockTrackingPage() {
       // just "not counted yet", so they don't bump any of the
       // tracking-relevant counters.
       if (c.manual_quantity !== null) {
-        if (!isEffectivelyZero(c.difference) && Math.abs(c.diff_percent || 0) > 5) {
+        if (!isEffectivelyZero(c.difference) && !isWithinTolerance(c.difference, c.diff_percent)) {
           p.totalOverTolerance++;
         }
         if (c.status === 'pending') p.pendingCount++;
@@ -851,7 +866,7 @@ export default function StockTrackingPage() {
                         }
                         const diff = day.difference;
                         const isMatch = isEffectivelyZero(diff);
-                        const overTol = !isMatch && Math.abs(day.diff_percent || 0) > 5;
+                        const overTol = !isMatch && !isWithinTolerance(diff, day.diff_percent);
                         let cellBg = 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400';
                         if (overTol) {
                           cellBg = 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400';

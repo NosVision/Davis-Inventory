@@ -89,6 +89,22 @@ function getStatusConfig(status: ComparisonStatus, t?: (key: string) => string) 
 const isEffectivelyZero = (n: number | null) =>
   n === null || Math.abs(n) < 0.005;
 
+// Default tolerances. The compare API reads per-store values from
+// store_settings, but the UI hard-codes the same defaults so the
+// "level" chip + summary stats agree with the auto-approve rule. If a
+// store changes its tolerances and we ever surface a mismatch, we'll
+// thread the live values through here.
+const PERCENT_TOLERANCE = 5;
+const UNIT_TOLERANCE = 0.4;
+
+const isWithinTolerance = (difference: number | null, diffPercent: number | null) => {
+  if (difference === null) return false;
+  return (
+    Math.abs(difference) <= UNIT_TOLERANCE ||
+    Math.abs(diffPercent || 0) <= PERCENT_TOLERANCE
+  );
+};
+
 function getDiffColor(difference: number | null, diffPercent: number | null) {
   if (isEffectivelyZero(difference)) {
     return {
@@ -98,8 +114,7 @@ function getDiffColor(difference: number | null, diffPercent: number | null) {
       labelKey: 'comparison.match',
     };
   }
-  const absPct = Math.abs(diffPercent || 0);
-  if (absPct <= 5) {
+  if (isWithinTolerance(difference, diffPercent)) {
     return {
       bg: 'bg-yellow-50 dark:bg-yellow-900/20',
       text: 'text-yellow-700 dark:text-yellow-400',
@@ -313,12 +328,12 @@ export default function ComparisonPage() {
     const withinTolerance = dateItems.filter(
       (c) =>
         !isEffectivelyZero(c.difference) &&
-        Math.abs(c.diff_percent || 0) <= 5
+        isWithinTolerance(c.difference, c.diff_percent),
     ).length;
     const overTolerance = dateItems.filter(
       (c) =>
         !isEffectivelyZero(c.difference) &&
-        Math.abs(c.diff_percent || 0) > 5
+        !isWithinTolerance(c.difference, c.diff_percent),
     ).length;
 
     return { total, match, withinTolerance, overTolerance };
@@ -345,12 +360,12 @@ export default function ComparisonPage() {
         withinTolerance: items.filter(
           (i) =>
             !isEffectivelyZero(i.difference) &&
-            Math.abs(i.diff_percent || 0) <= 5,
+            isWithinTolerance(i.difference, i.diff_percent),
         ).length,
         overTolerance: items.filter(
           (i) =>
             !isEffectivelyZero(i.difference) &&
-            Math.abs(i.diff_percent || 0) > 5,
+            !isWithinTolerance(i.difference, i.diff_percent),
         ).length,
         pending: items.filter((i) => i.status === 'pending').length,
         explained: items.filter((i) => i.status === 'explained').length,
@@ -393,10 +408,10 @@ export default function ComparisonPage() {
         total: items.length,
         match: items.filter((i) => isEffectivelyZero(i.difference)).length,
         withinTolerance: items.filter(
-          (i) => !isEffectivelyZero(i.difference) && Math.abs(i.diff_percent || 0) <= 5,
+          (i) => !isEffectivelyZero(i.difference) && isWithinTolerance(i.difference, i.diff_percent),
         ).length,
         overTolerance: items.filter(
-          (i) => !isEffectivelyZero(i.difference) && Math.abs(i.diff_percent || 0) > 5,
+          (i) => !isEffectivelyZero(i.difference) && !isWithinTolerance(i.difference, i.diff_percent),
         ).length,
       });
     }
