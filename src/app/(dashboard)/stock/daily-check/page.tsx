@@ -871,30 +871,31 @@ export default function DailyCheckPage() {
         </span>
       </div>
 
-      {/* Locked-after-compare banner — surfaces the read-only state at
-          the top of the page so staff don't waste time hunting for an
-          input that won't accept changes. */}
+      {/* Locked-after-compare banner — same indigo "เปรียบเทียบแล้ว"
+          treatment as the /stock summary banner so the user reads the
+          two pages as a single state, not two visually unrelated
+          notices. */}
       {comparedCodes.size > 0 && (
-        <div className="flex flex-col gap-3 rounded-xl border border-gray-300 bg-gray-50 p-3 sm:flex-row sm:items-center sm:justify-between dark:border-gray-700 dark:bg-gray-800/50">
-          <div className="flex items-start gap-2">
-            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-gray-500 dark:text-gray-400" />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-                {t('dailyCheck.lockedComparedBannerTitle')}
-              </p>
-              <p className="mt-0.5 text-xs text-gray-600 dark:text-gray-400">
-                {t('dailyCheck.lockedComparedBannerHint')}
-              </p>
-            </div>
+        <a
+          href={`/stock/comparison?date=${businessDate}`}
+          className="flex items-center gap-3 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 transition-colors hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-900/20 dark:hover:bg-indigo-900/30"
+        >
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-900/40">
+            <CheckCircle2 className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
           </div>
-          <a
-            href={`/stock/comparison?date=${businessDate}`}
-            className="inline-flex items-center justify-center gap-1 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100 sm:shrink-0 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
-          >
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-indigo-800 dark:text-indigo-200">
+              {t('dailyCheck.lockedComparedBannerTitle')}
+            </p>
+            <p className="mt-0.5 text-xs text-indigo-600 dark:text-indigo-400">
+              {t('dailyCheck.lockedComparedBannerHint')}
+            </p>
+          </div>
+          <span className="hidden shrink-0 items-center gap-1 text-xs font-medium text-indigo-700 sm:inline-flex dark:text-indigo-300">
             {t('dailyCheck.lockedComparedBannerCta')}
             <ArrowRight className="h-3.5 w-3.5" />
-          </a>
-        </div>
+          </span>
+        </a>
       )}
 
       {/* "ต้องนับเพิ่ม" prominent counter — opens with a one-tap filter

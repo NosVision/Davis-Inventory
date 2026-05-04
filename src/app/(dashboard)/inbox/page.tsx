@@ -4,13 +4,25 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { Card, CardHeader, CardContent } from '@/components/ui';
-import { Inbox, ClipboardCheck, Wine, Package, Repeat, Truck, ArrowRight, Loader2, RefreshCw, TrendingUp, AlertTriangle, Banknote, ChevronDown, ChevronUp } from 'lucide-react';
+import { Inbox, ClipboardCheck, ClipboardList, FileText, ScanLine, Wine, Package, Repeat, Truck, ArrowRight, Loader2, RefreshCw, TrendingUp, AlertTriangle, Banknote, ChevronDown, ChevronUp } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuthStore } from '@/stores/auth-store';
 import { cn } from '@/lib/utils/cn';
 import { formatThaiDate } from '@/lib/utils/format';
 
-type Category = 'stock_explain' | 'bar_confirm' | 'customer_request' | 'borrow_approval' | 'transfer_confirm';
+// Stock variance flow surfaces three different waiting states to the
+// owner — staff still needs to write an explanation, staff still needs
+// to count the supplementary POS items, and owner needs to approve
+// already-explained rows. We list them as separate categories so the
+// owner can tell at a glance which lever to pull next.
+type Category =
+  | 'stock_pending_explain'
+  | 'stock_pending_count'
+  | 'stock_approve'
+  | 'bar_confirm'
+  | 'customer_request'
+  | 'borrow_approval'
+  | 'transfer_confirm';
 
 interface PendingItem {
   id: string;
@@ -57,7 +69,9 @@ interface DailySummary {
 }
 
 const CATEGORY_META: Record<Category, { icon: typeof Inbox; titleKey: string; color: string }> = {
-  stock_explain: { icon: ClipboardCheck, titleKey: 'inbox.stockExplain', color: 'amber' },
+  stock_pending_count: { icon: ScanLine, titleKey: 'inbox.stockPendingCount', color: 'red' },
+  stock_pending_explain: { icon: FileText, titleKey: 'inbox.stockPendingExplain', color: 'amber' },
+  stock_approve: { icon: ClipboardList, titleKey: 'inbox.stockApprove', color: 'violet' },
   bar_confirm: { icon: Wine, titleKey: 'inbox.barConfirm', color: 'emerald' },
   customer_request: { icon: Package, titleKey: 'inbox.customerRequest', color: 'green' },
   borrow_approval: { icon: Repeat, titleKey: 'inbox.borrowApproval', color: 'rose' },
@@ -99,13 +113,14 @@ export default function InboxPage() {
         .order('store_name');
       const storeMap = new Map((stores || []).map((s) => [s.id, s.store_name as string]));
 
-      // 2. Pending counts grouped per store/date.
-      const [explainRes, barRes, custReqRes, borrowRes, transferRes] = await Promise.all([
-        // Stock explanations awaiting owner approval — group by store + comp_date
+      // 2. Pending counts grouped per store/date. Pull pending +
+      //    explained comparison rows in one query and split them by
+      //    status / manual_quantity client-side; saves a round trip.
+      const [stockRes, barRes, custReqRes, borrowRes, transferRes] = await Promise.all([
         supabase
           .from('comparisons')
-          .select('id, store_id, comp_date, product_name, product_code')
-          .eq('status', 'explained')
+          .select('id, store_id, comp_date, product_name, product_code, status, manual_quantity')
+          .in('status', ['pending', 'explained'])
           .order('comp_date', { ascending: false }),
         // Deposits awaiting bar confirm
         supabase
@@ -135,26 +150,67 @@ export default function InboxPage() {
 
       const next: PendingItem[] = [];
 
-      // Stock explanations — aggregate per (store_id, comp_date)
-      const explainGroups = new Map<string, { store_id: string; comp_date: string; rows: typeof explainRes.data }>();
-      for (const row of (explainRes.data || []) as Array<{ id: string; store_id: string; comp_date: string; product_name: string | null; product_code: string }>) {
+      type StockRow = {
+        id: string;
+        store_id: string;
+        comp_date: string;
+        product_name: string | null;
+        product_code: string;
+        status: string;
+        manual_quantity: number | null;
+      };
+
+      // Three buckets for the variance flow. Each bucket aggregates per
+      // (store, comp_date) and lands as its own category card so the
+      // owner can pivot to the right page.
+      const buckets: Record<
+        'stock_pending_count' | 'stock_pending_explain' | 'stock_approve',
+        Map<string, { store_id: string; comp_date: string; rows: StockRow[] }>
+      > = {
+        stock_pending_count: new Map(),
+        stock_pending_explain: new Map(),
+        stock_approve: new Map(),
+      };
+
+      const hrefFor: Record<keyof typeof buckets, (compDate: string) => string> = {
+        stock_pending_count: (d) => `/stock/comparison?date=${d}`,
+        stock_pending_explain: () => `/stock/explanation`,
+        stock_approve: (d) => `/stock/approval?date=${d}`,
+      };
+
+      for (const row of ((stockRes.data || []) as StockRow[])) {
+        let bucketKey: keyof typeof buckets;
+        if (row.status === 'explained') {
+          bucketKey = 'stock_approve';
+        } else if (row.manual_quantity === null) {
+          // POS-only rows (manual=null, status='pending') — staff
+          // still has to physically count. Surfaced separately because
+          // there's no explanation to write yet.
+          bucketKey = 'stock_pending_count';
+        } else {
+          bucketKey = 'stock_pending_explain';
+        }
         const key = `${row.store_id}__${row.comp_date}`;
-        const g = explainGroups.get(key);
-        if (g) g.rows!.push(row);
-        else explainGroups.set(key, { store_id: row.store_id, comp_date: row.comp_date, rows: [row] });
+        const bucket = buckets[bucketKey];
+        const g = bucket.get(key);
+        if (g) g.rows.push(row);
+        else bucket.set(key, { store_id: row.store_id, comp_date: row.comp_date, rows: [row] });
       }
-      for (const g of explainGroups.values()) {
-        const preview = (g.rows || []).slice(0, 3).map((r) => r.product_name || r.product_code).join(', ');
-        next.push({
-          id: `stock_${g.store_id}_${g.comp_date}`,
-          category: 'stock_explain',
-          store_id: g.store_id,
-          store_name: storeMap.get(g.store_id) || '-',
-          comp_date: g.comp_date,
-          count: g.rows?.length || 0,
-          href: `/stock/approval?date=${g.comp_date}`,
-          preview,
-        });
+
+      for (const [category, bucket] of Object.entries(buckets) as Array<[keyof typeof buckets, typeof buckets[keyof typeof buckets]]>) {
+        for (const g of bucket.values()) {
+          const preview = g.rows.slice(0, 3).map((r) => r.product_name || r.product_code).join(', ');
+          next.push({
+            id: `${category}_${g.store_id}_${g.comp_date}`,
+            category,
+            store_id: g.store_id,
+            store_name: storeMap.get(g.store_id) || '-',
+            comp_date: g.comp_date,
+            count: g.rows.length,
+            href: hrefFor[category](g.comp_date),
+            preview,
+          });
+        }
       }
 
       for (const row of (barRes.data || []) as Array<{ id: string; store_id: string; deposit_code: string; customer_name: string; product_name: string; created_at: string }>) {
