@@ -607,7 +607,7 @@ export default function InboxPage() {
               </p>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-3 text-right">
-              {(['stock_explain', 'bar_confirm', 'customer_request', 'borrow_approval', 'transfer_confirm'] as Category[]).map((c) => {
+              {(['stock_pending_count', 'stock_pending_explain', 'stock_approve', 'bar_confirm', 'customer_request', 'borrow_approval', 'transfer_confirm'] satisfies readonly Category[]).map((c) => {
                 const total = items.filter((i) => i.category === c).reduce((s, x) => s + x.count, 0);
                 if (total === 0) return null;
                 const meta = CATEGORY_META[c];
@@ -661,7 +661,7 @@ export default function InboxPage() {
             <CardContent>
               <div className="space-y-1.5">
                 {/* Group items by category */}
-                {(['stock_explain', 'bar_confirm', 'customer_request', 'borrow_approval', 'transfer_confirm'] as Category[]).map((cat) => {
+                {(['stock_pending_count', 'stock_pending_explain', 'stock_approve', 'bar_confirm', 'customer_request', 'borrow_approval', 'transfer_confirm'] satisfies readonly Category[]).map((cat) => {
                   const catItems = g.items.filter((i) => i.category === cat);
                   if (catItems.length === 0) return null;
                   const meta = CATEGORY_META[cat];
