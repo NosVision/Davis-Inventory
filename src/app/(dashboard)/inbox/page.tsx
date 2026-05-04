@@ -2,11 +2,13 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Card, CardHeader, CardContent } from '@/components/ui';
 import { Inbox, ClipboardCheck, ClipboardList, FileText, ScanLine, Wine, Package, Repeat, Truck, ArrowRight, Loader2, RefreshCw, TrendingUp, AlertTriangle, Banknote, ChevronDown, ChevronUp } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuthStore } from '@/stores/auth-store';
+import { useAppStore } from '@/stores/app-store';
 import { cn } from '@/lib/utils/cn';
 import { formatThaiDate } from '@/lib/utils/format';
 
@@ -81,6 +83,25 @@ const CATEGORY_META: Record<Category, { icon: typeof Inbox; titleKey: string; co
 export default function InboxPage() {
   const t = useTranslations();
   const { user } = useAuthStore();
+  const setCurrentStoreId = useAppStore((s) => s.setCurrentStoreId);
+  const currentStoreId = useAppStore((s) => s.currentStoreId);
+  const router = useRouter();
+
+  // Inbox items belong to a specific store, but the rest of the app
+  // reads `currentStoreId` from the global app-store. Clicking through
+  // from "รอชี้แจงผลต่าง · Baccarat" used to land on /stock/explanation
+  // showing whatever store was selected in the top-right switcher.
+  // Switch the active store first when it differs, then navigate.
+  const handleItemClick = useCallback(
+    (e: React.MouseEvent<HTMLAnchorElement>, storeId: string, href: string) => {
+      if (storeId !== currentStoreId) {
+        e.preventDefault();
+        setCurrentStoreId(storeId);
+        router.push(href);
+      }
+    },
+    [currentStoreId, setCurrentStoreId, router],
+  );
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<PendingItem[]>([]);
   const [summary, setSummary] = useState<DailySummary | null>(null);
@@ -728,6 +749,7 @@ export default function InboxPage() {
                           <Link
                             key={item.id}
                             href={item.href}
+                            onClick={(e) => handleItemClick(e, item.store_id, item.href)}
                             className="flex items-center justify-between rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 transition-colors hover:bg-gray-100 dark:border-gray-700/50 dark:bg-gray-800/40 dark:hover:bg-gray-700/40"
                           >
                             <div className="min-w-0 flex-1">
