@@ -3088,13 +3088,20 @@
       "countComplete": "Stock count completed",
       "countNow": "Count Stock Now",
       "counting": "Counting stock",
+      "compared": "Stock comparison done",
+      "allDone": "All clear",
       "notCounted": "Stock not counted today",
       "notCountingDay": "Not a stock counting day",
       "viewDetails": "View Details",
       "periodNotCounted": "{date} — {count} items not counted",
       "periodCounted": "{date} — {counted}/{total} items counted",
+      "periodCompared": "{date} — counted {counted}/{total} + comparison done",
       "supplementaryTitle": "{count} items still need counting",
-      "supplementaryHint": "POS shows quantity but no manual count yet — please count to enable comparison"
+      "supplementaryHint": "POS shows quantity but no manual count yet — please count to enable comparison",
+      "explanationTitle": "{count} items waiting for explanation",
+      "explanationHint": "Variance over tolerance — write an explanation for owner approval",
+      "approvalTitle": "{count} explanations waiting for approval",
+      "approvalHint": "Staff have explained the variances — owner needs to approve or reject"
     },
     "comparison": {
       "all": "All",

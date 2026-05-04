@@ -3089,14 +3089,21 @@
     "banner": {
       "countComplete": "นับสต๊อกครบแล้ว",
       "counting": "กำลังนับสต๊อก",
+      "compared": "เปรียบเทียบสต๊อกแล้ว",
+      "allDone": "เสร็จเรียบร้อย",
       "countNow": "นับสต๊อกเลย",
       "notCounted": "ยังไม่ได้นับสต๊อกวันนี้",
       "notCountingDay": "วันนี้ไม่ใช่วันนับสต๊อก",
       "viewDetails": "ดูรายละเอียด",
       "periodNotCounted": "{date} — ยังไม่ได้นับ {count} รายการ",
       "periodCounted": "{date} — นับแล้ว {counted}/{total} รายการ",
+      "periodCompared": "{date} — นับ {counted}/{total} รายการ + เปรียบเทียบเรียบร้อย",
       "supplementaryTitle": "มี {count} รายการต้องนับเพิ่ม",
-      "supplementaryHint": "POS มียอดแต่ยังไม่มีนับมือ — กรุณานับเพิ่มเพื่อให้ระบบเปรียบเทียบได้"
+      "supplementaryHint": "POS มียอดแต่ยังไม่มีนับมือ — กรุณานับเพิ่มเพื่อให้ระบบเปรียบเทียบได้",
+      "explanationTitle": "รอชี้แจง {count} รายการ",
+      "explanationHint": "พบส่วนต่างเกินเกณฑ์ — กรอกคำชี้แจงเพื่อรอเจ้าของอนุมัติ",
+      "approvalTitle": "รออนุมัติคำชี้แจง {count} รายการ",
+      "approvalHint": "พนักงานชี้แจงไว้แล้ว — รอเจ้าของอนุมัติหรือปฏิเสธ"
     },
     "comparison": {
       "all": "ทั้งหมด",
