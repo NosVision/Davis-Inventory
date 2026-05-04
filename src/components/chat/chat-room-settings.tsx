@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuthStore } from '@/stores/auth-store';
 import { useChatStore } from '@/stores/chat-store';
-import { Modal, ModalFooter, Button, Input } from '@/components/ui';
+import { Modal, ModalFooter, Button, Input, toast } from '@/components/ui';
 import {
   Camera,
   Loader2,
@@ -130,12 +130,29 @@ export function ChatRoomSettings({ roomId, isOpen, onClose }: ChatRoomSettingsPr
     if (avatarUrl !== (room?.avatar_url || '')) updates.avatar_url = avatarUrl || null;
 
     if (Object.keys(updates).length > 0) {
-      await supabase.from('chat_rooms').update(updates).eq('id', roomId);
+      // Use .select() so RLS rejections surface as zero rows instead of
+      // silently succeeding — otherwise the local store gets updated
+      // optimistically and the change reverts on next refresh.
+      const { data, error } = await supabase
+        .from('chat_rooms')
+        .update(updates)
+        .eq('id', roomId)
+        .select('id, name, avatar_url')
+        .maybeSingle();
 
-      // Update local state
+      if (error || !data) {
+        toast({
+          type: 'error',
+          title: 'บันทึกไม่สำเร็จ',
+          message: error?.message || 'คุณอาจไม่มีสิทธิ์แก้ไขห้องแชทนี้',
+        });
+        setSaving(false);
+        return;
+      }
+
       setRooms(
         rooms.map((r) =>
-          r.id === roomId ? { ...r, ...updates } as typeof r : r
+          r.id === roomId ? ({ ...r, ...updates } as typeof r) : r
         )
       );
     }
