@@ -111,6 +111,15 @@ export interface Comparison {
   approved_by: string | null;
   approval_status: string | null;
   owner_notes: string | null;
+  // Owner-review additions (migration 00041)
+  recount_quantity: number | null;
+  recount_by: string | null;
+  recount_at: string | null;
+  recount_notes: string | null;
+  conclusion: string | null;
+  responsible_staff_id: string | null;
+  escalated_to_hr_at: string | null;
+  escalated_by: string | null;
   created_at: string;
 }
 
@@ -359,7 +368,23 @@ export interface Penalty {
   status: string;
   approved_by: string | null;
   notes: string | null;
+  // Owner-review additions (migration 00041)
+  penalty_code: string | null;
+  comparison_id: string | null;
+  month_year: string | null;
+  included_in_quota: boolean;
   created_at: string;
+}
+
+export interface PenaltyCode {
+  code: string;
+  label: string;
+  description: string | null;
+  default_amount: number | null;
+  level: 'notify' | 'suspend' | 'fine' | 'compensate' | 'terminate';
+  included_in_quota: boolean;
+  active: boolean;
+  sort_order: number;
 }
 
 export interface AuditLog {

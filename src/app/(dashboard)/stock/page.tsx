@@ -30,6 +30,7 @@ import {
   Calendar,
   Info,
   Pin,
+  Shield,
 } from 'lucide-react';
 import { StockCountBanner } from '@/components/stock/stock-count-banner';
 import {
@@ -471,6 +472,15 @@ export default function StockOverviewPage() {
       href: '/stock/tracking',
       gradient: 'from-pink-500 to-rose-600',
       shadow: 'shadow-pink-500/25',
+      staffVisible: false,
+    },
+    {
+      label: 'รายการเจ้าของร้าน',
+      description: 'รีวิวรายวัน + ออกบทลงโทษตาม SOP',
+      icon: Shield,
+      href: '/stock/owner-review',
+      gradient: 'from-fuchsia-500 to-pink-600',
+      shadow: 'shadow-fuchsia-500/25',
       staffVisible: false,
     },
   ];
