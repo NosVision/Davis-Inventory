@@ -475,7 +475,7 @@ export default function StockOverviewPage() {
       staffVisible: false,
     },
     {
-      label: 'รายการเจ้าของร้าน',
+      label: 'รายงานเจ้าของร้าน',
       description: 'รีวิวรายวัน + ออกบทลงโทษตาม SOP',
       icon: Shield,
       href: '/stock/owner-review',

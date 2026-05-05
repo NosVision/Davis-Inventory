@@ -154,6 +154,30 @@ export default function OwnerReviewPage() {
     return m;
   }, [penalties]);
 
+  // Filtered list driven by the showAll toggle. Hides matched rows by
+  // default so the screenshot only contains rows that need attention.
+  // MUST stay above the early-return guards below — Rules of Hooks.
+  const visibleComparisons = useMemo(
+    () =>
+      showAll
+        ? comparisons
+        : comparisons.filter((c) => Math.abs(c.difference || 0) > 0.005),
+    [comparisons, showAll],
+  );
+
+  // Aggregate this store's monthly totals across every staff so the owner
+  // sees one big number ("เดือนนี้บันทึกความผิดไปแล้ว N ครั้ง") regardless
+  // of who got dinged. Excludes EXP-01 (those rows already have included_in_quota=false).
+  const storeMonthTotals = useMemo(() => {
+    let count = 0;
+    let amount = 0;
+    for (const v of violations) {
+      count += v.violations;
+      amount += v.total_amount;
+    }
+    return { count, amount };
+  }, [violations]);
+
   // ────────────────────────────────────────────────────────────────────────
   // Data loading
   // ────────────────────────────────────────────────────────────────────────
@@ -536,29 +560,6 @@ export default function OwnerReviewPage() {
   ).length;
   const escalatedCount = comparisons.filter((c) => c.escalated_to_hr_at).length;
 
-  // Filtered list driven by the showAll toggle. Hides matched rows by
-  // default so the screenshot only contains rows that need attention.
-  const visibleComparisons = useMemo(
-    () =>
-      showAll
-        ? comparisons
-        : comparisons.filter((c) => Math.abs(c.difference || 0) > 0.005),
-    [comparisons, showAll],
-  );
-
-  // Aggregate this store's monthly totals across every staff so the owner
-  // sees one big number ("เดือนนี้บันทึกความผิดไปแล้ว N ครั้ง") regardless
-  // of who got dinged. Excludes EXP-01 (those rows already have included_in_quota=false).
-  const storeMonthTotals = useMemo(() => {
-    let count = 0;
-    let amount = 0;
-    for (const v of violations) {
-      count += v.violations;
-      amount += v.total_amount;
-    }
-    return { count, amount };
-  }, [violations]);
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -572,7 +573,7 @@ export default function OwnerReviewPage() {
             กลับไปสต็อก
           </Link>
           <h1 className="text-xl font-bold text-gray-900 sm:text-2xl dark:text-white">
-            รายการเจ้าของร้าน
+            รายงานเจ้าของร้าน
           </h1>
           <p className="mt-0.5 text-xs text-gray-500 sm:text-sm dark:text-gray-400">
             ตรวจสอบ + นับซ้ำ + ออกบทลงโทษตามระเบียบ SOP
