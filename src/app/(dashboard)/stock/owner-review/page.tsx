@@ -49,6 +49,8 @@ import {
   Calendar,
   Megaphone,
   RotateCcw,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 
 // SOP target: same role set already gated for /stock/tracking. Manager
@@ -87,6 +89,11 @@ export default function OwnerReviewPage() {
 
   const [businessDate, setBusinessDate] = useState<string>(() => businessDateBangkok());
   const [loading, setLoading] = useState(true);
+
+  // Owners screenshot the table to send to staff. By default the row list
+  // is filtered to discrepancies only (matched rows are visual noise +
+  // bloat the screenshot); toggle to show everything when needed.
+  const [showAll, setShowAll] = useState(false);
 
   const [comparisons, setComparisons] = useState<Comparison[]>([]);
   const [penalties, setPenalties] = useState<PenaltyRow[]>([]);
@@ -529,6 +536,29 @@ export default function OwnerReviewPage() {
   ).length;
   const escalatedCount = comparisons.filter((c) => c.escalated_to_hr_at).length;
 
+  // Filtered list driven by the showAll toggle. Hides matched rows by
+  // default so the screenshot only contains rows that need attention.
+  const visibleComparisons = useMemo(
+    () =>
+      showAll
+        ? comparisons
+        : comparisons.filter((c) => Math.abs(c.difference || 0) > 0.005),
+    [comparisons, showAll],
+  );
+
+  // Aggregate this store's monthly totals across every staff so the owner
+  // sees one big number ("เดือนนี้บันทึกความผิดไปแล้ว N ครั้ง") regardless
+  // of who got dinged. Excludes EXP-01 (those rows already have included_in_quota=false).
+  const storeMonthTotals = useMemo(() => {
+    let count = 0;
+    let amount = 0;
+    for (const v of violations) {
+      count += v.violations;
+      amount += v.total_amount;
+    }
+    return { count, amount };
+  }, [violations]);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -578,7 +608,52 @@ export default function OwnerReviewPage() {
         </div>
       </div>
 
-      {/* Summary chips */}
+      {/* Store-wide monthly violation banner — answers the "เดือนนี้สาขานี้
+          บันทึกผิดไปแล้วกี่ครั้ง" question owners ask first when they open
+          this page. */}
+      <div
+        className={cn(
+          'flex flex-wrap items-center gap-3 rounded-xl px-4 py-3',
+          storeMonthTotals.count >= QUOTA_MAX
+            ? 'bg-red-50 ring-1 ring-red-200 dark:bg-red-900/20 dark:ring-red-800'
+            : storeMonthTotals.count >= QUOTA_WARN
+              ? 'bg-amber-50 ring-1 ring-amber-200 dark:bg-amber-900/20 dark:ring-amber-800'
+              : 'bg-indigo-50 ring-1 ring-indigo-200 dark:bg-indigo-900/20 dark:ring-indigo-800',
+        )}
+      >
+        <Calendar className="h-5 w-5 text-gray-500" />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs text-gray-600 dark:text-gray-400">
+            สาขา{storeName ? ` ${storeName}` : ''} — เดือน {monthYear}
+          </p>
+          <p className="text-base font-bold text-gray-900 dark:text-white">
+            บันทึกความผิดแล้ว{' '}
+            <span className="tabular-nums">{storeMonthTotals.count}</span> ครั้ง
+            {storeMonthTotals.amount > 0 && (
+              <span className="ml-2 text-sm font-medium text-gray-600 dark:text-gray-300">
+                (ค่าปรับสะสม {formatNumber(storeMonthTotals.amount)} บาท)
+              </span>
+            )}
+          </p>
+        </div>
+        <Badge
+          variant={
+            storeMonthTotals.count >= QUOTA_MAX
+              ? 'danger'
+              : storeMonthTotals.count >= QUOTA_WARN
+                ? 'warning'
+                : 'info'
+          }
+        >
+          {storeMonthTotals.count >= QUOTA_MAX
+            ? `≥ ${QUOTA_MAX} (ครบโควตา)`
+            : storeMonthTotals.count >= QUOTA_WARN
+              ? `≥ ${QUOTA_WARN} (ใกล้เกิน)`
+              : `≤ ${QUOTA_WARN} (ปกติ)`}
+        </Badge>
+      </div>
+
+      {/* Per-day summary chips */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <SummaryChip label="รายการทั้งหมด" value={comparisons.length} icon={ClipboardList} tone="gray" />
         <SummaryChip label="ผลต่าง" value={totalDiscrepancy} icon={AlertTriangle} tone="amber" />
@@ -696,6 +771,24 @@ export default function OwnerReviewPage() {
       <Card padding="none">
         <CardHeader
           title={`รายการสำหรับวันที่ ${formatThaiDate(businessDate)}`}
+          action={
+            <Button
+              size="sm"
+              variant="outline"
+              icon={
+                showAll ? (
+                  <EyeOff className="h-3.5 w-3.5" />
+                ) : (
+                  <Eye className="h-3.5 w-3.5" />
+                )
+              }
+              onClick={() => setShowAll((v) => !v)}
+            >
+              {showAll
+                ? `ซ่อนรายการที่ตรง (${comparisons.length - totalDiscrepancy})`
+                : `แสดงทั้งหมด (${comparisons.length})`}
+            </Button>
+          }
         />
         {loading ? (
           <div className="flex h-48 items-center justify-center">
@@ -707,10 +800,23 @@ export default function OwnerReviewPage() {
             title="ยังไม่มีรายการเปรียบเทียบ"
             description="กดเปรียบเทียบในหน้า /stock/comparison ก่อน"
           />
+        ) : visibleComparisons.length === 0 ? (
+          <div className="px-6 py-12 text-center">
+            <CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-emerald-400" />
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              ทุกรายการตรงพอดี — ไม่มีผลต่างให้รีวิว
+            </p>
+            <p className="mt-1 text-xs text-gray-400">
+              กด "แสดงทั้งหมด" ด้านบนเพื่อดูรายการที่ตรง
+            </p>
+          </div>
         ) : (
-          <div className="overflow-x-auto">
+          // Cap height + sticky thead so the header still shows in
+          // screenshots when the row list is long. max-h tuned to fit a
+          // typical laptop viewport without dwarfing smaller phones.
+          <div className="max-h-[70vh] overflow-auto">
             <table className="w-full text-xs sm:text-sm">
-              <thead className="bg-pink-50 text-gray-700 dark:bg-pink-900/20 dark:text-gray-300">
+              <thead className="sticky top-0 z-10 bg-pink-50 text-gray-700 shadow-sm dark:bg-pink-900/40 dark:text-gray-200">
                 <tr>
                   <Th>สินค้า</Th>
                   <Th align="right">POS</Th>
@@ -725,7 +831,7 @@ export default function OwnerReviewPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                {comparisons.map((c) => {
+                {visibleComparisons.map((c) => {
                   const diff = c.difference || 0;
                   const draft = drafts[c.id] || {};
                   const linkedPenalty = penaltyByComparison.get(c.id);
