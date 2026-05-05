@@ -118,14 +118,16 @@ class HtmlRenderer {
   }
 
   /**
-   * สร้าง HTML พร้อมพิมพ์ (รวม copies)
+   * สร้าง HTML พร้อมพิมพ์ — return เป็น array เสมอ
+   * Multi-bottle labels => 1 element ต่อขวด (เพื่อให้ printer ตัดทีละใบ)
+   * อย่างอื่น => array ที่มี 1 element
    */
   renderForPrint(job) {
     const payload = job.payload;
     const copies = job.copies || 1;
 
     if (job.job_type === 'receipt') {
-      return this.renderReceipt(payload);
+      return [this.renderReceipt(payload)];
     }
 
     if (job.job_type === 'label') {
@@ -140,48 +142,26 @@ class HtmlRenderer {
           }));
       const totalBottles = payload.quantity || bottles.length;
 
-      if (bottles.length <= 1) {
-        const b = bottles[0] || { bottle_no: 1, remaining_percent: 100 };
-        return this.renderLabel(
-          { ...payload, _bottle: b, _total_bottles: totalBottles },
-          b.bottle_no,
-          totalBottles,
+      // Always render one HTML doc per bottle. The job processor sends
+      // each one as a separate print job so the thermal printer auto-cuts
+      // between bottles instead of spitting out one long ribbon.
+      return bottles
+        .slice()
+        .sort((a, b) => (a.bottle_no || 0) - (b.bottle_no || 0))
+        .map((b) =>
+          this.renderLabel(
+            { ...payload, _bottle: b, _total_bottles: totalBottles },
+            b.bottle_no,
+            totalBottles,
+          ),
         );
-      }
-
-      // Multi-page: each label is a page, same width as receipt
-      let html = `<html><head><meta charset="UTF-8">` +
-        `<style>@page{size:${this.paperWidth}mm auto;margin:0;} .page{page-break-after:always;} .page:last-child{page-break-after:auto;}</style>` +
-        `</head><body style="font-family:Tahoma,sans-serif;font-size:8pt;margin:0;padding:0;">`;
-
-      for (const b of bottles) {
-        html += `<div class="page" style="width:70mm;margin:0 auto;padding:2mm;">` +
-          `<div style="text-align:center;font-size:9pt;font-weight:bold;padding:1mm 0;">${this.storeName} : Deposit</div>` +
-          `<table style="width:100%;border-collapse:collapse;">` +
-          this._labelRow('Customer Name', payload.customer_name || '-') +
-          this._labelRow('Table', payload.table_number || '-') +
-          this._labelRow('Alcohol Type', payload.product_name || '-') +
-          this._labelRow('Remaining', (payload.remaining_qty || payload.quantity || '-') + ' bottles') +
-          this._labelRow('Bottle', `<b>${b.bottle_no}/${totalBottles}</b>`) +
-          this._labelRow('Bottle Remaining', `<b>${b.remaining_percent}%</b>`) +
-          this._labelRow('Staff', payload.received_by_name || '-') +
-          this._labelRow('Deposit Date', this._formatDateShort(payload.created_at)) +
-          this._labelRow('Expiry Date', `<b>${payload.expiry_date ? this._formatDateShort(payload.expiry_date) : '-'}</b>`) +
-          this._labelRow('Return HQ', '________') +
-          `</table>` +
-          `<div style="text-align:center;font-size:12pt;font-weight:bold;font-family:'Courier New',monospace;padding:2mm 0;">${payload.deposit_code}</div>` +
-          `</div>`;
-      }
-
-      html += `</body></html>`;
-      return html;
     }
 
     if (job.job_type === 'transfer') {
-      return this.renderTransfer(payload);
+      return [this.renderTransfer(payload)];
     }
 
-    return this.renderReceipt(payload);
+    return [this.renderReceipt(payload)];
   }
 
   /**

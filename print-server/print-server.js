@@ -160,15 +160,20 @@ async function processJob(job) {
     // Mark as printing
     await connector.updateJobStatus(job.id, 'printing');
 
-    // Render HTML
-    const html = renderer.renderForPrint(job);
+    // Render HTML — multi-bottle labels return one element per bottle so
+    // each one is sent as its own print job and the printer cuts between.
+    const htmls = renderer.renderForPrint(job);
+    const pages = Array.isArray(htmls) ? htmls : [htmls];
 
-    // Print
-    await processor.processJob(html, job.id, job.job_type);
+    for (let i = 0; i < pages.length; i++) {
+      const partId = pages.length > 1 ? `${job.id}-${i + 1}` : job.id;
+      await processor.processJob(pages[i], partId, job.job_type);
+    }
 
     // Mark completed
     await connector.updateJobStatus(job.id, 'completed');
-    console.log(`[${time}] [OK] Completed: ${type} ${code}`);
+    const suffix = pages.length > 1 ? ` (${pages.length} cuts)` : '';
+    console.log(`[${time}] [OK] Completed: ${type} ${code}${suffix}`);
 
   } catch (error) {
     console.error(`[${time}] [FAIL] ${type} ${code}:`, error.message);
