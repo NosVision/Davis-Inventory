@@ -39,6 +39,8 @@ import {
   notifyChatTransferRejected,
   notifyChatHqWithdrawal,
 } from '@/lib/chat/transfer-bot-client';
+import { ReceiveHistoryView } from './_components/receive-history-view';
+import type { ReceiveReportData } from './_components/receive-report-pdf';
 
 // ==========================================
 // Types
@@ -86,6 +88,7 @@ interface HqDepositItem {
   received_by_name: string | null;
   received_photo_url: string | null;
   received_at: string;
+  received_session_id: string | null;
   withdrawn_by: string | null;
   withdrawn_by_name: string | null;
   withdrawal_notes: string | null;
@@ -101,7 +104,80 @@ interface BranchSummary {
   received: number;
 }
 
-type TabId = 'pending' | 'received' | 'withdrawn';
+type TabId = 'pending' | 'received' | 'history' | 'withdrawn';
+
+// Convert the in-app HqDepositItem[] for a given day into the
+// serializable shape the PDF generator expects. Mirrors the grouping
+// the on-screen ReceiveHistoryView uses so the PDF and the screen
+// always agree.
+function buildReportData(
+  date: string,
+  items: HqDepositItem[],
+  hqName: string,
+): ReceiveReportData {
+  const sessionMap = new Map<string, {
+    session_id: string;
+    received_at: string;
+    received_by_name: string | null;
+    from_store_name: string;
+    items: HqDepositItem[];
+  }>();
+  for (const it of items) {
+    const sid = it.received_session_id || `solo:${it.id}`;
+    const cur = sessionMap.get(sid);
+    if (cur) cur.items.push(it);
+    else sessionMap.set(sid, {
+      session_id: sid,
+      received_at: it.received_at,
+      received_by_name: it.received_by_name,
+      from_store_name: it.from_store_name,
+      items: [it],
+    });
+  }
+  const sortedSessions = Array.from(sessionMap.values()).sort(
+    (a, b) => new Date(a.received_at).getTime() - new Date(b.received_at).getTime(),
+  );
+
+  const storeMap = new Map<string, ReceiveReportData['stores'][number]>();
+  for (const s of sortedSessions) {
+    const key = s.from_store_name;
+    const existing = storeMap.get(key);
+    const sessionDto = {
+      session_id: s.session_id,
+      received_at: s.received_at,
+      received_by_name: s.received_by_name,
+      items: s.items.map((it) => ({
+        product_name: it.product_name,
+        customer_name: it.customer_name,
+        deposit_code: it.deposit_code,
+        quantity: it.quantity,
+      })),
+    };
+    if (existing) existing.sessions.push(sessionDto);
+    else storeMap.set(key, { from_store_name: key, sessions: [sessionDto] });
+  }
+
+  const receiverNames = Array.from(
+    new Set(items.map((i) => i.received_by_name).filter(Boolean) as string[]),
+  );
+
+  return {
+    date,
+    date_label: new Intl.DateTimeFormat('th-TH', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'Asia/Bangkok',
+    }).format(new Date(`${date}T12:00:00+07:00`)),
+    hq_name: hqName,
+    total_items: items.length,
+    total_sessions: sortedSessions.length,
+    receiver_names: receiverNames,
+    stores: Array.from(storeMap.values()).sort((a, b) =>
+      a.from_store_name.localeCompare(b.from_store_name, 'th'),
+    ),
+  };
+}
 
 // ==========================================
 // Main Component
@@ -177,6 +253,19 @@ export default function HqWarehousePage() {
       return next;
     });
   };
+
+  // Partial-receipt state — per batch_code, the set of item ids the
+  // owner has ticked. When empty we treat "เลือกทั้งหมด" as the implicit
+  // selection. Cleared after a successful receive.
+  const [pendingSelection, setPendingSelection] = useState<Map<string, Set<string>>>(new Map());
+
+  // History tab — date-scoped fetch of confirmed receipts (ALL statuses,
+  // not just awaiting_withdrawal) so the report can show items that have
+  // since been withdrawn too. Fresh array on every date pick.
+  const [historyDate, setHistoryDate] = useState<string>(() => todayBangkok());
+  const [historyData, setHistoryData] = useState<HqDepositItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   // Get central store(s) for filtering
   const centralStores = useMemo(
@@ -431,6 +520,61 @@ export default function HqWarehousePage() {
     }
   }, [loadPendingTransfers, loadReceivedItems, loadWithdrawnItems]);
 
+  // History tab: pull every hq_deposit whose received_at falls within the
+  // selected Bangkok day. Includes items already withdrawn so the daily
+  // report stays complete even after an owner empties the warehouse.
+  const loadHistoryForDate = useCallback(async (date: string) => {
+    if (centralStoreIds.length === 0) return;
+    setHistoryLoading(true);
+    try {
+      const supabase = createClient();
+      // Bangkok day window in UTC. received_at is stored UTC; converting
+      // here keeps the comparison in the index's collation.
+      const startIso = `${date}T00:00:00+07:00`;
+      const endIso = `${date}T23:59:59.999+07:00`;
+
+      const { data, error } = await supabase
+        .from('hq_deposits')
+        .select('*')
+        .gte('received_at', startIso)
+        .lte('received_at', endIso)
+        .order('received_at', { ascending: true });
+      if (error) throw error;
+
+      const storeMap = new Map(stores.map((s) => [s.id, s.store_name]));
+      const userIds = [...new Set([
+        ...(data || []).map((d) => d.received_by),
+      ].filter(Boolean))] as string[];
+      let userMap = new Map<string, string>();
+      if (userIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, display_name, username')
+          .in('id', userIds);
+        if (profiles) {
+          userMap = new Map(profiles.map((p) => [p.id, p.display_name || p.username]));
+        }
+      }
+
+      const items: HqDepositItem[] = (data || []).map((d) => ({
+        ...d,
+        from_store_name: storeMap.get(d.from_store_id || '') || unknownBranch,
+        received_by_name: d.received_by ? (userMap.get(d.received_by) || null) : null,
+        withdrawn_by_name: null,
+      }));
+      if (mountedRef.current) setHistoryData(items);
+    } finally {
+      if (mountedRef.current) setHistoryLoading(false);
+    }
+  }, [centralStoreIds, stores, unknownBranch]);
+
+  // Refetch history whenever date or store list changes while on the tab.
+  useEffect(() => {
+    if (activeTab === 'history' && stores.length > 0) {
+      loadHistoryForDate(historyDate);
+    }
+  }, [activeTab, historyDate, stores.length, loadHistoryForDate]);
+
   useEffect(() => {
     mountedRef.current = true;
     fetchStores();
@@ -496,7 +640,8 @@ export default function HqWarehousePage() {
         t.transfer_code.toLowerCase().includes(q) ||
         t.from_store_name.toLowerCase().includes(q) ||
         t.product_name?.toLowerCase().includes(q) ||
-        t.customer_name?.toLowerCase().includes(q)
+        t.customer_name?.toLowerCase().includes(q) ||
+        t.deposit_code?.toLowerCase().includes(q)
       );
     }
     return result;
@@ -606,7 +751,10 @@ export default function HqWarehousePage() {
 
       if (transferError) throw transferError;
 
-      // 2. Create hq_deposit record
+      // 2. Create hq_deposit record. Single-item receipt still gets its
+      //    own session_id so the history view can render this as one
+      //    session of size 1.
+      const sessionId = crypto.randomUUID();
       const { error: hqError } = await supabase
         .from('hq_deposits')
         .insert({
@@ -620,6 +768,7 @@ export default function HqWarehousePage() {
           status: 'awaiting_withdrawal',
           received_by: user.id,
           received_photo_url: confirmPhotoUrl,
+          received_session_id: sessionId,
           notes: confirmNotes || null,
         });
 
@@ -715,8 +864,21 @@ export default function HqWarehousePage() {
 
     try {
       const supabase = createClient();
+      // Honour any partial selection captured in the pending tab. Empty
+      // set => receive every item in the batch (the modal's default
+      // behaviour). Anything else => only the ticked items get marked
+      // received; the rest stay pending for a later session.
+      const selected = pendingSelection.get(batchConfirmGroup.transfer_code);
+      const itemsToReceive =
+        selected && selected.size > 0
+          ? batchConfirmGroup.items.filter((t) => selected.has(t.id))
+          : batchConfirmGroup.items;
 
-      for (const transfer of batchConfirmGroup.items) {
+      // One session id for the whole receive action so the history view
+      // can group these items back together.
+      const sessionId = crypto.randomUUID();
+
+      for (const transfer of itemsToReceive) {
         // 1. Update transfer status to confirmed
         const { error: transferError } = await supabase
           .from('transfers')
@@ -743,6 +905,7 @@ export default function HqWarehousePage() {
             status: 'awaiting_withdrawal',
             received_by: user.id,
             received_photo_url: batchConfirmPhotoUrl,
+            received_session_id: sessionId,
             notes: batchConfirmNotes || null,
           });
 
@@ -757,13 +920,22 @@ export default function HqWarehousePage() {
         }
       }
 
-      toast({ type: 'success', title: t('receiveAllSuccess'), message: t('receiveAllSuccessMsg', { count: batchConfirmGroup.items.length, code: batchConfirmGroup.transfer_code }) });
+      toast({ type: 'success', title: t('receiveAllSuccess'), message: t('receiveAllSuccessMsg', { count: itemsToReceive.length, code: batchConfirmGroup.transfer_code }) });
 
       // ส่ง system message กลับไปห้องสาขาต้นทาง
-      notifyChatTransferReceived(batchConfirmGroup.items[0].from_store_id, {
+      notifyChatTransferReceived(itemsToReceive[0].from_store_id, {
         transfer_code: batchConfirmGroup.transfer_code,
-        item_count: batchConfirmGroup.items.length,
+        item_count: itemsToReceive.length,
         received_by_name: user?.displayName || user?.username || 'HQ Staff',
+      });
+
+      // Clear partial selection for this batch — the un-selected items
+      // (if any) stay in the tab as a fresh "remaining" batch.
+      setPendingSelection((prev) => {
+        if (!prev.has(batchConfirmGroup.transfer_code)) return prev;
+        const next = new Map(prev);
+        next.delete(batchConfirmGroup.transfer_code);
+        return next;
       });
 
       setShowBatchConfirmModal(false);
@@ -946,6 +1118,8 @@ export default function HqWarehousePage() {
   const tabs: { id: TabId; label: string; icon: typeof Clock; count: number; color: string }[] = [
     { id: 'pending', label: t('tabPending'), icon: Clock, count: summary.pending, color: 'yellow' },
     { id: 'received', label: t('tabReceived'), icon: Package, count: summary.received, color: 'green' },
+    // Count omitted on history (depends on selected date — fetched lazily).
+    { id: 'history', label: t('tabHistory'), icon: FileText, count: 0, color: 'blue' },
     { id: 'withdrawn', label: t('tabWithdrawn'), icon: BoxSelect, count: summary.withdrawn, color: 'gray' },
   ];
 
@@ -1004,21 +1178,24 @@ export default function HqWarehousePage() {
       {/* Summary Cards */}
       <div className="border-b bg-gradient-to-br from-orange-50 to-amber-50 dark:from-gray-900 dark:to-gray-900">
         <div className="mx-auto max-w-7xl px-4 py-4">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {tabs.map((tab) => {
               const colorMap: Record<string, string> = {
                 yellow: 'border-yellow-200 dark:border-yellow-800',
                 green: 'border-green-200 dark:border-green-800',
+                blue: 'border-blue-200 dark:border-blue-800',
                 gray: 'border-gray-200 dark:border-gray-700',
               };
               const iconBgMap: Record<string, string> = {
                 yellow: 'bg-yellow-100 dark:bg-yellow-900/30',
                 green: 'bg-green-100 dark:bg-green-900/30',
+                blue: 'bg-blue-100 dark:bg-blue-900/30',
                 gray: 'bg-gray-100 dark:bg-gray-800',
               };
               const textColorMap: Record<string, string> = {
                 yellow: 'text-yellow-600 dark:text-yellow-400',
                 green: 'text-green-600 dark:text-green-400',
+                blue: 'text-blue-600 dark:text-blue-400',
                 gray: 'text-gray-600 dark:text-gray-400',
               };
               const TabIcon = tab.icon;
@@ -1038,7 +1215,13 @@ export default function HqWarehousePage() {
                     </div>
                     <div>
                       <p className="text-xs text-gray-500 dark:text-gray-400">{tab.label}</p>
-                      <p className={cn('text-2xl font-bold', textColorMap[tab.color])}>{tab.count}</p>
+                      {tab.id === 'history' ? (
+                        <p className={cn('text-sm font-medium', textColorMap[tab.color])}>
+                          {t('historyCardHint')}
+                        </p>
+                      ) : (
+                        <p className={cn('text-2xl font-bold', textColorMap[tab.color])}>{tab.count}</p>
+                      )}
                     </div>
                   </div>
                 </button>
@@ -1108,7 +1291,7 @@ export default function HqWarehousePage() {
                 >
                   <TabIcon className="h-4 w-4" />
                   {tab.label}
-                  {tab.count > 0 && (
+                  {tab.id !== 'history' && tab.count > 0 && (
                     <span className={cn(
                       'ml-1 rounded-full px-1.5 py-0.5 text-xs font-bold',
                       activeTab === tab.id
@@ -1198,13 +1381,14 @@ export default function HqWarehousePage() {
                           </div>
                         </button>
 
-                        {/* Batch-level receive all button */}
+                        {/* Batch-level receive bar — partial-receipt aware.
+                            Renders one of 3 states:
+                              1. Claimed in chat → locked notice
+                              2. Collapsed (no expand) → "รับทั้งหมด" shortcut
+                              3. Expanded → checkbox-driven partial receive
+                            All three live on the same yellow strip so the
+                            batch header always has consistent affordance. */}
                         {(() => {
-                          // Cross-check: chat-side transfer_receive card
-                          // is keyed by transfer_code (the batch). If
-                          // someone has it claimed there, lock the
-                          // batch-level button so HQ users on this
-                          // page don't double-receive.
                           const batchClaim = chatClaims.get(batch.transfer_code);
                           if (batchClaim) {
                             return (
@@ -1218,16 +1402,22 @@ export default function HqWarehousePage() {
                               </div>
                             );
                           }
-                          return (
-                            <div className="border-t border-yellow-100 bg-yellow-50/50 px-4 py-2 dark:border-yellow-900/30 dark:bg-yellow-900/10">
-                              <button
-                                onClick={() => openBatchConfirmModal(batch)}
-                                className="w-full rounded-lg bg-gradient-to-r from-green-500 to-emerald-600 py-2.5 text-sm font-bold text-white shadow-md transition hover:from-green-600 hover:to-emerald-700"
-                              >
-                                <Check className="mr-1 inline h-4 w-4" /> {t('receiveAll', { count: batch.items.length })}
-                              </button>
-                            </div>
-                          );
+                          if (!isExpanded) {
+                            return (
+                              <div className="border-t border-yellow-100 bg-yellow-50/50 px-4 py-2 dark:border-yellow-900/30 dark:bg-yellow-900/10">
+                                <button
+                                  onClick={() => openBatchConfirmModal(batch)}
+                                  className="w-full rounded-lg bg-gradient-to-r from-green-500 to-emerald-600 py-2.5 text-sm font-bold text-white shadow-md transition hover:from-green-600 hover:to-emerald-700"
+                                >
+                                  <Check className="mr-1 inline h-4 w-4" /> {t('receiveAll', { count: batch.items.length })}
+                                </button>
+                              </div>
+                            );
+                          }
+                          // Expanded → render the partial-receipt bar at
+                          // the bottom (after items list). The bottom bar
+                          // lives below; here we just render an info hint.
+                          return null;
                         })()}
 
                         {/* Batch Transfer Cards */}
@@ -1239,9 +1429,35 @@ export default function HqWarehousePage() {
                               // batch shares the same chat card.
                               const itemClaim = chatClaims.get(transfer.transfer_code);
                               const itemClaimedInChat = !!itemClaim;
+                              const batchSelection = pendingSelection.get(batch.transfer_code) ?? new Set<string>();
+                              const checked = batchSelection.has(transfer.id);
+                              const toggleItem = () => {
+                                setPendingSelection((prev) => {
+                                  const next = new Map(prev);
+                                  const set = new Set(next.get(batch.transfer_code) ?? []);
+                                  if (set.has(transfer.id)) set.delete(transfer.id);
+                                  else set.add(transfer.id);
+                                  if (set.size === 0) next.delete(batch.transfer_code);
+                                  else next.set(batch.transfer_code, set);
+                                  return next;
+                                });
+                              };
                               return (
-                              <div key={transfer.id} className="rounded-xl border-l-4 border-yellow-500 bg-gray-50 dark:bg-gray-800">
-                                <div className="p-4">
+                              <div key={transfer.id} className={cn(
+                                "flex items-stretch gap-2 rounded-xl border-l-4 bg-gray-50 dark:bg-gray-800",
+                                checked
+                                  ? "border-emerald-500 ring-1 ring-emerald-300 dark:ring-emerald-800"
+                                  : "border-yellow-500"
+                              )}>
+                                <label className="flex shrink-0 cursor-pointer items-center px-3" title={t('selectThisItem')}>
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={toggleItem}
+                                    className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 dark:border-gray-600"
+                                  />
+                                </label>
+                                <div className="flex-1 p-4">
                                   <div className="mb-3 flex items-start justify-between">
                                     <div>
                                       <p className="font-medium text-gray-900 dark:text-white">{transfer.product_name || t('unspecified')}</p>
@@ -1318,6 +1534,56 @@ export default function HqWarehousePage() {
                               </div>
                               );
                             })}
+
+                            {/* Partial-receipt action bar — only when
+                                expanded and not chat-claimed. Picks up
+                                pendingSelection and either receives the
+                                ticked subset or the whole batch. */}
+                            {!chatClaims.get(batch.transfer_code) && (() => {
+                              const sel = pendingSelection.get(batch.transfer_code) ?? new Set<string>();
+                              const total = batch.items.length;
+                              const allSelected = sel.size === total;
+                              const someSelected = sel.size > 0 && !allSelected;
+                              const setAll = (on: boolean) => {
+                                setPendingSelection((prev) => {
+                                  const next = new Map(prev);
+                                  if (on) next.set(batch.transfer_code, new Set(batch.items.map((i) => i.id)));
+                                  else next.delete(batch.transfer_code);
+                                  return next;
+                                });
+                              };
+                              return (
+                                <div className="sticky bottom-2 mt-2 rounded-xl border border-yellow-200 bg-white/95 p-3 shadow-md backdrop-blur dark:border-yellow-900 dark:bg-gray-900/95">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                                      <input
+                                        type="checkbox"
+                                        checked={allSelected}
+                                        ref={(el) => { if (el) el.indeterminate = someSelected; }}
+                                        onChange={(e) => setAll(e.target.checked)}
+                                        className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 dark:border-gray-600"
+                                      />
+                                      <span>
+                                        {sel.size > 0
+                                          ? t('selectedOfTotal', { selected: sel.size, total })
+                                          : t('selectAllBatch')}
+                                      </span>
+                                    </label>
+                                    <div className="flex gap-2">
+                                      <button
+                                        onClick={() => openBatchConfirmModal(batch)}
+                                        className="rounded-lg bg-gradient-to-r from-green-500 to-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-md transition hover:from-green-600 hover:to-emerald-700"
+                                      >
+                                        <Check className="mr-1 inline h-4 w-4" />
+                                        {sel.size > 0 && sel.size < total
+                                          ? t('receiveSelectedCount', { count: sel.size })
+                                          : t('receiveAll', { count: total })}
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })()}
                           </div>
                         )}
                       </div>
@@ -1584,6 +1850,42 @@ export default function HqWarehousePage() {
                   </div>
                 )}
               </div>
+            )}
+
+            {/* Tab: History (รายงานรับเข้ารายวัน) */}
+            {activeTab === 'history' && (
+              <ReceiveHistoryView
+                date={historyDate}
+                setDate={setHistoryDate}
+                items={historyData}
+                loading={historyLoading}
+                hqName={centralStores[0]?.store_name || 'HQ'}
+                searchQuery={searchQuery}
+                downloading={downloadingPdf}
+                onDownload={async () => {
+                  setDownloadingPdf(true);
+                  try {
+                    // Lazy-load the PDF module so the ~600 KB react-pdf
+                    // bundle doesn't ship on tabs that never use it.
+                    const mod = await import('./_components/receive-report-pdf');
+                    const data = buildReportData(
+                      historyDate,
+                      historyData,
+                      centralStores[0]?.store_name || 'HQ',
+                    );
+                    const blob = await mod.buildReceiveReportPdf(data);
+                    mod.downloadBlob(
+                      blob,
+                      `รายงานรับเข้า-${historyDate}.pdf`,
+                    );
+                  } catch (err) {
+                    console.error('PDF download error:', err);
+                    toast({ type: 'error', title: 'สร้าง PDF ล้มเหลว' });
+                  } finally {
+                    setDownloadingPdf(false);
+                  }
+                }}
+              />
             )}
 
             {/* Tab: Withdrawn */}
