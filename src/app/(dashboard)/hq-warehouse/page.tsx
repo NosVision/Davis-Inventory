@@ -275,6 +275,12 @@ export default function HqWarehousePage() {
   // selection. Cleared after a successful receive.
   const [pendingSelection, setPendingSelection] = useState<Map<string, Set<string>>>(new Map());
 
+  // Per-batch local search query — filters items inside one expanded
+  // batch only, separate from the page-level search box. Owners with a
+  // 30-item batch can find a specific bottle without affecting which
+  // batches are visible at the top level.
+  const [batchSearch, setBatchSearch] = useState<Map<string, string>>(new Map());
+
   // History tab — date-scoped fetch of confirmed receipts (ALL statuses,
   // not just awaiting_withdrawal) so the report can show items that have
   // since been withdrawn too. Fresh array on every date pick.
@@ -1408,9 +1414,60 @@ export default function HqWarehousePage() {
                         })()}
 
                         {/* Batch Transfer Cards — compact one-row layout */}
-                        {isExpanded && (
+                        {isExpanded && (() => {
+                          // Local-to-batch search: filter just this
+                          // batch's items by deposit_code / product /
+                          // customer. Empty string => show all items.
+                          const localQuery = (batchSearch.get(batch.transfer_code) || '').toLowerCase().trim();
+                          const visibleItems = localQuery
+                            ? batch.items.filter((it) =>
+                                it.deposit_code?.toLowerCase().includes(localQuery) ||
+                                it.product_name?.toLowerCase().includes(localQuery) ||
+                                it.customer_name?.toLowerCase().includes(localQuery),
+                              )
+                            : batch.items;
+                          return (
                           <div className="space-y-1.5 p-2">
-                            {batch.items.map((transfer) => {
+                            {/* Per-batch search box */}
+                            <div className="relative">
+                              <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+                              <input
+                                type="text"
+                                value={batchSearch.get(batch.transfer_code) || ''}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  setBatchSearch((prev) => {
+                                    const next = new Map(prev);
+                                    if (v) next.set(batch.transfer_code, v);
+                                    else next.delete(batch.transfer_code);
+                                    return next;
+                                  });
+                                }}
+                                placeholder={`ค้นหาในใบโอนนี้ (${batch.items.length} รายการ) — รหัสฝาก / สินค้า / ลูกค้า`}
+                                className="w-full rounded-md border border-yellow-200 bg-white py-1.5 pl-7 pr-7 text-xs dark:border-yellow-900/40 dark:bg-gray-800 dark:text-gray-200"
+                              />
+                              {batchSearch.get(batch.transfer_code) && (
+                                <button
+                                  onClick={() => setBatchSearch((prev) => {
+                                    const next = new Map(prev);
+                                    next.delete(batch.transfer_code);
+                                    return next;
+                                  })}
+                                  className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                  aria-label="ล้างคำค้นหา"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
+
+                            {visibleItems.length === 0 ? (
+                              <div className="rounded-md bg-gray-50 px-3 py-4 text-center text-xs text-gray-400 dark:bg-gray-800">
+                                ไม่พบรายการที่ตรงกับ &quot;{batchSearch.get(batch.transfer_code)}&quot;
+                              </div>
+                            ) : null}
+
+                            {visibleItems.map((transfer) => {
                               // Per-item button gate uses the same
                               // batch-level claim — every item in the
                               // batch shares the same chat card.
@@ -1591,7 +1648,8 @@ export default function HqWarehousePage() {
                               );
                             })()}
                           </div>
-                        )}
+                          );
+                        })()}
                       </div>
                     );
                   })
