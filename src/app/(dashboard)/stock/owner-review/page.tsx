@@ -51,6 +51,7 @@ import {
   RotateCcw,
   Eye,
   EyeOff,
+  FileDown,
 } from 'lucide-react';
 
 // SOP target: same role set already gated for /stock/tracking. Manager
@@ -121,12 +122,15 @@ export default function OwnerReviewPage() {
   >({});
   const [savingCell, setSavingCell] = useState<string | null>(null);
 
-  // Modal state
-  const [recountModal, setRecountModal] = useState<{
-    comparison: Comparison;
-    quantity: string;
-    notes: string;
+  // Inline recount editor — replaces the old modal so a fast owner can
+  // tab through dozens of rows without confirming each one.
+  const [editingRecount, setEditingRecount] = useState<{
+    id: string;
+    value: string;
   } | null>(null);
+
+  // PDF download spinner gate.
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [penaltyModal, setPenaltyModal] = useState<{
     comparison: Comparison | null;       // null = ad-hoc / EXP-01
     code: string;
@@ -464,42 +468,48 @@ export default function OwnerReviewPage() {
     });
   };
 
-  const handleSubmitRecount = async () => {
-    if (!recountModal || !user) return;
-    const qty = Number(recountModal.quantity);
-    if (!Number.isFinite(qty)) {
-      toast({ type: 'error', title: 'กรุณาใส่ตัวเลข' });
+  // Save the inline recount input. Triggered on blur and on Enter — no
+  // confirmation modal because the owner reviews dozens of rows per
+  // morning and each extra click was the loudest complaint about the
+  // previous version. Empty string means "clear the recount".
+  const commitRecount = async (item: Comparison, raw: string) => {
+    if (!user) return;
+    const trimmed = raw.trim();
+    let qty: number | null;
+    if (trimmed === '') {
+      qty = null;
+    } else {
+      qty = Number(trimmed);
+      if (!Number.isFinite(qty) || qty < 0) {
+        toast({ type: 'error', title: 'ใส่ตัวเลขไม่ถูกต้อง' });
+        setEditingRecount(null);
+        return;
+      }
+    }
+    // No-op if value didn't actually change — avoid pointless writes
+    // when the owner just opened + closed the cell.
+    if (qty === item.recount_quantity) {
+      setEditingRecount(null);
       return;
     }
+    setSavingCell(`${item.id}:recount`);
     const supabase = createClient();
+    const patch = qty === null
+      ? { recount_quantity: null, recount_by: null, recount_at: null }
+      : { recount_quantity: qty, recount_by: user.id, recount_at: new Date().toISOString() };
     const { error } = await supabase
       .from('comparisons')
-      .update({
-        recount_quantity: qty,
-        recount_by: user.id,
-        recount_at: new Date().toISOString(),
-        recount_notes: recountModal.notes || null,
-      })
-      .eq('id', recountModal.comparison.id);
+      .update(patch)
+      .eq('id', item.id);
+    setSavingCell(null);
     if (error) {
       toast({ type: 'error', title: 'บันทึกล้มเหลว', message: error.message });
       return;
     }
     setComparisons((prev) =>
-      prev.map((c) =>
-        c.id === recountModal.comparison.id
-          ? {
-              ...c,
-              recount_quantity: qty,
-              recount_by: user.id,
-              recount_at: new Date().toISOString(),
-              recount_notes: recountModal.notes || null,
-            }
-          : c,
-      ),
+      prev.map((c) => (c.id === item.id ? { ...c, ...patch } : c)),
     );
-    setRecountModal(null);
-    toast({ type: 'success', title: 'บันทึกการนับซ้ำแล้ว' });
+    setEditingRecount(null);
   };
 
   const handleSubmitPenalty = async () => {
@@ -513,60 +523,157 @@ export default function OwnerReviewPage() {
       toast({ type: 'error', title: 'เลือกพนักงานที่รับผิดชอบ' });
       return;
     }
+    // Resolve target staff list. Group sentinels expand into one penalty
+    // per active member of that role at this store — the SOP wording
+    // ("หักคนละ 500 บาท") fits naturally with N rows so each member's
+    // monthly quota counter ticks up independently.
+    let targetStaffIds: string[] = [];
+    if (penaltyModal.staffId === GROUP_VALUES.staff_all) {
+      targetStaffIds = staff.filter((s) => s.role === 'staff').map((s) => s.id);
+    } else if (penaltyModal.staffId === GROUP_VALUES.bar_all) {
+      targetStaffIds = staff.filter((s) => s.role === 'bar').map((s) => s.id);
+    } else {
+      targetStaffIds = [penaltyModal.staffId];
+    }
+    if (targetStaffIds.length === 0) {
+      toast({ type: 'error', title: 'ไม่มีพนักงานในกลุ่มที่เลือก' });
+      return;
+    }
+
     const amount = penaltyModal.amount ? Number(penaltyModal.amount) : null;
     const supabase = createClient();
+    const rows = targetStaffIds.map((sid) => ({
+      store_id: currentStoreId,
+      staff_id: sid,
+      penalty_code: code.code,
+      comparison_id: penaltyModal.comparison?.id || null,
+      reason: code.label,
+      amount,
+      status: 'pending',
+      notes: penaltyModal.notes || null,
+      included_in_quota: code.included_in_quota,
+      approved_by: user.id,
+    }));
     const { error, data } = await supabase
       .from('penalties')
-      .insert({
-        store_id: currentStoreId,
-        staff_id: penaltyModal.staffId,
-        penalty_code: code.code,
-        comparison_id: penaltyModal.comparison?.id || null,
-        reason: code.label,
-        amount,
-        status: 'pending',
-        notes: penaltyModal.notes || null,
-        included_in_quota: code.included_in_quota,
-        approved_by: user.id,
-      })
-      .select('*')
-      .single();
+      .insert(rows)
+      .select('*');
     if (error) {
       toast({ type: 'error', title: 'บันทึกล้มเหลว', message: error.message });
       return;
     }
-    const newPen: PenaltyRow = {
-      ...(data as Penalty),
+
+    const newRows: PenaltyRow[] = ((data as Penalty[]) || []).map((p) => ({
+      ...p,
       code_meta: code,
       staff_name:
-        staffById.get(penaltyModal.staffId)?.display_name ||
-        staffById.get(penaltyModal.staffId)?.username ||
+        staffById.get(p.staff_id)?.display_name ||
+        staffById.get(p.staff_id)?.username ||
         '—',
-    };
-    setPenalties((prev) => [newPen, ...prev]);
+    }));
+    setPenalties((prev) => [...newRows, ...prev]);
     setPenaltyModal(null);
-    toast({ type: 'success', title: `สร้าง ${code.code} แล้ว` });
-    // Recompute violation buckets cheaply
-    if (newPen.included_in_quota) {
+    toast({
+      type: 'success',
+      title:
+        newRows.length > 1
+          ? `สร้าง ${code.code} ${newRows.length} รายการแล้ว`
+          : `สร้าง ${code.code} แล้ว`,
+    });
+    // Recompute violation buckets cheaply for every staff that got a row.
+    if (code.included_in_quota) {
       setViolations((prev) => {
         const next = [...prev];
-        const idx = next.findIndex((v) => v.staff_id === newPen.staff_id);
-        if (idx >= 0) {
-          next[idx] = {
-            ...next[idx],
-            violations: next[idx].violations + 1,
-            total_amount: next[idx].total_amount + Number(newPen.amount || 0),
-          };
-        } else {
-          next.push({
-            staff_id: newPen.staff_id,
-            staff_name: newPen.staff_name || '—',
-            violations: 1,
-            total_amount: Number(newPen.amount || 0),
-          });
+        for (const np of newRows) {
+          const idx = next.findIndex((v) => v.staff_id === np.staff_id);
+          if (idx >= 0) {
+            next[idx] = {
+              ...next[idx],
+              violations: next[idx].violations + 1,
+              total_amount: next[idx].total_amount + Number(np.amount || 0),
+            };
+          } else {
+            next.push({
+              staff_id: np.staff_id,
+              staff_name: np.staff_name || '—',
+              violations: 1,
+              total_amount: Number(np.amount || 0),
+            });
+          }
         }
         return next.sort((a, b) => b.violations - a.violations);
       });
+    }
+  };
+
+  // Build the report DTO + lazy-load the PDF module on first click so
+  // the ~600 KB react-pdf bundle stays out of the main route chunk.
+  const handleDownloadPdf = async () => {
+    if (comparisons.length === 0) return;
+    setDownloadingPdf(true);
+    try {
+      const mod = await import('./_components/owner-review-pdf');
+
+      // Build a label for "ผู้รับผิดชอบ" — uuid → person name, group → label.
+      const responsibleLabel = (c: Comparison): string | null => {
+        if (c.responsible_group === 'staff_all') return 'Staff ทุกคน';
+        if (c.responsible_group === 'bar_all') return 'Bar ทุกคน';
+        if (c.responsible_staff_id) {
+          const s = staffById.get(c.responsible_staff_id);
+          return s ? (s.display_name || s.username) : null;
+        }
+        return null;
+      };
+
+      const data: import('./_components/owner-review-pdf').OwnerReviewReportData = {
+        date_label: formatThaiDate(businessDate),
+        store_name: storeName || 'สาขา',
+        month_year: monthYear,
+        totals: {
+          items: comparisons.length,
+          discrepancies: totalDiscrepancy,
+          pending_recount: pendingRecount,
+          escalated: escalatedCount,
+        },
+        quota: violations.map((v) => ({
+          staff_name: v.staff_name,
+          violations: v.violations,
+          total_amount: v.total_amount,
+          level:
+            v.violations >= QUOTA_MAX
+              ? 'max'
+              : v.violations >= QUOTA_WARN
+                ? 'warn'
+                : 'normal',
+        })),
+        // Use the same showAll-filtered list the screen uses so the PDF
+        // matches what the owner sees on screen at print time.
+        rows: visibleComparisons.map((c) => {
+          const linked = penaltyByComparison.get(c.id);
+          return {
+            product_name: c.product_name || c.product_code,
+            product_code: c.product_code,
+            pos_quantity: c.pos_quantity,
+            manual_quantity: c.manual_quantity,
+            difference: c.difference,
+            recount_quantity: c.recount_quantity,
+            conclusion: c.conclusion,
+            responsible_label: responsibleLabel(c),
+            penalty_code: linked?.penalty_code || null,
+            penalty_amount: linked?.amount ? Number(linked.amount) : null,
+            remark: c.owner_notes,
+            escalated_to_hr: !!c.escalated_to_hr_at,
+          };
+        }),
+      };
+
+      const blob = await mod.buildOwnerReviewPdf(data);
+      mod.downloadBlob(blob, `รายงานเจ้าของร้าน-${businessDate}.pdf`);
+    } catch (err) {
+      console.error('PDF download error:', err);
+      toast({ type: 'error', title: 'สร้าง PDF ล้มเหลว' });
+    } finally {
+      setDownloadingPdf(false);
     }
   };
 
@@ -849,22 +956,38 @@ export default function OwnerReviewPage() {
         <CardHeader
           title={`รายการสำหรับวันที่ ${formatThaiDate(businessDate)}`}
           action={
-            <Button
-              size="sm"
-              variant="outline"
-              icon={
-                showAll ? (
-                  <EyeOff className="h-3.5 w-3.5" />
-                ) : (
-                  <Eye className="h-3.5 w-3.5" />
-                )
-              }
-              onClick={() => setShowAll((v) => !v)}
-            >
-              {showAll
-                ? `ซ่อนรายการที่ตรง (${comparisons.length - totalDiscrepancy})`
-                : `แสดงทั้งหมด (${comparisons.length})`}
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                icon={
+                  showAll ? (
+                    <EyeOff className="h-3.5 w-3.5" />
+                  ) : (
+                    <Eye className="h-3.5 w-3.5" />
+                  )
+                }
+                onClick={() => setShowAll((v) => !v)}
+              >
+                {showAll
+                  ? `ซ่อนรายการที่ตรง (${comparisons.length - totalDiscrepancy})`
+                  : `แสดงทั้งหมด (${comparisons.length})`}
+              </Button>
+              <Button
+                size="sm"
+                icon={
+                  downloadingPdf ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <FileDown className="h-3.5 w-3.5" />
+                  )
+                }
+                disabled={downloadingPdf || comparisons.length === 0}
+                onClick={handleDownloadPdf}
+              >
+                ดาวน์โหลด PDF
+              </Button>
+            </div>
           }
         />
         {loading ? (
@@ -944,36 +1067,62 @@ export default function OwnerReviewPage() {
                       >
                         {formatSignedQty(c.difference)}
                       </td>
-                      {/* Recount */}
+                      {/* Recount — inline edit, save on blur / Enter */}
                       <td className="px-3 py-2 text-right align-top">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setRecountModal({
-                              comparison: c,
-                              quantity:
-                                c.recount_quantity !== null
-                                  ? String(c.recount_quantity)
-                                  : '',
-                              notes: c.recount_notes || '',
-                            })
-                          }
-                          className={cn(
-                            'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs',
-                            c.recount_quantity !== null
-                              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
-                              : 'border-dashed border-gray-300 text-gray-500 hover:border-indigo-400 hover:text-indigo-600',
-                          )}
-                        >
-                          {c.recount_quantity !== null
-                            ? formatQty(c.recount_quantity)
-                            : '+ นับซ้ำ'}
-                          {c.recount_by && (
-                            <span className="text-[10px] opacity-70">
-                              ({initials(staffById.get(c.recount_by))})
-                            </span>
-                          )}
-                        </button>
+                        {editingRecount?.id === c.id ? (
+                          <div className="inline-flex items-center gap-1">
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={editingRecount.value}
+                              onChange={(e) =>
+                                setEditingRecount({ id: c.id, value: e.target.value })
+                              }
+                              onBlur={() => commitRecount(c, editingRecount.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  commitRecount(c, editingRecount.value);
+                                }
+                                if (e.key === 'Escape') setEditingRecount(null);
+                              }}
+                              autoFocus
+                              disabled={savingCell === `${c.id}:recount`}
+                              className="w-20 rounded border border-indigo-300 bg-white px-2 py-1 text-right text-xs dark:border-indigo-600 dark:bg-gray-800 dark:text-white"
+                            />
+                            {savingCell === `${c.id}:recount` && (
+                              <Loader2 className="h-3 w-3 animate-spin text-indigo-400" />
+                            )}
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEditingRecount({
+                                id: c.id,
+                                value:
+                                  c.recount_quantity !== null
+                                    ? String(c.recount_quantity)
+                                    : '',
+                              })
+                            }
+                            className={cn(
+                              'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs',
+                              c.recount_quantity !== null
+                                ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
+                                : 'border-dashed border-gray-300 text-gray-500 hover:border-indigo-400 hover:text-indigo-600',
+                            )}
+                          >
+                            {c.recount_quantity !== null
+                              ? formatQty(c.recount_quantity)
+                              : '+ นับซ้ำ'}
+                            {c.recount_by && (
+                              <span className="text-[10px] opacity-70">
+                                ({initials(staffById.get(c.recount_by))})
+                              </span>
+                            )}
+                          </button>
+                        )}
                       </td>
                       {/* Conclusion */}
                       <td className="px-3 py-2 align-top min-w-[160px]">
@@ -1124,58 +1273,6 @@ export default function OwnerReviewPage() {
         </CardContent>
       </Card>
 
-      {/* Recount modal */}
-      <Modal
-        isOpen={!!recountModal}
-        onClose={() => setRecountModal(null)}
-        title="นับสอบ (Recount)"
-      >
-        {recountModal && (
-          <div className="space-y-3">
-            <div className="rounded-lg bg-gray-50 px-3 py-2 text-sm dark:bg-gray-700/50">
-              <p className="font-semibold">{recountModal.comparison.product_name}</p>
-              <p className="text-xs text-gray-500">
-                POS {formatQty(recountModal.comparison.pos_quantity)} · นับได้{' '}
-                {formatQty(recountModal.comparison.manual_quantity)} · ผลต่าง{' '}
-                <span
-                  className={cn(
-                    (recountModal.comparison.difference || 0) < 0
-                      ? 'text-rose-600'
-                      : 'text-emerald-600',
-                  )}
-                >
-                  {formatSignedQty(recountModal.comparison.difference)}
-                </span>
-              </p>
-            </div>
-            <Input
-              type="number"
-              step="0.01"
-              label="ยอดที่นับสอบได้"
-              value={recountModal.quantity}
-              onChange={(e) =>
-                setRecountModal((prev) => prev && { ...prev, quantity: e.target.value })
-              }
-              autoFocus
-            />
-            <Textarea
-              label="หมายเหตุ (ถ้ามี)"
-              value={recountModal.notes}
-              onChange={(e) =>
-                setRecountModal((prev) => prev && { ...prev, notes: e.target.value })
-              }
-              rows={2}
-            />
-            <ModalFooter>
-              <Button variant="outline" onClick={() => setRecountModal(null)}>
-                ยกเลิก
-              </Button>
-              <Button onClick={handleSubmitRecount}>บันทึก</Button>
-            </ModalFooter>
-          </div>
-        )}
-      </Modal>
-
       {/* Penalty modal */}
       <Modal
         isOpen={!!penaltyModal}
@@ -1224,29 +1321,10 @@ export default function OwnerReviewPage() {
             <Select
               label="พนักงานที่รับผิดชอบ"
               value={penaltyModal.staffId}
-              // Penalty is always per-individual — no "all" sentinels here.
-              // Reuse the bar-first sort already applied to `staff` and add
-              // role headers so the two groups read clearly.
-              options={(() => {
-                const bar = staff.filter((s) => s.role === 'bar');
-                const others = staff.filter((s) => s.role === 'staff');
-                const opts: Array<{ value: string; label: string; disabled?: boolean }> = [
-                  { value: '', label: '— เลือก —' },
-                ];
-                if (bar.length > 0) {
-                  opts.push({ value: '__sep:bar__', label: '── Bar ──', disabled: true });
-                  for (const s of bar) {
-                    opts.push({ value: s.id, label: s.display_name || s.username });
-                  }
-                }
-                if (others.length > 0) {
-                  opts.push({ value: '__sep:staff__', label: '── Staff ──', disabled: true });
-                  for (const s of others) {
-                    opts.push({ value: s.id, label: s.display_name || s.username });
-                  }
-                }
-                return opts;
-              })()}
+              // Same options as the row dropdown so "Bar ทุกคน" / "Staff
+              // ทุกคน" are reachable here too. handleSubmitPenalty
+              // expands group sentinels into one penalty per member.
+              options={responsibleOptions}
               onChange={(e) =>
                 setPenaltyModal((prev) => prev && { ...prev, staffId: e.target.value })
               }
