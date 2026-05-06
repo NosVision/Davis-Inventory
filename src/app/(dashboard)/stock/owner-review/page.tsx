@@ -64,7 +64,16 @@ interface StaffOption {
   id: string;
   username: string;
   display_name: string | null;
+  role: string;
 }
+
+// Sentinel option values for the "ผู้รับผิดชอบ" dropdown — picked over
+// real UUIDs so we can route to comparisons.responsible_group instead of
+// .responsible_staff_id when the owner picks a whole role.
+const GROUP_VALUES = {
+  staff_all: '__group:staff_all__',
+  bar_all: '__group:bar_all__',
+} as const;
 
 interface PenaltyRow extends Penalty {
   code_meta?: PenaltyCode | null;
@@ -154,6 +163,40 @@ export default function OwnerReviewPage() {
     return m;
   }, [penalties]);
 
+  // Composed options for the "ผู้รับผิดชอบ" dropdown: blank → group meta
+  // shortcuts → individual people grouped by role with role headers so the
+  // bar list and staff list are visually separated.
+  const responsibleOptions = useMemo(() => {
+    const bar = staff.filter((s) => s.role === 'bar');
+    const others = staff.filter((s) => s.role === 'staff');
+    const opts: Array<{ value: string; label: string; disabled?: boolean }> = [
+      { value: '', label: '— เลือก —' },
+      { value: GROUP_VALUES.bar_all, label: 'Bar ทุกคน' },
+      { value: GROUP_VALUES.staff_all, label: 'Staff ทุกคน' },
+    ];
+    if (bar.length > 0) {
+      opts.push({ value: '__sep:bar__', label: '── Bar ──', disabled: true });
+      for (const s of bar) {
+        opts.push({ value: s.id, label: s.display_name || s.username });
+      }
+    }
+    if (others.length > 0) {
+      opts.push({ value: '__sep:staff__', label: '── Staff ──', disabled: true });
+      for (const s of others) {
+        opts.push({ value: s.id, label: s.display_name || s.username });
+      }
+    }
+    return opts;
+  }, [staff]);
+
+  // Decode comparisons.responsible_group / responsible_staff_id back into
+  // the dropdown's selected value.
+  const valueForResponsible = (c: Comparison): string => {
+    if (c.responsible_group === 'staff_all') return GROUP_VALUES.staff_all;
+    if (c.responsible_group === 'bar_all') return GROUP_VALUES.bar_all;
+    return c.responsible_staff_id ?? '';
+  };
+
   // Filtered list driven by the showAll toggle. Hides matched rows by
   // default so the screenshot only contains rows that need attention.
   // MUST stay above the early-return guards below — Rules of Hooks.
@@ -201,11 +244,14 @@ export default function OwnerReviewPage() {
       .order('product_name', { ascending: true });
 
     // Staff list scoped to this store. user_stores join keeps the dropdown
-    // small instead of dumping the whole org.
+    // small instead of dumping the whole org. We further filter to the
+    // two roles that physically count stock — owners/managers should
+    // never appear under "ผู้รับผิดชอบ" because they don't pour drinks.
     const staffPromise = supabase
       .from('user_stores')
       .select('user_id, profiles!inner(id, username, display_name, active, role)')
-      .eq('store_id', currentStoreId);
+      .eq('store_id', currentStoreId)
+      .in('profiles.role', ['staff', 'bar']);
 
     const codesPromise = supabase
       .from('penalty_codes')
@@ -263,17 +309,31 @@ export default function OwnerReviewPage() {
     if (codesRes.data) setCodes(codesRes.data as PenaltyCode[]);
 
     // Flatten the staff join + dedupe (a user_stores row can appear twice
-    // if assignments overlap — keep the first).
+    // if assignments overlap — keep the first). Sort: bar-first then
+    // staff, then alphabetically within each role to match the dropdown
+    // order the owner asked for.
     const staffList: StaffOption[] = [];
     const seen = new Set<string>();
     for (const row of (staffRes.data || []) as unknown as Array<{
-      profiles: { id: string; username: string; display_name: string | null; active: boolean };
+      profiles: { id: string; username: string; display_name: string | null; active: boolean; role: string };
     }>) {
       const p = row.profiles;
       if (!p || !p.active || seen.has(p.id)) continue;
       seen.add(p.id);
-      staffList.push({ id: p.id, username: p.username, display_name: p.display_name });
+      staffList.push({
+        id: p.id,
+        username: p.username,
+        display_name: p.display_name,
+        role: p.role,
+      });
     }
+    staffList.sort((a, b) => {
+      if (a.role !== b.role) return a.role === 'bar' ? -1 : 1;
+      return (a.display_name || a.username).localeCompare(
+        b.display_name || b.username,
+        'th',
+      );
+    });
     setStaff(staffList);
 
     // Decorate penalties with code meta + staff name for downstream UI.
@@ -347,12 +407,28 @@ export default function OwnerReviewPage() {
     });
   };
 
-  const handleAssignResponsible = async (id: string, staffId: string) => {
+  // Handles all three shapes the dropdown can return:
+  //   ''                       → clear both fields
+  //   '__group:staff_all__'    → set responsible_group, clear staff_id
+  //   '__group:bar_all__'      → set responsible_group, clear staff_id
+  //   <uuid>                   → set responsible_staff_id, clear group
+  // The two fields are mutually exclusive on the row.
+  const handleAssignResponsible = async (id: string, value: string) => {
     setSavingCell(`${id}:responsible`);
+    let patch: { responsible_staff_id: string | null; responsible_group: 'staff_all' | 'bar_all' | null };
+    if (value === GROUP_VALUES.staff_all) {
+      patch = { responsible_staff_id: null, responsible_group: 'staff_all' };
+    } else if (value === GROUP_VALUES.bar_all) {
+      patch = { responsible_staff_id: null, responsible_group: 'bar_all' };
+    } else if (value === '') {
+      patch = { responsible_staff_id: null, responsible_group: null };
+    } else {
+      patch = { responsible_staff_id: value, responsible_group: null };
+    }
     const supabase = createClient();
     const { error } = await supabase
       .from('comparisons')
-      .update({ responsible_staff_id: staffId || null })
+      .update(patch)
       .eq('id', id);
     setSavingCell(null);
     if (error) {
@@ -360,7 +436,7 @@ export default function OwnerReviewPage() {
       return;
     }
     setComparisons((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, responsible_staff_id: staffId || null } : c)),
+      prev.map((c) => (c.id === id ? { ...c, ...patch } : c)),
     );
   };
 
@@ -928,14 +1004,8 @@ export default function OwnerReviewPage() {
                       {/* Responsible */}
                       <td className="px-3 py-2 align-top min-w-[140px]">
                         <Select
-                          value={c.responsible_staff_id ?? ''}
-                          options={[
-                            { value: '', label: '— เลือก —' },
-                            ...staff.map((s) => ({
-                              value: s.id,
-                              label: s.display_name || s.username,
-                            })),
-                          ]}
+                          value={valueForResponsible(c)}
+                          options={responsibleOptions}
                           onChange={(e) => handleAssignResponsible(c.id, e.target.value)}
                           className="!py-1.5 text-xs"
                         />
@@ -1154,13 +1224,29 @@ export default function OwnerReviewPage() {
             <Select
               label="พนักงานที่รับผิดชอบ"
               value={penaltyModal.staffId}
-              options={[
-                { value: '', label: '— เลือก —' },
-                ...staff.map((s) => ({
-                  value: s.id,
-                  label: s.display_name || s.username,
-                })),
-              ]}
+              // Penalty is always per-individual — no "all" sentinels here.
+              // Reuse the bar-first sort already applied to `staff` and add
+              // role headers so the two groups read clearly.
+              options={(() => {
+                const bar = staff.filter((s) => s.role === 'bar');
+                const others = staff.filter((s) => s.role === 'staff');
+                const opts: Array<{ value: string; label: string; disabled?: boolean }> = [
+                  { value: '', label: '— เลือก —' },
+                ];
+                if (bar.length > 0) {
+                  opts.push({ value: '__sep:bar__', label: '── Bar ──', disabled: true });
+                  for (const s of bar) {
+                    opts.push({ value: s.id, label: s.display_name || s.username });
+                  }
+                }
+                if (others.length > 0) {
+                  opts.push({ value: '__sep:staff__', label: '── Staff ──', disabled: true });
+                  for (const s of others) {
+                    opts.push({ value: s.id, label: s.display_name || s.username });
+                  }
+                }
+                return opts;
+              })()}
               onChange={(e) =>
                 setPenaltyModal((prev) => prev && { ...prev, staffId: e.target.value })
               }

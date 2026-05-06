@@ -118,6 +118,7 @@ export interface Comparison {
   recount_notes: string | null;
   conclusion: string | null;
   responsible_staff_id: string | null;
+  responsible_group: 'staff_all' | 'bar_all' | null;
   escalated_to_hr_at: string | null;
   escalated_by: string | null;
   created_at: string;
