@@ -1883,9 +1883,13 @@ export default function HqWarehousePage() {
                   </div>
                 )}
 
-                {/* Sticky bulk action bar when items are selected */}
+                {/* Sticky bulk action bar when items are selected.
+                    Sits above the dashboard's mobile bottom nav (~64 px,
+                    z-50) instead of behind it — the previous bottom-0 +
+                    z-40 combo got covered. Adds a safe-area inset for
+                    iOS so it clears the home indicator too. */}
                 {canWithdraw && selectedReceivedIds.size > 0 && (
-                  <div className="fixed inset-x-0 bottom-0 z-40 border-t border-orange-200 bg-white/95 px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.08)] backdrop-blur-sm dark:border-orange-900/50 dark:bg-gray-900/95">
+                  <div className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+64px)] z-50 border-t border-orange-200 bg-white/95 px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.08)] backdrop-blur-sm dark:border-orange-900/50 dark:bg-gray-900/95">
                     <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
                       <div className="text-sm text-gray-600 dark:text-gray-300">
                         <span className="font-bold text-orange-600 dark:text-orange-400">
