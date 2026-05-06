@@ -1193,193 +1193,146 @@ export default function HqWarehousePage() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
-      {/* Header */}
-      <header className="bg-gradient-to-br from-orange-400 via-orange-500 to-orange-600 px-4 py-5 text-white shadow-xl">
-        <div className="mx-auto max-w-7xl">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-white/20 p-2.5 backdrop-blur-sm">
-                <Warehouse className="h-6 w-6" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold tracking-tight">{t('title')}</h1>
-                <p className="text-sm text-orange-100">
-                  {t('subtitle', { stores: centralStores.map((s) => s.store_name).join(', ') })}
-                </p>
-              </div>
+      {/* Compact header — single line on desktop, wraps to two lines on
+          mobile. The big gradient banner from the previous design ate
+          ~140 px before the user saw any data; this version is ~56 px. */}
+      <header className="border-b bg-white px-4 py-2.5 dark:bg-gray-900 dark:border-gray-800">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="rounded-md bg-orange-100 p-1.5 dark:bg-orange-900/30">
+              <Warehouse className="h-4 w-4 text-orange-600 dark:text-orange-400" />
             </div>
+            <div className="min-w-0">
+              <h1 className="truncate text-base font-bold text-gray-900 dark:text-white">
+                {t('title')}
+              </h1>
+              <p className="truncate text-[11px] text-gray-500 dark:text-gray-400">
+                {centralStores.map((s) => s.store_name).join(', ')}
+              </p>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              onClick={() => setShowBranchSummary(!showBranchSummary)}
+              className="hidden items-center gap-1 rounded-md px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 sm:flex dark:text-gray-300 dark:hover:bg-gray-800"
+              title={t('branchSummary')}
+            >
+              <StoreIcon className="h-3.5 w-3.5" />
+              {t('branchSummary')}
+            </button>
             <button
               onClick={handleRefresh}
               disabled={isRefreshing}
-              className="rounded-lg bg-white/20 px-3 py-1.5 text-sm font-medium backdrop-blur-sm transition hover:bg-white/30"
+              className="rounded-md border border-gray-200 p-1.5 text-gray-600 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+              title="Refresh"
             >
               <RefreshCw className={cn('h-4 w-4', isRefreshing && 'animate-spin')} />
             </button>
           </div>
         </div>
-      </header>
 
-      {/* Summary Cards */}
-      <div className="border-b bg-gradient-to-br from-orange-50 to-amber-50 dark:from-gray-900 dark:to-gray-900">
-        <div className="mx-auto max-w-7xl px-4 py-4">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {tabs.map((tab) => {
-              const colorMap: Record<string, string> = {
-                yellow: 'border-yellow-200 dark:border-yellow-800',
-                green: 'border-green-200 dark:border-green-800',
-                blue: 'border-blue-200 dark:border-blue-800',
-                gray: 'border-gray-200 dark:border-gray-700',
-              };
-              const iconBgMap: Record<string, string> = {
-                yellow: 'bg-yellow-100 dark:bg-yellow-900/30',
-                green: 'bg-green-100 dark:bg-green-900/30',
-                blue: 'bg-blue-100 dark:bg-blue-900/30',
-                gray: 'bg-gray-100 dark:bg-gray-800',
-              };
-              const textColorMap: Record<string, string> = {
-                yellow: 'text-yellow-600 dark:text-yellow-400',
-                green: 'text-green-600 dark:text-green-400',
-                blue: 'text-blue-600 dark:text-blue-400',
-                gray: 'text-gray-600 dark:text-gray-400',
-              };
-              const TabIcon = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={cn(
-                    'rounded-xl border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:bg-gray-900',
-                    colorMap[tab.color],
-                    activeTab === tab.id && 'ring-2 ring-orange-400'
-                  )}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={cn('rounded-lg p-2.5', iconBgMap[tab.color])}>
-                      <TabIcon className={cn('h-5 w-5', textColorMap[tab.color])} />
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">{tab.label}</p>
-                      {tab.id === 'history' ? (
-                        <p className={cn('text-sm font-medium', textColorMap[tab.color])}>
-                          {t('historyCardHint')}
-                        </p>
-                      ) : (
-                        <p className={cn('text-2xl font-bold', textColorMap[tab.color])}>{tab.count}</p>
-                      )}
-                    </div>
+        {/* Branch summary popover — opens under the header without
+            pushing the page. Hidden on mobile via the button above. */}
+        {showBranchSummary && (
+          <div className="mx-auto mt-2 max-w-7xl rounded-lg border bg-white p-2 text-xs shadow-sm dark:border-gray-800 dark:bg-gray-900">
+            {branchSummaryData.length === 0 ? (
+              <p className="py-1 text-center text-gray-400">{t('noBranchData')}</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {branchSummaryData.map((branch) => (
+                  <div
+                    key={branch.storeId}
+                    className="flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 dark:border-gray-700 dark:bg-gray-800"
+                  >
+                    <span className="font-medium text-gray-700 dark:text-gray-200">
+                      {branch.storeName}
+                    </span>
+                    {branch.pending > 0 && (
+                      <span className="rounded-full bg-yellow-100 px-1.5 font-bold text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
+                        {branch.pending}
+                      </span>
+                    )}
+                    {branch.received > 0 && (
+                      <span className="rounded-full bg-green-100 px-1.5 font-bold text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                        {branch.received}
+                      </span>
+                    )}
                   </div>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Branch Summary */}
-          <div className="mt-3">
-            <button
-              onClick={() => setShowBranchSummary(!showBranchSummary)}
-              className="flex w-full items-center justify-between rounded-lg bg-white px-4 py-2 text-sm text-gray-600 transition hover:bg-gray-50 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
-            >
-              <span className="flex items-center gap-2">
-                <StoreIcon className="h-4 w-4" />
-                {t('branchSummary')}
-              </span>
-              {showBranchSummary ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            </button>
-            {showBranchSummary && (
-              <div className="mt-2 rounded-lg bg-white p-3 shadow-sm dark:bg-gray-900">
-                {branchSummaryData.length === 0 ? (
-                  <p className="py-2 text-center text-sm text-gray-400">{t('noBranchData')}</p>
-                ) : (
-                  <div className="space-y-2">
-                    {branchSummaryData.map((branch) => (
-                      <div key={branch.storeId} className="flex items-center justify-between border-b py-2 last:border-0 dark:border-gray-800">
-                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{branch.storeName}</span>
-                        <div className="flex gap-2 text-xs">
-                          {branch.pending > 0 && (
-                            <span className="rounded-full bg-yellow-100 px-2 py-1 font-bold text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
-                              {t('pendingLabel', { count: branch.pending })}
-                            </span>
-                          )}
-                          {branch.received > 0 && (
-                            <span className="rounded-full bg-green-100 px-2 py-1 font-bold text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                              {t('receivedLabel', { count: branch.received })}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                ))}
               </div>
             )}
           </div>
-        </div>
-      </div>
+        )}
+      </header>
 
-      {/* Tab Navigation */}
-      <div className="sticky top-0 z-40 bg-white shadow-sm dark:bg-gray-900">
-        <div className="mx-auto max-w-7xl px-2">
-          <nav className="flex gap-2 overflow-x-auto py-3">
-            {tabs.map((tab) => {
-              const TabIcon = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={cn(
-                    'relative flex items-center gap-1.5 whitespace-nowrap rounded-lg px-4 py-2.5 text-sm font-medium transition',
-                    activeTab === tab.id
-                      ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-md'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
-                  )}
-                >
-                  <TabIcon className="h-4 w-4" />
-                  {tab.label}
-                  {tab.id !== 'history' && tab.count > 0 && (
-                    <span className={cn(
-                      'ml-1 rounded-full px-1.5 py-0.5 text-xs font-bold',
-                      activeTab === tab.id
-                        ? 'bg-white/20 text-white'
-                        : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
-                    )}>
-                      {tab.count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="mx-auto max-w-7xl px-4 pt-4">
-        <div className="flex flex-col gap-2 rounded-lg bg-white p-3 shadow-sm sm:flex-row dark:bg-gray-900">
-          <select
-            value={filterBranch}
-            onChange={(e) => setFilterBranch(e.target.value)}
-            className="flex-1 rounded-lg border px-4 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
-          >
-            <option value="">{t('allBranches')}</option>
-            {branchStores.map((store) => (
-              <option key={store.id} value={store.id}>{store.store_name}</option>
-            ))}
-          </select>
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={t('searchPlaceholder')}
-              className="w-full rounded-lg border py-2 pl-9 pr-4 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
-            />
+      {/* Sticky toolbar — tabs, store filter, search, all in one row.
+          Replaces the old "summary cards + tab nav + filters" stack
+          (saved ~200 px). Tabs carry their own count badge so the
+          big summary cards are no longer needed. */}
+      <div className="sticky top-0 z-40 border-b bg-white shadow-sm dark:bg-gray-900 dark:border-gray-800">
+        <div className="mx-auto max-w-7xl px-3 py-2">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+            <nav className="-mx-1 flex gap-1 overflow-x-auto px-1">
+              {tabs.map((tab) => {
+                const TabIcon = tab.icon;
+                const active = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={cn(
+                      'flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition',
+                      active
+                        ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-sm'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700',
+                    )}
+                  >
+                    <TabIcon className="h-3.5 w-3.5" />
+                    {tab.label}
+                    {tab.id !== 'history' && tab.count > 0 && (
+                      <span
+                        className={cn(
+                          'rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums',
+                          active
+                            ? 'bg-white/25 text-white'
+                            : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
+                        )}
+                      >
+                        {tab.count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
+            <div className="flex flex-1 gap-2 lg:max-w-md lg:ml-auto">
+              <select
+                value={filterBranch}
+                onChange={(e) => setFilterBranch(e.target.value)}
+                className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+              >
+                <option value="">{t('allBranches')}</option>
+                {branchStores.map((store) => (
+                  <option key={store.id} value={store.id}>{store.store_name}</option>
+                ))}
+              </select>
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={t('searchPlaceholder')}
+                  className="w-full rounded-md border border-gray-200 py-1.5 pl-7 pr-2 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                />
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Main Content */}
-      <main className="mx-auto max-w-7xl p-4 pb-24">
+      <main className="mx-auto max-w-7xl px-3 py-3 pb-24">
         {loading ? (
           <div className="rounded-lg bg-white p-8 text-center shadow dark:bg-gray-900">
             <Loader2 className="mx-auto h-10 w-10 animate-spin text-orange-500" />
@@ -1389,17 +1342,7 @@ export default function HqWarehousePage() {
           <>
             {/* Tab: Pending */}
             {activeTab === 'pending' && (
-              <div className="space-y-4">
-                <div className="flex items-center gap-3 rounded-xl bg-gradient-to-r from-yellow-500 to-amber-600 p-4 text-white">
-                  <div className="rounded-xl bg-white/20 p-3">
-                    <Clock className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-bold">{t('pendingHeader')}</h3>
-                    <p className="text-sm text-yellow-100">{t('pendingHeaderDesc')}</p>
-                  </div>
-                </div>
-
+              <div className="space-y-3">
                 {filteredPending.length === 0 ? (
                   <EmptyState message={t('noPendingItems')} />
                 ) : (
@@ -1658,16 +1601,7 @@ export default function HqWarehousePage() {
 
             {/* Tab: Received */}
             {activeTab === 'received' && (
-              <div className="space-y-4 pb-20">
-                <div className="flex items-center gap-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 p-4 text-white">
-                  <div className="rounded-xl bg-white/20 p-3">
-                    <Package className="h-6 w-6" />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="text-lg font-bold">{t('receivedHeader')}</h3>
-                    <p className="text-sm text-green-100">{t('receivedHeaderDesc')}</p>
-                  </div>
-                </div>
+              <div className="space-y-3 pb-20">
 
                 {/* Toolbar: select-all + view mode toggle */}
                 {filteredReceived.length > 0 && (
@@ -1960,17 +1894,7 @@ export default function HqWarehousePage() {
 
             {/* Tab: Withdrawn */}
             {activeTab === 'withdrawn' && (
-              <div className="space-y-4">
-                <div className="flex items-center gap-3 rounded-xl bg-gradient-to-r from-gray-500 to-gray-600 p-4 text-white">
-                  <div className="rounded-xl bg-white/20 p-3">
-                    <BoxSelect className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-bold">{t('withdrawnHeader')}</h3>
-                    <p className="text-sm text-gray-200">{t('withdrawnHeaderDesc')}</p>
-                  </div>
-                </div>
-
+              <div className="space-y-3">
                 {/* Date filter */}
                 <div className="flex gap-2 rounded-lg bg-white p-3 shadow-sm dark:bg-gray-900">
                   {(['today', 'week', 'all'] as const).map((filter) => (

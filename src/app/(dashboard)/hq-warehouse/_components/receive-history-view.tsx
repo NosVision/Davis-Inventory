@@ -11,7 +11,6 @@
 
 import { useMemo } from 'react';
 import {
-  Calendar,
   ArrowLeft,
   ArrowRight,
   FileDown,
@@ -166,69 +165,62 @@ export function ReceiveHistoryView({
   const isFutureDate = date >= today;
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center gap-3 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 p-4 text-white">
-        <div className="rounded-xl bg-white/20 p-3">
-          <Calendar className="h-6 w-6" />
-        </div>
-        <div className="flex-1">
-          <h3 className="text-lg font-bold">ประวัติการรับเข้า</h3>
-          <p className="text-sm text-blue-100">
-            ดูย้อนหลังตามวัน + ดาวน์โหลดรายงานเป็น PDF
-          </p>
-        </div>
-      </div>
+    <div className="space-y-3">
+      {/* Compact toolbar — date stepper + summary chip + download in one
+          row. Replaces the old gradient banner + separate chip stack. */}
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-white px-2 py-1.5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+        <button
+          onClick={() => shiftDate(-1)}
+          className="rounded p-1 hover:bg-gray-100 dark:hover:bg-gray-800"
+          aria-label="ก่อนหน้า"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+        <input
+          type="date"
+          value={date}
+          max={today}
+          onChange={(e) => e.target.value && setDate(e.target.value)}
+          className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+        />
+        <button
+          onClick={() => shiftDate(1)}
+          disabled={isFutureDate}
+          className="rounded p-1 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-gray-800"
+          aria-label="ถัดไป"
+        >
+          <ArrowRight className="h-4 w-4" />
+        </button>
+        <span className="text-xs text-gray-600 dark:text-gray-300">
+          {formatThaiDate(date)}
+        </span>
 
-      {/* Date controls */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-white p-3 shadow-sm dark:bg-gray-900">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => shiftDate(-1)}
-            className="rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-gray-800"
-            aria-label="ก่อนหน้า"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </button>
-          <input
-            type="date"
-            value={date}
-            max={today}
-            onChange={(e) => e.target.value && setDate(e.target.value)}
-            className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
-          />
-          <button
-            onClick={() => shiftDate(1)}
-            disabled={isFutureDate}
-            className="rounded-lg p-2 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-gray-800"
-            aria-label="ถัดไป"
-          >
-            <ArrowRight className="h-4 w-4" />
-          </button>
-          <span className="ml-2 text-sm text-gray-600 dark:text-gray-300">
-            {formatThaiDate(date)}
+        {!loading && totalItems > 0 && (
+          <span className="ml-2 hidden truncate text-xs text-gray-500 sm:inline dark:text-gray-400">
+            · {totalItems} รายการ · {groups.length} สาขา · {totalSessions} รอบ
           </span>
-        </div>
+        )}
 
         <button
           onClick={onDownload}
           disabled={downloading || totalItems === 0}
-          className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-orange-500 to-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:from-orange-600 hover:to-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
+          className="ml-auto flex items-center gap-1 rounded-md bg-orange-500 px-2.5 py-1 text-xs font-semibold text-white shadow-sm hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {downloading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : (
-            <FileDown className="h-4 w-4" />
+            <FileDown className="h-3.5 w-3.5" />
           )}
-          ดาวน์โหลดรายงาน PDF
+          PDF
         </button>
       </div>
 
-      {/* Summary chip */}
+      {/* Hide the separate summary chip on mobile (folded into toolbar
+          above on desktop). On mobile the toolbar stays narrow so we
+          surface the summary on its own thin line below. */}
       {!loading && totalItems > 0 && (
-        <div className="rounded-lg bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:bg-blue-900/20 dark:text-blue-200">
-          รวม <b>{totalItems}</b> รายการ จาก <b>{groups.length}</b> สาขา
-          ({totalSessions} รอบรับ) · HQ: <b>{hqName}</b>
+        <div className="rounded-md bg-blue-50 px-2.5 py-1 text-[11px] text-blue-800 sm:hidden dark:bg-blue-900/20 dark:text-blue-200">
+          {totalItems} รายการ · {groups.length} สาขา · {totalSessions} รอบรับ · HQ {hqName}
         </div>
       )}
 
