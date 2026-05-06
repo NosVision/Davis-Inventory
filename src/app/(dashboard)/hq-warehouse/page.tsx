@@ -94,9 +94,11 @@ interface HqDepositItem {
   withdrawal_notes: string | null;
   withdrawn_at: string | null;
   notes: string | null;
-  // Average remaining_percent across deposit_bottles for this row's
-  // deposit_id. Pulled by loadHistoryForDate, null in other loaders.
-  remaining_percent: number | null;
+  // Per-bottle remaining_percent for this row's deposit_id, ordered by
+  // bottle_no. A multi-bottle deposit (e.g. customer deposited 3 bottles
+  // under one code, only some are partly drunk) shows up as e.g.
+  // [100, 80, 50]. Pulled by loadHistoryForDate, null in other loaders.
+  remaining_percents: number[] | null;
   created_at: string;
 }
 
@@ -154,7 +156,7 @@ function buildReportData(
         customer_name: it.customer_name,
         deposit_code: it.deposit_code,
         quantity: it.quantity,
-        remaining_percent: it.remaining_percent,
+        remaining_percents: it.remaining_percents,
       })),
     };
     if (existing) existing.sessions.push(sessionDto);
@@ -211,6 +213,16 @@ export default function HqWarehousePage() {
   // Modal State
   const [selectedTransfer, setSelectedTransfer] = useState<TransferWithItems | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  // Detail panel enrichment fetched lazily on modal open: per-bottle
+  // remaining_percent + the original branch-side deposit photo (the one
+  // taken when the customer first dropped the bottle off, not the
+  // transfer photo). Reset whenever the modal closes or the selection
+  // changes.
+  const [detailExtras, setDetailExtras] = useState<{
+    bottles: { bottle_no: number; remaining_percent: number }[];
+    deposit_photo_url: string | null;
+  } | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmStep, setConfirmStep] = useState(1);
   const [confirmPhotoUrl, setConfirmPhotoUrl] = useState<string | null>(null);
@@ -428,7 +440,7 @@ export default function HqWarehousePage() {
       from_store_name: storeMap.get(d.from_store_id || '') || unknownBranch,
       received_by_name: d.received_by ? (userMap.get(d.received_by) || null) : null,
       withdrawn_by_name: null,
-      remaining_percent: null,
+      remaining_percents: null,
     }));
 
     if (mountedRef.current) setReceivedItems(items);
@@ -466,7 +478,7 @@ export default function HqWarehousePage() {
       from_store_name: storeMap.get(d.from_store_id || '') || unknownBranch,
       received_by_name: d.received_by ? (userMap.get(d.received_by) || null) : null,
       withdrawn_by_name: d.withdrawn_by ? (userMap.get(d.withdrawn_by) || null) : null,
-      remaining_percent: null,
+      remaining_percents: null,
     }));
 
     if (mountedRef.current) setWithdrawnItems(items);
@@ -521,34 +533,29 @@ export default function HqWarehousePage() {
         }
       }
 
-      // Pull average remaining_percent per deposit_id from deposit_bottles
-      // so the report can show a "%คงเหลือ" column. Average across all
-      // bottles of the same deposit because hq_deposits doesn't drill down
-      // to individual bottles — one row may correspond to N bottles.
+      // Pull per-bottle remaining_percent for each deposit_id. Keep the
+      // array (rather than averaging) so a multi-bottle deposit with
+      // partly-drunk bottles renders as "100%, 80%, 50%" instead of
+      // hiding the variance behind an average.
       const depositIds = [...new Set(
         (data || []).map((d) => d.deposit_id).filter(Boolean) as string[],
       )];
-      let pctMap = new Map<string, number>();
+      let pctMap = new Map<string, number[]>();
       if (depositIds.length > 0) {
         const { data: bottles } = await supabase
           .from('deposit_bottles')
-          .select('deposit_id, remaining_percent')
-          .in('deposit_id', depositIds);
+          .select('deposit_id, bottle_no, remaining_percent')
+          .in('deposit_id', depositIds)
+          .order('bottle_no', { ascending: true });
         if (bottles) {
-          const sums = new Map<string, { sum: number; n: number }>();
+          const grouped = new Map<string, number[]>();
           for (const b of bottles) {
             if (!b.deposit_id || b.remaining_percent === null) continue;
-            const cur = sums.get(b.deposit_id) || { sum: 0, n: 0 };
-            cur.sum += Number(b.remaining_percent);
-            cur.n += 1;
-            sums.set(b.deposit_id, cur);
+            const arr = grouped.get(b.deposit_id) || [];
+            arr.push(Math.round(Number(b.remaining_percent)));
+            grouped.set(b.deposit_id, arr);
           }
-          pctMap = new Map(
-            Array.from(sums.entries()).map(([id, v]) => [
-              id,
-              Math.round(v.sum / v.n),
-            ]),
-          );
+          pctMap = grouped;
         }
       }
 
@@ -557,7 +564,7 @@ export default function HqWarehousePage() {
         from_store_name: storeMap.get(d.from_store_id || '') || unknownBranch,
         received_by_name: d.received_by ? (userMap.get(d.received_by) || null) : null,
         withdrawn_by_name: null,
-        remaining_percent: d.deposit_id ? (pctMap.get(d.deposit_id) ?? null) : null,
+        remaining_percents: d.deposit_id ? (pctMap.get(d.deposit_id) ?? null) : null,
       }));
       if (mountedRef.current) setHistoryData(items);
     } finally {
@@ -571,6 +578,46 @@ export default function HqWarehousePage() {
       loadHistoryForDate(historyDate);
     }
   }, [activeTab, historyDate, stores.length, loadHistoryForDate]);
+
+  // Load deposit_bottles + the original branch-side deposit photo when
+  // the detail modal opens. Resets on close so a stale fetch from a
+  // previous transfer doesn't leak into the next one.
+  useEffect(() => {
+    if (!showDetailModal || !selectedTransfer?.deposit_id) {
+      setDetailExtras(null);
+      return;
+    }
+    let cancelled = false;
+    setDetailLoading(true);
+    const supabase = createClient();
+    (async () => {
+      const [bottlesRes, depositRes] = await Promise.all([
+        supabase
+          .from('deposit_bottles')
+          .select('bottle_no, remaining_percent')
+          .eq('deposit_id', selectedTransfer.deposit_id)
+          .order('bottle_no', { ascending: true }),
+        supabase
+          .from('deposits')
+          .select('photo_url')
+          .eq('id', selectedTransfer.deposit_id)
+          .maybeSingle(),
+      ]);
+      if (cancelled) return;
+      const bottles = (bottlesRes.data || [])
+        .filter((b) => b.remaining_percent !== null)
+        .map((b) => ({
+          bottle_no: b.bottle_no,
+          remaining_percent: Math.round(Number(b.remaining_percent)),
+        }));
+      setDetailExtras({
+        bottles,
+        deposit_photo_url: depositRes.data?.photo_url || null,
+      });
+      setDetailLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [showDetailModal, selectedTransfer]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -2042,16 +2089,73 @@ export default function HqWarehousePage() {
                 <p className="text-sm dark:text-gray-200">{selectedTransfer.notes}</p>
               </div>
             )}
-            {selectedTransfer.photo_url && (
-              <div className="mb-4">
+
+            {/* Per-bottle remaining % from deposit_bottles */}
+            <div className="mb-4 rounded-xl bg-emerald-50 p-3 dark:bg-emerald-900/20">
+              <div className="mb-1 flex items-center justify-between">
+                <span className="text-sm font-medium text-emerald-800 dark:text-emerald-300">
+                  ปริมาณคงเหลือต่อขวด
+                </span>
+                {detailExtras && detailExtras.bottles.length > 0 && (
+                  <span className="text-xs text-emerald-700 dark:text-emerald-400">
+                    {detailExtras.bottles.length} ขวด
+                  </span>
+                )}
+              </div>
+              {detailLoading ? (
+                <div className="flex items-center gap-2 text-xs text-emerald-700 dark:text-emerald-400">
+                  <Loader2 className="h-3 w-3 animate-spin" /> กำลังโหลด...
+                </div>
+              ) : detailExtras && detailExtras.bottles.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {detailExtras.bottles.map((b) => (
+                    <span
+                      key={b.bottle_no}
+                      className={cn(
+                        'rounded-md px-2 py-0.5 text-xs font-bold tabular-nums',
+                        b.remaining_percent >= 90
+                          ? 'bg-emerald-200 text-emerald-900 dark:bg-emerald-800 dark:text-emerald-100'
+                          : b.remaining_percent >= 50
+                            ? 'bg-amber-200 text-amber-900 dark:bg-amber-800 dark:text-amber-100'
+                            : 'bg-rose-200 text-rose-900 dark:bg-rose-800 dark:text-rose-100',
+                      )}
+                      title={`ขวดที่ ${b.bottle_no}`}
+                    >
+                      ขวด {b.bottle_no}: {b.remaining_percent}%
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  ไม่มีข้อมูลปริมาณคงเหลือ (ฝากแบบเดิมก่อนระบบติดตามต่อขวด)
+                </p>
+              )}
+            </div>
+
+            {/* Photo buttons — original deposit (branch) + transfer (HQ) */}
+            <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {detailExtras?.deposit_photo_url ? (
+                <button
+                  onClick={() => setViewingPhoto(detailExtras.deposit_photo_url)}
+                  className="rounded-xl bg-amber-100 py-3 text-sm font-medium text-amber-700 transition hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-400"
+                >
+                  <ImageIcon className="mr-2 inline h-4 w-4" />
+                  รูปฝากเหล้าจากสาขา
+                </button>
+              ) : !detailLoading ? (
+                <div className="rounded-xl bg-gray-100 py-3 text-center text-xs text-gray-400 dark:bg-gray-800">
+                  ไม่มีรูปฝากเดิม
+                </div>
+              ) : null}
+              {selectedTransfer.photo_url && (
                 <button
                   onClick={() => setViewingPhoto(selectedTransfer.photo_url)}
-                  className="w-full rounded-xl bg-blue-100 py-3 text-sm font-medium text-blue-700 transition hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400"
+                  className="rounded-xl bg-blue-100 py-3 text-sm font-medium text-blue-700 transition hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400"
                 >
                   <ImageIcon className="mr-2 inline h-4 w-4" /> {t('viewAttachedPhoto')}
                 </button>
-              </div>
-            )}
+              )}
+            </div>
             <div className="flex gap-3">
               <button
                 onClick={() => setShowDetailModal(false)}

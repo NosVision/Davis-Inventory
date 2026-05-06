@@ -39,8 +39,19 @@ export interface HistoryItem {
   received_photo_url: string | null;
   received_at: string;
   received_session_id: string | null;
-  remaining_percent: number | null;
+  remaining_percents: number[] | null;
   notes: string | null;
+}
+
+// Render an array of bottle percentages compactly:
+// - empty / null → "—"
+// - all bottles same → "100%"
+// - mixed → "100%, 80%, 50%"
+export function formatPercents(p: number[] | null | undefined): string {
+  if (!p || p.length === 0) return '—';
+  const allSame = p.every((v) => v === p[0]);
+  if (allSame) return `${p[0]}%`;
+  return p.map((v) => `${v}%`).join(', ');
 }
 
 interface Props {
@@ -306,9 +317,7 @@ export function ReceiveHistoryView({
                                 {it.deposit_code || '—'}
                               </td>
                               <td className="px-2 py-1.5 text-right tabular-nums text-gray-900 dark:text-gray-100">
-                                {it.remaining_percent !== null && it.remaining_percent !== undefined
-                                  ? `${it.remaining_percent}%`
-                                  : '—'}
+                                {formatPercents(it.remaining_percents)}
                               </td>
                               <td className="px-2 py-1.5 text-right tabular-nums text-gray-900 dark:text-gray-100">
                                 {it.quantity ?? '—'}

@@ -176,10 +176,16 @@ export interface ReportItem {
   customer_name: string | null;
   deposit_code: string | null;
   quantity: number | null;
-  // Average remaining_percent across this deposit's bottles (or the
-  // single bottle's value when quantity = 1). Null when no bottles row
-  // exists for the deposit (legacy data before deposit_bottles).
-  remaining_percent: number | null;
+  // Per-bottle remaining_percent, ordered by bottle_no. Null when no
+  // deposit_bottles row exists (legacy data).
+  remaining_percents: number[] | null;
+}
+
+function formatPercents(p: number[] | null | undefined): string {
+  if (!p || p.length === 0) return '—';
+  const allSame = p.every((v) => v === p[0]);
+  if (allSame) return `${p[0]}%`;
+  return p.map((v) => `${v}%`).join(', ');
 }
 
 export interface ReportSession {
@@ -281,9 +287,7 @@ function ReceiveReportDocument({ data }: { data: ReceiveReportData }) {
                           {item.deposit_code || '—'}
                         </Text>
                         <Text style={styles.cellPct}>
-                          {item.remaining_percent !== null && item.remaining_percent !== undefined
-                            ? `${item.remaining_percent}%`
-                            : '—'}
+                          {formatPercents(item.remaining_percents)}
                         </Text>
                         <Text style={styles.cellQty}>
                           {item.quantity ?? '—'}
