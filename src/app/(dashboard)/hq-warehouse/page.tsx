@@ -380,57 +380,16 @@ export default function HqWarehousePage() {
     if (centralStoreIds.length === 0) return;
     const supabase = createClient();
 
-    // --- Auto-repair: find confirmed transfers without matching hq_deposits ---
-    const { data: confirmedTransfers } = await supabase
-      .from('transfers')
-      .select('id, from_store_id, deposit_id, product_name, quantity, requested_by, confirmed_by, confirm_photo_url, notes, created_at')
-      .in('to_store_id', centralStoreIds)
-      .eq('status', 'confirmed');
-
-    if (confirmedTransfers && confirmedTransfers.length > 0) {
-      const tIds = confirmedTransfers.map((t) => t.id);
-      const { data: existingHq } = await supabase
-        .from('hq_deposits')
-        .select('transfer_id')
-        .in('transfer_id', tIds);
-
-      const existingSet = new Set((existingHq || []).map((d) => d.transfer_id));
-      const orphaned = confirmedTransfers.filter((t) => !existingSet.has(t.id));
-
-      if (orphaned.length > 0) {
-        // Resolve deposit info (customer_name, deposit_code)
-        const depIds = orphaned.map((t) => t.deposit_id).filter(Boolean) as string[];
-        let depMap = new Map<string, { customer_name: string; deposit_code: string }>();
-        if (depIds.length > 0) {
-          const { data: deps } = await supabase
-            .from('deposits')
-            .select('id, customer_name, deposit_code')
-            .in('id', depIds);
-          if (deps) {
-            depMap = new Map(deps.map((d) => [d.id, { customer_name: d.customer_name, deposit_code: d.deposit_code }]));
-          }
-        }
-
-        const newRecords = orphaned.map((t) => {
-          const dep = t.deposit_id ? depMap.get(t.deposit_id) : null;
-          return {
-            transfer_id: t.id,
-            deposit_id: t.deposit_id,
-            from_store_id: t.from_store_id,
-            product_name: t.product_name,
-            customer_name: dep?.customer_name || null,
-            deposit_code: dep?.deposit_code || null,
-            quantity: t.quantity,
-            status: 'awaiting_withdrawal' as const,
-            received_by: t.confirmed_by || t.requested_by,
-            received_photo_url: t.confirm_photo_url || null,
-            notes: t.notes,
-          };
-        });
-
-        await supabase.from('hq_deposits').insert(newRecords);
-      }
-    }
+    // The previous version of this function ran an auto-repair pass that
+    // re-inserted any confirmed transfer missing an hq_deposits row. Its
+    // dedup query (`.in('transfer_id', [...709 UUIDs])`) silently
+    // overflowed PostgREST's URL length limit on this dataset, so every
+    // page load thought all 709 confirmed transfers were still orphans
+    // and inserted another batch — creating 2,836 ghost rows with NULL
+    // product_name visible in /history. Migration 00044 cleans the
+    // ghosts and adds a UNIQUE index on transfer_id; the receive flow
+    // (single + batch) already creates the row at confirm time, so this
+    // safety net is no longer needed.
 
     // --- Now load hq_deposits normally ---
     const { data, error } = await supabase
@@ -1420,9 +1379,9 @@ export default function HqWarehousePage() {
                           return null;
                         })()}
 
-                        {/* Batch Transfer Cards */}
+                        {/* Batch Transfer Cards — compact one-row layout */}
                         {isExpanded && (
-                          <div className="space-y-3 p-3">
+                          <div className="space-y-1.5 p-2">
                             {batch.items.map((transfer) => {
                               // Per-item button gate uses the same
                               // batch-level claim — every item in the
@@ -1444,12 +1403,12 @@ export default function HqWarehousePage() {
                               };
                               return (
                               <div key={transfer.id} className={cn(
-                                "flex items-stretch gap-2 rounded-xl border-l-4 bg-gray-50 dark:bg-gray-800",
+                                "flex items-center gap-2 rounded-lg border-l-4 bg-gray-50 px-3 py-2 dark:bg-gray-800",
                                 checked
                                   ? "border-emerald-500 ring-1 ring-emerald-300 dark:ring-emerald-800"
                                   : "border-yellow-500"
                               )}>
-                                <label className="flex shrink-0 cursor-pointer items-center px-3" title={t('selectThisItem')}>
+                                <label className="flex shrink-0 cursor-pointer items-center" title={t('selectThisItem')}>
                                   <input
                                     type="checkbox"
                                     checked={checked}
@@ -1457,80 +1416,99 @@ export default function HqWarehousePage() {
                                     className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 dark:border-gray-600"
                                   />
                                 </label>
-                                <div className="flex-1 p-4">
-                                  <div className="mb-3 flex items-start justify-between">
-                                    <div>
-                                      <p className="font-medium text-gray-900 dark:text-white">{transfer.product_name || t('unspecified')}</p>
-                                      {transfer.customer_name && (
-                                        <p className="text-sm text-gray-500 dark:text-gray-400">{transfer.customer_name}</p>
-                                      )}
-                                      {transfer.deposit_code && (
-                                        <p className="text-xs font-mono text-gray-400">{transfer.deposit_code}</p>
-                                      )}
-                                    </div>
-                                    <div className="text-right">
-                                      <p className="text-lg font-bold text-gray-700 dark:text-gray-200">
-                                        {transfer.quantity || 1} <span className="text-sm font-normal text-gray-500">{t('bottles')}</span>
-                                      </p>
-                                      {transfer.requested_by_name && (
-                                        <p className="text-xs text-gray-400">{t('requestedBy', { name: transfer.requested_by_name })}</p>
-                                      )}
-                                    </div>
-                                  </div>
 
-                                  {/* Photo indicator */}
-                                  {transfer.photo_url && (
-                                    <div className="mb-3">
+                                {/* Body — single line of metadata; truncate on
+                                    overflow so a long product/customer string
+                                    doesn't push the action buttons off screen. */}
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm">
+                                    <span className="truncate font-medium text-gray-900 dark:text-white">
+                                      {transfer.product_name || transfer.deposit_code || t('unspecified')}
+                                    </span>
+                                    {transfer.customer_name && (
+                                      <span className="truncate text-xs text-gray-500 dark:text-gray-400">
+                                        · {transfer.customer_name}
+                                      </span>
+                                    )}
+                                    <span className="ml-auto whitespace-nowrap text-xs font-semibold text-gray-700 dark:text-gray-200">
+                                      {transfer.quantity || 1} {t('bottles')}
+                                    </span>
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-gray-400">
+                                    {transfer.deposit_code && (
+                                      <span className="font-mono">{transfer.deposit_code}</span>
+                                    )}
+                                    {transfer.requested_by_name && (
+                                      <span>โดย {transfer.requested_by_name}</span>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Compact action row — icon-only buttons keep
+                                    the card height down; tooltips supply the
+                                    label that the old text buttons carried. */}
+                                {itemClaimedInChat ? (
+                                  <div className="flex shrink-0 items-center gap-1">
+                                    {transfer.photo_url && (
                                       <button
                                         onClick={() => setViewingPhoto(transfer.photo_url)}
-                                        className="flex items-center gap-1.5 rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-600 transition hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400"
+                                        className="rounded-md bg-blue-50 p-1.5 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400"
+                                        title={t('transferPhotoFromBranch')}
                                       >
-                                        <ImageIcon className="h-3.5 w-3.5" /> {t('transferPhotoFromBranch')}
+                                        <ImageIcon className="h-3.5 w-3.5" />
                                       </button>
-                                    </div>
-                                  )}
-
-                                  {/* Actions — keep "view detail" but
-                                      lock receive/reject when the
-                                      chat card is being handled. */}
-                                  {itemClaimedInChat ? (
-                                    <div className="flex gap-2">
-                                      <button
-                                        onClick={() => { setSelectedTransfer(transfer); setShowDetailModal(true); }}
-                                        className="flex-1 rounded-lg bg-blue-100 py-2.5 text-sm font-medium text-blue-700 transition hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400"
-                                      >
-                                        <Eye className="mr-1 inline h-4 w-4" /> {t('viewDetail')}
-                                      </button>
-                                      <div className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
-                                        <Hand className="h-3.5 w-3.5 shrink-0" />
-                                        <span className="truncate">
-                                          {(itemClaim?.claimedByName || 'พนักงาน')} กำลังดำเนินการในแชท
-                                        </span>
-                                      </div>
-                                    </div>
-                                  ) : (
-                                  <div className="flex gap-2">
+                                    )}
                                     <button
                                       onClick={() => { setSelectedTransfer(transfer); setShowDetailModal(true); }}
-                                      className="flex-1 rounded-lg bg-blue-100 py-2.5 text-sm font-medium text-blue-700 transition hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400"
+                                      className="rounded-md bg-blue-100 p-1.5 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400"
+                                      title={t('viewDetail')}
                                     >
-                                      <Eye className="mr-1 inline h-4 w-4" /> {t('viewDetail')}
+                                      <Eye className="h-3.5 w-3.5" />
+                                    </button>
+                                    <span
+                                      className="flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-[10px] text-blue-700 dark:bg-blue-900/20 dark:text-blue-300"
+                                      title={`${itemClaim?.claimedByName || 'พนักงาน'} กำลังดำเนินการในแชท`}
+                                    >
+                                      <Hand className="h-3 w-3" />
+                                      <span className="hidden sm:inline truncate max-w-[80px]">
+                                        {itemClaim?.claimedByName || 'พนักงาน'}
+                                      </span>
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <div className="flex shrink-0 items-center gap-1">
+                                    {transfer.photo_url && (
+                                      <button
+                                        onClick={() => setViewingPhoto(transfer.photo_url)}
+                                        className="rounded-md bg-blue-50 p-1.5 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400"
+                                        title={t('transferPhotoFromBranch')}
+                                      >
+                                        <ImageIcon className="h-3.5 w-3.5" />
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={() => { setSelectedTransfer(transfer); setShowDetailModal(true); }}
+                                      className="rounded-md bg-blue-100 p-1.5 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400"
+                                      title={t('viewDetail')}
+                                    >
+                                      <Eye className="h-3.5 w-3.5" />
                                     </button>
                                     <button
                                       onClick={() => openConfirmModal(transfer)}
-                                      className="flex-1 rounded-lg bg-gradient-to-r from-green-500 to-emerald-600 py-2.5 text-sm font-bold text-white shadow-md transition hover:from-green-600 hover:to-emerald-700"
+                                      className="rounded-md bg-gradient-to-r from-green-500 to-emerald-600 px-2 py-1 text-xs font-bold text-white shadow-sm hover:from-green-600 hover:to-emerald-700"
+                                      title={t('receiveItem')}
                                     >
-                                      <Check className="mr-1 inline h-4 w-4" /> {t('receiveItem')}
+                                      <Check className="h-3.5 w-3.5" />
                                     </button>
                                     <button
                                       onClick={() => openRejectModal(transfer)}
-                                      className="rounded-lg bg-red-100 px-3 py-2.5 text-sm font-medium text-red-600 transition hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400"
+                                      className="rounded-md bg-red-100 p-1.5 text-red-600 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400"
+                                      title="ปฏิเสธ"
                                     >
-                                      <X className="h-4 w-4" />
+                                      <X className="h-3.5 w-3.5" />
                                     </button>
                                   </div>
-                                  )}
-                                </div>
+                                )}
                               </div>
                               );
                             })}
@@ -1663,68 +1641,75 @@ export default function HqWarehousePage() {
                 {filteredReceived.length === 0 ? (
                   <EmptyState message={t('noReceivedItems')} />
                 ) : receivedViewMode === 'card' ? (
-                  filteredReceived.map((item) => {
-                    const isSelected = selectedReceivedIds.has(item.id);
-                    return (
-                      <div
-                        key={item.id}
-                        className={cn(
-                          'rounded-xl border-l-4 bg-white p-4 shadow-md transition dark:bg-gray-900',
-                          isSelected
-                            ? 'border-orange-500 ring-2 ring-orange-300 dark:ring-orange-700'
-                            : 'border-green-500',
-                        )}
-                      >
-                        <div className="mb-2 flex items-start gap-3">
+                  // Compact one-row card — same density as the pending tab.
+                  // Quantity, branch, deposit code and received timestamp
+                  // share a single line under the product name; actions are
+                  // icon-only with tooltips.
+                  <div className="space-y-1.5">
+                    {filteredReceived.map((item) => {
+                      const isSelected = selectedReceivedIds.has(item.id);
+                      return (
+                        <div
+                          key={item.id}
+                          className={cn(
+                            'flex items-center gap-2 rounded-lg border-l-4 bg-white px-3 py-2 shadow-sm transition dark:bg-gray-900',
+                            isSelected
+                              ? 'border-orange-500 ring-1 ring-orange-300 dark:ring-orange-700'
+                              : 'border-green-500',
+                          )}
+                        >
                           {canWithdraw && (
                             <input
                               type="checkbox"
                               checked={isSelected}
                               onChange={() => toggleReceivedSelection(item.id)}
-                              className="mt-1 h-4 w-4 shrink-0 rounded border-gray-300 text-orange-600 focus:ring-orange-500 dark:border-gray-600"
+                              className="h-4 w-4 shrink-0 rounded border-gray-300 text-orange-600 focus:ring-orange-500 dark:border-gray-600"
                             />
                           )}
-                          <div className="flex-1">
-                            <div className="flex items-start justify-between">
-                              <div>
-                                <p className="font-bold text-gray-800 dark:text-gray-100">{item.product_name || t('unspecified')}</p>
-                                <p className="text-sm text-gray-600 dark:text-gray-400">{item.customer_name || '-'}</p>
-                                <p className="mt-1 text-xs text-gray-400">
-                                  {t('fromBranch', { name: item.from_store_name })}
-                                  {item.deposit_code && <> &bull; {t('code', { code: item.deposit_code })}</>}
-                                </p>
-                              </div>
-                              <div className="text-right">
-                                <span className="text-lg font-bold text-green-600">{item.quantity || 1}</span>
-                                <span className="ml-1 text-sm text-gray-500">{t('bottles')}</span>
-                                <p className="mt-1 text-xs text-gray-400">
-                                  {t('receivedAt', { date: formatThaiDateTime(item.received_at) })}
-                                </p>
-                              </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm">
+                              <span className="truncate font-medium text-gray-900 dark:text-white">
+                                {item.product_name || t('unspecified')}
+                              </span>
+                              {item.customer_name && (
+                                <span className="truncate text-xs text-gray-500 dark:text-gray-400">
+                                  · {item.customer_name}
+                                </span>
+                              )}
+                              <span className="ml-auto whitespace-nowrap text-xs font-semibold text-green-700 dark:text-green-400">
+                                {item.quantity || 1} {t('bottles')}
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-gray-400">
+                              <span>{item.from_store_name}</span>
+                              {item.deposit_code && <span className="font-mono">{item.deposit_code}</span>}
+                              <span className="ml-auto">{formatThaiDateTime(item.received_at)}</span>
                             </div>
                           </div>
+                          <div className="flex shrink-0 items-center gap-1">
+                            {item.received_photo_url && (
+                              <button
+                                onClick={() => setViewingPhoto(item.received_photo_url)}
+                                className="rounded-md bg-gray-100 p-1.5 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300"
+                                title="ดูรูปยืนยัน"
+                              >
+                                <ImageIcon className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            {canWithdraw && (
+                              <button
+                                onClick={() => openWithdrawModal(item)}
+                                className="rounded-md bg-gradient-to-r from-orange-500 to-amber-600 px-2 py-1 text-xs font-bold text-white shadow-sm hover:from-orange-600 hover:to-amber-700"
+                                title={t('withdrawItem')}
+                              >
+                                <BoxSelect className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </div>
-                        <div className="mt-3 flex gap-2">
-                          {canWithdraw && (
-                            <button
-                              onClick={() => openWithdrawModal(item)}
-                              className="flex-1 rounded-lg bg-gradient-to-r from-orange-500 to-amber-600 py-2 text-sm font-medium text-white shadow transition hover:from-orange-600 hover:to-amber-700"
-                            >
-                              <BoxSelect className="mr-1 inline h-4 w-4" /> {t('withdrawItem')}
-                            </button>
-                          )}
-                          {item.received_photo_url && (
-                            <button
-                              onClick={() => setViewingPhoto(item.received_photo_url)}
-                              className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300"
-                            >
-                              <ImageIcon className="h-4 w-4" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })
+                      );
+                    })}
+                  </div>
                 ) : (
                   <div className="overflow-hidden rounded-xl bg-white shadow-sm dark:bg-gray-900">
                     <div className="overflow-x-auto">

@@ -315,7 +315,7 @@ export function ReceiveHistoryView({
                                       : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
                                   )}
                                 >
-                                  {it.status === 'withdrawn' ? 'จำหน่ายแล้ว' : 'คงค้าง'}
+                                  {it.status === 'withdrawn' ? 'จำหน่ายแล้ว' : 'อยู่ในคลัง'}
                                 </span>
                               </td>
                             </tr>
