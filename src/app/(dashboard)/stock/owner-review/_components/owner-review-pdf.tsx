@@ -175,6 +175,11 @@ export interface OwnerReviewReportData {
   date_label: string;
   store_name: string;
   month_year: string;
+  // Pre-formatted Thai label describing which row filter was applied
+  // when this PDF was generated (e.g. "เฉพาะรายการที่ต้องชี้แจง").
+  // Owners attach this PDF to LINE messages to staff, so it has to be
+  // obvious from the doc itself which subset they're looking at.
+  filter_label: string;
   totals: {
     items: number;
     discrepancies: number;
@@ -220,9 +225,12 @@ function ReportDocument({ data }: { data: OwnerReviewReportData }) {
             <Text style={styles.subTitle}>
               {data.store_name} — วันที่ {data.date_label}
             </Text>
+            <Text style={[styles.subTitle, { fontWeight: 700, color: '#9d174d' }]}>
+              ({data.filter_label} — {data.rows.length} รายการ)
+            </Text>
           </View>
           <View>
-            <Text style={styles.totals}>รายการที่ตรวจ</Text>
+            <Text style={styles.totals}>รายการทั้งหมด</Text>
             <Text style={styles.totalsBig}>{data.totals.items} รายการ</Text>
             <Text style={styles.totals}>
               ผลต่าง {data.totals.discrepancies} · ยังไม่นับซ้ำ{' '}

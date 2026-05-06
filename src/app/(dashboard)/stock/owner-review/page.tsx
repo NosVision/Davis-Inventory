@@ -49,8 +49,6 @@ import {
   Calendar,
   Megaphone,
   RotateCcw,
-  Eye,
-  EyeOff,
   FileDown,
 } from 'lucide-react';
 
@@ -100,10 +98,14 @@ export default function OwnerReviewPage() {
   const [businessDate, setBusinessDate] = useState<string>(() => businessDateBangkok());
   const [loading, setLoading] = useState(true);
 
-  // Owners screenshot the table to send to staff. By default the row list
-  // is filtered to discrepancies only (matched rows are visual noise +
-  // bloat the screenshot); toggle to show everything when needed.
-  const [showAll, setShowAll] = useState(false);
+  // Three-state row filter — "ทั้งหมด" shows every comparison row,
+  // "เฉพาะที่ต้องชี้แจง" only the rows still status='pending' (real
+  // discrepancies the owner must explain), and "เฉพาะ tolerance ผ่าน"
+  // the rows that are status='approved' but still have a non-zero
+  // diff (auto-approved by the store's tolerance rule). Default to
+  // "pending" because that's what the owner reaches for every morning.
+  type FilterMode = 'all' | 'pending' | 'tolerance';
+  const [filterMode, setFilterMode] = useState<FilterMode>('pending');
 
   const [comparisons, setComparisons] = useState<Comparison[]>([]);
   const [penalties, setPenalties] = useState<PenaltyRow[]>([]);
@@ -201,16 +203,43 @@ export default function OwnerReviewPage() {
     return c.responsible_staff_id ?? '';
   };
 
-  // Filtered list driven by the showAll toggle. Hides matched rows by
-  // default so the screenshot only contains rows that need attention.
-  // MUST stay above the early-return guards below — Rules of Hooks.
-  const visibleComparisons = useMemo(
-    () =>
-      showAll
-        ? comparisons
-        : comparisons.filter((c) => Math.abs(c.difference || 0) > 0.005),
-    [comparisons, showAll],
-  );
+  // Filtered list driven by filterMode. MUST stay above the early-return
+  // guards below — Rules of Hooks.
+  const visibleComparisons = useMemo(() => {
+    switch (filterMode) {
+      case 'all':
+        return comparisons;
+      case 'pending':
+        // Rows the owner still needs to act on — over-tolerance + still
+        // un-explained / un-approved. We exclude rows with no diff so
+        // a "pending count" (no manual_quantity yet) row doesn't show
+        // here as a fake action item.
+        return comparisons.filter(
+          (c) => c.status === 'pending' && Math.abs(c.difference || 0) > 0.005,
+        );
+      case 'tolerance':
+        // Auto-approved by tolerance: status was flipped to 'approved'
+        // even though the diff isn't zero, because it fell under the
+        // store's diff_tolerance / diff_tolerance_unit threshold.
+        return comparisons.filter(
+          (c) => c.status === 'approved' && Math.abs(c.difference || 0) > 0.005,
+        );
+    }
+  }, [comparisons, filterMode]);
+
+  // Counts for the filter buttons — computed once per render so each
+  // pill shows a live tally.
+  const filterCounts = useMemo(() => {
+    let pending = 0;
+    let tolerance = 0;
+    for (const c of comparisons) {
+      const hasDiff = Math.abs(c.difference || 0) > 0.005;
+      if (!hasDiff) continue;
+      if (c.status === 'pending') pending++;
+      else if (c.status === 'approved') tolerance++;
+    }
+    return { all: comparisons.length, pending, tolerance };
+  }, [comparisons]);
 
   // Aggregate this store's monthly totals across every staff so the owner
   // sees one big number ("เดือนนี้บันทึกความผิดไปแล้ว N ครั้ง") regardless
@@ -625,10 +654,24 @@ export default function OwnerReviewPage() {
         return null;
       };
 
+      const filterLabel =
+        filterMode === 'pending'
+          ? 'เฉพาะรายการที่ต้องชี้แจง'
+          : filterMode === 'tolerance'
+            ? 'เฉพาะรายการที่ผ่านโดย tolerance'
+            : 'รายการทั้งหมด';
+      const filenameSuffix =
+        filterMode === 'pending'
+          ? '-ที่ต้องชี้แจง'
+          : filterMode === 'tolerance'
+            ? '-tolerance'
+            : '-ทั้งหมด';
+
       const data: import('./_components/owner-review-pdf').OwnerReviewReportData = {
         date_label: formatThaiDate(businessDate),
         store_name: storeName || 'สาขา',
         month_year: monthYear,
+        filter_label: filterLabel,
         totals: {
           items: comparisons.length,
           discrepancies: totalDiscrepancy,
@@ -668,7 +711,7 @@ export default function OwnerReviewPage() {
       };
 
       const blob = await mod.buildOwnerReviewPdf(data);
-      mod.downloadBlob(blob, `รายงานเจ้าของร้าน-${businessDate}.pdf`);
+      mod.downloadBlob(blob, `รายงานเจ้าของร้าน-${businessDate}${filenameSuffix}.pdf`);
     } catch (err) {
       console.error('PDF download error:', err);
       toast({ type: 'error', title: 'สร้าง PDF ล้มเหลว' });
@@ -957,22 +1000,38 @@ export default function OwnerReviewPage() {
           title={`รายการสำหรับวันที่ ${formatThaiDate(businessDate)}`}
           action={
             <div className="flex flex-wrap items-center gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                icon={
-                  showAll ? (
-                    <EyeOff className="h-3.5 w-3.5" />
-                  ) : (
-                    <Eye className="h-3.5 w-3.5" />
-                  )
-                }
-                onClick={() => setShowAll((v) => !v)}
-              >
-                {showAll
-                  ? `ซ่อนรายการที่ตรง (${comparisons.length - totalDiscrepancy})`
-                  : `แสดงทั้งหมด (${comparisons.length})`}
-              </Button>
+              {/* 3-state row filter — drives both the on-screen list
+                  and the PDF download. */}
+              <div className="inline-flex rounded-md border border-gray-200 bg-white p-0.5 text-xs shadow-sm dark:border-gray-700 dark:bg-gray-800">
+                {([
+                  { id: 'pending', label: 'ต้องชี้แจง', count: filterCounts.pending, tone: 'amber' },
+                  { id: 'tolerance', label: 'tolerance ผ่าน', count: filterCounts.tolerance, tone: 'emerald' },
+                  { id: 'all', label: 'ทั้งหมด', count: filterCounts.all, tone: 'gray' },
+                ] as const).map((opt) => {
+                  const active = filterMode === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      onClick={() => setFilterMode(opt.id)}
+                      className={cn(
+                        'rounded px-2.5 py-1 font-medium transition',
+                        active
+                          ? opt.tone === 'amber'
+                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
+                            : opt.tone === 'emerald'
+                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
+                              : 'bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-100'
+                          : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700/60',
+                      )}
+                    >
+                      {opt.label}{' '}
+                      <span className={cn('ml-0.5 tabular-nums', active ? 'opacity-80' : 'opacity-60')}>
+                        {opt.count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
               <Button
                 size="sm"
                 icon={
@@ -1004,11 +1063,17 @@ export default function OwnerReviewPage() {
           <div className="px-6 py-12 text-center">
             <CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-emerald-400" />
             <p className="text-sm text-gray-600 dark:text-gray-300">
-              ทุกรายการตรงพอดี — ไม่มีผลต่างให้รีวิว
+              {filterMode === 'pending'
+                ? 'ไม่มีรายการที่ต้องชี้แจง'
+                : filterMode === 'tolerance'
+                  ? 'ไม่มีรายการที่ผ่านโดย tolerance'
+                  : 'ทุกรายการตรงพอดี — ไม่มีผลต่างให้รีวิว'}
             </p>
-            <p className="mt-1 text-xs text-gray-400">
-              กด "แสดงทั้งหมด" ด้านบนเพื่อดูรายการที่ตรง
-            </p>
+            {filterMode !== 'all' && (
+              <p className="mt-1 text-xs text-gray-400">
+                เลือก "ทั้งหมด" ด้านบนเพื่อดูรายการอื่น
+              </p>
+            )}
           </div>
         ) : (
           // Cap height + sticky thead so the header still shows in
