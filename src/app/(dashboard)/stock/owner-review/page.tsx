@@ -98,13 +98,15 @@ export default function OwnerReviewPage() {
   const [businessDate, setBusinessDate] = useState<string>(() => businessDateBangkok());
   const [loading, setLoading] = useState(true);
 
-  // Three-state row filter — "ทั้งหมด" shows every comparison row,
-  // "เฉพาะที่ต้องชี้แจง" only the rows still status='pending' (real
-  // discrepancies the owner must explain), and "เฉพาะ tolerance ผ่าน"
-  // the rows that are status='approved' but still have a non-zero
-  // diff (auto-approved by the store's tolerance rule). Default to
-  // "pending" because that's what the owner reaches for every morning.
-  type FilterMode = 'all' | 'pending' | 'tolerance';
+  // Four-state row filter:
+  //   pending     — status='pending' AND |diff|>0 (must explain)
+  //   tolerance   — status='approved' AND |diff|>0 (auto-OK by tolerance)
+  //   discrepancy — any |diff|>0 row regardless of status (= the
+  //                 "ผลต่าง" summary chip; pending + tolerance combined)
+  //   all         — every comparison row
+  // Default to "pending" because that's what the owner reaches for
+  // every morning.
+  type FilterMode = 'all' | 'pending' | 'tolerance' | 'discrepancy';
   const [filterMode, setFilterMode] = useState<FilterMode>('pending');
 
   const [comparisons, setComparisons] = useState<Comparison[]>([]);
@@ -141,10 +143,23 @@ export default function OwnerReviewPage() {
     notes: string;
   } | null>(null);
 
+  // ISO month-year (e.g. "2026-05") used as the DB column key. Stays as-is.
   const monthYear = useMemo(
     () => businessDate.slice(0, 7),
     [businessDate],
   );
+
+  // Thai display label for the same month — "พ.ค. 2569" with the
+  // Buddhist year. Used everywhere a human reads the month: banners,
+  // card titles, the LINE chat alert, the PDF header.
+  const monthYearLabel = useMemo(() => {
+    const d = new Date(`${businessDate}T12:00:00+07:00`);
+    return d.toLocaleDateString('th-TH', {
+      month: 'short',
+      year: 'numeric',
+      timeZone: 'Asia/Bangkok',
+    });
+  }, [businessDate]);
 
   // Lookup helpers
   const staffById = useMemo(() => {
@@ -210,20 +225,17 @@ export default function OwnerReviewPage() {
       case 'all':
         return comparisons;
       case 'pending':
-        // Rows the owner still needs to act on — over-tolerance + still
-        // un-explained / un-approved. We exclude rows with no diff so
-        // a "pending count" (no manual_quantity yet) row doesn't show
-        // here as a fake action item.
         return comparisons.filter(
           (c) => c.status === 'pending' && Math.abs(c.difference || 0) > 0.005,
         );
       case 'tolerance':
-        // Auto-approved by tolerance: status was flipped to 'approved'
-        // even though the diff isn't zero, because it fell under the
-        // store's diff_tolerance / diff_tolerance_unit threshold.
         return comparisons.filter(
           (c) => c.status === 'approved' && Math.abs(c.difference || 0) > 0.005,
         );
+      case 'discrepancy':
+        // Every row with a real diff — what the "ผลต่าง" summary chip
+        // counts. Pending + tolerance combined.
+        return comparisons.filter((c) => Math.abs(c.difference || 0) > 0.005);
     }
   }, [comparisons, filterMode]);
 
@@ -232,13 +244,15 @@ export default function OwnerReviewPage() {
   const filterCounts = useMemo(() => {
     let pending = 0;
     let tolerance = 0;
+    let discrepancy = 0;
     for (const c of comparisons) {
       const hasDiff = Math.abs(c.difference || 0) > 0.005;
       if (!hasDiff) continue;
+      discrepancy++;
       if (c.status === 'pending') pending++;
       else if (c.status === 'approved') tolerance++;
     }
-    return { all: comparisons.length, pending, tolerance };
+    return { all: comparisons.length, pending, tolerance, discrepancy };
   }, [comparisons]);
 
   // Aggregate this store's monthly totals across every staff so the owner
@@ -658,19 +672,23 @@ export default function OwnerReviewPage() {
         filterMode === 'pending'
           ? 'เฉพาะรายการที่ต้องชี้แจง'
           : filterMode === 'tolerance'
-            ? 'เฉพาะรายการที่ผ่านโดย tolerance'
-            : 'รายการทั้งหมด';
+            ? 'เฉพาะรายการที่ผ่านเกณฑ์อนุโลม'
+            : filterMode === 'discrepancy'
+              ? 'เฉพาะรายการที่มีผลต่าง'
+              : 'รายการทั้งหมด';
       const filenameSuffix =
         filterMode === 'pending'
           ? '-ที่ต้องชี้แจง'
           : filterMode === 'tolerance'
-            ? '-tolerance'
-            : '-ทั้งหมด';
+            ? '-อนุโลม'
+            : filterMode === 'discrepancy'
+              ? '-มีผลต่าง'
+              : '-ทั้งหมด';
 
       const data: import('./_components/owner-review-pdf').OwnerReviewReportData = {
         date_label: formatThaiDate(businessDate),
         store_name: storeName || 'สาขา',
-        month_year: monthYear,
+        month_year: monthYearLabel,
         filter_label: filterLabel,
         totals: {
           items: comparisons.length,
@@ -728,7 +746,7 @@ export default function OwnerReviewPage() {
       type: 'system',
       content:
         `⚠️ แจ้งเตือนหัวหน้าบาร์ ${name} — ${v.staff_name} มีความผิดสะสม ${v.violations} ครั้ง ` +
-        `ในเดือน ${monthYear} (เกินเกณฑ์ ${QUOTA_WARN} ครั้ง — ใกล้เกิน ${QUOTA_MAX} ครั้งที่กำหนด) ` +
+        `ในเดือน ${monthYearLabel} (เกินเกณฑ์ ${QUOTA_WARN} ครั้ง — ใกล้เกิน ${QUOTA_MAX} ครั้งที่กำหนด) ` +
         `กรุณาตรวจสอบและออกใบเตือนตาม SOP`,
     });
     toast({ type: 'success', title: 'ส่งแจ้งเตือนเข้าแชทสาขาแล้ว' });
@@ -851,7 +869,7 @@ export default function OwnerReviewPage() {
         <Calendar className="h-5 w-5 text-gray-500" />
         <div className="flex-1 min-w-0">
           <p className="text-xs text-gray-600 dark:text-gray-400">
-            สาขา{storeName ? ` ${storeName}` : ''} — เดือน {monthYear}
+            สาขา{storeName ? ` ${storeName}` : ''} — เดือน {monthYearLabel}
           </p>
           <p className="text-base font-bold text-gray-900 dark:text-white">
             บันทึกความผิดแล้ว{' '}
@@ -882,8 +900,22 @@ export default function OwnerReviewPage() {
 
       {/* Per-day summary chips */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <SummaryChip label="รายการทั้งหมด" value={comparisons.length} icon={ClipboardList} tone="gray" />
-        <SummaryChip label="ผลต่าง" value={totalDiscrepancy} icon={AlertTriangle} tone="amber" />
+        <SummaryChip
+          label="รายการทั้งหมด"
+          value={comparisons.length}
+          icon={ClipboardList}
+          tone="gray"
+          onClick={() => setFilterMode('all')}
+          active={filterMode === 'all'}
+        />
+        <SummaryChip
+          label="ผลต่าง"
+          value={totalDiscrepancy}
+          icon={AlertTriangle}
+          tone="amber"
+          onClick={() => setFilterMode('discrepancy')}
+          active={filterMode === 'discrepancy'}
+        />
         <SummaryChip label="ยังไม่ได้นับซ้ำ" value={pendingRecount} icon={RotateCcw} tone="rose" />
         <SummaryChip label="ส่ง HR แล้ว" value={escalatedCount} icon={Send} tone="violet" />
       </div>
@@ -891,7 +923,7 @@ export default function OwnerReviewPage() {
       {/* Quota strip — only show staff with actual violations this month */}
       {violations.length > 0 && (
         <Card>
-          <CardHeader title={`คะแนนความผิดเดือน ${monthYear}`} />
+          <CardHeader title={`คะแนนความผิดเดือน ${monthYearLabel}`} />
           <CardContent>
             <div className="space-y-2">
               {violations.map((v) => {
@@ -954,18 +986,47 @@ export default function OwnerReviewPage() {
                     {formatThaiDate(lastTuesdayTransfer.tuesday)}
                   </span>
                 </p>
-                {lastTuesdayTransfer.transferred_at ? (
-                  <p className="mt-0.5 flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-400">
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    ส่งคืน HQ เวลา{' '}
-                    {new Date(lastTuesdayTransfer.transferred_at).toLocaleTimeString('th-TH', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                      timeZone: 'Asia/Bangkok',
-                    })}{' '}
-                    น. — ตรงกำหนด 18:00–18:20 ให้ตรวจสอบเองอีกครั้ง
-                  </p>
-                ) : (
+                {lastTuesdayTransfer.transferred_at ? (() => {
+                  // Compare the transfer's Bangkok-local time to the
+                  // SOP window 18:00–18:20. We don't trust the device
+                  // timezone — use the Asia/Bangkok formatter to pull
+                  // hour/minute, then compute total minutes since
+                  // midnight for a clean range check.
+                  const dt = new Date(lastTuesdayTransfer.transferred_at);
+                  const parts = new Intl.DateTimeFormat('en-GB', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: false,
+                    timeZone: 'Asia/Bangkok',
+                  }).formatToParts(dt);
+                  const hh = Number(parts.find((p) => p.type === 'hour')?.value ?? 0);
+                  const mm = Number(parts.find((p) => p.type === 'minute')?.value ?? 0);
+                  const minutesOfDay = hh * 60 + mm;
+                  const onTime = minutesOfDay >= 18 * 60 && minutesOfDay <= 18 * 60 + 20;
+                  const tooEarly = minutesOfDay < 18 * 60;
+                  const lateBy = minutesOfDay - (18 * 60 + 20);
+                  const timeLabel = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+                  return (
+                    <p className={cn(
+                      'mt-0.5 flex items-center gap-1 text-xs',
+                      onTime
+                        ? 'text-emerald-700 dark:text-emerald-400'
+                        : 'text-amber-700 dark:text-amber-400',
+                    )}>
+                      {onTime ? (
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                      ) : (
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                      )}
+                      ส่งคืน HQ เวลา {timeLabel} น. —{' '}
+                      {onTime
+                        ? 'ตรงกำหนด 18:00–18:20 ✓'
+                        : tooEarly
+                          ? `เร็วกว่ากำหนด (เกณฑ์ 18:00–18:20)`
+                          : `ช้ากว่ากำหนด ${lateBy} นาที (เกณฑ์ 18:00–18:20) — อาจเข้าข่าย EXP-01`}
+                    </p>
+                  );
+                })() : (
                   <p className="mt-0.5 flex items-center gap-1 text-xs text-rose-700 dark:text-rose-400">
                     <AlertTriangle className="h-3.5 w-3.5" />
                     ยังไม่พบการส่งคืน HQ — อาจเข้าข่าย EXP-01 (ปรับ 100 บ./วัน)
@@ -1000,12 +1061,15 @@ export default function OwnerReviewPage() {
           title={`รายการสำหรับวันที่ ${formatThaiDate(businessDate)}`}
           action={
             <div className="flex flex-wrap items-center gap-2">
-              {/* 3-state row filter — drives both the on-screen list
-                  and the PDF download. */}
-              <div className="inline-flex rounded-md border border-gray-200 bg-white p-0.5 text-xs shadow-sm dark:border-gray-700 dark:bg-gray-800">
+              {/* 4-state row filter — drives both the on-screen list
+                  and the PDF download. The summary chips above also
+                  hook into this state, so clicking "ผลต่าง" up there
+                  jumps the filter here. */}
+              <div className="inline-flex flex-wrap rounded-md bg-white p-0.5 text-xs shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
                 {([
                   { id: 'pending', label: 'ต้องชี้แจง', count: filterCounts.pending, tone: 'amber' },
-                  { id: 'tolerance', label: 'tolerance ผ่าน', count: filterCounts.tolerance, tone: 'emerald' },
+                  { id: 'tolerance', label: 'ผ่านเกณฑ์อนุโลม', count: filterCounts.tolerance, tone: 'emerald' },
+                  { id: 'discrepancy', label: 'มีผลต่าง', count: filterCounts.discrepancy, tone: 'rose' },
                   { id: 'all', label: 'ทั้งหมด', count: filterCounts.all, tone: 'gray' },
                 ] as const).map((opt) => {
                   const active = filterMode === opt.id;
@@ -1020,7 +1084,9 @@ export default function OwnerReviewPage() {
                             ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
                             : opt.tone === 'emerald'
                               ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
-                              : 'bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-100'
+                              : opt.tone === 'rose'
+                                ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200'
+                                : 'bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-100'
                           : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700/60',
                       )}
                     >
@@ -1453,11 +1519,15 @@ function SummaryChip({
   value,
   icon: Icon,
   tone,
+  onClick,
+  active,
 }: {
   label: string;
   value: number;
   icon: React.ComponentType<{ className?: string }>;
   tone: 'gray' | 'amber' | 'rose' | 'violet';
+  onClick?: () => void;
+  active?: boolean;
 }) {
   const toneClass = {
     gray: 'bg-gray-50 text-gray-700 dark:bg-gray-700/40',
@@ -1465,14 +1535,25 @@ function SummaryChip({
     rose: 'bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300',
     violet: 'bg-violet-50 text-violet-700 dark:bg-violet-900/20 dark:text-violet-300',
   }[tone];
+  const interactive = !!onClick;
+  const Cmp: 'button' | 'div' = interactive ? 'button' : 'div';
   return (
-    <div className={cn('flex items-center gap-3 rounded-xl px-3 py-3', toneClass)}>
+    <Cmp
+      type={interactive ? 'button' : undefined}
+      onClick={onClick}
+      className={cn(
+        'flex items-center gap-3 rounded-xl px-3 py-3 text-left transition',
+        toneClass,
+        interactive && 'cursor-pointer hover:brightness-95',
+        active && 'ring-2 ring-offset-1 ring-current ring-offset-white dark:ring-offset-gray-900',
+      )}
+    >
       <Icon className="h-5 w-5 opacity-70" />
       <div className="min-w-0">
         <p className="text-xs opacity-80">{label}</p>
         <p className="text-lg font-bold tabular-nums">{value}</p>
       </div>
-    </div>
+    </Cmp>
   );
 }
 
