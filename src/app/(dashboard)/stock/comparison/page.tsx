@@ -29,7 +29,69 @@ import {
   ChevronLeft,
   ChevronRight,
   Eye,
+  Pencil,
+  Check,
+  X,
 } from 'lucide-react';
+
+// Roles that may NOT override the "นับจริง" cell from this page —
+// staff/bar count via /stock/daily-check; only manager+ may correct
+// after the fact (request from owner: "ทุก role ยกเว้น staff/bar").
+const READ_ONLY_ROLES = new Set(['staff', 'bar']);
+
+// Default tolerance used when store_settings hasn't been read yet —
+// matches the constants below so the first paint doesn't show a row in
+// a different tone than after settings load. Server-side compare API
+// has its own copy; keep both in sync.
+const DEFAULT_TOLERANCE = { percent: 5, unit: 0.4 };
+
+// Recompute difference + diff_percent + status the same way the
+// /api/stock/compare server route does, so an inline edit stays
+// consistent with what a fresh compare would produce.
+function deriveComparisonFields(
+  manual: number | null,
+  pos: number | null,
+  tolerance: { percent: number; unit: number },
+): { difference: number | null; diff_percent: number | null; status: ComparisonStatus } {
+  // POS-only → still "pending" (staff hasn't counted yet).
+  if (pos !== null && manual === null) {
+    return { difference: 0 - pos, diff_percent: pos === 0 ? 0 : -100, status: 'pending' };
+  }
+  // Manual-only → auto-approve (no POS line means no expectation).
+  if (manual !== null && pos === null) {
+    return { difference: null, diff_percent: null, status: 'approved' };
+  }
+  if (manual === null || pos === null) {
+    return { difference: null, diff_percent: null, status: 'approved' };
+  }
+
+  let difference: number = manual - pos;
+  let diffPercent: number;
+  if (Math.abs(difference) < 0.005) {
+    difference = 0;
+    diffPercent = 0;
+  } else if (pos !== 0) {
+    diffPercent = (difference / pos) * 100;
+  } else {
+    diffPercent = manual > 0 ? 100 : -100;
+  }
+  // Clamp to numeric(10,2) range.
+  diffPercent = Math.max(-99999999.99, Math.min(99999999.99, Math.round(diffPercent * 100) / 100));
+
+  let status: ComparisonStatus;
+  if (difference === 0) {
+    status = 'approved';
+  } else if (
+    Math.abs(difference) <= tolerance.unit ||
+    Math.abs(diffPercent) <= tolerance.percent
+  ) {
+    status = 'approved';
+  } else {
+    status = 'pending';
+  }
+
+  return { difference, diff_percent: diffPercent, status };
+}
 import {
   ResponsiveContainer,
   BarChart,
@@ -157,6 +219,25 @@ export default function ComparisonPage() {
   });
   const [detailDate, setDetailDate] = useState<string | null>(null);
   const [posFileUrl, setPosFileUrl] = useState<string | null>(null);
+
+  // Inline-edit state for the "นับจริง" column.
+  // - editingId: which row is being edited (input visible)
+  // - editingValue: textbox draft (string so we keep "" + "12." mid-typing)
+  // - confirming: row pending confirmation modal acceptance
+  // - savingId: optimistic-save spinner gate
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingValue, setEditingValue] = useState('');
+  const [confirming, setConfirming] = useState<{
+    item: Comparison;
+    newQty: number;
+  } | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  // Per-store tolerance — used by deriveComparisonFields to flip status
+  // between approved/pending without a server round-trip.
+  const [tolerance, setTolerance] = useState(DEFAULT_TOLERANCE);
+
+  const canEditManual = !!user && !READ_ONLY_ROLES.has(user.role);
   // Trend always shows the current calendar month — the week/month toggle
   // was confusing (entering on a fresh week showed an empty state) and the
   // month range gives enough resolution for daily-stock workflows.
@@ -217,6 +298,151 @@ export default function ComparisonPage() {
   useEffect(() => {
     fetchComparisons();
   }, [fetchComparisons]);
+
+  // Fetch this store's tolerance once per store change so inline
+  // recompute uses the same thresholds as the server compare route.
+  useEffect(() => {
+    if (!currentStoreId) {
+      setTolerance(DEFAULT_TOLERANCE);
+      return;
+    }
+    const supabase = createClient();
+    supabase
+      .from('store_settings')
+      .select('diff_tolerance, diff_tolerance_unit')
+      .eq('store_id', currentStoreId)
+      .maybeSingle()
+      .then(({ data }) => {
+        setTolerance({
+          percent: Number(data?.diff_tolerance ?? DEFAULT_TOLERANCE.percent),
+          unit: Number(data?.diff_tolerance_unit ?? DEFAULT_TOLERANCE.unit),
+        });
+      });
+  }, [currentStoreId]);
+
+  const beginEdit = useCallback((item: Comparison) => {
+    setEditingId(item.id);
+    setEditingValue(
+      item.manual_quantity !== null && item.manual_quantity !== undefined
+        ? String(item.manual_quantity)
+        : '',
+    );
+  }, []);
+
+  const cancelEdit = useCallback(() => {
+    setEditingId(null);
+    setEditingValue('');
+  }, []);
+
+  // Step 1 of save: validate input + open confirm modal. Actual DB write
+  // happens in commitSave below — we want a confirm step because manual
+  // count is a data-integrity field and a fat-fingered enter shouldn't
+  // silently overwrite the staff's count.
+  const requestSave = useCallback(
+    (item: Comparison) => {
+      const trimmed = editingValue.trim();
+      if (trimmed === '') {
+        toast({ type: 'error', title: 'กรุณาใส่จำนวน' });
+        return;
+      }
+      const newQty = Number(trimmed);
+      if (!Number.isFinite(newQty) || newQty < 0) {
+        toast({ type: 'error', title: 'ใส่ตัวเลขไม่ถูกต้อง' });
+        return;
+      }
+      // No-op if the value didn't actually change.
+      if (newQty === Number(item.manual_quantity ?? NaN)) {
+        cancelEdit();
+        return;
+      }
+      setConfirming({ item, newQty });
+    },
+    [editingValue, cancelEdit],
+  );
+
+  // Step 2 of save: write to DB.
+  // Updates BOTH:
+  //   • manual_counts (upsert) so any future re-run of /api/stock/compare
+  //     keeps this corrected number — comparisons row alone would get
+  //     overwritten on next compare.
+  //   • comparisons row with recomputed difference + diff_percent + status
+  //     so the page reflects the change immediately without a refetch.
+  const commitSave = useCallback(async () => {
+    if (!confirming || !user || !currentStoreId) return;
+    const { item, newQty } = confirming;
+    setSavingId(item.id);
+    const supabase = createClient();
+
+    const derived = deriveComparisonFields(newQty, item.pos_quantity, tolerance);
+
+    // 1. Upsert the canonical manual_counts row.
+    const { error: mcError } = await supabase
+      .from('manual_counts')
+      .upsert(
+        {
+          store_id: currentStoreId,
+          count_date: item.comp_date,
+          product_code: item.product_code,
+          count_quantity: newQty,
+          user_id: user.id,
+          notes: 'edited via /stock/comparison',
+        },
+        { onConflict: 'store_id,count_date,product_code' },
+      );
+    if (mcError) {
+      setSavingId(null);
+      toast({ type: 'error', title: 'บันทึก manual_counts ล้มเหลว', message: mcError.message });
+      return;
+    }
+
+    // 2. Update the comparisons row with the new derived values + reset
+    //    explanation/approval state so the row re-enters the normal
+    //    explain → approve flow if it now exceeds tolerance.
+    const { error: cmpError } = await supabase
+      .from('comparisons')
+      .update({
+        manual_quantity: newQty,
+        difference: derived.difference,
+        diff_percent: derived.diff_percent,
+        status: derived.status,
+        // Clear stale explanation/approval — the number changed, the
+        // previous explanation no longer describes the new diff.
+        explanation: null,
+        explained_by: null,
+        approval_status: null,
+        approved_by: null,
+        owner_notes: null,
+      })
+      .eq('id', item.id);
+    setSavingId(null);
+    if (cmpError) {
+      toast({ type: 'error', title: 'บันทึก comparisons ล้มเหลว', message: cmpError.message });
+      return;
+    }
+
+    // Local update so UI reflects the change without a refetch.
+    setComparisons((prev) =>
+      prev.map((c) =>
+        c.id === item.id
+          ? {
+              ...c,
+              manual_quantity: newQty,
+              difference: derived.difference,
+              diff_percent: derived.diff_percent,
+              status: derived.status,
+              explanation: null,
+              explained_by: null,
+              approval_status: null,
+              approved_by: null,
+              owner_notes: null,
+            }
+          : c,
+      ),
+    );
+    setConfirming(null);
+    cancelEdit();
+    toast({ type: 'success', title: 'บันทึกแล้ว' });
+  }, [confirming, user, currentStoreId, tolerance, cancelEdit]);
 
   // Fetch POS file URL for the selected date
   useEffect(() => {
@@ -917,7 +1143,64 @@ export default function ComparisonPage() {
                             ? 'text-blue-600 italic dark:text-blue-400'
                             : 'text-gray-900 dark:text-white',
                         )}>
-                          {needsCount ? t('comparison.statusPendingCount') : formatQty(item.manual_quantity)}
+                          {editingId === item.id ? (
+                            <div className="flex items-center justify-end gap-1">
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={editingValue}
+                                onChange={(e) => setEditingValue(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') requestSave(item);
+                                  if (e.key === 'Escape') cancelEdit();
+                                }}
+                                autoFocus
+                                disabled={savingId === item.id}
+                                className="w-24 rounded border border-gray-300 bg-white px-2 py-1 text-right text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => requestSave(item)}
+                                disabled={savingId === item.id}
+                                className="rounded p-1 text-emerald-600 hover:bg-emerald-50 disabled:opacity-40 dark:hover:bg-emerald-900/20"
+                                aria-label="บันทึก"
+                              >
+                                {savingId === item.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Check className="h-4 w-4" />
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={cancelEdit}
+                                disabled={savingId === item.id}
+                                className="rounded p-1 text-gray-400 hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-700"
+                                aria-label="ยกเลิก"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="group inline-flex items-center justify-end gap-1.5">
+                              <span>
+                                {needsCount
+                                  ? t('comparison.statusPendingCount')
+                                  : formatQty(item.manual_quantity)}
+                              </span>
+                              {canEditManual && (
+                                <button
+                                  type="button"
+                                  onClick={() => beginEdit(item)}
+                                  className="rounded p-0.5 text-gray-300 opacity-0 transition-opacity hover:bg-gray-100 hover:text-indigo-600 group-hover:opacity-100 dark:hover:bg-gray-700"
+                                  aria-label="แก้ไขจำนวนนับจริง"
+                                  title="แก้ไขจำนวนนับจริง"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </td>
                         <td className={cn(
                           'px-4 py-3 text-right font-bold',
@@ -1076,6 +1359,98 @@ export default function ComparisonPage() {
           </div>
         </>
       )}
+
+      {/* Manual-count edit confirmation modal */}
+      <Modal
+        isOpen={!!confirming}
+        onClose={() => savingId === null && setConfirming(null)}
+        title="ยืนยันการแก้ไขจำนวนนับจริง"
+        size="md"
+      >
+        {confirming && (
+          <div className="space-y-3">
+            <div className="rounded-lg bg-gray-50 px-3 py-2 text-sm dark:bg-gray-700/50">
+              <p className="font-semibold text-gray-900 dark:text-white">
+                {confirming.item.product_name || confirming.item.product_code}
+              </p>
+              <p className="mt-0.5 text-xs text-gray-400">
+                {confirming.item.product_code} ·{' '}
+                {formatThaiDate(confirming.item.comp_date)}
+              </p>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-sm">
+              <div className="rounded-lg bg-gray-50 p-2 text-center dark:bg-gray-700/50">
+                <p className="text-[10px] text-gray-400">POS</p>
+                <p className="font-semibold tabular-nums text-gray-700 dark:text-gray-200">
+                  {formatQty(confirming.item.pos_quantity)}
+                </p>
+              </div>
+              <div className="rounded-lg bg-amber-50 p-2 text-center dark:bg-amber-900/20">
+                <p className="text-[10px] text-amber-700 dark:text-amber-400">นับจริง (เดิม)</p>
+                <p className="font-semibold tabular-nums text-amber-700 dark:text-amber-400">
+                  {formatQty(confirming.item.manual_quantity)}
+                </p>
+              </div>
+              <div className="rounded-lg bg-emerald-50 p-2 text-center dark:bg-emerald-900/20">
+                <p className="text-[10px] text-emerald-700 dark:text-emerald-400">นับจริง (ใหม่)</p>
+                <p className="font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
+                  {formatQty(confirming.newQty)}
+                </p>
+              </div>
+            </div>
+            {(() => {
+              const d = deriveComparisonFields(
+                confirming.newQty,
+                confirming.item.pos_quantity,
+                tolerance,
+              );
+              return (
+                <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm dark:border-indigo-700 dark:bg-indigo-900/20">
+                  <p className="text-xs text-indigo-600 dark:text-indigo-300">
+                    ส่วนต่างใหม่
+                  </p>
+                  <p className="font-bold text-indigo-900 dark:text-indigo-100">
+                    {formatSignedQty(d.difference)}
+                    {d.diff_percent !== null && (
+                      <span className="ml-2 text-xs font-medium text-indigo-700 dark:text-indigo-300">
+                        ({formatPercent(d.diff_percent)})
+                      </span>
+                    )}
+                  </p>
+                  <p className="mt-1 text-[11px] text-indigo-700 dark:text-indigo-300">
+                    สถานะใหม่: <b>{d.status === 'approved' ? 'ผ่าน' : 'รอชี้แจง'}</b>
+                    {' · '}คำชี้แจง/อนุมัติเดิมจะถูกล้าง
+                  </p>
+                </div>
+              );
+            })()}
+            <div className="flex justify-end gap-2 pt-1">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setConfirming(null)}
+                disabled={savingId !== null}
+              >
+                ยกเลิก
+              </Button>
+              <Button
+                size="sm"
+                onClick={commitSave}
+                disabled={savingId !== null}
+                icon={
+                  savingId !== null ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Check className="h-4 w-4" />
+                  )
+                }
+              >
+                ยืนยันบันทึก
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Detail Modal */}
       <Modal

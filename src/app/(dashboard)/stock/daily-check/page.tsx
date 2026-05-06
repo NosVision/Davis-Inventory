@@ -36,7 +36,6 @@ import {
   AlertTriangle,
   ArrowRight,
   Info,
-  Check,
 } from 'lucide-react';
 
 interface CountEntry {
@@ -72,8 +71,9 @@ export default function DailyCheckPage() {
     {},
   );
   const [showZeroConfirm, setShowZeroConfirm] = useState(false);
-  const [savingItem, setSavingItem] = useState<string | null>(null);
-  const [savedItems, setSavedItems] = useState<Set<string>>(new Set());
+  // Per-item saving / saved indicators were tied to the auto-save-on-blur
+  // path that we removed; the bottom-right batch save now drives a single
+  // global spinner on its own button instead.
   // Product codes that already have a comparison row for the current
   // business date. Once a comparison exists for an item, editing the
   // count silently desyncs it from any explanation/approval that's
@@ -107,126 +107,10 @@ export default function DailyCheckPage() {
   // Track whether this component triggered the realtime event (skip echo)
   const skipRealtimeRef = useRef<Set<string>>(new Set());
 
-  // ── Upsert a single manual_count row ──
-  const upsertSingleCount = useCallback(
-    async (
-      productCode: string,
-      quantity: number,
-      notes: string | null,
-    ): Promise<boolean> => {
-      if (!currentStoreId || !user) return false;
-
-      try {
-        const supabase = createClient();
-        const { error } = await supabase.from('manual_counts').upsert(
-          {
-            store_id: currentStoreId,
-            count_date: businessDate,
-            product_code: productCode,
-            count_quantity: quantity,
-            user_id: user.id,
-            notes: notes || null,
-            verified: false,
-          },
-          { onConflict: 'store_id,count_date,product_code' },
-        );
-
-        if (error) throw error;
-        return true;
-      } catch (error) {
-        console.error('Error upserting count:', error);
-        return false;
-      }
-    },
-    [currentStoreId, businessDate, user],
-  );
-
-  // ── On blur: auto-save individual count ──
-  const handleCountBlur = useCallback(
-    async (productCode: string) => {
-      const entry = counts[productCode];
-      if (
-        entry?.count_quantity === '' ||
-        entry?.count_quantity === undefined
-      )
-        return;
-      if (!currentStoreId || !user) return;
-
-      // Skip if value hasn't changed
-      if (existingCounts[productCode] === Number(entry.count_quantity)) return;
-
-      setSavingItem(productCode);
-      skipRealtimeRef.current.add(productCode);
-
-      const ok = await upsertSingleCount(
-        productCode,
-        Number(entry.count_quantity),
-        entry.notes,
-      );
-
-      if (ok) {
-        // Fire-and-forget per-item audit log
-        const product = products.find((p) => p.product_code === productCode);
-        logAudit({
-          store_id: currentStoreId,
-          action_type: AUDIT_ACTIONS.STOCK_COUNT_SAVED,
-          table_name: 'manual_counts',
-          record_id: productCode,
-          old_value: existingCounts[productCode] != null
-            ? { count_quantity: existingCounts[productCode] }
-            : null,
-          new_value: {
-            count_quantity: Number(entry.count_quantity),
-            product_code: productCode,
-            product_name: product?.product_name || productCode,
-            count_date: businessDate,
-            type: 'per_item',
-          },
-          changed_by: user.id,
-        });
-
-        setExistingCounts((prev) => ({
-          ...prev,
-          [productCode]: Number(entry.count_quantity),
-        }));
-        setSavedItems((prev) => new Set(prev).add(productCode));
-        // Clear saved indicator after 2s
-        setTimeout(() => {
-          setSavedItems((prev) => {
-            const next = new Set(prev);
-            next.delete(productCode);
-            return next;
-          });
-          skipRealtimeRef.current.delete(productCode);
-        }, 2000);
-      }
-
-      setSavingItem(null);
-    },
-    [counts, currentStoreId, user, existingCounts, upsertSingleCount, products, businessDate],
-  );
-
-  // ── On blur: auto-save notes ──
-  const handleNotesBlur = useCallback(
-    async (productCode: string) => {
-      const entry = counts[productCode];
-      if (
-        entry?.count_quantity === '' ||
-        entry?.count_quantity === undefined
-      )
-        return;
-      if (!currentStoreId || !user) return;
-
-      skipRealtimeRef.current.add(productCode);
-      await upsertSingleCount(
-        productCode,
-        Number(entry.count_quantity),
-        entry.notes,
-      );
-      setTimeout(() => skipRealtimeRef.current.delete(productCode), 2000);
-    },
-    [counts, currentStoreId, user, upsertSingleCount],
-  );
+  // Per-item auto-save (upsertSingleCount + handleCountBlur + handleNotesBlur)
+  // was removed — bar staff lost edit access the moment they tabbed off
+  // after a typo. The bottom-right "บันทึก" button is the only writer
+  // now; it batches every dirty row in handleSave below.
 
   // ── Check for POS items not yet counted (supplementary) ──
   const checkSupplementaryItems = useCallback(
@@ -1126,8 +1010,7 @@ export default function DailyCheckPage() {
               entry?.count_quantity !== '' &&
               entry?.count_quantity !== undefined;
             const isZero = entry?.count_quantity === 0;
-            const isSaving = savingItem === product.product_code;
-            const justSaved = savedItems.has(product.product_code);
+            // Per-item save indicators retired with auto-save-on-blur.
             // Two reasons we'd lock an input:
             //   1. Bar staff editing a count that's already been saved
             //      for the day — only owners/managers/accountants can
@@ -1162,13 +1045,7 @@ export default function DailyCheckPage() {
                       <p className="text-sm font-medium text-gray-900 dark:text-white">
                         {product.product_name}
                       </p>
-                      {isSaving && (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-400" />
-                      )}
-                      {justSaved && !isSaving && (
-                        <Check className="h-3.5 w-3.5 text-emerald-500" />
-                      )}
-                      {hasExisting && !isSaving && !justSaved && (
+                      {hasExisting && (
                         <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
                       )}
                       {isZero && (
@@ -1208,7 +1085,9 @@ export default function DailyCheckPage() {
                       onChange={(e) =>
                         handleCountChange(product.product_code, e.target.value)
                       }
-                      onBlur={() => handleCountBlur(product.product_code)}
+                      // No more auto-save on blur — caused bar staff to lose
+                      // edit access the moment they tabbed off after a typo.
+                      // The bottom-right "บันทึก" button is now the only writer.
                       className={cn(
                         'w-20 rounded-lg border bg-white px-3 py-2 text-center text-sm font-medium outline-none transition-colors',
                         'focus:ring-2 focus:ring-offset-0',
@@ -1240,7 +1119,9 @@ export default function DailyCheckPage() {
                       onChange={(e) =>
                         handleNotesChange(product.product_code, e.target.value)
                       }
-                      onBlur={() => handleNotesBlur(product.product_code)}
+                      // Notes are saved together with the count on the
+                      // bottom-right "บันทึก" press — see comment on the
+                      // qty input above.
                       className={cn(
                         'w-full rounded-lg border bg-gray-50 px-3 py-1.5 text-xs outline-none transition-colors placeholder:text-gray-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 dark:bg-gray-700 dark:placeholder:text-gray-500',
                         locked
