@@ -1202,7 +1202,7 @@ export default function HqWarehousePage() {
       {/* Compact header — single line on desktop, wraps to two lines on
           mobile. The big gradient banner from the previous design ate
           ~140 px before the user saw any data; this version is ~56 px. */}
-      <header className="border-b bg-white px-4 py-2.5 dark:bg-gray-900 dark:border-gray-800">
+      <header className="bg-white px-4 py-2.5 shadow-sm ring-1 ring-gray-100 dark:bg-gray-900 dark:ring-gray-800">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
             <div className="rounded-md bg-orange-100 p-1.5 dark:bg-orange-900/30">
@@ -1229,7 +1229,7 @@ export default function HqWarehousePage() {
             <button
               onClick={handleRefresh}
               disabled={isRefreshing}
-              className="rounded-md border border-gray-200 p-1.5 text-gray-600 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+              className="rounded-md p-1.5 text-gray-600 ring-1 ring-gray-200 hover:bg-gray-100 disabled:opacity-50 dark:text-gray-300 dark:ring-gray-700 dark:hover:bg-gray-800"
               title="Refresh"
             >
               <RefreshCw className={cn('h-4 w-4', isRefreshing && 'animate-spin')} />
@@ -1240,7 +1240,7 @@ export default function HqWarehousePage() {
         {/* Branch summary popover — opens under the header without
             pushing the page. Hidden on mobile via the button above. */}
         {showBranchSummary && (
-          <div className="mx-auto mt-2 max-w-7xl rounded-lg border bg-white p-2 text-xs shadow-sm dark:border-gray-800 dark:bg-gray-900">
+          <div className="mx-auto mt-2 max-w-7xl rounded-lg bg-white p-2 text-xs shadow-sm ring-1 ring-gray-200 dark:bg-gray-900 dark:ring-gray-700">
             {branchSummaryData.length === 0 ? (
               <p className="py-1 text-center text-gray-400">{t('noBranchData')}</p>
             ) : (
@@ -1248,7 +1248,7 @@ export default function HqWarehousePage() {
                 {branchSummaryData.map((branch) => (
                   <div
                     key={branch.storeId}
-                    className="flex items-center gap-1.5 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 dark:border-gray-700 dark:bg-gray-800"
+                    className="flex items-center gap-1.5 rounded-full bg-gray-50 px-2 py-0.5 ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700"
                   >
                     <span className="font-medium text-gray-700 dark:text-gray-200">
                       {branch.storeName}
@@ -1275,7 +1275,7 @@ export default function HqWarehousePage() {
           Replaces the old "summary cards + tab nav + filters" stack
           (saved ~200 px). Tabs carry their own count badge so the
           big summary cards are no longer needed. */}
-      <div className="sticky top-0 z-40 border-b bg-white shadow-sm dark:bg-gray-900 dark:border-gray-800">
+      <div className="sticky top-0 z-40 bg-white shadow-sm ring-1 ring-gray-100 dark:bg-gray-900 dark:ring-gray-800">
         <div className="mx-auto max-w-7xl px-3 py-2">
           <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
             <nav className="-mx-1 flex gap-1 overflow-x-auto px-1">
@@ -1315,7 +1315,7 @@ export default function HqWarehousePage() {
               <select
                 value={filterBranch}
                 onChange={(e) => setFilterBranch(e.target.value)}
-                className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                className="rounded-md bg-white px-2 py-1.5 text-xs ring-1 ring-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-300 dark:bg-gray-800 dark:text-gray-200 dark:ring-gray-700"
               >
                 <option value="">{t('allBranches')}</option>
                 {branchStores.map((store) => (
@@ -1329,7 +1329,7 @@ export default function HqWarehousePage() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder={t('searchPlaceholder')}
-                  className="w-full rounded-md border border-gray-200 py-1.5 pl-7 pr-2 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+                  className="w-full rounded-md bg-white py-1.5 pl-7 pr-2 text-xs ring-1 ring-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-300 dark:bg-gray-800 dark:text-gray-200 dark:ring-gray-700"
                 />
               </div>
             </div>
@@ -1355,7 +1355,7 @@ export default function HqWarehousePage() {
                   pendingByBatch.map((batch) => {
                     const isExpanded = expandedBranches.has(batch.transfer_code);
                     return (
-                      <div key={batch.transfer_code} className="overflow-hidden rounded-xl bg-white shadow-md dark:bg-gray-900">
+                      <div key={batch.transfer_code} className="overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-900 dark:ring-gray-700">
                         {/* Batch Header */}
                         <button
                           onClick={() => toggleBranch(batch.transfer_code)}
@@ -1444,7 +1444,7 @@ export default function HqWarehousePage() {
                                   });
                                 }}
                                 placeholder={`ค้นหาในใบโอนนี้ (${batch.items.length} รายการ) — รหัสฝาก / สินค้า / ลูกค้า`}
-                                className="w-full rounded-md border border-yellow-200 bg-white py-1.5 pl-7 pr-7 text-xs dark:border-yellow-900/40 dark:bg-gray-800 dark:text-gray-200"
+                                className="w-full rounded-md bg-white py-1.5 pl-7 pr-7 text-xs ring-1 ring-yellow-200 focus:outline-none focus:ring-2 focus:ring-yellow-400 dark:bg-gray-800 dark:text-gray-200 dark:ring-yellow-900/40"
                               />
                               {batchSearch.get(batch.transfer_code) && (
                                 <button
@@ -1488,10 +1488,10 @@ export default function HqWarehousePage() {
                               };
                               return (
                               <div key={transfer.id} className={cn(
-                                "flex items-center gap-2 rounded-lg border-l-4 bg-gray-50 px-3 py-2 dark:bg-gray-800",
+                                "flex items-center gap-2 overflow-hidden rounded-xl bg-white px-3 py-2 shadow-sm ring-1 dark:bg-gray-800",
                                 checked
-                                  ? "border-emerald-500 ring-1 ring-emerald-300 dark:ring-emerald-800"
-                                  : "border-yellow-500"
+                                  ? "ring-emerald-300 dark:ring-emerald-700"
+                                  : "ring-gray-200 dark:ring-gray-700"
                               )}>
                                 <label className="flex shrink-0 cursor-pointer items-center" title={t('selectThisItem')}>
                                   <input
@@ -1616,7 +1616,7 @@ export default function HqWarehousePage() {
                                 });
                               };
                               return (
-                                <div className="sticky bottom-2 mt-2 rounded-xl border border-yellow-200 bg-white/95 p-3 shadow-md backdrop-blur dark:border-yellow-900 dark:bg-gray-900/95">
+                                <div className="sticky bottom-2 mt-2 rounded-xl bg-white/95 p-3 shadow-md ring-1 ring-yellow-200 backdrop-blur dark:bg-gray-900/95 dark:ring-yellow-900/50">
                                   <div className="flex flex-wrap items-center justify-between gap-2">
                                     <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
                                       <input
@@ -1729,10 +1729,10 @@ export default function HqWarehousePage() {
                         <div
                           key={item.id}
                           className={cn(
-                            'flex items-center gap-2 rounded-lg border-l-4 bg-white px-3 py-2 shadow-sm transition dark:bg-gray-900',
+                            'flex items-center gap-2 rounded-xl bg-white px-3 py-2 shadow-sm ring-1 transition dark:bg-gray-900',
                             isSelected
-                              ? 'border-orange-500 ring-1 ring-orange-300 dark:ring-orange-700'
-                              : 'border-green-500',
+                              ? 'ring-orange-300 dark:ring-orange-700'
+                              : 'ring-gray-200 dark:ring-gray-700',
                           )}
                         >
                           {canWithdraw && (
@@ -2403,7 +2403,7 @@ export default function HqWarehousePage() {
               {selectedReceivedItems.map((item, idx) => (
                 <div
                   key={item.id}
-                  className="flex items-center justify-between rounded-lg border border-gray-100 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-900"
+                  className="flex items-center justify-between rounded-lg bg-white px-3 py-2 ring-1 ring-gray-100 dark:bg-gray-900 dark:ring-gray-700"
                 >
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-gray-900 dark:text-white">
@@ -2569,7 +2569,7 @@ export default function HqWarehousePage() {
 
                 <div className="mb-4 max-h-60 space-y-2 overflow-y-auto">
                   {batchConfirmGroup.items.map((transfer, idx) => (
-                    <div key={transfer.id} className="flex items-center justify-between rounded-lg border border-gray-100 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-800">
+                    <div key={transfer.id} className="flex items-center justify-between rounded-lg bg-white px-3 py-2 ring-1 ring-gray-100 dark:bg-gray-800 dark:ring-gray-700">
                       <div>
                         <p className="text-sm font-medium text-gray-900 dark:text-white">{idx + 1}. {transfer.product_name || t('unspecified')}</p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">

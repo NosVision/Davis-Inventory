@@ -168,7 +168,7 @@ export function ReceiveHistoryView({
     <div className="space-y-3">
       {/* Compact toolbar — date stepper + summary chip + download in one
           row. Replaces the old gradient banner + separate chip stack. */}
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-white px-2 py-1.5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+      <div className="flex flex-wrap items-center gap-2 rounded-xl bg-white px-2 py-1.5 shadow-sm ring-1 ring-gray-200 dark:bg-gray-900 dark:ring-gray-700">
         <button
           onClick={() => shiftDate(-1)}
           className="rounded p-1 hover:bg-gray-100 dark:hover:bg-gray-800"
@@ -181,7 +181,7 @@ export function ReceiveHistoryView({
           value={date}
           max={today}
           onChange={(e) => e.target.value && setDate(e.target.value)}
-          className="rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+          className="rounded-md bg-white px-2 py-1 text-xs font-medium text-gray-700 ring-1 ring-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-300 dark:bg-gray-800 dark:text-gray-200 dark:ring-gray-700"
         />
         <button
           onClick={() => shiftDate(1)}
@@ -230,7 +230,7 @@ export function ReceiveHistoryView({
           <Loader2 className="mx-auto h-8 w-8 animate-spin text-blue-500" />
         </div>
       ) : totalItems === 0 ? (
-        <div className="rounded-xl bg-white p-12 text-center shadow-sm dark:bg-gray-900">
+        <div className="rounded-xl bg-white p-12 text-center shadow-sm ring-1 ring-gray-200 dark:bg-gray-900 dark:ring-gray-700">
           <Inbox className="mx-auto mb-3 h-12 w-12 text-gray-300" />
           <p className="text-sm text-gray-500 dark:text-gray-400">
             ไม่มีรายการรับเข้าในวันที่เลือก
@@ -241,7 +241,7 @@ export function ReceiveHistoryView({
           {groups.map((g) => (
             <div
               key={g.from_store_name}
-              className="overflow-hidden rounded-xl bg-white shadow-md dark:bg-gray-900"
+              className="overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-900 dark:ring-gray-700"
             >
               <div className="flex items-center justify-between bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-3 dark:from-blue-900/20 dark:to-indigo-900/20">
                 <div>
@@ -284,7 +284,7 @@ export function ReceiveHistoryView({
                       </a>
                     )}
 
-                    <div className="overflow-x-auto rounded-lg border border-gray-100 dark:border-gray-700">
+                    <div className="overflow-x-auto rounded-lg ring-1 ring-gray-100 dark:ring-gray-700">
                       <table className="w-full text-xs">
                         <thead className="bg-gray-50 text-gray-600 dark:bg-gray-800 dark:text-gray-300">
                           <tr>
