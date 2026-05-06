@@ -131,9 +131,10 @@ const styles = StyleSheet.create({
     fontWeight: 700,
   },
   cellNum: { width: 22, textAlign: 'center', fontSize: 9 },
-  cellProduct: { flex: 3, fontSize: 9, paddingRight: 4 },
-  cellCustomer: { flex: 2, fontSize: 9, paddingRight: 4 },
-  cellCode: { flex: 1.4, fontSize: 9, paddingRight: 4 },
+  cellProduct: { flex: 2.8, fontSize: 9, paddingRight: 4 },
+  cellCustomer: { flex: 1.8, fontSize: 9, paddingRight: 4 },
+  cellCode: { flex: 1.3, fontSize: 9, paddingRight: 4 },
+  cellPct: { width: 56, textAlign: 'right', fontSize: 9, paddingRight: 4 },
   cellQty: { width: 50, textAlign: 'right', fontSize: 9 },
   // Footer block at the very end of the report
   signatures: {
@@ -175,6 +176,10 @@ export interface ReportItem {
   customer_name: string | null;
   deposit_code: string | null;
   quantity: number | null;
+  // Average remaining_percent across this deposit's bottles (or the
+  // single bottle's value when quantity = 1). Null when no bottles row
+  // exists for the deposit (legacy data before deposit_bottles).
+  remaining_percent: number | null;
 }
 
 export interface ReportSession {
@@ -237,8 +242,13 @@ function ReceiveReportDocument({ data }: { data: ReceiveReportData }) {
               </View>
 
               {store.sessions.map((session, sIdx) => (
-                <View key={session.session_id} wrap={false}>
-                  <Text style={styles.sessionMeta}>
+                // No wrap=false on the session block — a 40-item session
+                // would overflow one page and react-pdf would render the
+                // overflow on top of itself (the "garbled" jumble).
+                // Per-row wrap=false below keeps individual rows atomic
+                // while allowing the session to break across pages.
+                <View key={session.session_id}>
+                  <Text style={styles.sessionMeta} wrap={false}>
                     รอบที่ {sIdx + 1} — รับโดย{' '}
                     {session.received_by_name || '—'} เวลา{' '}
                     {new Date(session.received_at).toLocaleTimeString('th-TH', {
@@ -250,15 +260,16 @@ function ReceiveReportDocument({ data }: { data: ReceiveReportData }) {
                   </Text>
 
                   <View style={styles.table}>
-                    <View style={[styles.row, styles.rowHead]}>
+                    <View style={[styles.row, styles.rowHead]} wrap={false}>
                       <Text style={styles.cellNum}>#</Text>
                       <Text style={styles.cellProduct}>สินค้า</Text>
                       <Text style={styles.cellCustomer}>ลูกค้า</Text>
                       <Text style={styles.cellCode}>รหัสฝาก</Text>
+                      <Text style={styles.cellPct}>%คงเหลือ</Text>
                       <Text style={styles.cellQty}>จำนวน</Text>
                     </View>
                     {session.items.map((item, idx) => (
-                      <View key={idx} style={styles.row}>
+                      <View key={idx} style={styles.row} wrap={false}>
                         <Text style={styles.cellNum}>{idx + 1}</Text>
                         <Text style={styles.cellProduct}>
                           {item.product_name || '—'}
@@ -268,6 +279,11 @@ function ReceiveReportDocument({ data }: { data: ReceiveReportData }) {
                         </Text>
                         <Text style={styles.cellCode}>
                           {item.deposit_code || '—'}
+                        </Text>
+                        <Text style={styles.cellPct}>
+                          {item.remaining_percent !== null && item.remaining_percent !== undefined
+                            ? `${item.remaining_percent}%`
+                            : '—'}
                         </Text>
                         <Text style={styles.cellQty}>
                           {item.quantity ?? '—'}

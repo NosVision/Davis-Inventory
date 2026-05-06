@@ -94,6 +94,9 @@ interface HqDepositItem {
   withdrawal_notes: string | null;
   withdrawn_at: string | null;
   notes: string | null;
+  // Average remaining_percent across deposit_bottles for this row's
+  // deposit_id. Pulled by loadHistoryForDate, null in other loaders.
+  remaining_percent: number | null;
   created_at: string;
 }
 
@@ -151,6 +154,7 @@ function buildReportData(
         customer_name: it.customer_name,
         deposit_code: it.deposit_code,
         quantity: it.quantity,
+        remaining_percent: it.remaining_percent,
       })),
     };
     if (existing) existing.sessions.push(sessionDto);
@@ -424,6 +428,7 @@ export default function HqWarehousePage() {
       from_store_name: storeMap.get(d.from_store_id || '') || unknownBranch,
       received_by_name: d.received_by ? (userMap.get(d.received_by) || null) : null,
       withdrawn_by_name: null,
+      remaining_percent: null,
     }));
 
     if (mountedRef.current) setReceivedItems(items);
@@ -461,6 +466,7 @@ export default function HqWarehousePage() {
       from_store_name: storeMap.get(d.from_store_id || '') || unknownBranch,
       received_by_name: d.received_by ? (userMap.get(d.received_by) || null) : null,
       withdrawn_by_name: d.withdrawn_by ? (userMap.get(d.withdrawn_by) || null) : null,
+      remaining_percent: null,
     }));
 
     if (mountedRef.current) setWithdrawnItems(items);
@@ -515,11 +521,43 @@ export default function HqWarehousePage() {
         }
       }
 
+      // Pull average remaining_percent per deposit_id from deposit_bottles
+      // so the report can show a "%คงเหลือ" column. Average across all
+      // bottles of the same deposit because hq_deposits doesn't drill down
+      // to individual bottles — one row may correspond to N bottles.
+      const depositIds = [...new Set(
+        (data || []).map((d) => d.deposit_id).filter(Boolean) as string[],
+      )];
+      let pctMap = new Map<string, number>();
+      if (depositIds.length > 0) {
+        const { data: bottles } = await supabase
+          .from('deposit_bottles')
+          .select('deposit_id, remaining_percent')
+          .in('deposit_id', depositIds);
+        if (bottles) {
+          const sums = new Map<string, { sum: number; n: number }>();
+          for (const b of bottles) {
+            if (!b.deposit_id || b.remaining_percent === null) continue;
+            const cur = sums.get(b.deposit_id) || { sum: 0, n: 0 };
+            cur.sum += Number(b.remaining_percent);
+            cur.n += 1;
+            sums.set(b.deposit_id, cur);
+          }
+          pctMap = new Map(
+            Array.from(sums.entries()).map(([id, v]) => [
+              id,
+              Math.round(v.sum / v.n),
+            ]),
+          );
+        }
+      }
+
       const items: HqDepositItem[] = (data || []).map((d) => ({
         ...d,
         from_store_name: storeMap.get(d.from_store_id || '') || unknownBranch,
         received_by_name: d.received_by ? (userMap.get(d.received_by) || null) : null,
         withdrawn_by_name: null,
+        remaining_percent: d.deposit_id ? (pctMap.get(d.deposit_id) ?? null) : null,
       }));
       if (mountedRef.current) setHistoryData(items);
     } finally {

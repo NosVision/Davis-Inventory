@@ -39,6 +39,7 @@ export interface HistoryItem {
   received_photo_url: string | null;
   received_at: string;
   received_session_id: string | null;
+  remaining_percent: number | null;
   notes: string | null;
 }
 
@@ -287,6 +288,7 @@ export function ReceiveHistoryView({
                             <th className="px-2 py-1.5 text-left font-medium">สินค้า</th>
                             <th className="px-2 py-1.5 text-left font-medium">ลูกค้า</th>
                             <th className="px-2 py-1.5 text-left font-medium">รหัสฝาก</th>
+                            <th className="px-2 py-1.5 text-right font-medium">%คงเหลือ</th>
                             <th className="px-2 py-1.5 text-right font-medium">จำนวน</th>
                             <th className="px-2 py-1.5 text-center font-medium">สถานะ</th>
                           </tr>
@@ -302,6 +304,11 @@ export function ReceiveHistoryView({
                               </td>
                               <td className="px-2 py-1.5 font-mono text-gray-500 dark:text-gray-400">
                                 {it.deposit_code || '—'}
+                              </td>
+                              <td className="px-2 py-1.5 text-right tabular-nums text-gray-900 dark:text-gray-100">
+                                {it.remaining_percent !== null && it.remaining_percent !== undefined
+                                  ? `${it.remaining_percent}%`
+                                  : '—'}
                               </td>
                               <td className="px-2 py-1.5 text-right tabular-nums text-gray-900 dark:text-gray-100">
                                 {it.quantity ?? '—'}
