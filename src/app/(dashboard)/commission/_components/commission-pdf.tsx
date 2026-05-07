@@ -177,7 +177,6 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontSize: 7.5,
     color: '#6b7280',
-    fontStyle: 'italic',
   },
 
   pageNum: {
@@ -286,9 +285,10 @@ function ReportDocument({ data }: { data: CommissionReportData }) {
               </Text>
             </View>
 
-            {/* Column heads — repeat at the top of each page when a
-                group spills onto the next page. */}
-            <View style={styles.tableHead} fixed>
+            {/* Column heads — render once per AE block. `fixed` only
+                behaves well as a direct child of <Page>, so we don't
+                use it inside a nested wrap block. */}
+            <View style={styles.tableHead}>
               <Text style={styles.cDate}>วันที่</Text>
               <Text style={styles.cReceipt}>เลขใบเสร็จ</Text>
               <Text style={styles.cTable}>โต๊ะ</Text>
