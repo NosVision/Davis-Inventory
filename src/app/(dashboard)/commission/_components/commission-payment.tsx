@@ -4,8 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { Button, Card, CardHeader, CardContent, Badge, Modal, ModalFooter, toast, PhotoUpload, Textarea } from '@/components/ui';
 import { useAppStore } from '@/stores/app-store';
 import { useAuthStore } from '@/stores/auth-store';
-import { createClient } from '@/lib/supabase/client';
-import { Loader2, Banknote, Clock, Search, CheckCircle2, XCircle, Eye, Image, ChevronDown, ChevronRight, RotateCcw, FileDown } from 'lucide-react';
+import { CommissionExportButton } from './commission-export-button';
+import { Loader2, Banknote, Clock, Search, CheckCircle2, XCircle, Eye, Image, ChevronDown, ChevronRight, RotateCcw } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/audit';
 import { useTranslations } from 'next-intl';
@@ -196,14 +196,6 @@ export function CommissionPayment({ month: monthProp, refreshKey }: CommissionPa
   // Receipt photo viewer modal — same UX as the history tab.
   const [photoModal, setPhotoModal] = useState<string | null>(null);
 
-  // PDF export modal — accountant picks which AEs to include in the
-  // monthly commission payout report and downloads a PDF that mirrors
-  // the existing spreadsheet template + a receipt-# column.
-  const [exportModalOpen, setExportModalOpen] = useState(false);
-  const [exportSelectedIds, setExportSelectedIds] = useState<Set<string>>(new Set());
-  const [exportingPdf, setExportingPdf] = useState(false);
-  const [storeName, setStoreName] = useState<string>('');
-
   // Per-entry selection. When the user opens a group's row, they pick
   // which bills to bundle into this payment via checkboxes; the form
   // total then reflects only the picked rows. Empty set = "all unpaid"
@@ -245,19 +237,6 @@ export function CommissionPayment({ month: monthProp, refreshKey }: CommissionPa
   }, [month, currentStoreId, refreshKey]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
-
-  // Look up the current store's display name once per store change so
-  // the PDF header can show "Baccarat" instead of a UUID.
-  useEffect(() => {
-    if (!currentStoreId) { setStoreName(''); return; }
-    const supabase = createClient();
-    supabase
-      .from('stores')
-      .select('store_name')
-      .eq('id', currentStoreId)
-      .maybeSingle()
-      .then(({ data }) => setStoreName((data as { store_name?: string } | null)?.store_name || ''));
-  }, [currentStoreId]);
 
   // Fetch cancelled entries on demand (only when the section is opened).
   const fetchCancelled = useCallback(async () => {
@@ -439,130 +418,6 @@ export function CommissionPayment({ month: monthProp, refreshKey }: CommissionPa
     }
   }
 
-  // Open the export modal with every AE pre-selected — accountant
-  // usually wants the full report, not a single AE, so the default
-  // "all" matches the common path and they uncheck what they don't need.
-  function openExportModal() {
-    const allAeIds = (summary?.ae_summary || []).map((a) => a.ae_id);
-    setExportSelectedIds(new Set(allAeIds));
-    setExportModalOpen(true);
-  }
-
-  function toggleExportAe(aeId: string, next: boolean) {
-    setExportSelectedIds((prev) => {
-      const set = new Set(prev);
-      if (next) set.add(aeId);
-      else set.delete(aeId);
-      return set;
-    });
-  }
-
-  function toggleExportAll(next: boolean) {
-    if (next) {
-      setExportSelectedIds(new Set((summary?.ae_summary || []).map((a) => a.ae_id)));
-    } else {
-      setExportSelectedIds(new Set());
-    }
-  }
-
-  // Build the report payload + lazy-load the PDF module on click. Same
-  // pattern as owner-review/page.tsx so the ~600 KB react-pdf bundle
-  // stays out of the main route chunk.
-  async function handleExportPdf() {
-    if (exportSelectedIds.size === 0) {
-      toast({ type: 'error', title: 'กรุณาเลือกอย่างน้อย 1 AE' });
-      return;
-    }
-    setExportingPdf(true);
-    try {
-      const mod = await import('./commission-pdf');
-
-      const allGroups = summary?.ae_summary || [];
-      const picked = allGroups.filter((g) => exportSelectedIds.has(g.ae_id));
-
-      const groups = picked.map((g) => {
-        const sortedEntries = [...(g.entries || [])].sort((a, b) => {
-          const da = String((a as Record<string, unknown>).bill_date || '');
-          const db = String((b as Record<string, unknown>).bill_date || '');
-          return da.localeCompare(db);
-        });
-        const rows = sortedEntries.map((e) => {
-          const r = e as Record<string, unknown>;
-          return {
-            bill_date: String(r.bill_date || ''),
-            receipt_no: (r.receipt_no as string | null) ?? null,
-            table_no: (r.table_no as string | null) ?? null,
-            subtotal: Number(r.subtotal_amount) || 0,
-            commission_amount: Number(r.commission_amount) || 0,
-            net_amount: Number(r.net_amount) || 0,
-          };
-        });
-        const totals = rows.reduce(
-          (acc, r) => ({
-            subtotal: acc.subtotal + r.subtotal,
-            commission: acc.commission + r.commission_amount,
-            net: acc.net + r.net_amount,
-            bill_count: acc.bill_count + 1,
-          }),
-          { subtotal: 0, commission: 0, net: 0, bill_count: 0 },
-        );
-        const bankLabel = g.bank_name
-          ? `${g.bank_name} ${g.bank_account_no || ''}${g.bank_account_name ? ` (${g.bank_account_name})` : ''}`.trim()
-          : null;
-        return {
-          ae_name: g.ae_name,
-          ae_nickname: g.ae_nickname,
-          bank_label: bankLabel,
-          rows,
-          totals,
-        };
-      });
-
-      const grand = groups.reduce(
-        (acc, g) => ({
-          subtotal: acc.subtotal + g.totals.subtotal,
-          commission: acc.commission + g.totals.commission,
-          net: acc.net + g.totals.net,
-          bill_count: acc.bill_count + g.totals.bill_count,
-        }),
-        { subtotal: 0, commission: 0, net: 0, bill_count: 0 },
-      );
-
-      // Thai-formatted month label (e.g. "เมษายน 2569") — derived from
-      // the YYYY-MM string the page already tracks.
-      const [y, m] = month.split('-').map(Number);
-      const monthLabel = new Intl.DateTimeFormat('th-TH-u-ca-buddhist', {
-        month: 'long',
-        year: 'numeric',
-      }).format(new Date(y, m - 1, 1));
-
-      const generatedAtLabel = new Intl.DateTimeFormat('th-TH-u-ca-buddhist', {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      }).format(new Date());
-
-      const data: import('./commission-pdf').CommissionReportData = {
-        store_name: storeName || 'สาขา',
-        month_label: monthLabel,
-        generated_at_label: generatedAtLabel,
-        groups,
-        grand,
-      };
-
-      const blob = await mod.buildCommissionPdf(data);
-      mod.downloadBlob(blob, `รายงานคอมมิชชั่น-${storeName || 'store'}-${month}.pdf`);
-      setExportModalOpen(false);
-    } catch (err) {
-      console.error('Commission PDF export error:', err);
-      toast({ type: 'error', title: 'สร้าง PDF ล้มเหลว' });
-    } finally {
-      setExportingPdf(false);
-    }
-  }
-
   if (loading) return <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-gray-400" /></div>;
 
   return (
@@ -606,8 +461,8 @@ export function CommissionPayment({ month: monthProp, refreshKey }: CommissionPa
       </div>
 
       {/* Action row — show-cancelled toggle on the left, PDF export
-          button on the right. The export pulls AE data from `summary`
-          and lets the accountant pick which AEs to include. */}
+          button on the right. Export modal is owned by the shared
+          CommissionExportButton; here it's locked to the page month. */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
           <input
@@ -618,15 +473,7 @@ export function CommissionPayment({ month: monthProp, refreshKey }: CommissionPa
           />
           {t('payment.showCancelled')}
         </label>
-        <Button
-          size="sm"
-          variant="secondary"
-          icon={<FileDown className="h-3.5 w-3.5" />}
-          disabled={(summary?.ae_summary || []).length === 0}
-          onClick={openExportModal}
-        >
-          ดาวน์โหลด PDF
-        </Button>
+        <CommissionExportButton month={month} />
       </div>
 
       {/* Unpaid AE list */}
@@ -1019,86 +866,6 @@ export function CommissionPayment({ month: monthProp, refreshKey }: CommissionPa
         )}
       </Modal>
 
-      {/* PDF export — pick which AEs to include */}
-      <Modal
-        isOpen={exportModalOpen}
-        onClose={() => setExportModalOpen(false)}
-        title="ดาวน์โหลดรายงาน PDF"
-        description="เลือก AE ที่ต้องการรวมในรายงานเดือนนี้"
-        size="md"
-      >
-        {(() => {
-          const allGroups = summary?.ae_summary || [];
-          const allChecked = allGroups.length > 0 && allGroups.every((g) => exportSelectedIds.has(g.ae_id));
-          const someChecked = !allChecked && allGroups.some((g) => exportSelectedIds.has(g.ae_id));
-          const pickedTotal = allGroups
-            .filter((g) => exportSelectedIds.has(g.ae_id))
-            .reduce((s, g) => s + (Number(g.total_net) || 0), 0);
-          return (
-            <div className="space-y-3">
-              {allGroups.length === 0 ? (
-                <p className="py-4 text-center text-sm text-gray-400">ไม่มีข้อมูล AE ในเดือนนี้</p>
-              ) : (
-                <>
-                  <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-gray-50 px-3 py-2 text-sm font-medium text-gray-700 dark:bg-gray-800/50 dark:text-gray-200">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                      checked={allChecked}
-                      ref={(el) => { if (el) el.indeterminate = someChecked; }}
-                      onChange={(ev) => toggleExportAll(ev.target.checked)}
-                    />
-                    เลือกทั้งหมด ({allGroups.length} AE)
-                  </label>
-                  <div className="max-h-72 overflow-y-auto divide-y divide-gray-100 rounded-lg ring-1 ring-gray-200 dark:divide-gray-700 dark:ring-gray-700">
-                    {allGroups.map((g) => {
-                      const checked = exportSelectedIds.has(g.ae_id);
-                      return (
-                        <label
-                          key={g.ae_id}
-                          className="flex cursor-pointer items-center justify-between gap-2 px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800/50"
-                        >
-                          <div className="flex min-w-0 flex-1 items-center gap-2">
-                            <input
-                              type="checkbox"
-                              className="h-4 w-4 shrink-0 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                              checked={checked}
-                              onChange={(ev) => toggleExportAe(g.ae_id, ev.target.checked)}
-                            />
-                            <div className="min-w-0">
-                              <p className="truncate font-medium text-gray-900 dark:text-white">
-                                {g.ae_name}
-                                {g.ae_nickname ? ` (${g.ae_nickname})` : ''}
-                              </p>
-                              <p className="text-xs text-gray-500 dark:text-gray-400">
-                                {g.entry_count} บิล · {formatCurrency(Number(g.total_net) || 0)} บาท
-                              </p>
-                            </div>
-                          </div>
-                        </label>
-                      );
-                    })}
-                  </div>
-                  <div className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300">
-                    เลือก {exportSelectedIds.size} AE · ยอดสุทธิรวม {formatCurrency(pickedTotal)} บาท
-                  </div>
-                </>
-              )}
-            </div>
-          );
-        })()}
-        <ModalFooter>
-          <Button variant="ghost" onClick={() => setExportModalOpen(false)}>ยกเลิก</Button>
-          <Button
-            variant="primary"
-            onClick={handleExportPdf}
-            disabled={exportingPdf || exportSelectedIds.size === 0}
-          >
-            {exportingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
-            ดาวน์โหลด PDF
-          </Button>
-        </ModalFooter>
-      </Modal>
     </div>
   );
 }

@@ -137,8 +137,8 @@ const styles = StyleSheet.create({
   cSubtotal: { flex: 1, textAlign: 'right' },
   cCommission: { flex: 1, textAlign: 'right' },
   cNet: { flex: 1, textAlign: 'right', color: '#047857' },
-  cCashier: { flex: 1.1, paddingHorizontal: 2 },
-  cManager: { flex: 1.1, paddingHorizontal: 2 },
+  cCashier: { flex: 1.1, paddingHorizontal: 2, textAlign: 'center' },
+  cManager: { flex: 1.1, paddingHorizontal: 2, textAlign: 'center' },
 
   signatureSlot: {
     borderBottomWidth: 0.5,
