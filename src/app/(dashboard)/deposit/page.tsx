@@ -577,7 +577,7 @@ export default function DepositPage() {
         .single();
       const storeName = storeData?.store_name || 'สาขา';
 
-      const transferCode = await generateTransferCode(supabase);
+      const transferCode = await generateTransferCode(supabase, currentStoreId);
       const selected = deposits.filter((d) => batchSelectedIds.has(d.id));
       const transfers = selected.map((d) => ({
         from_store_id: currentStoreId,

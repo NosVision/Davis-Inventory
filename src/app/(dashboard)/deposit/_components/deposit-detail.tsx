@@ -1162,8 +1162,8 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
         .single();
       const storeName = storeData?.store_name || t('detail.branch');
 
-      // Generate transfer code
-      const transferCode = await generateTransferCode(supabase);
+      // Generate transfer code (per-store, per-day sequence)
+      const transferCode = await generateTransferCode(supabase, currentStoreId);
 
       // Create transfer record
       const { data: insertedTransfer, error } = await supabase

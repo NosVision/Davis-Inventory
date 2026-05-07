@@ -390,8 +390,10 @@ export default function TransferPage() {
     const supabase = createClient();
 
     try {
-      // Generate shared transfer code for the batch
-      const transferCode = await generateTransferCode(supabase);
+      // Generate shared transfer code for the batch (per-store, per-day
+      // sequence — see lib/utils/transfer-code.ts for why the prefix
+      // now includes the store_code).
+      const transferCode = await generateTransferCode(supabase, currentStoreId);
 
       // Create one transfer per deposit, all sharing the same transfer_code
       const selectedDeposits = expiredDeposits.filter((d) => selectedIds.has(d.id));
