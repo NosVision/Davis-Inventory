@@ -66,7 +66,14 @@ interface TransferWithItems {
 }
 
 interface TransferBatchGroup {
+  // Composite group key — same transfer_code can appear across multiple
+  // from_store_ids (legacy bulk-imports give the same code to several
+  // stores), so we split each (transfer_code, from_store_id) into its
+  // own card. The key is what the page React-keys / chat-claim-locks
+  // against; transfer_code is still the human-readable label.
+  group_key: string;
   transfer_code: string;
+  from_store_id: string;
   from_store_name: string;
   items: TransferWithItems[];
   created_at: string;
@@ -699,15 +706,22 @@ export default function HqWarehousePage() {
 
   // Group pending transfers by transfer_code (batch)
   const pendingByBatch = useMemo(() => {
+    // Group by (transfer_code, from_store_id) so a transfer code that
+    // exists across multiple branches lands on multiple cards — one per
+    // source. Otherwise the items from later stores appeared mixed
+    // under the first store's name and looked "missing" to anyone who
+    // expected to see their own branch's portion.
     const grouped = new Map<string, TransferBatchGroup>();
     for (const t of filteredPending) {
-      const code = t.transfer_code;
-      const existing = grouped.get(code);
+      const key = `${t.transfer_code}::${t.from_store_id}`;
+      const existing = grouped.get(key);
       if (existing) {
         existing.items.push(t);
       } else {
-        grouped.set(code, {
-          transfer_code: code,
+        grouped.set(key, {
+          group_key: key,
+          transfer_code: t.transfer_code,
+          from_store_id: t.from_store_id,
           from_store_name: t.from_store_name,
           items: [t],
           created_at: t.created_at,
@@ -918,7 +932,7 @@ export default function HqWarehousePage() {
       // set => receive every item in the batch (the modal's default
       // behaviour). Anything else => only the ticked items get marked
       // received; the rest stay pending for a later session.
-      const selected = pendingSelection.get(batchConfirmGroup.transfer_code);
+      const selected = pendingSelection.get(batchConfirmGroup.group_key);
       const itemsToReceive =
         selected && selected.size > 0
           ? batchConfirmGroup.items.filter((t) => selected.has(t.id))
@@ -982,9 +996,9 @@ export default function HqWarehousePage() {
       // Clear partial selection for this batch — the un-selected items
       // (if any) stay in the tab as a fresh "remaining" batch.
       setPendingSelection((prev) => {
-        if (!prev.has(batchConfirmGroup.transfer_code)) return prev;
+        if (!prev.has(batchConfirmGroup.group_key)) return prev;
         const next = new Map(prev);
-        next.delete(batchConfirmGroup.transfer_code);
+        next.delete(batchConfirmGroup.group_key);
         return next;
       });
 
@@ -1353,12 +1367,12 @@ export default function HqWarehousePage() {
                   <EmptyState message={t('noPendingItems')} />
                 ) : (
                   pendingByBatch.map((batch) => {
-                    const isExpanded = expandedBranches.has(batch.transfer_code);
+                    const isExpanded = expandedBranches.has(batch.group_key);
                     return (
-                      <div key={batch.transfer_code} className="overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-900 dark:ring-gray-700">
+                      <div key={batch.group_key} className="overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-900 dark:ring-gray-700">
                         {/* Batch Header */}
                         <button
-                          onClick={() => toggleBranch(batch.transfer_code)}
+                          onClick={() => toggleBranch(batch.group_key)}
                           className="flex w-full items-center justify-between bg-gradient-to-r from-yellow-50 to-amber-50 px-4 py-3 transition hover:from-yellow-100 hover:to-amber-100 dark:from-yellow-900/20 dark:to-amber-900/20 dark:hover:from-yellow-900/30 dark:hover:to-amber-900/30"
                         >
                           <div className="flex items-center gap-2">
@@ -1418,7 +1432,7 @@ export default function HqWarehousePage() {
                           // Local-to-batch search: filter just this
                           // batch's items by deposit_code / product /
                           // customer. Empty string => show all items.
-                          const localQuery = (batchSearch.get(batch.transfer_code) || '').toLowerCase().trim();
+                          const localQuery = (batchSearch.get(batch.group_key) || '').toLowerCase().trim();
                           const visibleItems = localQuery
                             ? batch.items.filter((it) =>
                                 it.deposit_code?.toLowerCase().includes(localQuery) ||
@@ -1433,24 +1447,24 @@ export default function HqWarehousePage() {
                               <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
                               <input
                                 type="text"
-                                value={batchSearch.get(batch.transfer_code) || ''}
+                                value={batchSearch.get(batch.group_key) || ''}
                                 onChange={(e) => {
                                   const v = e.target.value;
                                   setBatchSearch((prev) => {
                                     const next = new Map(prev);
-                                    if (v) next.set(batch.transfer_code, v);
-                                    else next.delete(batch.transfer_code);
+                                    if (v) next.set(batch.group_key, v);
+                                    else next.delete(batch.group_key);
                                     return next;
                                   });
                                 }}
                                 placeholder={`ค้นหาในใบโอนนี้ (${batch.items.length} รายการ) — รหัสฝาก / สินค้า / ลูกค้า`}
                                 className="w-full rounded-md bg-white py-1.5 pl-7 pr-7 text-xs ring-1 ring-yellow-200 focus:outline-none focus:ring-2 focus:ring-yellow-400 dark:bg-gray-800 dark:text-gray-200 dark:ring-yellow-900/40"
                               />
-                              {batchSearch.get(batch.transfer_code) && (
+                              {batchSearch.get(batch.group_key) && (
                                 <button
                                   onClick={() => setBatchSearch((prev) => {
                                     const next = new Map(prev);
-                                    next.delete(batch.transfer_code);
+                                    next.delete(batch.group_key);
                                     return next;
                                   })}
                                   className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
@@ -1463,7 +1477,7 @@ export default function HqWarehousePage() {
 
                             {visibleItems.length === 0 ? (
                               <div className="rounded-md bg-gray-50 px-3 py-4 text-center text-xs text-gray-400 dark:bg-gray-800">
-                                ไม่พบรายการที่ตรงกับ &quot;{batchSearch.get(batch.transfer_code)}&quot;
+                                ไม่พบรายการที่ตรงกับ &quot;{batchSearch.get(batch.group_key)}&quot;
                               </div>
                             ) : null}
 
@@ -1473,16 +1487,16 @@ export default function HqWarehousePage() {
                               // batch shares the same chat card.
                               const itemClaim = chatClaims.get(transfer.transfer_code);
                               const itemClaimedInChat = !!itemClaim;
-                              const batchSelection = pendingSelection.get(batch.transfer_code) ?? new Set<string>();
+                              const batchSelection = pendingSelection.get(batch.group_key) ?? new Set<string>();
                               const checked = batchSelection.has(transfer.id);
                               const toggleItem = () => {
                                 setPendingSelection((prev) => {
                                   const next = new Map(prev);
-                                  const set = new Set(next.get(batch.transfer_code) ?? []);
+                                  const set = new Set(next.get(batch.group_key) ?? []);
                                   if (set.has(transfer.id)) set.delete(transfer.id);
                                   else set.add(transfer.id);
-                                  if (set.size === 0) next.delete(batch.transfer_code);
-                                  else next.set(batch.transfer_code, set);
+                                  if (set.size === 0) next.delete(batch.group_key);
+                                  else next.set(batch.group_key, set);
                                   return next;
                                 });
                               };
@@ -1603,15 +1617,15 @@ export default function HqWarehousePage() {
                                 pendingSelection and either receives the
                                 ticked subset or the whole batch. */}
                             {!chatClaims.get(batch.transfer_code) && (() => {
-                              const sel = pendingSelection.get(batch.transfer_code) ?? new Set<string>();
+                              const sel = pendingSelection.get(batch.group_key) ?? new Set<string>();
                               const total = batch.items.length;
                               const allSelected = sel.size === total;
                               const someSelected = sel.size > 0 && !allSelected;
                               const setAll = (on: boolean) => {
                                 setPendingSelection((prev) => {
                                   const next = new Map(prev);
-                                  if (on) next.set(batch.transfer_code, new Set(batch.items.map((i) => i.id)));
-                                  else next.delete(batch.transfer_code);
+                                  if (on) next.set(batch.group_key, new Set(batch.items.map((i) => i.id)));
+                                  else next.delete(batch.group_key);
                                   return next;
                                 });
                               };
