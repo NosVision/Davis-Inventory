@@ -16,6 +16,10 @@
     {
       "path": "/api/cron/stock-tracking-weekly",
       "schedule": "0 2 * * 1"
+    },
+    {
+      "path": "/api/cron/expiry-check",
+      "schedule": "0 1 * * *"
     }
   ]
 }
