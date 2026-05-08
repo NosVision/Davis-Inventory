@@ -95,6 +95,7 @@ interface TransferBatchItem {
   remaining_percent: number | null;
   notes: string | null;
   photo_url: string | null;
+  deposit_photo_url: string | null;
   created_at: string;
 }
 
@@ -354,16 +355,17 @@ export default function DepositPage() {
       return;
     }
 
-    // Resolve deposit info (incl. remaining_percent for the print receipt)
+    // Resolve deposit info (incl. remaining_percent for the print receipt
+    // and photo_url so the row can show the original deposit photo).
     const depositIds = data.map((t) => t.deposit_id).filter(Boolean) as string[];
     let depositMap = new Map<
       string,
-      { customer_name: string; deposit_code: string; remaining_percent: number | null }
+      { customer_name: string; deposit_code: string; remaining_percent: number | null; photo_url: string | null }
     >();
     if (depositIds.length > 0) {
       const { data: deps } = await supabase
         .from('deposits')
-        .select('id, customer_name, deposit_code, remaining_percent')
+        .select('id, customer_name, deposit_code, remaining_percent, photo_url')
         .in('id', depositIds);
       if (deps) {
         depositMap = new Map(
@@ -373,6 +375,7 @@ export default function DepositPage() {
               customer_name: d.customer_name,
               deposit_code: d.deposit_code,
               remaining_percent: d.remaining_percent ?? null,
+              photo_url: d.photo_url ?? null,
             },
           ]),
         );
@@ -395,6 +398,7 @@ export default function DepositPage() {
         remaining_percent: info?.remaining_percent ?? null,
         notes: t.notes,
         photo_url: t.photo_url,
+        deposit_photo_url: info?.photo_url ?? null,
         created_at: t.created_at,
       };
       const existing = map.get(code);
@@ -775,6 +779,23 @@ export default function DepositPage() {
       setSelectedDeposit(deposit);
     }
   }, [router]);
+
+  // Open the original deposit's detail view from a transfer batch row.
+  // Transfer rows only carry deposit_id, so fetch the full record.
+  const openDepositDetailById = useCallback(async (depositId: string | null) => {
+    if (!depositId) return;
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from('deposits')
+      .select('*')
+      .eq('id', depositId)
+      .maybeSingle();
+    if (error || !data) {
+      toast({ type: 'error', title: t('notFoundTitle'), message: t('notFoundMessage') });
+      return;
+    }
+    setSelectedDeposit(data as Deposit);
+  }, [t]);
 
   const filteredDeposits = useMemo(() => {
     let result = deposits;
@@ -1221,14 +1242,32 @@ export default function DepositPage() {
                                   )}
                                   {transfer.notes && <p>{t('transfer.notesLabel', { notes: transfer.notes })}</p>}
                                 </div>
-                                {transfer.photo_url && (
-                                  <button
-                                    onClick={() => setViewingPhoto(transfer.photo_url)}
-                                    className="mt-2 flex items-center gap-1.5 rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-600 transition hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400"
-                                  >
-                                    <ImageIcon className="h-3.5 w-3.5" /> {t('transfer.viewPhoto')}
-                                  </button>
-                                )}
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                  {transfer.photo_url && (
+                                    <button
+                                      onClick={() => setViewingPhoto(transfer.photo_url)}
+                                      className="flex items-center gap-1.5 rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-600 transition hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400"
+                                    >
+                                      <ImageIcon className="h-3.5 w-3.5" /> {t('transfer.viewPhoto')}
+                                    </button>
+                                  )}
+                                  {transfer.deposit_photo_url && (
+                                    <button
+                                      onClick={() => setViewingPhoto(transfer.deposit_photo_url)}
+                                      className="flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 transition hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400"
+                                    >
+                                      <ImageIcon className="h-3.5 w-3.5" /> {t('transfer.viewDepositPhoto')}
+                                    </button>
+                                  )}
+                                  {transfer.deposit_id && (
+                                    <button
+                                      onClick={() => openDepositDetailById(transfer.deposit_id)}
+                                      className="flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300"
+                                    >
+                                      <Eye className="h-3.5 w-3.5" /> {t('transfer.viewDetail')}
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                             ))}
                           </div>

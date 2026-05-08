@@ -1211,7 +1211,9 @@
       "sentAt": "Sent: {date}",
       "unspecified": "Unspecified",
       "notesLabel": "Notes: {notes}",
-      "viewPhoto": "View Transfer Photo"
+      "viewPhoto": "View Transfer Photo",
+      "viewDepositPhoto": "View Original Deposit Photo",
+      "viewDetail": "View Details"
     },
     "print": {
       "confirmTitle": "Confirm Print Transfer Slip",
@@ -1983,6 +1985,7 @@
     "bottles": "bottles",
     "requestedBy": "By: {name}",
     "transferPhotoFromBranch": "Transfer photo from branch",
+    "depositPhotoFromBranch": "Original deposit photo",
     "viewDetail": "View details",
     "receiveItem": "Receive item",
     "receivedHeader": "Items in warehouse",

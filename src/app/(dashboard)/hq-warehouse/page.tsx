@@ -61,6 +61,7 @@ interface TransferWithItems {
   requested_by_name: string | null;
   notes: string | null;
   photo_url: string | null;
+  deposit_photo_url: string | null;
   rejection_reason: string | null;
   created_at: string;
 }
@@ -367,16 +368,17 @@ export default function HqWarehousePage() {
       }
     }
 
-    // Resolve deposit info
+    // Resolve deposit info (incl. photo_url so the HQ row can show the
+    // original deposit photo without opening the detail modal).
     const depositIds = data.map((t) => t.deposit_id).filter(Boolean) as string[];
-    let depositMap = new Map<string, { customer_name: string; deposit_code: string }>();
+    let depositMap = new Map<string, { customer_name: string; deposit_code: string; photo_url: string | null }>();
     if (depositIds.length > 0) {
       const { data: deposits } = await supabase
         .from('deposits')
-        .select('id, customer_name, deposit_code')
+        .select('id, customer_name, deposit_code, photo_url')
         .in('id', depositIds);
       if (deposits) {
-        depositMap = new Map(deposits.map((d) => [d.id, { customer_name: d.customer_name, deposit_code: d.deposit_code }]));
+        depositMap = new Map(deposits.map((d) => [d.id, { customer_name: d.customer_name, deposit_code: d.deposit_code, photo_url: d.photo_url ?? null }]));
       }
     }
 
@@ -397,6 +399,7 @@ export default function HqWarehousePage() {
         requested_by_name: t.requested_by ? (userMap.get(t.requested_by) || null) : null,
         notes: t.notes,
         photo_url: t.photo_url,
+        deposit_photo_url: depositInfo?.photo_url ?? null,
         rejection_reason: t.rejection_reason || null,
         created_at: t.created_at,
       };
@@ -1557,6 +1560,15 @@ export default function HqWarehousePage() {
                                         <ImageIcon className="h-3.5 w-3.5" />
                                       </button>
                                     )}
+                                    {transfer.deposit_photo_url && (
+                                      <button
+                                        onClick={() => setViewingPhoto(transfer.deposit_photo_url)}
+                                        className="rounded-md bg-amber-50 p-1.5 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400"
+                                        title={t('depositPhotoFromBranch')}
+                                      >
+                                        <ImageIcon className="h-3.5 w-3.5" />
+                                      </button>
+                                    )}
                                     <button
                                       onClick={() => { setSelectedTransfer(transfer); setShowDetailModal(true); }}
                                       className="rounded-md bg-blue-100 p-1.5 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400"
@@ -1581,6 +1593,15 @@ export default function HqWarehousePage() {
                                         onClick={() => setViewingPhoto(transfer.photo_url)}
                                         className="rounded-md bg-blue-50 p-1.5 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400"
                                         title={t('transferPhotoFromBranch')}
+                                      >
+                                        <ImageIcon className="h-3.5 w-3.5" />
+                                      </button>
+                                    )}
+                                    {transfer.deposit_photo_url && (
+                                      <button
+                                        onClick={() => setViewingPhoto(transfer.deposit_photo_url)}
+                                        className="rounded-md bg-amber-50 p-1.5 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400"
+                                        title={t('depositPhotoFromBranch')}
                                       >
                                         <ImageIcon className="h-3.5 w-3.5" />
                                       </button>

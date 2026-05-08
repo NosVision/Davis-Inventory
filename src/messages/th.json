@@ -1211,7 +1211,9 @@
       "sentAt": "ส่งเมื่อ: {date}",
       "unspecified": "ไม่ระบุ",
       "notesLabel": "หมายเหตุ: {notes}",
-      "viewPhoto": "ดูรูปนำส่ง"
+      "viewPhoto": "ดูรูปนำส่ง",
+      "viewDepositPhoto": "ดูรูปฝากเดิม",
+      "viewDetail": "ดูรายละเอียด"
     },
     "print": {
       "confirmTitle": "ยืนยันพิมพ์ใบนำส่ง",
@@ -1984,6 +1986,7 @@
     "bottles": "ขวด",
     "requestedBy": "โดย: {name}",
     "transferPhotoFromBranch": "รูปนำส่งจากสาขา",
+    "depositPhotoFromBranch": "รูปฝากเดิมจากสาขา",
     "viewDetail": "ดูรายละเอียด",
     "receiveItem": "รับสินค้า",
     "receivedHeader": "สินค้าในคลัง",
