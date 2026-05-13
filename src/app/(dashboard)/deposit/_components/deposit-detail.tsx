@@ -363,8 +363,12 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
   }, [loadWithdrawals, loadReceiptSettings, loadStaffNames]);
 
   const expiryDays = deposit.expiry_date ? daysUntil(deposit.expiry_date) : null;
-  const isExpiringSoon = expiryDays !== null && expiryDays <= 7 && expiryDays > 0 && deposit.status === 'in_store';
-  const isExpired = expiryDays !== null && expiryDays <= 0;
+  // "หมดอายุแล้ว" ตัดสินจาก status จริง (cron ใช้ effectiveExpiryISO ที่ขยาย
+  // grace ตาม endHour ของร้าน) ไม่ใช่จาก expiry_date ดิบ — กันเคสที่กะ
+  // ทำงานข้ามเที่ยงคืน (เช่น เปิด 10:00 ปิด 04:00) ทำให้ UI แปะ expired
+  // ทั้งที่ยังอยู่ในกะวันที่ฝาก
+  const isExpired = deposit.status === 'expired';
+  const isExpiringSoon = expiryDays !== null && expiryDays <= 7 && deposit.status === 'in_store' && !isExpired;
   // Bottle-count ratio (e.g. 2 of 3 bottles still in store).
   const remainingPercent = deposit.quantity > 0
     ? Math.round((deposit.remaining_qty / deposit.quantity) * 100)
@@ -1419,7 +1423,9 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
         <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
           <AlertTriangle className="h-5 w-5 shrink-0 text-red-600 dark:text-red-400" />
           <p className="text-sm font-medium text-red-700 dark:text-red-300">
-            {t('detail.expiringWarning', { days: expiryDays })}
+            {expiryDays !== null && expiryDays > 0
+              ? t('detail.expiringWarning', { days: expiryDays })
+              : t('detail.expiringWarningToday')}
           </p>
         </div>
       )}
@@ -1668,6 +1674,9 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
                           <span className="ml-1 text-xs text-gray-500 dark:text-gray-400">
                             {t("detail.daysLeft", { days: expiryDays })}
                           </span>
+                        )}
+                        {!isExpired && isExpiringSoon && expiryDays !== null && expiryDays <= 0 && (
+                          <span className="ml-1 text-xs text-red-500">{t("mobile.daysLeftToday")}</span>
                         )}
                         {isExpired && (
                           <span className="ml-1 text-xs text-red-500">{t("detail.expiredLabel")}</span>

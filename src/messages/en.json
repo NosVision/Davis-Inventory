@@ -1177,8 +1177,10 @@
       "remaining": "Remaining: {remaining}/{total}",
       "noExpiry": "No expiry date",
       "expiresIn": "Expires in {days} days",
+      "expiresToday": "Expires today",
       "expiryLabel": "Expires: {date}",
       "daysLeft": "{days} days left",
+      "daysLeftToday": "Expires today",
       "noDeposit": "No Deposit"
     },
     "batch": {
@@ -1396,6 +1398,7 @@
     "detail": {
       "backToList": "Back to list",
       "expiringWarning": "This item expires in {days} days. Please notify customer.",
+      "expiringWarningToday": "This item expires today (still withdrawable during open shift). Please notify customer.",
       "photos": "Photos",
       "photoCustomer": "Customer photo",
       "photoAdditional": "Additional photo",

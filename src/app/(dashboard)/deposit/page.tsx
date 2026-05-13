@@ -1334,7 +1334,9 @@ export default function DepositPage() {
                   <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
                     {filteredDeposits.map((deposit) => {
                       const expiryDays = deposit.expiry_date ? daysUntil(deposit.expiry_date) : null;
-                      const isExpiringSoon = expiryDays !== null && expiryDays <= 7 && expiryDays > 0 && deposit.status === 'in_store';
+                      // ยังเตือนแม้ days <= 0 ตราบใดที่ status ยังเป็น in_store
+                      // (อยู่ในช่วง grace ของกะข้ามวัน) — cron จะ flip status เอง
+                      const isExpiringSoon = expiryDays !== null && expiryDays <= 7 && deposit.status === 'in_store';
                       const eligibleForBatch = user && user.role !== 'customer' && (
                         (activeTab === 'expired' && deposit.status === 'expired') ||
                         (activeTab === 'vip' && deposit.is_vip && deposit.status === 'in_store' &&
@@ -1452,7 +1454,9 @@ export default function DepositPage() {
                                 </p>
                                 {isExpiringSoon && (
                                   <p className="text-xs text-red-500 dark:text-red-400">
-                                    {t('mobile.daysLeft', { days: expiryDays })}
+                                    {expiryDays !== null && expiryDays > 0
+                                      ? t('mobile.daysLeft', { days: expiryDays })
+                                      : t('mobile.daysLeftToday')}
                                   </p>
                                 )}
                               </div>
@@ -1486,7 +1490,7 @@ export default function DepositPage() {
           {activeTab !== 'transfer_pending' && <div className="space-y-3 md:hidden">
             {filteredDeposits.map((deposit) => {
               const expiryDays = deposit.expiry_date ? daysUntil(deposit.expiry_date) : null;
-              const isExpiringSoon = expiryDays !== null && expiryDays <= 7 && expiryDays > 0 && deposit.status === 'in_store';
+              const isExpiringSoon = expiryDays !== null && expiryDays <= 7 && deposit.status === 'in_store';
 
               const showCheckbox =
                 user && user.role !== 'customer' && (
@@ -1580,7 +1584,9 @@ export default function DepositPage() {
                       })() : deposit.expiry_date ? (
                         <span className={cn(isExpiringSoon && 'font-medium text-red-500 dark:text-red-400')}>
                           {isExpiringSoon
-                            ? t('mobile.expiresIn', { days: expiryDays })
+                            ? (expiryDays !== null && expiryDays > 0
+                                ? t('mobile.expiresIn', { days: expiryDays })
+                                : t('mobile.expiresToday'))
                             : t('mobile.expiryLabel', { date: formatThaiDate(deposit.expiry_date) })
                           }
                         </span>

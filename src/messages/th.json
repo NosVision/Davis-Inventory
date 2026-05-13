@@ -1177,8 +1177,10 @@
       "remaining": "คงเหลือ: {remaining}/{total}",
       "noExpiry": "ไม่มีวันหมดอายุ",
       "expiresIn": "หมดอายุใน {days} วัน",
+      "expiresToday": "หมดอายุวันนี้",
       "expiryLabel": "หมดอายุ: {date}",
       "daysLeft": "เหลือ {days} วัน",
+      "daysLeftToday": "หมดวันนี้",
       "noDeposit": "ไม่ฝาก"
     },
     "batch": {
@@ -1396,6 +1398,7 @@
     "detail": {
       "backToList": "กลับหน้ารายการ",
       "expiringWarning": "รายการนี้จะหมดอายุใน {days} วัน กรุณาแจ้งลูกค้า",
+      "expiringWarningToday": "รายการนี้หมดอายุวันนี้ (อยู่ในช่วงเปิดร้านยังเบิกได้) กรุณาแจ้งลูกค้า",
       "photos": "รูปถ่าย",
       "photoCustomer": "รูปหลัก (จากลูกค้า)",
       "photoAdditional": "รูปเพิ่มเติม",
