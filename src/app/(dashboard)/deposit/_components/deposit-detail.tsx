@@ -14,6 +14,7 @@ import {
   Input,
   Modal,
   ModalFooter,
+  Select,
   Textarea,
   EmptyState,
   PhotoUpload,
@@ -48,6 +49,7 @@ import {
   Warehouse,
   Send,
   Pencil,
+  Search,
 } from 'lucide-react';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/audit';
 import { useTranslations } from 'next-intl';
@@ -218,7 +220,14 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
   const [editBottlePercents, setEditBottlePercents] = useState<string[]>([]);
   const [editPhoto, setEditPhoto] = useState<string | null>(null);
   // Owner-only: allow correcting the product name (e.g. typo at intake).
+  // Mirrors the bar/staff intake form — search the store's products table,
+  // auto-fill category when a known product is picked, free-text allowed.
   const [editProductName, setEditProductName] = useState('');
+  const [editCategory, setEditCategory] = useState('');
+  const [editShowProductDropdown, setEditShowProductDropdown] = useState(false);
+  const [editProductOptions, setEditProductOptions] = useState<
+    { product_name: string; category: string | null }[]
+  >([]);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   // Staff/Bar names
@@ -619,8 +628,30 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
     }
     setEditPhoto(deposit.confirm_photo_url || null);
     setEditProductName(deposit.product_name || '');
+    setEditCategory(deposit.category || '');
+    setEditShowProductDropdown(false);
     setShowEditModal(true);
   };
+
+  // Fetch the active products list once the owner opens the edit modal so
+  // the rename input behaves like the bar's intake search. We only fetch
+  // when needed — non-owner roles never see the search UI.
+  useEffect(() => {
+    if (!showEditModal) return;
+    if (user?.role !== 'owner') return;
+    if (!currentStoreId) return;
+    if (editProductOptions.length > 0) return;
+    const supabase = createClient();
+    supabase
+      .from('products')
+      .select('product_name, category')
+      .eq('store_id', currentStoreId)
+      .eq('active', true)
+      .order('product_name')
+      .then(({ data }) => {
+        if (data) setEditProductOptions(data);
+      });
+  }, [showEditModal, user?.role, currentStoreId, editProductOptions.length]);
 
   const handleEditSave = async () => {
     if (!user || !currentStoreId || !canEditDeposit) return;
@@ -643,15 +674,18 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
       percents.push(n);
     }
 
-    // Owner-only: rename the product (typo fix at intake). For other roles
-    // the field is hidden, so we leave product_name alone.
+    // Owner-only: rename the product + adjust category (typo fix at intake).
+    // For other roles the field is hidden, so we leave product_name/category
+    // untouched.
     const isOwnerRenaming = user.role === 'owner';
     const trimmedProductName = editProductName.trim();
+    const newCategory = editCategory.trim() || null;
     if (isOwnerRenaming && !trimmedProductName) {
       toast({ type: 'error', title: 'กรุณาระบุชื่อเหล้า' });
       return;
     }
     const nameChanged = isOwnerRenaming && trimmedProductName !== deposit.product_name;
+    const categoryChanged = isOwnerRenaming && newCategory !== (deposit.category || null);
 
     setIsSavingEdit(true);
     const supabase = createClient();
@@ -669,6 +703,7 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
     };
     if (editPhoto) updateData.confirm_photo_url = editPhoto;
     if (nameChanged) updateData.product_name = trimmedProductName;
+    if (categoryChanged) updateData.category = newCategory;
 
     const { error } = await supabase
       .from('deposits')
@@ -713,6 +748,9 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
         ...(nameChanged
           ? { product_name: trimmedProductName, previous_product_name: deposit.product_name }
           : {}),
+        ...(categoryChanged
+          ? { category: newCategory, previous_category: deposit.category }
+          : {}),
       },
     });
 
@@ -732,6 +770,8 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
     setEditBottlePercents([]);
     setEditPhoto(null);
     setEditProductName('');
+    setEditCategory('');
+    setEditShowProductDropdown(false);
     setIsSavingEdit(false);
     refreshDeposit();
     loadBottles();
@@ -2992,21 +3032,122 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
           setEditBottlePercents([]);
           setEditPhoto(null);
           setEditProductName('');
+          setEditCategory('');
+          setEditShowProductDropdown(false);
         }}
         title="แก้ไขข้อมูลฝาก"
         description={`${deposit.deposit_code} — ${deposit.product_name} (${deposit.customer_name})`}
         size="md"
       >
         <div className="space-y-4">
-          {user?.role === 'owner' && (
-            <Input
-              label="ชื่อเหล้า"
-              value={editProductName}
-              onChange={(e) => setEditProductName(e.target.value)}
-              placeholder={deposit.product_name}
-              hint={`เดิม: ${deposit.product_name}`}
-            />
-          )}
+          {user?.role === 'owner' && (() => {
+            const query = editProductName.trim().toLowerCase();
+            const filteredProducts = query
+              ? editProductOptions.filter((p) =>
+                  p.product_name.toLowerCase().includes(query),
+                )
+              : editProductOptions;
+            const categorySet = new Set<string>();
+            for (const p of editProductOptions) {
+              if (p.category) categorySet.add(p.category);
+            }
+            if (deposit.category && !categorySet.has(deposit.category)) {
+              categorySet.add(deposit.category);
+            }
+            if (editCategory && !categorySet.has(editCategory)) {
+              categorySet.add(editCategory);
+            }
+            const sortedCategories = Array.from(categorySet).sort((a, b) =>
+              a.localeCompare(b),
+            );
+            const categoryOptions = [
+              { value: '', label: 'เลือกหมวดหมู่' },
+              ...sortedCategories.map((c) => ({ value: c, label: c })),
+            ];
+            const showNoResultsHint =
+              editShowProductDropdown &&
+              query.length > 0 &&
+              filteredProducts.length === 0;
+            return (
+              <div className="space-y-3">
+                <div className="relative">
+                  <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    ชื่อเหล้า
+                  </label>
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="text"
+                      value={editProductName}
+                      onChange={(e) => {
+                        setEditProductName(e.target.value);
+                        setEditShowProductDropdown(true);
+                      }}
+                      onFocus={() => setEditShowProductDropdown(true)}
+                      onBlur={() => {
+                        setTimeout(() => setEditShowProductDropdown(false), 200);
+                      }}
+                      placeholder="พิมพ์ค้นหาชื่อเหล้า..."
+                      className={cn(
+                        'w-full rounded-lg border bg-white py-2 pl-9 pr-3 text-sm transition-colors',
+                        'focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500',
+                        'dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-indigo-400 dark:focus:ring-indigo-400',
+                        'border-gray-300',
+                      )}
+                    />
+                  </div>
+                  <p className="mt-1 text-[10px] text-gray-400">
+                    เดิม: {deposit.product_name}
+                  </p>
+
+                  {editShowProductDropdown && filteredProducts.length > 0 && (
+                    <div className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                      {filteredProducts.slice(0, 50).map((product, pIdx) => (
+                        <button
+                          key={`${product.product_name}-${pIdx}`}
+                          type="button"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            setEditProductName(product.product_name);
+                            setEditCategory(product.category || '');
+                            setEditShowProductDropdown(false);
+                          }}
+                          className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-indigo-50 dark:hover:bg-indigo-900/20"
+                        >
+                          <span className="font-medium text-gray-800 dark:text-gray-200">
+                            {product.product_name}
+                          </span>
+                          {product.category && (
+                            <span className="ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+                              {product.category}
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {showNoResultsHint && (
+                    <div className="absolute z-20 mt-1 w-full rounded-lg border border-gray-200 bg-white p-3 text-center text-xs text-gray-400 shadow-lg dark:border-gray-700 dark:bg-gray-800 dark:text-gray-500">
+                      ไม่พบสินค้า — บันทึกเป็นชื่อใหม่ได้
+                    </div>
+                  )}
+                </div>
+
+                <Select
+                  label="หมวดหมู่"
+                  options={categoryOptions}
+                  value={editCategory}
+                  onChange={(e) => setEditCategory(e.target.value)}
+                />
+                {editProductName.trim() && editCategory && (
+                  <p className="text-[11px] text-gray-400 dark:text-gray-500">
+                    หมวดหมู่จะถูกเลือกอัตโนมัติเมื่อเลือกจากรายการ — แก้ไขได้
+                  </p>
+                )}
+              </div>
+            );
+          })()}
 
           <Input
             label={t("detail.qtyEditable")}
@@ -3097,6 +3238,8 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
               setEditBottlePercents([]);
               setEditPhoto(null);
               setEditProductName('');
+              setEditCategory('');
+              setEditShowProductDropdown(false);
             }}
           >
             {t("detail.cancelBtn")}
