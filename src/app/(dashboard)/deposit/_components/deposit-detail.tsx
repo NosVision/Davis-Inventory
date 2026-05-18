@@ -217,6 +217,8 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
   const [editQty, setEditQty] = useState('');
   const [editBottlePercents, setEditBottlePercents] = useState<string[]>([]);
   const [editPhoto, setEditPhoto] = useState<string | null>(null);
+  // Owner-only: allow correcting the product name (e.g. typo at intake).
+  const [editProductName, setEditProductName] = useState('');
   const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   // Staff/Bar names
@@ -616,6 +618,7 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
       setEditBottlePercents(Array.from({ length: qty }, () => String(fallbackPct)));
     }
     setEditPhoto(deposit.confirm_photo_url || null);
+    setEditProductName(deposit.product_name || '');
     setShowEditModal(true);
   };
 
@@ -640,6 +643,16 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
       percents.push(n);
     }
 
+    // Owner-only: rename the product (typo fix at intake). For other roles
+    // the field is hidden, so we leave product_name alone.
+    const isOwnerRenaming = user.role === 'owner';
+    const trimmedProductName = editProductName.trim();
+    if (isOwnerRenaming && !trimmedProductName) {
+      toast({ type: 'error', title: 'กรุณาระบุชื่อเหล้า' });
+      return;
+    }
+    const nameChanged = isOwnerRenaming && trimmedProductName !== deposit.product_name;
+
     setIsSavingEdit(true);
     const supabase = createClient();
 
@@ -655,6 +668,7 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
       remaining_qty: remainingQty,
     };
     if (editPhoto) updateData.confirm_photo_url = editPhoto;
+    if (nameChanged) updateData.product_name = trimmedProductName;
 
     const { error } = await supabase
       .from('deposits')
@@ -696,15 +710,20 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
         bottle_percents: percents,
         quantity: qty,
         remaining_percent: avgPercent,
+        ...(nameChanged
+          ? { product_name: trimmedProductName, previous_product_name: deposit.product_name }
+          : {}),
       },
     });
 
     const displayName = user.displayName || user.username || 'Staff';
     const percentSummary = percents.map((p, i) => `${i + 1}:${p}%`).join(', ');
+    const productNameForMsg = nameChanged ? trimmedProductName : deposit.product_name;
+    const renameSuffix = nameChanged ? ` (เปลี่ยนชื่อจาก "${deposit.product_name}")` : '';
     sendChatBotMessage({
       storeId: currentStoreId,
       type: 'system',
-      content: `✏️ ${displayName} แก้ไขข้อมูลฝาก ${deposit.product_name} x${qty} (${deposit.deposit_code}) — ${deposit.customer_name} — รายขวด [${percentSummary}] เฉลี่ย ${avgPercent}%`,
+      content: `✏️ ${displayName} แก้ไขข้อมูลฝาก ${productNameForMsg} x${qty} (${deposit.deposit_code}) — ${deposit.customer_name} — รายขวด [${percentSummary}] เฉลี่ย ${avgPercent}%${renameSuffix}`,
     });
 
     toast({ type: 'success', title: 'แก้ไขข้อมูลสำเร็จ' });
@@ -712,6 +731,7 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
     setEditQty('');
     setEditBottlePercents([]);
     setEditPhoto(null);
+    setEditProductName('');
     setIsSavingEdit(false);
     refreshDeposit();
     loadBottles();
@@ -2971,12 +2991,23 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
           setEditQty('');
           setEditBottlePercents([]);
           setEditPhoto(null);
+          setEditProductName('');
         }}
         title="แก้ไขข้อมูลฝาก"
         description={`${deposit.deposit_code} — ${deposit.product_name} (${deposit.customer_name})`}
         size="md"
       >
         <div className="space-y-4">
+          {user?.role === 'owner' && (
+            <Input
+              label="ชื่อเหล้า"
+              value={editProductName}
+              onChange={(e) => setEditProductName(e.target.value)}
+              placeholder={deposit.product_name}
+              hint={`เดิม: ${deposit.product_name}`}
+            />
+          )}
+
           <Input
             label={t("detail.qtyEditable")}
             type="number"
@@ -3065,6 +3096,7 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
               setEditQty('');
               setEditBottlePercents([]);
               setEditPhoto(null);
+              setEditProductName('');
             }}
           >
             {t("detail.cancelBtn")}
@@ -3076,6 +3108,7 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
               const qtyNum = parseInt(editQty);
               const validQty = Number.isFinite(qtyNum) && qtyNum > 0 ? qtyNum : 0;
               if (!validQty) return true;
+              if (user?.role === 'owner' && !editProductName.trim()) return true;
               for (let i = 0; i < validQty; i++) {
                 const raw = editBottlePercents[i];
                 if (raw === undefined || raw === '') return true;
