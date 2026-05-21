@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useCustomerAuth } from '../_components/customer-provider';
 import { BottleLoader } from '../_components/bottle-loader';
+import { compressImage } from '@/lib/utils/image-compress';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
@@ -149,11 +150,19 @@ function DepositContent() {
       return URL.createObjectURL(file);
     });
 
-    // Upload
+    // Upload — compress client-side first so LIFF uploads from phones
+    // don't burn storage with 4-8MB camera originals.
     setIsUploading(true);
     try {
+      let uploadFile = file;
+      try {
+        uploadFile = await compressImage(file);
+      } catch {
+        // Keep original on compression failure
+      }
+
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('file', uploadFile);
 
       const authParams = getAuthParams();
       if (authParams.token) {

@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth-store';
 import { useChatStore } from '@/stores/chat-store';
 import { FolderPlus, X, Loader2, ImagePlus, FolderOpen, ChevronLeft, Trash2 } from 'lucide-react';
 import { ImageLightbox, type LightboxImage } from './image-lightbox';
+import { compressImage } from '@/lib/utils/image-compress';
 import toast from 'react-hot-toast';
 import type { ChatAlbum, ChatAlbumPhoto, ChatMessage, AlbumCardMetadata, UnreadBadgePayload } from '@/types/chat';
 
@@ -374,8 +375,15 @@ function AlbumDetail({ album, onBack, onClose, onPhotoCountChange }: AlbumDetail
 
     try {
       for (const file of valid) {
+        let uploadFile = file;
+        try {
+          uploadFile = await compressImage(file);
+        } catch {
+          // Keep original on compression failure
+        }
+
         const formData = new FormData();
-        formData.append('file', file);
+        formData.append('file', uploadFile);
         formData.append('folder', `album/${album.id}`);
 
         const res = await fetch('/api/upload/photo', { method: 'POST', body: formData });

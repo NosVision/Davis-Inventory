@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuthStore } from '@/stores/auth-store';
 import { usePushSubscription } from '@/hooks/use-push-subscription';
+import { compressImage } from '@/lib/utils/image-compress';
 import {
   Button,
   Card,
@@ -101,8 +102,16 @@ export default function ProfilePage() {
 
     setIsUploadingAvatar(true);
     try {
+      let uploadFile = file;
+      try {
+        // Avatars don't need to be big — clamp harder than the default.
+        uploadFile = await compressImage(file, { maxDimension: 512, quality: 0.8 });
+      } catch {
+        // Keep original on compression failure
+      }
+
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('file', uploadFile);
       formData.append('folder', 'avatars');
 
       const res = await fetch('/api/upload/photo', { method: 'POST', body: formData });

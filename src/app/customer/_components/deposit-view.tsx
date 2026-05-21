@@ -12,6 +12,7 @@ import {
   Send,
 } from 'lucide-react';
 import { useCustomerAuth } from './customer-provider';
+import { compressImage } from '@/lib/utils/image-compress';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
@@ -144,8 +145,15 @@ export function DepositView({ onSuccess }: DepositViewProps) {
 
       setIsUploading(true);
       try {
+        let uploadFile = file;
+        try {
+          uploadFile = await compressImage(file);
+        } catch {
+          // Keep original on compression failure
+        }
+
         const formData = new FormData();
-        formData.append('file', file);
+        formData.append('file', uploadFile);
 
         const authParams = getAuthParams();
         if (authParams.token) formData.append('token', authParams.token);

@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback } from 'react';
 import { cn } from '@/lib/utils/cn';
+import { compressImage } from '@/lib/utils/image-compress';
 import {
   Camera,
   ImagePlus,
@@ -72,14 +73,14 @@ export function PhotoUpload({
       const objectUrl = URL.createObjectURL(file);
       setPreview(objectUrl);
 
-      // Compress on client side if image is large
+      // Always try to compress — the util internally skips work for tiny
+      // files and types it can't decode (e.g. HEIC), and gracefully falls
+      // back to the original when re-encoding wouldn't shrink it.
       let uploadFile = file;
-      if (file.size > 2 * 1024 * 1024 && typeof window !== 'undefined') {
-        try {
-          uploadFile = await compressImage(file);
-        } catch {
-          // If compression fails, use original
-        }
+      try {
+        uploadFile = await compressImage(file);
+      } catch {
+        // If compression throws unexpectedly, use original
       }
 
       // Upload to server
@@ -280,56 +281,3 @@ export function PhotoUpload({
   );
 }
 
-/**
- * Client-side image compression using Canvas API
- */
-async function compressImage(file: File, maxWidth = 1920, quality = 0.8): Promise<File> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-
-      let { width, height } = img;
-      if (width > maxWidth) {
-        height = (height * maxWidth) / width;
-        width = maxWidth;
-      }
-
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        resolve(file);
-        return;
-      }
-
-      ctx.drawImage(img, 0, 0, width, height);
-
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) {
-            resolve(file);
-            return;
-          }
-          resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), {
-            type: 'image/jpeg',
-            lastModified: Date.now(),
-          }));
-        },
-        'image/jpeg',
-        quality
-      );
-    };
-
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error('Failed to load image'));
-    };
-
-    img.src = url;
-  });
-}

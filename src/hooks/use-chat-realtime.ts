@@ -6,6 +6,7 @@ import { broadcastToChannel, broadcastToMany } from '@/lib/supabase/broadcast';
 import { useChatStore } from '@/stores/chat-store';
 import { useAuthStore } from '@/stores/auth-store';
 import { useChatSound } from './use-chat-sound';
+import { compressImage } from '@/lib/utils/image-compress';
 import type { ChatMessage, ChatBroadcastPayload, UnreadBadgePayload, ChatPinnedMessage } from '@/types/chat';
 
 /**
@@ -205,9 +206,18 @@ export async function sendChatImageMessage(
 ): Promise<ChatMessage | null> {
   const supabase = createClient();
 
-  // 1. Upload image via API
+  // 1. Compress on the client before upload — chat photos in this app
+  // are mostly screenshots/snapshots, never need to be full 4K.
+  let uploadFile = file;
+  try {
+    uploadFile = await compressImage(file);
+  } catch {
+    // Keep original on compression failure
+  }
+
+  // 2. Upload image via API
   const formData = new FormData();
-  formData.append('file', file);
+  formData.append('file', uploadFile);
   formData.append('folder', 'chat');
 
   const uploadRes = await fetch('/api/upload/photo', {

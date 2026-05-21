@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useAuthStore } from '@/stores/auth-store';
 import { useChatStore } from '@/stores/chat-store';
 import { Modal, ModalFooter, Button, Input, toast } from '@/components/ui';
+import { compressImage } from '@/lib/utils/image-compress';
 import {
   Camera,
   Loader2,
@@ -100,8 +101,14 @@ export function ChatRoomSettings({ roomId, isOpen, onClose }: ChatRoomSettingsPr
     if (!file) return;
 
     setUploading(true);
+    let uploadFile = file;
+    try {
+      uploadFile = await compressImage(file);
+    } catch {
+      // Keep original on compression failure
+    }
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('file', uploadFile);
     formData.append('folder', 'chat-rooms');
 
     try {
