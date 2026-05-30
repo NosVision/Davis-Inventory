@@ -17,6 +17,8 @@ import {
   ExternalLink,
   AlertTriangle,
   Lightbulb,
+  LayoutGrid,
+  Smartphone,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -356,6 +358,49 @@ export default function BranchSetupGuidePage() {
         </Warn>
       </StepCard>
 
+      {/* Step 7 — Rich Menu */}
+      <StepCard n={7} icon={<LayoutGrid className="h-4 w-4" />} title="เปิดใช้งาน Rich Menu + ตั้งปุ่มฝากเหล้า">
+        <p>
+          Rich Menu คือเมนูรูปภาพที่อยู่ด้านล่างหน้าแชทของ LINE OA — ให้ลูกค้าแตะเข้าระบบฝากเหล้าได้ทันที
+          ตั้งค่าที่ <strong>LINE OA Manager</strong> (ไม่ใช่ Developers Console)
+        </p>
+        <ol className="ml-4 list-decimal space-y-1.5">
+          <li>
+            เข้า{' '}
+            <a
+              href="https://manager.line.biz"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-0.5 font-medium text-indigo-600 underline decoration-dotted underline-offset-2 dark:text-indigo-400"
+            >
+              LINE OA Manager <ExternalLink className="h-3 w-3" />
+            </a>{' '}
+            → เลือก OA ของสาขา → เมนู <strong>ริชเมนู (Rich menus)</strong>
+          </li>
+          <li>กด <strong>สร้างใหม่</strong> → ตั้งชื่อ, ช่วงเวลาแสดงผล, เลือกเทมเพลต layout แล้วอัปโหลดรูปเมนู</li>
+          <li>
+            ที่ช่องปุ่ม <strong>&quot;ระบบฝากเหล้า&quot;</strong> → ตั้ง <strong>Action</strong> เป็น{' '}
+            <strong>ข้อความ (Text)</strong> → พิมพ์ข้อความให้ส่งเป็น <Code>alcohol deposit</Code>
+          </li>
+          <li>ตั้งค่าปุ่มอื่น ๆ ตามต้องการ → <strong>บันทึก</strong> → กด <strong>เปิดใช้งาน / แสดงผล</strong> ริชเมนู</li>
+        </ol>
+        <Warn>
+          ปุ่มฝากเหล้าต้องตั้งให้ส่งข้อความ <Code>alcohol deposit</Code> เป๊ะ ๆ — เพราะบอทจับคีย์เวิร์ดนี้แล้วเปิดระบบฝากเหล้าให้
+          (จะใช้คำอื่นที่บอทรองรับก็ได้ เช่น <Code>ฝากเหล้า</Code> · <Code>deposit</Code> · <Code>เมนู</Code> —
+          ดูคำสั่งทั้งหมดที่หน้า ตั้งค่า → DAVIS Ai → คำสั่งที่รองรับ)
+        </Warn>
+
+        {/* Test callout */}
+        <div className="flex gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs leading-relaxed text-emerald-800 dark:border-emerald-800/50 dark:bg-emerald-900/20 dark:text-emerald-200">
+          <Smartphone className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+          <div>
+            <strong>ทดสอบ:</strong> เปิดแชท LINE OA ของสาขา → แตะปุ่ม <strong>&quot;ระบบฝากเหล้า&quot;</strong> ในริชเมนู →
+            บอทต้องตอบกลับเป็น <strong>Flex message</strong> พร้อมปุ่ม{' '}
+            <Code>📱 Open Bottle Keeper</Code> → แตะแล้วเปิดหน้า LIFF ฝากเหล้าได้ = ตั้งค่าครบถูกต้อง 🎉
+          </div>
+        </div>
+      </StepCard>
+
       {/* Final checklist */}
       <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-800/50 dark:bg-emerald-900/20">
         <p className="flex items-center gap-2 text-sm font-semibold text-emerald-900 dark:text-emerald-200">
@@ -368,6 +413,8 @@ export default function BranchSetupGuidePage() {
           <li>☐ สร้าง LIFF + ตั้ง Endpoint URL จากหน้าตั้งค่าสาขา</li>
           <li>☐ เปลี่ยน LINE Login channel เป็น Published</li>
           <li>☐ กรอก Channel ID / Token / Secret / LIFF ID + กด &quot;ดึงจาก LINE&quot; (Bot User ID) แล้วบันทึก</li>
+          <li>☐ เปิด Rich Menu + ปุ่มฝากเหล้าตั้ง Action ส่งข้อความ <Code>alcohol deposit</Code></li>
+          <li>☐ ทดลองแตะปุ่มฝากเหล้า → ขึ้น Flex message ปุ่ม &quot;📱 Open Bottle Keeper&quot; → แตะเปิด LIFF ได้</li>
         </ul>
         <Button
           variant="primary"
