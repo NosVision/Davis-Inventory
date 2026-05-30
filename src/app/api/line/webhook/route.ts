@@ -181,6 +181,22 @@ export async function POST(request: NextRequest) {
 
   console.log(`[LINE webhook ${reqId}] destination=${destination} events=${parsed.events?.length ?? 0} sigLen=${signature.length}`);
 
+  // -----------------------------------------------------------------------
+  // 0. Verify ping / empty delivery → 200, always.
+  //
+  // LINE's Console "Verify" button (and the occasional keep-alive delivery)
+  // POSTs `{"destination":"U…","events":[]}`. There's nothing to process and
+  // no store to resolve, so acknowledge immediately. This keeps "Verify"
+  // green even for a brand-new branch that hasn't saved its Bot User ID yet —
+  // otherwise the store lookup below 404s and the operator sees a scary
+  // "endpoint returned 404" while still mid-setup. Real events (events.length
+  // > 0) still go through full store resolution + signature verification.
+  // -----------------------------------------------------------------------
+  if (!parsed.events || parsed.events.length === 0) {
+    console.log(`[LINE webhook ${reqId}] verify/empty delivery (destination=${destination || 'none'}) → 200`);
+    return NextResponse.json({ status: 'ok', reason: 'no_events' });
+  }
+
   const supabase = createServiceClient();
 
   // -----------------------------------------------------------------------

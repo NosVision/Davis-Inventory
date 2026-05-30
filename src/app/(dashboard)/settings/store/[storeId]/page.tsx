@@ -471,28 +471,38 @@ export default function StoreDetailSettingsPage() {
     }
     setIsFetchingBotId(true);
     try {
-      const res = await fetch('https://api.line.me/v2/bot/info', {
-        headers: { Authorization: `Bearer ${token}` },
+      // Route through our own server. A direct browser fetch to api.line.me
+      // is impossible: LINE sends no CORS headers, and our service worker
+      // (public/sw.js) intercepts the cross-origin GET and synthesises a
+      // "503 Offline" when the network call fails — the exact error operators
+      // hit on this button. /api/* is skipped by the SW and runs server-side.
+      const res = await fetch('/api/line/bot-info', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
       });
-      if (!res.ok) {
-        const detail = await res.text().catch(() => '');
-        toast({
-          type: 'error',
-          title: t('storeDetail.fetchBotIdError'),
-          message: `HTTP ${res.status}${detail ? ` — ${detail.slice(0, 120)}` : ''}`,
-        });
+      const data = (await res.json().catch(() => null)) as
+        | {
+            userId?: string;
+            basicId?: string;
+            displayName?: string;
+            error?: string;
+            lineStatus?: number;
+            detail?: string;
+          }
+        | null;
+      if (!res.ok || !data?.userId) {
+        const hint = data?.lineStatus
+          ? `HTTP ${data.lineStatus}${data.detail ? ` — ${data.detail}` : ''}`
+          : data?.detail || data?.error || `HTTP ${res.status}`;
+        toast({ type: 'error', title: t('storeDetail.fetchBotIdError'), message: hint });
         return;
       }
-      const info = (await res.json()) as { userId?: string; basicId?: string; displayName?: string };
-      if (!info.userId) {
-        toast({ type: 'error', title: t('storeDetail.fetchBotIdError'), message: 'No userId in response' });
-        return;
-      }
-      setLineBotUserId(info.userId);
+      setLineBotUserId(data.userId);
       toast({
         type: 'success',
         title: t('storeDetail.fetchBotIdSuccess'),
-        message: info.displayName ? `${info.displayName} (${info.basicId || ''})` : undefined,
+        message: data.displayName ? `${data.displayName} (${data.basicId || ''})` : undefined,
       });
     } catch (err) {
       toast({
@@ -519,8 +529,12 @@ export default function StoreDetailSettingsPage() {
     let resolvedBotUserId = lineBotUserId.trim() || null;
     if (!resolvedBotUserId && lineToken.trim()) {
       try {
-        const res = await fetch('https://api.line.me/v2/bot/info', {
-          headers: { Authorization: `Bearer ${lineToken.trim()}` },
+        // Same reason as handleFetchBotUserId: go through our server proxy,
+        // never call api.line.me from the browser (CORS + service worker).
+        const res = await fetch('/api/line/bot-info', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: lineToken.trim() }),
         });
         if (res.ok) {
           const info = (await res.json()) as { userId?: string };
@@ -530,7 +544,7 @@ export default function StoreDetailSettingsPage() {
           }
         }
       } catch (err) {
-        console.warn('[settings] failed to auto-fetch /v2/bot/info', err);
+        console.warn('[settings] failed to auto-fetch bot info', err);
       }
     }
 
