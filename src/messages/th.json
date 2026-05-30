@@ -2088,6 +2088,8 @@
     "centralWarehouse": "คลังกลาง",
     "importDeposits": "นำเข้าข้อมูลฝากเหล้า",
     "importDepositsDesc": "นำเข้าข้อมูลฝากเหล้าจากระบบเดิม (CSV)",
+    "branchGuideTitle": "คู่มือการเพิ่มสาขาใหม่",
+    "branchGuideDesc": "ขั้นตอนตั้งค่า LINE OA / Messaging API / LIFF สำหรับสาขาใหม่",
     "davisAiTitle": "DAVIS Ai (บอทกลาง)",
     "davisAiDesc": "ตั้งค่าชื่อบอทกลางและดู Webhook URL (LIFF/LINE OA ตั้งแยกต่อสาขา)",
     "davisAi": {

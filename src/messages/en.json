@@ -2087,6 +2087,8 @@
     "centralWarehouse": "Central Warehouse",
     "importDeposits": "Import Deposit Data",
     "importDepositsDesc": "Import deposit data from legacy system (CSV)",
+    "branchGuideTitle": "New Branch Setup Guide",
+    "branchGuideDesc": "Steps to set up LINE OA / Messaging API / LIFF for a new branch",
     "davisAiTitle": "DAVIS Ai (Central Bot)",
     "davisAiDesc": "Set the central bot name and view the webhook URL (LIFF/LINE OA configured per store)",
     "davisAi": {

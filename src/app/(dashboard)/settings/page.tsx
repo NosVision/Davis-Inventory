@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { createClient } from '@/lib/supabase/client';
@@ -14,7 +14,7 @@ import {
   Store,
   Plus,
   ChevronRight,
-  Upload,
+  BookOpen,
   Bot,
 } from 'lucide-react';
 
@@ -33,19 +33,23 @@ export default function SettingsPage() {
   const isOwner = user?.role === 'owner';
   const [stores, setStores] = useState<StoreInfo[]>([]);
 
-
-  const loadStores = useCallback(async () => {
-    const supabase = createClient();
-    const { data } = await supabase
-      .from('stores')
-      .select('id, store_code, store_name, is_central, active')
-      .order('store_name');
-    if (data) setStores(data);
-  }, []);
-
   useEffect(() => {
-    loadStores();
-  }, [loadStores]);
+    // Load the branch list on mount. The async work is inlined so the
+    // setState lands after `await` (off the synchronous effect path), and a
+    // mounted guard prevents a state update if the user navigates away first.
+    let active = true;
+    (async () => {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from('stores')
+        .select('id, store_code, store_name, is_central, active')
+        .order('store_name');
+      if (active && data) setStores(data);
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -123,22 +127,22 @@ export default function SettingsPage() {
         </div>
       </Card>
 
-      {/* Import Deposits Link */}
+      {/* Branch Setup Guide Link */}
       <Card padding="none">
         <button
-          onClick={() => router.push('/settings/import-deposits')}
+          onClick={() => router.push('/settings/branch-setup-guide')}
           className="flex w-full items-center justify-between px-5 py-4 text-left transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/50"
         >
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 dark:bg-emerald-900/20">
-              <Upload className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+              <BookOpen className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
             </div>
             <div>
               <p className="text-sm font-medium text-gray-900 dark:text-white">
-                {t('importDeposits')}
+                {t('branchGuideTitle')}
               </p>
               <p className="text-xs text-gray-400">
-                {t('importDepositsDesc')}
+                {t('branchGuideDesc')}
               </p>
             </div>
           </div>
