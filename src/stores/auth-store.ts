@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { AuthUser } from '@/lib/auth/permissions';
+import { useAppStore } from './app-store';
 
 interface AuthState {
   user: AuthUser | null;
@@ -19,5 +20,10 @@ export const useAuthStore = create<AuthState>((set) => ({
     set((state) => ({
       user: state.user ? { ...state.user, ...partial } : null,
     })),
-  logout: () => set({ user: null, isLoading: false }),
+  logout: () => {
+    set({ user: null, isLoading: false });
+    // Clear the persisted store selection so the next account on this device
+    // doesn't inherit a store it may not be authorized for.
+    useAppStore.setState({ currentStoreId: null });
+  },
 }));

@@ -24,12 +24,15 @@ if %ERRORLEVEL% NEQ 0 (
 if not exist "%INSTALL_DIR%\node_modules\@supabase" (
     echo [*] Installing npm packages ...
     cd /d "%INSTALL_DIR%"
+    set PUPPETEER_SKIP_DOWNLOAD=true
     call npm install --production 2>nul
 )
 
 echo [OK] config.json: Found
 echo [OK] Node.js: Ready
 echo [OK] npm packages: Ready
+if exist "C:\Program Files\Google\Chrome\Application\chrome.exe" echo [OK] Chrome: Found
+if exist "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" echo [OK] Edge: Found
 echo.
 echo ==========================================
 echo   Starting Print Server ...

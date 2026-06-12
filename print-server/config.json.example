@@ -7,6 +7,7 @@
   "PRINT_ACCOUNT_EMAIL": "printer-brn@stockmanager.app",
   "PRINT_ACCOUNT_PASSWORD": "auto-generated-password",
   "PRINTER_NAME": "POS80",
+  "CHROME_PATH": "",
   "PAPER_WIDTH": 80,
   "WORKING_HOURS": {
     "enabled": true,

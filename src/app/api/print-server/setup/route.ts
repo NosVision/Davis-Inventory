@@ -163,6 +163,7 @@ export async function POST(request: NextRequest) {
     PRINT_ACCOUNT_EMAIL: email,
     PRINT_ACCOUNT_PASSWORD: password,
     PRINTER_NAME: printerName,
+    CHROME_PATH: '',
     PAPER_WIDTH: paperWidth,
     WORKING_HOURS: workingHours,
     POLL_INTERVAL: 10000,

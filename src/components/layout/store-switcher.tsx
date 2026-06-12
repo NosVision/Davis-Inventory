@@ -25,7 +25,10 @@ export function StoreSwitcher({ stores, collapsed = false }: StoreSwitcherProps)
   useEffect(() => {
     // Don't auto-select before persist hydration — otherwise we clobber the
     // user's saved store selection with stores[0] every page navigation.
-    if (_hasHydrated && !currentStoreId && stores.length > 0) {
+    // Also reset when the persisted id isn't in this user's authorized stores
+    // (stale localStorage from another account on the same device) — otherwise
+    // every store-scoped query silently returns empty data.
+    if (_hasHydrated && stores.length > 0 && !stores.some((s) => s.id === currentStoreId)) {
       setCurrentStoreId(stores[0].id);
     }
   }, [_hasHydrated, currentStoreId, stores, setCurrentStoreId]);

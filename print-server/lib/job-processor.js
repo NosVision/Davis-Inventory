@@ -9,6 +9,7 @@ const { exec } = require('child_process');
 
 class JobProcessor {
   constructor(config) {
+    this.config = config;
     this.printerName = config.PRINTER_NAME;
     this.paperWidth = config.PAPER_WIDTH || 80;
     this.tempDir = path.join(__dirname, '..', 'temp');
@@ -40,10 +41,20 @@ class JobProcessor {
    */
   async init() {
     const puppeteer = require('puppeteer');
-    this.browser = await puppeteer.launch({
+    const executablePath = this._findBrowserExecutable();
+    const launchOptions = {
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu'],
-    });
+    };
+
+    if (executablePath) {
+      launchOptions.executablePath = executablePath;
+      console.log(`  [*] Browser executable: ${executablePath}`);
+    } else {
+      console.log('  [*] Browser executable: Puppeteer managed browser');
+    }
+
+    this.browser = await puppeteer.launch(launchOptions);
     console.log('  [OK] Puppeteer browser launched');
   }
 
@@ -131,6 +142,27 @@ class JobProcessor {
       (process.env.LOCALAPPDATA || '') + '\\SumatraPDF\\SumatraPDF.exe',
     ];
     return paths.find((p) => p && fs.existsSync(p)) || null;
+  }
+
+  /**
+   * Prefer an installed browser over Puppeteer's cache. The cache path is tied
+   * to the Windows user that installed npm packages, so it often breaks after
+   * copying this print server to another POS account.
+   */
+  _findBrowserExecutable() {
+    const configured = [
+      process.env.PUPPETEER_EXECUTABLE_PATH,
+      this.config.CHROME_PATH,
+      this.config.BROWSER_PATH,
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+      path.join(process.env.LOCALAPPDATA || '', 'Google\\Chrome\\Application\\chrome.exe'),
+      'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+      'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+      path.join(process.env.LOCALAPPDATA || '', 'Microsoft\\Edge\\Application\\msedge.exe'),
+    ];
+
+    return configured.find((p) => p && fs.existsSync(p)) || null;
   }
 
   /**

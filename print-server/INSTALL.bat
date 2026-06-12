@@ -89,6 +89,7 @@ echo.
 echo [3/6] Installing npm packages...
 cd /d "C:\print-server"
 if exist "C:\print-server\node_modules\@supabase" goto :NPM_OK
+set PUPPETEER_SKIP_DOWNLOAD=true
 call npm install --production
 if %errorLevel% neq 0 (
     echo [!] Failed to install npm packages
