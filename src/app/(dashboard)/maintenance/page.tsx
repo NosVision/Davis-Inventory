@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, Store, Loader2 } from 'lucide-react';
-import { Button, Card, EmptyState, Modal, ModalFooter, toast } from '@/components/ui';
+import { Badge, Button, Card, EmptyState, Modal, ModalFooter, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { MonthCalendar, type CalendarItem } from '@/components/maintenance/month-calendar';
 import { RepairPhotoInput } from '@/components/repairs/repair-photo-input';
@@ -22,6 +22,17 @@ const MAINTENANCE_STATUS_LABELS: Record<string, string> = {
   skipped: 'ข้าม',
 };
 
+const STATUS_DOT: Record<string, string> = {
+  pending: 'bg-amber-400',
+  completed: 'bg-emerald-500',
+  skipped: 'bg-gray-300 dark:bg-gray-600',
+};
+
+function todayYmd(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 export default function MaintenancePage() {
   const { currentStoreId } = useAppStore();
   const { user } = useAuthStore();
@@ -30,6 +41,7 @@ export default function MaintenancePage() {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1); // 1-12
+  const [selectedDate, setSelectedDate] = useState<string | null>(todayYmd());
   const [rows, setRows] = useState<OccurrenceRow[]>([]);
   const [storeNames, setStoreNames] = useState<Record<string, string>>({});
   const [accessibleCount, setAccessibleCount] = useState(1);
@@ -99,23 +111,24 @@ export default function MaintenancePage() {
   }, [load]);
 
   function prevMonth() {
+    setSelectedDate(null);
     if (month === 1) {
       setYear((y) => y - 1);
       setMonth(12);
     } else setMonth((m) => m - 1);
   }
   function nextMonth() {
+    setSelectedDate(null);
     if (month === 12) {
       setYear((y) => y + 1);
       setMonth(1);
     } else setMonth((m) => m + 1);
   }
 
-  function openOccurrence(item: CalendarItem) {
-    const row = rows.find((r) => r.id === item.id) ?? null;
+  function openRow(row: OccurrenceRow) {
     setSelected(row);
-    setPhotos(row?.photo_urls ?? []);
-    setNotes(row?.notes ?? '');
+    setPhotos(row.photo_urls ?? []);
+    setNotes(row.notes ?? '');
   }
 
   async function completeOccurrence() {
@@ -175,6 +188,15 @@ export default function MaintenancePage() {
 
   const pendingCount = rows.filter((r) => r.status === 'pending').length;
   const doneCount = rows.filter((r) => r.status === 'completed').length;
+  const dayRows = selectedDate ? rows.filter((r) => r.due_date === selectedDate) : [];
+  const selectedLabel = selectedDate
+    ? new Date(selectedDate + 'T00:00:00').toLocaleDateString('th-TH', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      })
+    : '';
 
   return (
     <div className="space-y-4">
@@ -238,7 +260,63 @@ export default function MaintenancePage() {
           <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
         </div>
       ) : (
-        <MonthCalendar year={year} month={month} items={calendarItems} onSelect={openOccurrence} />
+        <>
+          <MonthCalendar
+            year={year}
+            month={month}
+            items={calendarItems}
+            selectedDate={selectedDate}
+            onSelectDay={setSelectedDate}
+          />
+
+          {selectedDate && (
+            <Card padding="none">
+              <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-3 dark:border-gray-800">
+                <CalendarDays className="h-4 w-4 text-cyan-500" />
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                  งานวันที่ {selectedLabel}
+                </h3>
+                <span className="ml-auto text-xs text-gray-400">{dayRows.length} งาน</span>
+              </div>
+              {dayRows.length === 0 ? (
+                <p className="px-4 py-8 text-center text-sm text-gray-400">
+                  ไม่มีงานประจำในวันนี้
+                </p>
+              ) : (
+                <div className="divide-y divide-gray-100 dark:divide-gray-800">
+                  {dayRows.map((r) => (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => openRow(r)}
+                      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                    >
+                      <span className={cn('h-2.5 w-2.5 shrink-0 rounded-full', STATUS_DOT[r.status])} />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-medium text-gray-900 dark:text-white">
+                          {r.schedule?.title ?? 'งานประจำ'}
+                        </p>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                          {mode === 'all' && storeNames[r.store_id] && (
+                            <Badge variant="outline" size="sm">
+                              {storeNames[r.store_id]}
+                            </Badge>
+                          )}
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            {MAINTENANCE_STATUS_LABELS[r.status] ?? r.status}
+                          </span>
+                        </div>
+                      </div>
+                      {r.status !== 'completed' && canComplete && (
+                        <ChevronRight className="h-4 w-4 shrink-0 text-gray-300" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </Card>
+          )}
+        </>
       )}
 
       <Modal

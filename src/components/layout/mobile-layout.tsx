@@ -102,6 +102,15 @@ export function MobileLayout({ children, stores }: MobileLayoutProps) {
     return groups;
   }, [modules]);
 
+  // Highlight only the most specific matching module (longest href prefix).
+  const activeHref = useMemo(() => {
+    const matches = modules.filter(
+      (m) => pathname === m.href || pathname.startsWith(m.href + '/'),
+    );
+    if (matches.length === 0) return null;
+    return matches.reduce((best, m) => (m.href.length > best.href.length ? m : best)).href;
+  }, [modules, pathname]);
+
   const isChatRoom = /^\/chat\/[^/]+/.test(pathname);
   const isFullWidthPage = pathname.startsWith('/performance');
 
@@ -190,8 +199,7 @@ export function MobileLayout({ children, stores }: MobileLayoutProps) {
                 <ul className="space-y-0.5">
                   {group.items.map((mod) => {
                     const Icon = iconMap[mod.icon] ?? ClipboardCheck;
-                    const isActive =
-                      pathname === mod.href || pathname.startsWith(mod.href + '/');
+                    const isActive = mod.href === activeHref;
                     const colors = getModuleColors(mod.color);
 
                     return (

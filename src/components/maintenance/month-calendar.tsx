@@ -15,23 +15,33 @@ interface MonthCalendarProps {
   /** 1-12 */
   month: number;
   items: CalendarItem[];
-  onSelect: (item: CalendarItem) => void;
+  /** Currently selected day (YYYY-MM-DD) */
+  selectedDate: string | null;
+  onSelectDay: (date: string) => void;
 }
 
 const WEEKDAYS = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
 
-const STATUS_CHIP: Record<CalendarItem['status'], string> = {
-  pending: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
-  completed: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300',
-  skipped: 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
+const DOT_COLOR: Record<CalendarItem['status'], string> = {
+  pending: 'bg-amber-400',
+  completed: 'bg-emerald-500',
+  skipped: 'bg-gray-300 dark:bg-gray-600',
 };
 
-export function MonthCalendar({ year, month, items, onSelect }: MonthCalendarProps) {
-  const firstDay = new Date(year, month - 1, 1);
-  const startWeekday = firstDay.getDay(); // 0=Sun
+function pad(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+export function MonthCalendar({
+  year,
+  month,
+  items,
+  selectedDate,
+  onSelectDay,
+}: MonthCalendarProps) {
+  const startWeekday = new Date(year, month - 1, 1).getDay(); // 0=Sun
   const daysInMonth = new Date(year, month, 0).getDate();
 
-  // Group items by day-of-month
   const byDay = new Map<number, CalendarItem[]>();
   for (const it of items) {
     const d = new Date(it.due_date + 'T00:00:00');
@@ -48,70 +58,90 @@ export function MonthCalendar({ year, month, items, onSelect }: MonthCalendarPro
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
   while (cells.length % 7 !== 0) cells.push(null);
 
-  const todayStr = new Date().toDateString();
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
 
   return (
-    <div className="overflow-hidden rounded-xl ring-1 ring-gray-200 dark:ring-gray-700">
-      <div className="grid grid-cols-7 bg-gray-50 dark:bg-gray-800/50">
-        {WEEKDAYS.map((w) => (
+    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
+      <div className="grid grid-cols-7 border-b border-gray-100 dark:border-gray-800">
+        {WEEKDAYS.map((w, i) => (
           <div
             key={w}
-            className="py-2 text-center text-[11px] font-semibold text-gray-500 dark:text-gray-400"
+            className={cn(
+              'py-2.5 text-center text-[11px] font-semibold',
+              i === 0 ? 'text-rose-400' : 'text-gray-400 dark:text-gray-500',
+            )}
           >
             {w}
           </div>
         ))}
       </div>
-      <div className="grid grid-cols-7">
+      <div className="grid grid-cols-7 gap-px bg-gray-100 p-px dark:bg-gray-800">
         {cells.map((day, i) => {
           if (day === null) {
-            return (
-              <div
-                key={`empty-${i}`}
-                className="min-h-[72px] border-b border-r border-gray-100 bg-gray-50/50 dark:border-gray-800 dark:bg-gray-900/30"
-              />
-            );
+            return <div key={`empty-${i}`} className="aspect-square bg-gray-50/60 dark:bg-gray-900/40" />;
           }
           const dayItems = byDay.get(day) ?? [];
-          const isToday =
-            new Date(year, month - 1, day).toDateString() === todayStr;
+          const dateStr = `${year}-${pad(month)}-${pad(day)}`;
+          const isToday = dateStr === todayStr;
+          const isSelected = dateStr === selectedDate;
+          const isSunday = i % 7 === 0;
+          const hasPending = dayItems.some((it) => it.status === 'pending');
+
           return (
-            <div
+            <button
               key={day}
-              className="min-h-[72px] border-b border-r border-gray-100 p-1 dark:border-gray-800"
+              type="button"
+              onClick={() => onSelectDay(dateStr)}
+              className={cn(
+                'group relative flex aspect-square flex-col items-center justify-start gap-1 bg-white p-1 transition-colors dark:bg-gray-900',
+                isSelected
+                  ? 'bg-cyan-500 dark:bg-cyan-500'
+                  : 'hover:bg-cyan-50 dark:hover:bg-cyan-900/20',
+              )}
             >
-              <div
+              <span
                 className={cn(
-                  'mb-1 flex h-5 w-5 items-center justify-center rounded-full text-[11px]',
-                  isToday
-                    ? 'bg-indigo-600 font-bold text-white'
-                    : 'text-gray-500 dark:text-gray-400',
+                  'mt-0.5 flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium',
+                  isSelected
+                    ? 'bg-white/25 text-white'
+                    : isToday
+                      ? 'bg-cyan-500 text-white'
+                      : isSunday
+                        ? 'text-rose-500 dark:text-rose-400'
+                        : 'text-gray-700 dark:text-gray-300',
                 )}
               >
                 {day}
-              </div>
-              <div className="space-y-0.5">
-                {dayItems.slice(0, 3).map((it) => (
-                  <button
-                    key={it.id}
-                    type="button"
-                    onClick={() => onSelect(it)}
-                    className={cn(
-                      'block w-full truncate rounded px-1 py-0.5 text-left text-[10px] font-medium',
-                      STATUS_CHIP[it.status],
-                    )}
-                    title={it.title}
-                  >
-                    {it.title}
-                  </button>
-                ))}
-                {dayItems.length > 3 && (
-                  <span className="block px-1 text-[10px] text-gray-400">
-                    +{dayItems.length - 3}
-                  </span>
-                )}
-              </div>
-            </div>
+              </span>
+              {dayItems.length > 0 && (
+                <div className="flex flex-wrap items-center justify-center gap-0.5">
+                  {dayItems.slice(0, 3).map((it) => (
+                    <span
+                      key={it.id}
+                      className={cn(
+                        'h-1.5 w-1.5 rounded-full',
+                        isSelected ? 'bg-white/90' : DOT_COLOR[it.status],
+                      )}
+                    />
+                  ))}
+                  {dayItems.length > 3 && (
+                    <span
+                      className={cn(
+                        'text-[8px] font-semibold leading-none',
+                        isSelected ? 'text-white' : 'text-gray-400',
+                      )}
+                    >
+                      +{dayItems.length - 3}
+                    </span>
+                  )}
+                </div>
+              )}
+              {/* subtle indicator that the day still has pending work */}
+              {hasPending && !isSelected && (
+                <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-amber-400" />
+              )}
+            </button>
           );
         })}
       </div>

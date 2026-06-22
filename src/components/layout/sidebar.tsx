@@ -109,6 +109,16 @@ export function Sidebar({ stores }: SidebarProps) {
     return groups;
   }, [modules]);
 
+  // Highlight only the most specific matching module so a parent route
+  // (e.g. /repairs) doesn't also light up for a child (/repairs/new).
+  const activeHref = useMemo(() => {
+    const matches = modules.filter(
+      (m) => pathname === m.href || pathname.startsWith(m.href + '/'),
+    );
+    if (matches.length === 0) return null;
+    return matches.reduce((best, m) => (m.href.length > best.href.length ? m : best)).href;
+  }, [modules, pathname]);
+
   if (!user) return null;
 
   function handleLogout() {
@@ -162,8 +172,7 @@ export function Sidebar({ stores }: SidebarProps) {
             <ul className="space-y-0.5">
               {group.items.map((mod) => {
                 const Icon = iconMap[mod.icon] ?? ClipboardCheck;
-                const isActive =
-                  pathname === mod.href || pathname.startsWith(mod.href + '/');
+                const isActive = mod.href === activeHref;
                 const colors = getModuleColors(mod.color);
                 const modName = t(mod.nameKey);
                 // Inbox count drives the red badge — shown both expanded
