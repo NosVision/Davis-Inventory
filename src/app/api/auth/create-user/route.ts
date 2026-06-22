@@ -24,12 +24,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Only owners can create users' }, { status: 403 });
   }
 
-  const { username, password, role, displayName, storeId } = (await request.json()) as {
+  const { username, password, role, displayName, storeId, storeIds } = (await request.json()) as {
     username: string;
     password: string;
     role: string;
     displayName: string | null;
-    storeId: string | null;
+    storeId?: string | null;
+    storeIds?: string[];
   };
 
   if (!username || !password || !role) {
@@ -70,12 +71,17 @@ export async function POST(request: NextRequest) {
     })
     .eq('id', authData.user.id);
 
-  // Assign store
-  if (storeId) {
-    await serviceClient.from('user_stores').insert({
-      user_id: authData.user.id,
-      store_id: storeId,
-    });
+  // Assign stores (supports multiple branches, e.g. a technician covering
+  // several stores). Falls back to the legacy single storeId field.
+  const ids = Array.isArray(storeIds)
+    ? Array.from(new Set(storeIds.filter((s): s is string => !!s)))
+    : storeId
+      ? [storeId]
+      : [];
+  if (ids.length > 0) {
+    await serviceClient
+      .from('user_stores')
+      .insert(ids.map((sid) => ({ user_id: authData.user.id, store_id: sid })));
   }
 
   return NextResponse.json({ userId: authData.user.id });

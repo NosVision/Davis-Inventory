@@ -25,7 +25,6 @@ import {
   Users,
   Plus,
   Search,
-  Edit2,
   Shield,
   UserCheck,
   UserX,
@@ -87,7 +86,9 @@ export default function UsersPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
+  const [storeEditUser, setStoreEditUser] = useState<UserProfile | null>(null);
+  const [editStoreIds, setEditStoreIds] = useState<string[]>([]);
+  const [savingStores, setSavingStores] = useState(false);
   const [filterStoreId, setFilterStoreId] = useState<string>('all');
   const [filterRole, setFilterRole] = useState<string>('all');
   const [resetTarget, setResetTarget] = useState<UserProfile | null>(null);
@@ -99,7 +100,7 @@ export default function UsersPage() {
   const [formPassword, setFormPassword] = useState('');
   const [formRole, setFormRole] = useState<string>('staff');
   const [formDisplayName, setFormDisplayName] = useState('');
-  const [formStoreId, setFormStoreId] = useState('');
+  const [formStoreIds, setFormStoreIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const loadUsers = useCallback(async () => {
@@ -143,7 +144,7 @@ export default function UsersPage() {
           password: formPassword,
           role: formRole,
           displayName: formDisplayName.trim() || null,
-          storeId: formStoreId || null,
+          storeIds: formStoreIds,
         }),
       });
 
@@ -200,7 +201,50 @@ export default function UsersPage() {
     setFormPassword('');
     setFormRole('staff');
     setFormDisplayName('');
-    setFormStoreId('');
+    setFormStoreIds([]);
+  };
+
+  const openStoreEditor = (u: UserProfile) => {
+    setStoreEditUser(u);
+    setEditStoreIds(u.stores?.map((s) => s.store_id) ?? []);
+  };
+
+  const handleSaveStores = async () => {
+    if (!storeEditUser) return;
+    setSavingStores(true);
+    try {
+      const supabase = createClient();
+      const current = new Set(storeEditUser.stores?.map((s) => s.store_id) ?? []);
+      const next = new Set(editStoreIds);
+      const toAdd = editStoreIds.filter((id) => !current.has(id));
+      const toRemove = [...current].filter((id) => !next.has(id));
+
+      if (toAdd.length > 0) {
+        const { error } = await supabase
+          .from('user_stores')
+          .insert(toAdd.map((sid) => ({ user_id: storeEditUser.id, store_id: sid })));
+        if (error) throw new Error(error.message);
+      }
+      if (toRemove.length > 0) {
+        const { error } = await supabase
+          .from('user_stores')
+          .delete()
+          .eq('user_id', storeEditUser.id)
+          .in('store_id', toRemove);
+        if (error) throw new Error(error.message);
+      }
+      toast({ type: 'success', title: 'อัปเดตสาขาเรียบร้อย' });
+      setStoreEditUser(null);
+      loadUsers();
+    } catch (err) {
+      toast({
+        type: 'error',
+        title: 'อัปเดตสาขาไม่สำเร็จ',
+        message: err instanceof Error ? err.message : '',
+      });
+    } finally {
+      setSavingStores(false);
+    }
   };
 
   const filteredUsers = users.filter((u) => {
@@ -352,6 +396,15 @@ export default function UsersPage() {
                 {u.id !== currentUser?.id && !u.username.startsWith('printer-') && (
                   <div className="flex items-center gap-1">
                     {u.role !== 'owner' && u.role !== 'customer' && (
+                      <button
+                        onClick={() => openStoreEditor(u)}
+                        className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-900/20 dark:hover:text-indigo-400"
+                        title="จัดการสาขา"
+                      >
+                        <Store className="h-4 w-4" />
+                      </button>
+                    )}
+                    {u.role !== 'owner' && u.role !== 'customer' && (
                       <Link
                         href={`/users/${u.id}/permissions`}
                         className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-orange-50 hover:text-orange-600 dark:hover:bg-orange-900/20 dark:hover:text-orange-400"
@@ -433,13 +486,39 @@ export default function UsersPage() {
               { value: 'hq', label: t('roleHQ') },
             ]}
           />
-          <Select
-            label={t('branch')}
-            value={formStoreId}
-            onChange={(e) => setFormStoreId(e.target.value)}
-            placeholder={t('selectBranch')}
-            options={stores.map((s) => ({ value: s.id, label: s.store_name }))}
-          />
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">
+              {t('branch')}
+            </label>
+            <div className="max-h-44 space-y-0.5 overflow-y-auto rounded-lg border border-gray-300 p-2 dark:border-gray-600">
+              {stores.length === 0 ? (
+                <p className="px-1 py-2 text-sm text-gray-400">ไม่มีสาขา</p>
+              ) : (
+                stores.map((s) => {
+                  const checked = formStoreIds.includes(s.id);
+                  return (
+                    <label
+                      key={s.id}
+                      className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
+                    >
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                        checked={checked}
+                        onChange={(e) =>
+                          setFormStoreIds((prev) =>
+                            e.target.checked ? [...prev, s.id] : prev.filter((id) => id !== s.id),
+                          )
+                        }
+                      />
+                      <span className="text-gray-900 dark:text-white">{s.store_name}</span>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+            <p className="mt-1 text-xs text-gray-400">เลือกได้มากกว่า 1 สาขา (เช่น ช่างที่ดูแลหลายสาขา)</p>
+          </div>
         </div>
         <ModalFooter>
           <Button
@@ -458,6 +537,54 @@ export default function UsersPage() {
             icon={<Plus className="h-4 w-4" />}
           >
             {t('createUser')}
+          </Button>
+        </ModalFooter>
+      </Modal>
+
+      {/* Manage Branches Modal */}
+      <Modal
+        isOpen={!!storeEditUser}
+        onClose={() => setStoreEditUser(null)}
+        title="จัดการสาขา"
+        description={
+          storeEditUser
+            ? `${storeEditUser.display_name || storeEditUser.username} — เลือกสาขาที่ดูแล (เลือกได้หลายสาขา)`
+            : undefined
+        }
+      >
+        <div className="max-h-72 space-y-0.5 overflow-y-auto rounded-lg border border-gray-300 p-2 dark:border-gray-600">
+          {stores.length === 0 ? (
+            <p className="px-1 py-2 text-sm text-gray-400">ไม่มีสาขา</p>
+          ) : (
+            stores.map((s) => {
+              const checked = editStoreIds.includes(s.id);
+              return (
+                <label
+                  key={s.id}
+                  className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
+                >
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    checked={checked}
+                    onChange={(e) =>
+                      setEditStoreIds((prev) =>
+                        e.target.checked ? [...prev, s.id] : prev.filter((id) => id !== s.id),
+                      )
+                    }
+                  />
+                  <span className="text-gray-900 dark:text-white">{s.store_name}</span>
+                </label>
+              );
+            })
+          )}
+        </div>
+        <ModalFooter>
+          <Button variant="outline" onClick={() => setStoreEditUser(null)}>
+            {t('cancel')}
+          </Button>
+          <Button onClick={handleSaveStores} isLoading={savingStores} icon={<Store className="h-4 w-4" />}>
+            บันทึก
           </Button>
         </ModalFooter>
       </Modal>
