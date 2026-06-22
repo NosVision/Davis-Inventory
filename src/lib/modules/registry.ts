@@ -118,7 +118,8 @@ export const modules: ModuleConfig[] = [
     groupKey: 'moduleGroups.warehouse',
   },
 
-  // ─── งานซ่อมบำรุง ───
+  // ─── งานซ่อมบำรุง (ซ่อนเมนูชั่วคราว — โค้ด/หน้า/DB ยังอยู่ครบ; ลบคอมเมนต์เพื่อเปิดคืน) ───
+  /*
   {
     id: 'repair-new',
     nameKey: 'modules.repairNew.name',
@@ -161,6 +162,7 @@ export const modules: ModuleConfig[] = [
     roles: ['owner'],
     groupKey: 'moduleGroups.maintenance',
   },
+  */
 
   // ─── รายงาน ───
   {
