@@ -22,10 +22,10 @@ interface MonthCalendarProps {
 
 const WEEKDAYS = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
 
-const DOT_COLOR: Record<CalendarItem['status'], string> = {
-  pending: 'bg-amber-400',
-  completed: 'bg-emerald-500',
-  skipped: 'bg-gray-300 dark:bg-gray-600',
+const CHIP: Record<CalendarItem['status'], string> = {
+  pending: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
+  completed: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300',
+  skipped: 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
 };
 
 function pad(n: number): string {
@@ -68,7 +68,7 @@ export function MonthCalendar({
           <div
             key={w}
             className={cn(
-              'py-2.5 text-center text-[11px] font-semibold',
+              'py-2 text-center text-[11px] font-semibold',
               i === 0 ? 'text-rose-400' : 'text-gray-400 dark:text-gray-500',
             )}
           >
@@ -76,17 +76,16 @@ export function MonthCalendar({
           </div>
         ))}
       </div>
-      <div className="grid grid-cols-7 gap-px bg-gray-100 p-px dark:bg-gray-800">
+      <div className="grid grid-cols-7 gap-px bg-gray-100 dark:bg-gray-800">
         {cells.map((day, i) => {
           if (day === null) {
-            return <div key={`empty-${i}`} className="aspect-square bg-gray-50/60 dark:bg-gray-900/40" />;
+            return <div key={`empty-${i}`} className="min-h-[72px] bg-gray-50/60 dark:bg-gray-900/40" />;
           }
           const dayItems = byDay.get(day) ?? [];
           const dateStr = `${year}-${pad(month)}-${pad(day)}`;
           const isToday = dateStr === todayStr;
           const isSelected = dateStr === selectedDate;
           const isSunday = i % 7 === 0;
-          const hasPending = dayItems.some((it) => it.status === 'pending');
 
           return (
             <button
@@ -94,53 +93,51 @@ export function MonthCalendar({
               type="button"
               onClick={() => onSelectDay(dateStr)}
               className={cn(
-                'group relative flex aspect-square flex-col items-center justify-start gap-1 bg-white p-1 transition-colors dark:bg-gray-900',
+                'flex min-h-[72px] flex-col gap-0.5 p-1 text-left align-top transition-colors sm:min-h-[88px]',
                 isSelected
-                  ? 'bg-cyan-500 dark:bg-cyan-500'
-                  : 'hover:bg-cyan-50 dark:hover:bg-cyan-900/20',
+                  ? 'bg-cyan-500'
+                  : 'bg-white hover:bg-cyan-50 dark:bg-gray-900 dark:hover:bg-cyan-900/20',
               )}
             >
               <span
                 className={cn(
-                  'mt-0.5 flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium',
+                  'flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-semibold',
                   isSelected
                     ? 'bg-white/25 text-white'
                     : isToday
                       ? 'bg-cyan-500 text-white'
                       : isSunday
                         ? 'text-rose-500 dark:text-rose-400'
-                        : 'text-gray-700 dark:text-gray-300',
+                        : 'text-gray-600 dark:text-gray-300',
                 )}
               >
                 {day}
               </span>
-              {dayItems.length > 0 && (
-                <div className="flex flex-wrap items-center justify-center gap-0.5">
-                  {dayItems.slice(0, 3).map((it) => (
-                    <span
-                      key={it.id}
-                      className={cn(
-                        'h-1.5 w-1.5 rounded-full',
-                        isSelected ? 'bg-white/90' : DOT_COLOR[it.status],
-                      )}
-                    />
-                  ))}
-                  {dayItems.length > 3 && (
-                    <span
-                      className={cn(
-                        'text-[8px] font-semibold leading-none',
-                        isSelected ? 'text-white' : 'text-gray-400',
-                      )}
-                    >
-                      +{dayItems.length - 3}
-                    </span>
-                  )}
-                </div>
-              )}
-              {/* subtle indicator that the day still has pending work */}
-              {hasPending && !isSelected && (
-                <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-amber-400" />
-              )}
+
+              <div className="flex w-full flex-col gap-0.5 overflow-hidden">
+                {dayItems.slice(0, 2).map((it) => (
+                  <span
+                    key={it.id}
+                    title={it.title}
+                    className={cn(
+                      'truncate rounded px-1 py-0.5 text-[10px] font-medium leading-tight',
+                      isSelected ? 'bg-white/20 text-white' : CHIP[it.status],
+                    )}
+                  >
+                    {it.title}
+                  </span>
+                ))}
+                {dayItems.length > 2 && (
+                  <span
+                    className={cn(
+                      'px-1 text-[9px] font-medium leading-tight',
+                      isSelected ? 'text-white/90' : 'text-gray-400',
+                    )}
+                  >
+                    +{dayItems.length - 2} เพิ่มเติม
+                  </span>
+                )}
+              </div>
             </button>
           );
         })}
