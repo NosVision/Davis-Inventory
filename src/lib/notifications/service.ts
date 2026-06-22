@@ -29,7 +29,12 @@ export type NotificationType =
   | 'explanation_submitted'   // staff ส่งคำชี้แจง (for owner)
   | 'approval_result'         // ผลอนุมัติ (for staff)
   | 'new_deposit'             // มีรายการฝากใหม่ (for bar)
-  | 'withdrawal_request';     // มีคำขอเบิก (for bar)
+  | 'withdrawal_request'      // มีคำขอเบิก (for bar)
+  | 'repair_new'              // มีใบแจ้งซ่อมใหม่ (for technician)
+  | 'repair_purchase_request' // ช่างขออนุมัติสั่งซื้อ (for owner)
+  | 'repair_approved'         // owner อนุมัติสั่งซื้อ (for technician)
+  | 'repair_rejected'         // owner ไม่อนุมัติ (for technician)
+  | 'repair_completed';       // งานซ่อมเสร็จแล้ว (for reporter)
 
 export interface NotifyUserParams {
   userId: string;
@@ -67,6 +72,7 @@ interface NotificationPreferences {
   notify_promotions: boolean;
   notify_stock_alert: boolean;
   notify_approval_request: boolean;
+  notify_repair: boolean;
 }
 
 interface StoreNotifSettings {
@@ -108,6 +114,11 @@ const TYPE_TO_PREF: Record<NotificationType, keyof NotificationPreferences> = {
   new_deposit: 'notify_approval_request',             // bar approving
   deposit_received: 'notify_approval_request',        // bar confirming
   withdrawal_request: 'notify_approval_request',      // bar approving
+  repair_new: 'notify_repair',
+  repair_purchase_request: 'notify_repair',
+  repair_approved: 'notify_repair',
+  repair_rejected: 'notify_repair',
+  repair_completed: 'notify_repair',
 };
 
 // Customer-facing notification types that respect store_settings toggles

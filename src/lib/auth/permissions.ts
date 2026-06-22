@@ -35,7 +35,7 @@ export function canAccessStore(user: AuthUser, storeId: string): boolean {
 }
 
 export function isDesktopRole(role: UserRole): boolean {
-  return ['owner', 'accountant', 'manager', 'hq'].includes(role);
+  return ['owner', 'accountant', 'manager', 'hq', 'technician'].includes(role);
 }
 
 export function isMobileRole(role: UserRole): boolean {

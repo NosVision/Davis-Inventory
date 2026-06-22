@@ -113,6 +113,7 @@
     "accountant": "บัญชี",
     "manager": "คนคุมร้าน",
     "bar": "บาร์",
+    "technician": "ช่าง",
     "staff": "พนักงาน",
     "customer": "ลูกค้า",
     "hq": "พนักงานคลังกลาง"
@@ -139,7 +140,9 @@
     "borrowItem": "ยืมสินค้า",
     "transfer": "โอน",
     "approve": "อนุมัติ",
-    "selectStore": "เลือกสาขา"
+    "selectStore": "เลือกสาขา",
+    "repairs": "แจ้งซ่อม",
+    "maintenance": "งานประจำ"
   },
   "modules": {
     "overview": {
@@ -177,6 +180,22 @@
     "commission": {
       "name": "คอมมิชชั่น",
       "description": "AE Commission & Bottle Commission"
+    },
+    "repairNew": {
+      "name": "แจ้งซ่อม",
+      "description": "แจ้งอุปกรณ์ที่เสียในสาขา"
+    },
+    "repairs": {
+      "name": "รายการแจ้งซ่อม",
+      "description": "รับงาน อัปเดตสถานะ และดูประวัติงานซ่อม"
+    },
+    "maintenance": {
+      "name": "ตารางงานประจำ",
+      "description": "ปฏิทินงานประจำของช่างรายเดือน"
+    },
+    "maintenanceSchedules": {
+      "name": "งานประจำ",
+      "description": "ตั้งค่างานประจำที่ทำซ้ำ เช่น ล้างแอร์ทุก 2 เดือน"
     },
     "reports": {
       "name": "รายงาน",
@@ -223,6 +242,7 @@
     "main": "หลัก",
     "warehouse": "คลังสินค้า",
     "commission": "คอมมิชชั่น",
+    "maintenance": "งานซ่อมบำรุง",
     "reports": "รายงาน",
     "analytics": "วิเคราะห์",
     "help": "ช่วยเหลือ",
@@ -2481,6 +2501,7 @@
     "role": "ตำแหน่ง",
     "roleStaff": "พนักงาน (Staff)",
     "roleBar": "บาร์ (Bar)",
+    "roleTechnician": "ช่าง (Technician)",
     "roleManager": "คนคุมร้าน (Manager)",
     "roleAccountant": "บัญชี (Accountant)",
     "roleHQ": "พนักงานคลังกลาง (HQ)",

@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import crypto from 'crypto';
 
-type Role = 'owner' | 'accountant' | 'manager' | 'bar' | 'staff' | 'hq';
+type Role = 'owner' | 'accountant' | 'manager' | 'bar' | 'technician' | 'staff' | 'hq';
 
-const ALLOWED_ROLES: Role[] = ['accountant', 'manager', 'bar', 'staff', 'hq'];
+const ALLOWED_ROLES: Role[] = ['accountant', 'manager', 'bar', 'technician', 'staff', 'hq'];
 
 async function requireAdminOrManager() {
   const supabase = await createClient();

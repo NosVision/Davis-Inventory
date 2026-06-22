@@ -113,6 +113,7 @@
     "accountant": "Accountant",
     "manager": "Store Manager",
     "bar": "Bar",
+    "technician": "Technician",
     "staff": "Staff",
     "customer": "Customer",
     "hq": "HQ Warehouse Staff"
@@ -139,7 +140,9 @@
     "borrowItem": "Borrow",
     "transfer": "Transfer",
     "approve": "Approve",
-    "selectStore": "Select branch"
+    "selectStore": "Select branch",
+    "repairs": "Repairs",
+    "maintenance": "Maintenance"
   },
   "modules": {
     "overview": {
@@ -177,6 +180,22 @@
     "commission": {
       "name": "Commission",
       "description": "AE Commission & Bottle Commission"
+    },
+    "repairNew": {
+      "name": "Report Repair",
+      "description": "Report broken equipment at your branch"
+    },
+    "repairs": {
+      "name": "Repair Requests",
+      "description": "Claim, update status, and view repair history"
+    },
+    "maintenance": {
+      "name": "Maintenance Calendar",
+      "description": "Monthly recurring task calendar for technicians"
+    },
+    "maintenanceSchedules": {
+      "name": "Recurring Tasks",
+      "description": "Set up recurring tasks, e.g. clean AC every 2 months"
     },
     "reports": {
       "name": "Reports",
@@ -223,6 +242,7 @@
     "main": "Main",
     "warehouse": "Warehouse",
     "commission": "Commission",
+    "maintenance": "Maintenance",
     "reports": "Reports",
     "analytics": "Analytics",
     "help": "Help",
@@ -2480,6 +2500,7 @@
     "role": "Role",
     "roleStaff": "Staff",
     "roleBar": "Bar",
+    "roleTechnician": "Technician",
     "roleManager": "Store Manager",
     "roleAccountant": "Accountant",
     "roleHQ": "HQ Warehouse Staff",

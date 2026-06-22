@@ -501,3 +501,75 @@ export interface PrintServerWorkingHours {
   endHour: number;
   endMinute: number;
 }
+
+// ─── งานซ่อม (Repair) ───
+export type RepairStatus =
+  | 'pending'
+  | 'in_progress'
+  | 'awaiting_approval'
+  | 'approved'
+  | 'rejected'
+  | 'completed'
+  | 'cancelled';
+
+export type RepairResolution = 'repairable' | 'needs_purchase';
+
+export type RepairPriority = 'normal' | 'urgent';
+
+export interface RepairRequest {
+  id: string;
+  store_id: string;
+  title: string;
+  description: string | null;
+  location: string | null;
+  priority: RepairPriority;
+  photo_urls: string[];
+  status: RepairStatus;
+  resolution: RepairResolution | null;
+  estimated_cost: number | null;
+  purchase_note: string | null;
+  after_photo_urls: string[];
+  reported_by: string | null;
+  assigned_to: string | null;
+  completed_by: string | null;
+  completed_at: string | null;
+  approval_status: 'pending' | 'approved' | 'rejected' | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  owner_note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// ─── งานประจำช่าง (Maintenance) ───
+export type MaintenanceIntervalUnit = 'day' | 'week' | 'month';
+
+export interface MaintenanceSchedule {
+  id: string;
+  /** null = ทุกสาขา */
+  store_id: string | null;
+  title: string;
+  description: string | null;
+  interval_unit: MaintenanceIntervalUnit;
+  interval_count: number;
+  start_date: string;
+  active: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type MaintenanceOccurrenceStatus = 'pending' | 'completed' | 'skipped';
+
+export interface MaintenanceOccurrence {
+  id: string;
+  schedule_id: string;
+  store_id: string;
+  due_date: string;
+  status: MaintenanceOccurrenceStatus;
+  completed_by: string | null;
+  completed_at: string | null;
+  photo_urls: string[];
+  notes: string | null;
+  created_at: string;
+}

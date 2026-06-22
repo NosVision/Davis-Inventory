@@ -265,6 +265,11 @@ export const ROLE_COLOR_CLASSES: Record<UserRole, { badge: string; badgeDark: st
     badgeDark: 'dark:bg-teal-900 dark:text-teal-300',
     tocNum: 'bg-teal-500',
   },
+  technician: {
+    badge: 'bg-rose-100 text-rose-700',
+    badgeDark: 'dark:bg-rose-900 dark:text-rose-300',
+    tocNum: 'bg-rose-500',
+  },
   staff: {
     badge: 'bg-amber-100 text-amber-700',
     badgeDark: 'dark:bg-amber-900 dark:text-amber-300',

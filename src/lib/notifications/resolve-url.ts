@@ -68,6 +68,14 @@ export function resolveNotificationUrl(
     case 'hq_warehouse':
       return '/hq-warehouse';
 
+    // งานซ่อม
+    case 'repair_new':
+    case 'repair_purchase_request':
+    case 'repair_approved':
+    case 'repair_rejected':
+    case 'repair_completed':
+      return '/repairs';
+
     // โปรโมชั่น
     case 'promotion':
       return '/notifications';

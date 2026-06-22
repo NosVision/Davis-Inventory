@@ -118,6 +118,50 @@ export const modules: ModuleConfig[] = [
     groupKey: 'moduleGroups.warehouse',
   },
 
+  // ─── งานซ่อมบำรุง ───
+  {
+    id: 'repair-new',
+    nameKey: 'modules.repairNew.name',
+    descriptionKey: 'modules.repairNew.description',
+    icon: 'wrench',
+    color: 'orange',
+    href: '/repairs/new',
+    roles: ['owner', 'manager', 'bar', 'staff'],
+    permission: 'can_request_repair',
+    groupKey: 'moduleGroups.maintenance',
+  },
+  {
+    id: 'repairs',
+    nameKey: 'modules.repairs.name',
+    descriptionKey: 'modules.repairs.description',
+    icon: 'clipboard-list',
+    color: 'rose',
+    href: '/repairs',
+    roles: ['owner', 'accountant', 'manager', 'technician'],
+    permission: 'can_manage_repair',
+    groupKey: 'moduleGroups.maintenance',
+  },
+  {
+    id: 'maintenance',
+    nameKey: 'modules.maintenance.name',
+    descriptionKey: 'modules.maintenance.description',
+    icon: 'calendar-days',
+    color: 'cyan',
+    href: '/maintenance',
+    roles: ['owner', 'technician'],
+    groupKey: 'moduleGroups.maintenance',
+  },
+  {
+    id: 'maintenance-schedules',
+    nameKey: 'modules.maintenanceSchedules.name',
+    descriptionKey: 'modules.maintenanceSchedules.description',
+    icon: 'repeat',
+    color: 'teal',
+    href: '/maintenance/schedules',
+    roles: ['owner'],
+    groupKey: 'moduleGroups.maintenance',
+  },
+
   // ─── รายงาน ───
   {
     id: 'reports',

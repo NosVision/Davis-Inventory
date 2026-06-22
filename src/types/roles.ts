@@ -1,4 +1,4 @@
-export type UserRole = 'owner' | 'accountant' | 'manager' | 'bar' | 'staff' | 'customer' | 'hq';
+export type UserRole = 'owner' | 'accountant' | 'manager' | 'bar' | 'technician' | 'staff' | 'customer' | 'hq';
 
 export type Permission =
   | 'can_count_stock'
@@ -12,7 +12,9 @@ export type Permission =
   | 'can_view_own_deposits'
   | 'can_request_withdrawal'
   | 'can_borrow'
-  | 'can_manage_commission';
+  | 'can_manage_commission'
+  | 'can_request_repair'
+  | 'can_manage_repair';
 
 export const ROLE_PERMISSIONS: Record<UserRole, Permission[] | ['*']> = {
   owner: ['*'],
@@ -28,6 +30,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[] | ['*']> = {
     'can_borrow',
     'can_view_reports',
     'can_manage_commission',
+    'can_request_repair',
+    'can_manage_repair',
   ],
   // Bar = นับสต๊อค เช็คสต๊อค ฝากเหล้า ยืม เบิกเหล้า โอนคลังกลางที่หมดอายุ แชท
   bar: [
@@ -37,9 +41,12 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[] | ['*']> = {
     'can_approve_deposit',
     'can_borrow',
     'can_transfer',
+    'can_request_repair',
   ],
-  // Staff = ฝากเหล้า / เบิกเหล้า / แชท
-  staff: ['can_manage_deposit'],
+  // Technician = ช่าง: รับงานซ่อม อัปเดตสถานะ งานประจำ + แจ้งซ่อมได้
+  technician: ['can_manage_repair', 'can_request_repair'],
+  // Staff = ฝากเหล้า / เบิกเหล้า / แชท / แจ้งซ่อม
+  staff: ['can_manage_deposit', 'can_request_repair'],
   customer: ['can_view_own_deposits', 'can_request_withdrawal'],
   hq: ['can_transfer', 'can_view_reports'],
 };
@@ -49,6 +56,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   accountant: 'บัญชี',
   manager: 'คนคุมร้าน',
   bar: 'บาร์',
+  technician: 'ช่าง',
   staff: 'พนักงาน',
   customer: 'ลูกค้า',
   hq: 'พนักงานคลังกลาง',
@@ -60,6 +68,7 @@ export const ROLE_LABEL_KEYS: Record<UserRole, string> = {
   accountant: 'roles.accountant',
   manager: 'roles.manager',
   bar: 'roles.bar',
+  technician: 'roles.technician',
   staff: 'roles.staff',
   customer: 'roles.customer',
   hq: 'roles.hq',
@@ -70,6 +79,7 @@ export const ROLE_HOME_ROUTES: Record<UserRole, string> = {
   accountant: '/reports',
   manager: '/store-overview',
   bar: '/chat',
+  technician: '/repairs',
   staff: '/chat',
   customer: '/customer',
   hq: '/hq-warehouse',

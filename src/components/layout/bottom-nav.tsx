@@ -11,6 +11,8 @@ import {
   MessageSquare,
   BookOpen,
   ArrowLeftRight,
+  Wrench,
+  CalendarDays,
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { useAuthStore } from '@/stores/auth-store';
@@ -42,6 +44,14 @@ const staffNavItems: NavItem[] = [
   { labelKey: 'nav.guide', href: '/guide', icon: BookOpen, color: 'sky' },
 ];
 
+// เมนูสำหรับ technician (ช่าง) — รายการแจ้งซ่อม ตารางงานประจำ แชท คู่มือ
+const technicianNavItems: NavItem[] = [
+  { labelKey: 'nav.repairs', href: '/repairs', icon: Wrench, color: 'rose' },
+  { labelKey: 'nav.maintenance', href: '/maintenance', icon: CalendarDays, color: 'cyan' },
+  { labelKey: 'nav.chat', href: '/chat', icon: MessageSquare, color: 'blue' },
+  { labelKey: 'nav.guide', href: '/guide', icon: BookOpen, color: 'sky' },
+];
+
 // เมนูสำหรับ bar — นับสต๊อค ฝากเหล้า ยืม โอน แชท
 const barNavItems: NavItem[] = [
   { labelKey: 'nav.countStock', href: '/stock', icon: ClipboardCheck, color: 'indigo' },
@@ -63,9 +73,11 @@ export function BottomNav() {
   const desktopRoles = ['owner', 'accountant', 'manager', 'hq'];
   const navItems = desktopRoles.includes(user.role)
     ? desktopRoleNavItems
-    : user.role === 'bar'
-      ? barNavItems
-      : staffNavItems;
+    : user.role === 'technician'
+      ? technicianNavItems
+      : user.role === 'bar'
+        ? barNavItems
+        : staffNavItems;
 
   const centerIndex = navItems.length === 5 ? 2 : -1;
 

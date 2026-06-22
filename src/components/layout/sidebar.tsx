@@ -30,6 +30,10 @@ import {
   BookOpen,
   HandCoins,
   Inbox,
+  Wrench,
+  ClipboardList,
+  CalendarDays,
+  Repeat,
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { getModuleColors } from '@/lib/utils/module-colors';
@@ -63,6 +67,10 @@ const iconMap: Record<string, LucideIcon> = {
   'book-open': BookOpen,
   'hand-coins': HandCoins,
   inbox: Inbox,
+  wrench: Wrench,
+  'clipboard-list': ClipboardList,
+  'calendar-days': CalendarDays,
+  repeat: Repeat,
 };
 
 interface SidebarProps {

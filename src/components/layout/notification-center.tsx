@@ -15,6 +15,7 @@ import {
   Megaphone,
   Wine,
   BellOff,
+  Wrench,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
@@ -62,6 +63,12 @@ function getNotificationIcon(
       return { icon: ArrowUpFromLine, color: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-100 dark:bg-orange-900/30' };
     case 'promotion':
       return { icon: Megaphone, color: 'text-pink-600 dark:text-pink-400', bg: 'bg-pink-100 dark:bg-pink-900/30' };
+    case 'repair_new':
+    case 'repair_purchase_request':
+    case 'repair_approved':
+    case 'repair_rejected':
+    case 'repair_completed':
+      return { icon: Wrench, color: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-100 dark:bg-orange-900/30' };
     default:
       return { icon: Bell, color: 'text-gray-600 dark:text-gray-400', bg: 'bg-gray-100 dark:bg-gray-800' };
   }

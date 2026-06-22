@@ -219,7 +219,7 @@ export default function UsersPage() {
     return true;
   });
 
-  const FILTERABLE_ROLES: UserRole[] = ['owner', 'accountant', 'manager', 'bar', 'staff', 'hq'];
+  const FILTERABLE_ROLES: UserRole[] = ['owner', 'accountant', 'manager', 'bar', 'technician', 'staff', 'hq'];
 
   return (
     <div className="space-y-6">
@@ -427,6 +427,7 @@ export default function UsersPage() {
             options={[
               { value: 'staff', label: t('roleStaff') },
               { value: 'bar', label: t('roleBar') },
+              { value: 'technician', label: t('roleTechnician') },
               { value: 'manager', label: t('roleManager') },
               { value: 'accountant', label: t('roleAccountant') },
               { value: 'hq', label: t('roleHQ') },

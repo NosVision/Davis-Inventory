@@ -100,6 +100,13 @@ const STOCK_NOTI_TYPES = [
   'approval_result',
   'explanation_submitted',
 ];
+const REPAIR_NOTI_TYPES = [
+  'repair_new',
+  'repair_purchase_request',
+  'repair_approved',
+  'repair_rejected',
+  'repair_completed',
+];
 // Types that aren't operational and should reach everyone.
 const COMMON_NOTI_TYPES = [
   'chat_message',
@@ -116,8 +123,8 @@ const COMMON_NOTI_TYPES = [
 ];
 
 const ROLE_NOTIFICATION_TYPES: Partial<Record<UserRole, readonly string[]>> = {
-  staff: [...COMMON_NOTI_TYPES, ...DEPOSIT_NOTI_TYPES, ...WITHDRAWAL_NOTI_TYPES],
-  bar:   [...COMMON_NOTI_TYPES, ...DEPOSIT_NOTI_TYPES, ...WITHDRAWAL_NOTI_TYPES],
+  staff: [...COMMON_NOTI_TYPES, ...DEPOSIT_NOTI_TYPES, ...WITHDRAWAL_NOTI_TYPES, ...REPAIR_NOTI_TYPES],
+  bar:   [...COMMON_NOTI_TYPES, ...DEPOSIT_NOTI_TYPES, ...WITHDRAWAL_NOTI_TYPES, ...REPAIR_NOTI_TYPES],
   accountant: [...COMMON_NOTI_TYPES, ...STOCK_NOTI_TYPES],
   customer: [...COMMON_NOTI_TYPES, 'promotion'],
   // owner / manager / hq → see all
