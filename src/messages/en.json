@@ -157,6 +157,10 @@
       "name": "Chat",
       "description": "In-store chat and task claim system"
     },
+    "tasks": {
+      "name": "Task Rooms",
+      "description": "Manage tasks, assignments and repairs by room"
+    },
     "stock": {
       "name": "Check Stock",
       "description": "Count stock, compare, explain differences"

@@ -47,6 +47,18 @@ export const modules: ModuleConfig[] = [
     roles: ['owner', 'accountant', 'manager', 'bar', 'staff', 'hq'],
     groupKey: 'moduleGroups.main',
   },
+  {
+    // ห้องงาน (Task Management) — รวมงานทุกสายงาน + ยุบระบบแจ้งซ่อมเข้ามา
+    // การมองเห็นจริงคุมที่ membership/RLS ในหน้า เหมือน chat
+    id: 'tasks',
+    nameKey: 'modules.tasks.name',
+    descriptionKey: 'modules.tasks.description',
+    icon: 'clipboard-list',
+    color: 'indigo',
+    href: '/tasks',
+    roles: ['owner', 'accountant', 'manager', 'bar', 'technician', 'staff', 'hq'],
+    groupKey: 'moduleGroups.main',
+  },
 
   // ─── คลังสินค้า ───
   {

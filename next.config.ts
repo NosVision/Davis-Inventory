@@ -34,6 +34,14 @@ const nextConfig: NextConfig = {
       ],
     },
   ],
+  // ระบบแจ้งซ่อมถูกยุบเข้า Task Rooms (ห้อง "แจ้งซ่อม") — ชี้ /repairs ไปที่ /tasks
+  // ใช้ permanent:false เพื่อให้ย้อนกลับได้ระหว่างช่วงเปลี่ยนผ่าน (ตารางเก่ายังอยู่)
+  redirects: async () => [
+    { source: '/repairs', destination: '/tasks', permanent: false },
+    { source: '/repairs/:path*', destination: '/tasks', permanent: false },
+    { source: '/maintenance', destination: '/tasks', permanent: false },
+    { source: '/maintenance/:path*', destination: '/tasks', permanent: false },
+  ],
 };
 
 export default withNextIntl(nextConfig);

@@ -1,0 +1,101 @@
+import { createServiceClient } from '@/lib/supabase/server';
+import { sendPushToUser, type PushPayload } from '@/lib/notifications/push';
+
+/**
+ * แจ้งเตือนงาน (Task Management) — เฉพาะ in-app + web push เท่านั้น
+ * ตั้งใจ "ไม่มี LINE" สำหรับฟีเจอร์นี้ (จึงไม่เรียก service.ts / notifyUserWithLine)
+ */
+
+export type TaskNotificationType =
+  | 'task_assigned'
+  | 'task_approval_request'
+  | 'task_approved'
+  | 'task_rejected'
+  | 'task_completed';
+
+interface NotifyTaskUsersParams {
+  userIds: string[];
+  storeId?: string | null;
+  type: TaskNotificationType;
+  title: string;
+  body: string;
+  data?: Record<string, unknown>;
+  excludeUserId?: string;
+}
+
+interface PrefRow {
+  user_id: string;
+  pwa_enabled: boolean | null;
+  notify_task: boolean | null;
+}
+
+/** ส่งแจ้งเตือนงานให้ผู้ใช้หลายคน (in-app + web push, ไม่มี LINE) */
+export async function notifyTaskUsers(params: NotifyTaskUsersParams): Promise<void> {
+  const { userIds, storeId, type, title, body, data, excludeUserId } = params;
+  const targets = [...new Set(userIds)].filter((id) => !!id && id !== excludeUserId);
+  if (targets.length === 0) return;
+
+  try {
+    const supabase = createServiceClient();
+
+    // 1) in-app — insert เสมอ
+    const rows = targets.map((userId) => ({
+      user_id: userId,
+      store_id: storeId ?? null,
+      title,
+      body,
+      type,
+      read: false,
+      data: data ?? null,
+    }));
+    const { error } = await supabase.from('notifications').insert(rows);
+    if (error) console.error('[tasks] notify insert error:', error.message);
+
+    // 2) web push — ตาม preference (notify_task + pwa_enabled)
+    const { data: prefs } = await supabase
+      .from('notification_preferences')
+      .select('user_id, pwa_enabled, notify_task')
+      .in('user_id', targets);
+    const prefMap = new Map((prefs as PrefRow[] | null ?? []).map((p) => [p.user_id, p]));
+
+    const payload: PushPayload = {
+      title,
+      body,
+      url: data?.url as string | undefined,
+      data,
+    };
+
+    await Promise.allSettled(
+      targets.map((userId) => {
+        const p = prefMap.get(userId);
+        const typeOn = p ? p.notify_task !== false : true;
+        const pwaOn = p ? p.pwa_enabled !== false : true;
+        if (!typeOn || !pwaOn) return Promise.resolve();
+        return sendPushToUser(userId, payload);
+      }),
+    );
+  } catch (error) {
+    console.error('[tasks] notifyTaskUsers error:', error);
+  }
+}
+
+/** หา user ids ในห้อง (กรองตาม role ได้) — สำหรับแจ้งเตือนกลุ่ม */
+export async function getRoomMemberIds(
+  roomId: string,
+  opts?: { roles?: string[] },
+): Promise<string[]> {
+  try {
+    const supabase = createServiceClient();
+    let q = supabase
+      .from('task_room_members')
+      .select('user_id, profiles!inner(role)')
+      .eq('room_id', roomId);
+    if (opts?.roles && opts.roles.length > 0) {
+      q = q.in('profiles.role', opts.roles);
+    }
+    const { data } = await q;
+    return (data as { user_id: string }[] | null ?? []).map((r) => r.user_id);
+  } catch {
+    return [];
+  }
+}

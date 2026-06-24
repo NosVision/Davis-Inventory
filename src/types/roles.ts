@@ -79,7 +79,7 @@ export const ROLE_HOME_ROUTES: Record<UserRole, string> = {
   accountant: '/reports',
   manager: '/store-overview',
   bar: '/chat',
-  technician: '/repairs',
+  technician: '/tasks',
   staff: '/chat',
   customer: '/customer',
   hq: '/hq-warehouse',

@@ -253,6 +253,28 @@ export async function POST(request: NextRequest) {
       (item) => item.quantity > 0 || include_zero_qty
     );
 
+    // ── Step 6a: Overwrite — remove any previous POS-TXT upload for this
+    // store/business-date (+ its items) so a re-upload fully replaces the old
+    // data. ocr_logs has no created_at and all TXT rows for a date share the
+    // same upload_date (midnight), so "latest" can't be disambiguated — the
+    // only correct behaviour is to replace. This is what makes re-uploading a
+    // corrected file actually take effect for the comparison + messages.
+    const dayStart = `${upload_date}T00:00:00+07:00`;
+    const dayEnd = `${upload_date}T23:59:59.999+07:00`;
+    const { data: priorLogs } = await supabase
+      .from('ocr_logs')
+      .select('id')
+      .eq('store_id', store_id)
+      .eq('upload_method', 'txt')
+      .gte('upload_date', dayStart)
+      .lte('upload_date', dayEnd);
+
+    if (priorLogs && priorLogs.length > 0) {
+      const priorIds = priorLogs.map((l) => l.id);
+      await supabase.from('ocr_items').delete().in('ocr_log_id', priorIds);
+      await supabase.from('ocr_logs').delete().in('id', priorIds);
+    }
+
     // Create ocr_logs entry
     const { data: ocrLog, error: ocrLogError } = await supabase
       .from('ocr_logs')

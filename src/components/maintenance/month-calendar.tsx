@@ -95,20 +95,18 @@ export function MonthCalendar({
               className={cn(
                 'flex min-h-[72px] flex-col gap-0.5 p-1 text-left align-top transition-colors sm:min-h-[88px]',
                 isSelected
-                  ? 'bg-cyan-500'
-                  : 'bg-white hover:bg-cyan-50 dark:bg-gray-900 dark:hover:bg-cyan-900/20',
+                  ? 'bg-emerald-50 ring-1 ring-inset ring-emerald-300 dark:bg-emerald-900/20 dark:ring-emerald-700'
+                  : 'bg-white hover:bg-emerald-50/60 dark:bg-gray-900 dark:hover:bg-emerald-900/10',
               )}
             >
               <span
                 className={cn(
                   'flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-semibold',
-                  isSelected
-                    ? 'bg-white/25 text-white'
-                    : isToday
-                      ? 'bg-cyan-500 text-white'
-                      : isSunday
-                        ? 'text-rose-500 dark:text-rose-400'
-                        : 'text-gray-600 dark:text-gray-300',
+                  isToday
+                    ? 'bg-emerald-500 text-white'
+                    : isSunday
+                      ? 'text-rose-500 dark:text-rose-400'
+                      : 'text-gray-600 dark:text-gray-300',
                 )}
               >
                 {day}
@@ -121,19 +119,14 @@ export function MonthCalendar({
                     title={it.title}
                     className={cn(
                       'truncate rounded px-1 py-0.5 text-[10px] font-medium leading-tight',
-                      isSelected ? 'bg-white/20 text-white' : CHIP[it.status],
+                      CHIP[it.status],
                     )}
                   >
                     {it.title}
                   </span>
                 ))}
                 {dayItems.length > 2 && (
-                  <span
-                    className={cn(
-                      'px-1 text-[9px] font-medium leading-tight',
-                      isSelected ? 'text-white/90' : 'text-gray-400',
-                    )}
-                  >
+                  <span className="px-1 text-[9px] font-medium leading-tight text-gray-400">
                     +{dayItems.length - 2} เพิ่มเติม
                   </span>
                 )}
