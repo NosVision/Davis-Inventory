@@ -5,6 +5,12 @@ import { useRouter } from 'next/navigation';
 import { Button, Input, Textarea, Select, toast } from '@/components/ui';
 import { Archive } from 'lucide-react';
 import { TargetPicker } from './target-picker';
+import {
+  ICON_OPTIONS,
+  COLOR_OPTIONS,
+  ASSIGN_MODE_OPTIONS,
+  RESPONSE_TYPE_OPTIONS,
+} from '@/lib/tasks/room-options';
 import type {
   ProfileLite,
   TaskAssignMode,
@@ -12,38 +18,6 @@ import type {
   TaskRoom,
   TaskTarget,
 } from '@/types/tasks';
-
-const ICON_OPTIONS = [
-  { value: 'clipboard-list', label: 'รายการงาน' },
-  { value: 'wrench', label: 'ซ่อม' },
-  { value: 'wallet', label: 'บัญชี/การเงิน' },
-  { value: 'sparkles', label: 'ความสะอาด' },
-  { value: 'megaphone', label: 'การตลาด' },
-  { value: 'package', label: 'สต๊อก/คลัง' },
-  { value: 'utensils', label: 'ครัว/อาหาร' },
-  { value: 'calendar-days', label: 'ปฏิทิน' },
-];
-const COLOR_OPTIONS = [
-  { value: 'indigo', label: 'น้ำเงินม่วง' },
-  { value: 'rose', label: 'ชมพู' },
-  { value: 'amber', label: 'ส้มเหลือง' },
-  { value: 'green', label: 'เขียว' },
-  { value: 'sky', label: 'ฟ้า' },
-  { value: 'violet', label: 'ม่วง' },
-  { value: 'red', label: 'แดง' },
-  { value: 'teal', label: 'เขียวน้ำทะเล' },
-];
-
-const ASSIGN_MODE_OPTIONS = [
-  { value: 'manual', label: 'เจ้าของเลือกผู้รับผิดชอบเอง (เจ้าของ→พนักงาน)' },
-  { value: 'claim', label: 'เปิดให้กลุ่มเป้าหมายมารับงาน (เช่น แจ้งซ่อม→ช่าง)' },
-  { value: 'all', label: 'มอบหมายทุกคนในกลุ่มเป้าหมาย' },
-];
-const RESPONSE_TYPE_OPTIONS = [
-  { value: 'submit', label: 'ทำ + ส่งงาน' },
-  { value: 'acknowledge', label: 'กดรับทราบ' },
-  { value: 'notify', label: 'แจ้งเพื่อทราบ' },
-];
 
 interface RoomSettingsProps {
   room: TaskRoom;
