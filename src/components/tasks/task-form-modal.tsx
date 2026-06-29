@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Search } from 'lucide-react';
 import { Modal, ModalFooter, Button, Input, Textarea, Select, toast } from '@/components/ui';
 import { AttachmentInput } from './attachment-input';
@@ -8,7 +8,13 @@ import { initial, avatarColor } from '@/lib/tasks/format';
 import { cn } from '@/lib/utils/cn';
 import { ROLE_LABELS, type UserRole } from '@/types/roles';
 import { TASK_RESPONSE_TYPE_LABELS } from '@/lib/tasks/status';
-import type { ProfileLite, TaskAttachmentInput, TaskPriority, TaskResponseType } from '@/types/tasks';
+import type {
+  ProfileLite,
+  TaskAssignMode,
+  TaskAttachmentInput,
+  TaskPriority,
+  TaskResponseType,
+} from '@/types/tasks';
 
 interface StoreOption {
   id: string;
@@ -141,7 +147,30 @@ export function TaskFormModal({ roomId, members, stores, onClose, onCreated }: T
   const [approverIds, setApproverIds] = useState<string[]>([]);
   const [requireAttachment, setRequireAttachment] = useState(false);
   const [attachments, setAttachments] = useState<TaskAttachmentInput[]>([]);
+  const [assignMode, setAssignMode] = useState<TaskAssignMode>('manual');
   const [saving, setSaving] = useState(false);
+
+  // โหลดคอนฟิกห้องเพื่อปรับฟอร์ม (ซ่อนช่องเลือกคนเมื่อ route ตามตำแหน่ง + ตั้งค่าเริ่มต้น)
+  useEffect(() => {
+    let active = true;
+    fetch(`/api/tasks/rooms/${roomId}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (!active || !d?.room) return;
+        const room = d.room as {
+          assign_mode?: TaskAssignMode;
+          default_response_type?: TaskResponseType;
+          require_attachment_default?: boolean;
+        };
+        if (room.assign_mode) setAssignMode(room.assign_mode);
+        if (room.default_response_type) setResponseType(room.default_response_type);
+        if (room.require_attachment_default) setRequireAttachment(true);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [roomId]);
 
   const toggle = (list: string[], id: string) =>
     list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
@@ -226,15 +255,23 @@ export function TaskFormModal({ roomId, members, stores, onClose, onCreated }: T
           <Input label="กำหนดเสร็จ" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
         </div>
 
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">ผู้รับผิดชอบ</label>
-          <MemberPicker
-            members={members}
-            selected={assigneeIds}
-            onToggle={(id) => setAssigneeIds((s) => toggle(s, id))}
-            empty="ยังไม่มีสมาชิกในห้องนี้"
-          />
-        </div>
+        {assignMode === 'manual' ? (
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">ผู้รับผิดชอบ</label>
+            <MemberPicker
+              members={members}
+              selected={assigneeIds}
+              onToggle={(id) => setAssigneeIds((s) => toggle(s, id))}
+              empty="ยังไม่มีสมาชิกในห้องนี้"
+            />
+          </div>
+        ) : (
+          <div className="rounded-lg bg-indigo-50 p-3 text-xs text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300">
+            {assignMode === 'claim'
+              ? '🔔 งานนี้จะแจ้งให้ "กลุ่มผู้รับผิดชอบของห้อง" มารับงานเอง — ไม่ต้องเลือกผู้รับผิดชอบ'
+              : '👥 งานนี้จะมอบหมายให้ "กลุ่มผู้รับผิดชอบของห้อง" ทุกคนอัตโนมัติ'}
+          </div>
+        )}
 
         {responseType === 'submit' && (
           <>

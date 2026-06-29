@@ -21,6 +21,28 @@ export type TaskRoomMemberRole = 'member' | 'manager';
 /** ประเภทการตอบกลับของงาน: แจ้งเพื่อทราบ / กดรับทราบ / ทำ+ส่งงาน */
 export type TaskResponseType = 'notify' | 'acknowledge' | 'submit';
 
+/**
+ * โหมดมอบหมายเมื่อมีงานเข้าห้อง
+ * - manual = เจ้าของเลือกผู้รับผิดชอบเองรายงาน (เจ้าของ→พนักงาน)
+ * - claim  = เตือนกลุ่มเป้าหมายทุกคน ใครรับก็ได้ (แจ้งซ่อม→ช่าง)
+ * - all    = มอบหมายทุกคนในกลุ่มเป้าหมาย
+ */
+export type TaskAssignMode = 'manual' | 'claim' | 'all';
+
+/** วิธีระบุกลุ่มเป้าหมาย (ผู้รับผิดชอบ / ผู้เปิดเรื่อง) */
+export type TaskTargetMode = 'manual' | 'everyone' | 'stores' | 'roles' | 'users';
+
+/**
+ * กลุ่มเป้าหมายแบบยืดหยุ่น — ใช้ซ้ำทั้ง "ผู้รับผิดชอบ" และ "ใครเปิดเรื่องได้"
+ * roles + storeIds รวมกันได้ เช่น ช่าง (roles) เฉพาะบางสาขา (storeIds)
+ */
+export interface TaskTarget {
+  mode: TaskTargetMode;
+  storeIds?: string[];
+  roles?: string[];
+  userIds?: string[];
+}
+
 /** ผู้ใช้แบบย่อ สำหรับแสดง assignee / member */
 export interface ProfileLite {
   id: string;
@@ -43,6 +65,12 @@ export interface TaskRoom {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  // ── คอนฟิกความยืดหยุ่นต่อห้อง (00059) — optional เพื่อรองรับข้อมูล/โค้ดเดิม ──
+  assign_mode?: TaskAssignMode;
+  default_response_type?: TaskResponseType;
+  responsible_target?: TaskTarget;
+  creator_target?: TaskTarget;
+  require_attachment_default?: boolean;
 }
 
 /** ห้อง + ตัวเลขสรุป (สำหรับการ์ดหน้า home) */

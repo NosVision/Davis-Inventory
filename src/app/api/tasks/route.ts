@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { notifyTaskUsers } from '@/lib/tasks/notify';
+import { resolveTargetUserIds, userMatchesTarget } from '@/lib/tasks/resolve-target';
 import {
   OPEN_TASK_STATUSES,
   CLOSED_TASK_STATUSES,
@@ -13,6 +14,8 @@ import type {
   TaskPriority,
   TaskResponseType,
   TaskAttachmentInput,
+  TaskAssignMode,
+  TaskTarget,
 } from '@/types/tasks';
 
 const TASK_SELECT = `
@@ -113,6 +116,26 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'กรุณาระบุห้องและหัวข้องาน' }, { status: 400 });
   }
 
+  // ── คอนฟิกโฟลของห้อง (00059) ──
+  const { data: roomCfg } = await supabase
+    .from('task_rooms')
+    .select('assign_mode, responsible_target, default_response_type, require_attachment_default, creator_target')
+    .eq('id', body.roomId)
+    .maybeSingle();
+  const assignMode = (roomCfg?.assign_mode as TaskAssignMode | undefined) ?? 'manual';
+  const roomRespTarget = (roomCfg?.responsible_target as TaskTarget | null) ?? null;
+  const creatorTarget = (roomCfg?.creator_target as TaskTarget | null) ?? null;
+
+  // สิทธิ์เปิดเรื่อง (creator_target) — เจ้าของข้ามได้เสมอ
+  const { data: meProfile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single();
+  if (meProfile?.role !== 'owner' && !(await userMatchesTarget(user.id, creatorTarget))) {
+    return NextResponse.json({ error: 'คุณไม่มีสิทธิ์เปิดเรื่องในห้องนี้' }, { status: 403 });
+  }
+
   // Validate approvers/assignees are members of the room
   const { data: memberRows } = await supabase
     .from('task_room_members')
@@ -120,7 +143,7 @@ export async function POST(request: NextRequest) {
     .eq('room_id', body.roomId);
   const memberSet = new Set((memberRows ?? []).map((m) => m.user_id));
 
-  const assigneeIds = [...new Set(body.assigneeIds ?? [])].filter((id) => memberSet.has(id));
+  const manualAssigneeIds = [...new Set(body.assigneeIds ?? [])].filter((id) => memberSet.has(id));
   const approverIds = [...new Set(body.approverIds ?? [])].filter((id) => memberSet.has(id));
 
   if ((body.approverIds?.length ?? 0) > 0 && approverIds.length !== body.approverIds!.length) {
@@ -142,16 +165,38 @@ export async function POST(request: NextRequest) {
     ? (body.priority as TaskPriority)
     : 'med';
 
-  // ประเภทการตอบกลับ — งานแบบ แจ้งเพื่อทราบ/กดรับทราบ ไม่มีขั้นอนุมัติ/แนบไฟล์
-  const responseType: TaskResponseType = (['notify', 'acknowledge', 'submit'] as TaskResponseType[]).includes(
-    body.responseType as TaskResponseType,
-  )
-    ? (body.responseType as TaskResponseType)
-    : 'submit';
+  // ประเภทการตอบกลับ: ค่าจากฟอร์ม > default ของห้อง > 'submit'
+  const validResp = (v: unknown): TaskResponseType | null =>
+    (['notify', 'acknowledge', 'submit'] as TaskResponseType[]).includes(v as TaskResponseType)
+      ? (v as TaskResponseType)
+      : null;
+  const responseType: TaskResponseType =
+    validResp(body.responseType) ?? validResp(roomCfg?.default_response_type) ?? 'submit';
   const isSubmitType = responseType === 'submit';
   const requiresApproval = isSubmitType && !!body.requiresApproval;
-  const requireAttachment = isSubmitType && !!body.requireAttachment;
+  const requireAttachment =
+    isSubmitType && (!!body.requireAttachment || !!roomCfg?.require_attachment_default);
   const effApproverIds = isSubmitType ? approverIds : [];
+
+  // ── มอบหมายตามโฟลของห้อง ──
+  const svc = createServiceClient();
+  let finalAssigneeIds: string[] = [];
+  let openClaim = false;
+  let resolvedResponsible: string[] = [];
+  if (assignMode === 'manual') {
+    finalAssigneeIds = manualAssigneeIds;
+  } else {
+    resolvedResponsible = await resolveTargetUserIds(roomRespTarget);
+    // ผู้รับผิดชอบต้องเป็นสมาชิกห้อง (เพื่อให้เห็น/รับงานได้)
+    if (resolvedResponsible.length > 0) {
+      await svc.from('task_room_members').upsert(
+        resolvedResponsible.map((uid) => ({ room_id: body.roomId, user_id: uid, added_by: user.id })),
+        { onConflict: 'room_id,user_id', ignoreDuplicates: true },
+      );
+    }
+    if (assignMode === 'all') finalAssigneeIds = resolvedResponsible;
+    else openClaim = true; // claim — เปิดให้รับ
+  }
 
   const { data: task, error } = await supabase
     .from('tasks')
@@ -171,6 +216,7 @@ export async function POST(request: NextRequest) {
       assigner_id: user.id,
       start_date: body.startDate || null,
       due_date: body.dueDate || null,
+      meta: openClaim ? { open_claim: true } : null,
       created_by: user.id,
     })
     .select('*')
@@ -179,10 +225,10 @@ export async function POST(request: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   const created = task as Task;
 
-  // Assignees
-  if (assigneeIds.length > 0) {
-    await supabase.from('task_assignees').insert(
-      assigneeIds.map((uid) => ({ task_id: created.id, user_id: uid })),
+  // Assignees (manual/all)
+  if (finalAssigneeIds.length > 0) {
+    await svc.from('task_assignees').insert(
+      finalAssigneeIds.map((uid) => ({ task_id: created.id, user_id: uid })),
     );
   }
 
@@ -200,10 +246,20 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Notify assignees (in-app + push, no LINE)
-  if (assigneeIds.length > 0) {
+  // Notify (in-app + push, no LINE)
+  if (openClaim && resolvedResponsible.length > 0) {
     await notifyTaskUsers({
-      userIds: assigneeIds,
+      userIds: resolvedResponsible,
+      storeId: created.store_id,
+      type: 'task_assigned',
+      title: `🆕 มีงานใหม่รอรับ`,
+      body: `${created.ticket_no} · ${title}`,
+      data: { taskId: created.id, roomId: body.roomId, url: `/tasks/${body.roomId}` },
+      excludeUserId: user.id,
+    });
+  } else if (finalAssigneeIds.length > 0) {
+    await notifyTaskUsers({
+      userIds: finalAssigneeIds,
       storeId: created.store_id,
       type: 'task_assigned',
       title: `📋 ได้รับมอบหมายงานใหม่`,

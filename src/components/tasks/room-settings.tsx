@@ -4,7 +4,14 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button, Input, Textarea, Select, toast } from '@/components/ui';
 import { Archive } from 'lucide-react';
-import type { TaskRoom } from '@/types/tasks';
+import { TargetPicker } from './target-picker';
+import type {
+  ProfileLite,
+  TaskAssignMode,
+  TaskResponseType,
+  TaskRoom,
+  TaskTarget,
+} from '@/types/tasks';
 
 const ICON_OPTIONS = [
   { value: 'clipboard-list', label: 'รายการงาน' },
@@ -27,12 +34,43 @@ const COLOR_OPTIONS = [
   { value: 'teal', label: 'เขียวน้ำทะเล' },
 ];
 
-export function RoomSettings({ room, onUpdated }: { room: TaskRoom; onUpdated: () => void }) {
+const ASSIGN_MODE_OPTIONS = [
+  { value: 'manual', label: 'เจ้าของเลือกผู้รับผิดชอบเอง (เจ้าของ→พนักงาน)' },
+  { value: 'claim', label: 'เปิดให้กลุ่มเป้าหมายมารับงาน (เช่น แจ้งซ่อม→ช่าง)' },
+  { value: 'all', label: 'มอบหมายทุกคนในกลุ่มเป้าหมาย' },
+];
+const RESPONSE_TYPE_OPTIONS = [
+  { value: 'submit', label: 'ทำ + ส่งงาน' },
+  { value: 'acknowledge', label: 'กดรับทราบ' },
+  { value: 'notify', label: 'แจ้งเพื่อทราบ' },
+];
+
+interface RoomSettingsProps {
+  room: TaskRoom;
+  onUpdated: () => void;
+  stores?: { id: string; name: string }[];
+  members?: ProfileLite[];
+}
+
+export function RoomSettings({ room, onUpdated, stores = [], members = [] }: RoomSettingsProps) {
   const router = useRouter();
   const [name, setName] = useState(room.name);
   const [description, setDescription] = useState(room.description ?? '');
   const [icon, setIcon] = useState(room.icon);
   const [color, setColor] = useState(room.color);
+  const [assignMode, setAssignMode] = useState<TaskAssignMode>(room.assign_mode ?? 'manual');
+  const [defaultResponseType, setDefaultResponseType] = useState<TaskResponseType>(
+    room.default_response_type ?? 'submit',
+  );
+  const [responsibleTarget, setResponsibleTarget] = useState<TaskTarget>(
+    room.responsible_target ?? { mode: 'manual' },
+  );
+  const [creatorTarget, setCreatorTarget] = useState<TaskTarget>(
+    room.creator_target ?? { mode: 'everyone' },
+  );
+  const [requireAttachmentDefault, setRequireAttachmentDefault] = useState(
+    room.require_attachment_default ?? false,
+  );
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
@@ -41,7 +79,17 @@ export function RoomSettings({ room, onUpdated }: { room: TaskRoom; onUpdated: (
       const res = await fetch(`/api/tasks/rooms/${room.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, description, icon, color }),
+        body: JSON.stringify({
+          name,
+          description,
+          icon,
+          color,
+          assignMode,
+          defaultResponseType,
+          responsibleTarget,
+          creatorTarget,
+          requireAttachmentDefault,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'บันทึกไม่สำเร็จ');
@@ -81,6 +129,55 @@ export function RoomSettings({ room, onUpdated }: { room: TaskRoom; onUpdated: (
         <Select label="ไอคอน" value={icon} onChange={(e) => setIcon(e.target.value)} options={ICON_OPTIONS} />
         <Select label="สี" value={color} onChange={(e) => setColor(e.target.value)} options={COLOR_OPTIONS} />
       </div>
+
+      {/* ── คอนฟิกโฟลงานของห้องนี้ (ยืดหยุ่นต่อห้อง) ── */}
+      <div className="space-y-4 rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+        <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">โฟลงานของห้องนี้</p>
+
+        <Select
+          label="วิธีมอบหมายเมื่อมีงานเข้า"
+          value={assignMode}
+          onChange={(e) => setAssignMode(e.target.value as TaskAssignMode)}
+          options={ASSIGN_MODE_OPTIONS}
+        />
+
+        {assignMode !== 'manual' && (
+          <TargetPicker
+            label="ผู้รับผิดชอบ (กลุ่มที่ถูกแจ้ง/มอบหมาย)"
+            value={responsibleTarget}
+            onChange={setResponsibleTarget}
+            stores={stores}
+            members={members}
+            hint="เช่น ตำแหน่ง = ช่าง (เลือกสาขาเพิ่มได้)"
+          />
+        )}
+
+        <TargetPicker
+          label="ใครเปิดเรื่อง/สร้างงานในห้องนี้ได้"
+          value={creatorTarget}
+          onChange={setCreatorTarget}
+          stores={stores}
+          members={members}
+        />
+
+        <Select
+          label="โหมดตอบกลับเริ่มต้น (แก้รายงานได้)"
+          value={defaultResponseType}
+          onChange={(e) => setDefaultResponseType(e.target.value as TaskResponseType)}
+          options={RESPONSE_TYPE_OPTIONS}
+        />
+
+        <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+          <input
+            type="checkbox"
+            checked={requireAttachmentDefault}
+            onChange={(e) => setRequireAttachmentDefault(e.target.checked)}
+            className="h-4 w-4 rounded"
+          />
+          บังคับแนบไฟล์/รูปก่อนปิดงาน (ค่าเริ่มต้นของห้อง)
+        </label>
+      </div>
+
       <div className="flex justify-end">
         <Button onClick={save} isLoading={saving}>บันทึก</Button>
       </div>

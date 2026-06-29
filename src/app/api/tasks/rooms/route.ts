@@ -1,7 +1,18 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import type { TaskRoom, TaskRoomWithStats, TaskStatus } from '@/types/tasks';
+import { sanitizeTarget } from '@/lib/tasks/target';
+import type {
+  TaskAssignMode,
+  TaskResponseType,
+  TaskRoom,
+  TaskRoomWithStats,
+  TaskStatus,
+  TaskTarget,
+} from '@/types/tasks';
+
+const ASSIGN_MODES: TaskAssignMode[] = ['manual', 'claim', 'all'];
+const RESPONSE_TYPES: TaskResponseType[] = ['notify', 'acknowledge', 'submit'];
 
 interface CreateRoomBody {
   name: string;
@@ -10,6 +21,11 @@ interface CreateRoomBody {
   color?: string;
   ticketPrefix?: string;
   memberUserIds?: string[];
+  assignMode?: TaskAssignMode;
+  defaultResponseType?: TaskResponseType;
+  responsibleTarget?: TaskTarget;
+  creatorTarget?: TaskTarget;
+  requireAttachmentDefault?: boolean;
 }
 
 // GET /api/tasks/rooms — list rooms visible to the user + per-room stats
@@ -119,16 +135,26 @@ export async function POST(request: NextRequest) {
   const name = body.name?.trim();
   if (!name) return NextResponse.json({ error: 'กรุณาระบุชื่อห้อง' }, { status: 400 });
 
+  const insert: Record<string, unknown> = {
+    name,
+    description: body.description?.trim() || null,
+    icon: body.icon?.trim() || 'clipboard-list',
+    color: body.color?.trim() || 'indigo',
+    ticket_prefix: body.ticketPrefix?.trim() || 'TR',
+    created_by: user.id,
+  };
+  // ── คอนฟิกโฟลงาน (00059) — ใส่เฉพาะเมื่อส่งมา (ที่เหลือใช้ default ของ DB) ──
+  if (ASSIGN_MODES.includes(body.assignMode as TaskAssignMode)) insert.assign_mode = body.assignMode;
+  if (RESPONSE_TYPES.includes(body.defaultResponseType as TaskResponseType))
+    insert.default_response_type = body.defaultResponseType;
+  if (body.responsibleTarget) insert.responsible_target = sanitizeTarget(body.responsibleTarget);
+  if (body.creatorTarget) insert.creator_target = sanitizeTarget(body.creatorTarget);
+  if (typeof body.requireAttachmentDefault === 'boolean')
+    insert.require_attachment_default = body.requireAttachmentDefault;
+
   const { data: room, error } = await supabase
     .from('task_rooms')
-    .insert({
-      name,
-      description: body.description?.trim() || null,
-      icon: body.icon?.trim() || 'clipboard-list',
-      color: body.color?.trim() || 'indigo',
-      ticket_prefix: body.ticketPrefix?.trim() || 'TR',
-      created_by: user.id,
-    })
+    .insert(insert)
     .select('*')
     .single();
 

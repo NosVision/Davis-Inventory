@@ -96,7 +96,15 @@ export function TaskDetailModal({ taskId, currentUserId, onClose, onChanged }: T
     | undefined)?.approval_request;
   const pendingKind: 'purchase' | 'completion' = approvalReq?.kind === 'purchase' ? 'purchase' : 'completion';
   const canDecide = pendingKind === 'purchase' ? isOwner : canApprove;
-  const canAct = task?.status === 'in_progress' && (isAssignee || (isAssigner && totalAssignees === 0));
+  // งานแบบเปิดให้รับ (claim) ที่ยังไม่มีผู้รับผิดชอบ
+  const isOpenClaim =
+    task?.status === 'in_progress' &&
+    totalAssignees === 0 &&
+    (task?.meta as { open_claim?: boolean } | null | undefined)?.open_claim === true;
+  const canAct =
+    task?.status === 'in_progress' &&
+    !isOpenClaim &&
+    (isAssignee || (isAssigner && totalAssignees === 0));
 
   return (
     <Modal isOpen onClose={onClose} title={task ? `#${task.ticket_no}` : 'งาน'} size="lg">
@@ -267,6 +275,11 @@ export function TaskDetailModal({ taskId, currentUserId, onClose, onChanged }: T
                 {task.response_type === 'acknowledge' ? 'รับทราบ' : 'รับทราบว่าอ่านแล้ว'}
               </Button>
             )
+          )}
+
+          {/* open-claim: รับงาน (ยังไม่มีผู้รับผิดชอบ) */}
+          {isOpenClaim && (
+            <Button onClick={() => act('claim')} isLoading={busy}>รับงาน</Button>
           )}
 
           {/* pending_approval: อนุมัติ/ไม่อนุมัติ */}

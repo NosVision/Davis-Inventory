@@ -153,7 +153,9 @@ export default function RoomPage() {
         </div>
       )}
 
-      {tab === 'settings' && isOwner && <RoomSettings room={room} onUpdated={loadRoom} />}
+      {tab === 'settings' && isOwner && (
+        <RoomSettings room={room} onUpdated={loadRoom} stores={stores} members={memberProfiles} />
+      )}
 
       {tab === 'tasks' && user && (
         <TabTasks roomId={roomId} members={memberProfiles} stores={stores} currentUserId={user.id} onTasksChanged={loadRoom} />

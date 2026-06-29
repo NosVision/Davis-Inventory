@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import type { TaskRoom, TaskRoomMember } from '@/types/tasks';
+import { sanitizeTarget } from '@/lib/tasks/target';
+import type { TaskAssignMode, TaskResponseType, TaskRoom, TaskRoomMember, TaskTarget } from '@/types/tasks';
+
+const ASSIGN_MODES: TaskAssignMode[] = ['manual', 'claim', 'all'];
+const RESPONSE_TYPES: TaskResponseType[] = ['notify', 'acknowledge', 'submit'];
 
 const MEMBER_SELECT =
   '*, profile:profiles!task_room_members_user_id_fkey(id, display_name, username, avatar_url, role)';
@@ -68,6 +72,11 @@ export async function PATCH(
     color: string;
     ticketPrefix: string;
     isArchived: boolean;
+    assignMode: TaskAssignMode;
+    defaultResponseType: TaskResponseType;
+    responsibleTarget: TaskTarget;
+    creatorTarget: TaskTarget;
+    requireAttachmentDefault: boolean;
   }>;
   try {
     body = await request.json();
@@ -82,6 +91,16 @@ export async function PATCH(
   if (typeof body.color === 'string') update.color = body.color.trim();
   if (typeof body.ticketPrefix === 'string') update.ticket_prefix = body.ticketPrefix.trim();
   if (typeof body.isArchived === 'boolean') update.is_archived = body.isArchived;
+  // ── คอนฟิกโฟลงาน (00059) ──
+  if (ASSIGN_MODES.includes(body.assignMode as TaskAssignMode)) update.assign_mode = body.assignMode;
+  if (RESPONSE_TYPES.includes(body.defaultResponseType as TaskResponseType))
+    update.default_response_type = body.defaultResponseType;
+  if (body.responsibleTarget && typeof body.responsibleTarget === 'object')
+    update.responsible_target = sanitizeTarget(body.responsibleTarget);
+  if (body.creatorTarget && typeof body.creatorTarget === 'object')
+    update.creator_target = sanitizeTarget(body.creatorTarget);
+  if (typeof body.requireAttachmentDefault === 'boolean')
+    update.require_attachment_default = body.requireAttachmentDefault;
 
   if (Object.keys(update).length === 0) {
     return NextResponse.json({ error: 'ไม่มีข้อมูลที่จะแก้ไข' }, { status: 400 });

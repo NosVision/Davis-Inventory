@@ -25,6 +25,7 @@ type Action =
   | 'reject'
   | 'cancel'
   | 'start_now'
+  | 'claim'
   | 'pin'
   | 'unpin'
   | 'add_attachment';
@@ -402,6 +403,42 @@ export async function PATCH(
         return NextResponse.json({ error: 'งานนี้ไม่ได้อยู่ในสถานะรอเริ่ม' }, { status: 400 });
       }
       await supabase.from('tasks').update({ status: 'in_progress' }).eq('id', id);
+      break;
+    }
+
+    case 'claim': {
+      // งานแบบเปิดให้รับ (claim) ที่ยังไม่มีผู้รับผิดชอบ → ผู้รับกดรับเอง
+      if (assignees.length > 0) {
+        return NextResponse.json({ error: 'งานนี้มีผู้รับผิดชอบแล้ว' }, { status: 400 });
+      }
+      if (task.status !== 'in_progress') {
+        return NextResponse.json({ error: 'สถานะปัจจุบันรับงานไม่ได้' }, { status: 400 });
+      }
+      const { data: mem } = await supabase
+        .from('task_room_members')
+        .select('user_id')
+        .eq('room_id', task.room_id)
+        .eq('user_id', actorId)
+        .maybeSingle();
+      if (!mem && !isOwner) {
+        return NextResponse.json({ error: 'ต้องเป็นสมาชิกห้องนี้ถึงจะรับงานได้' }, { status: 403 });
+      }
+      const svc = createServiceClient();
+      await svc.from('task_assignees').insert({ task_id: id, user_id: actorId });
+      await svc
+        .from('tasks')
+        .update({ meta: { ...baseMeta, open_claim: false, claimed_by: actorId, claimed_at: nowIso } })
+        .eq('id', id);
+      if (task.assigner_id && task.assigner_id !== actorId) {
+        await notifyTaskUsers({
+          userIds: [task.assigner_id],
+          storeId: task.store_id,
+          type: 'task_assigned',
+          title: `🙌 มีคนรับงานแล้ว`,
+          body: `${task.ticket_no} · ${task.title} — ${actorName} รับงาน`,
+          data: { taskId: id, roomId: task.room_id, url: `/tasks/${task.room_id}` },
+        });
+      }
       break;
     }
 
