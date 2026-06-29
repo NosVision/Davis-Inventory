@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Search } from 'lucide-react';
+import { Search, Loader2 } from 'lucide-react';
 import { Modal, ModalFooter, Button, Input, Textarea, Select, toast } from '@/components/ui';
 import { AttachmentInput } from './attachment-input';
 import { initial, avatarColor } from '@/lib/tasks/format';
@@ -148,6 +148,7 @@ export function TaskFormModal({ roomId, members, stores, onClose, onCreated }: T
   const [requireAttachment, setRequireAttachment] = useState(false);
   const [attachments, setAttachments] = useState<TaskAttachmentInput[]>([]);
   const [assignMode, setAssignMode] = useState<TaskAssignMode>('manual');
+  const [cfgLoaded, setCfgLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // โหลดคอนฟิกห้องเพื่อปรับฟอร์ม (ซ่อนช่องเลือกคนเมื่อ route ตามตำแหน่ง + ตั้งค่าเริ่มต้น)
@@ -156,17 +157,24 @@ export function TaskFormModal({ roomId, members, stores, onClose, onCreated }: T
     fetch(`/api/tasks/rooms/${roomId}`)
       .then((r) => r.json())
       .then((d) => {
-        if (!active || !d?.room) return;
-        const room = d.room as {
-          assign_mode?: TaskAssignMode;
-          default_response_type?: TaskResponseType;
-          require_attachment_default?: boolean;
-        };
-        if (room.assign_mode) setAssignMode(room.assign_mode);
-        if (room.default_response_type) setResponseType(room.default_response_type);
-        if (room.require_attachment_default) setRequireAttachment(true);
+        if (!active) return;
+        const room = d?.room as
+          | {
+              assign_mode?: TaskAssignMode;
+              default_response_type?: TaskResponseType;
+              require_attachment_default?: boolean;
+            }
+          | undefined;
+        if (room) {
+          if (room.assign_mode) setAssignMode(room.assign_mode);
+          if (room.default_response_type) setResponseType(room.default_response_type);
+          if (room.require_attachment_default) setRequireAttachment(true);
+        }
+        setCfgLoaded(true);
       })
-      .catch(() => {});
+      .catch(() => {
+        if (active) setCfgLoaded(true);
+      });
     return () => {
       active = false;
     };
@@ -174,6 +182,10 @@ export function TaskFormModal({ roomId, members, stores, onClose, onCreated }: T
 
   const toggle = (list: string[], id: string) =>
     list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
+
+  // โหมดแจ้งเรื่อง: ห้อง claim/all = งาน routing อัตโนมัติ พนักงานแค่ "แจ้ง" ไม่ต้องตั้งกติกา
+  // (กติกา response type / อนุมัติ / บังคับแนบไฟล์ มาจาก default ของห้องที่เจ้าของตั้งไว้)
+  const reportMode = assignMode !== 'manual';
 
   const submit = async () => {
     if (!title.trim()) {
@@ -204,7 +216,11 @@ export function TaskFormModal({ roomId, members, stores, onClose, onCreated }: T
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'สร้างงานไม่สำเร็จ');
-      toast({ type: 'success', title: 'สร้างงานแล้ว', message: data.task?.ticket_no });
+      toast({
+        type: 'success',
+        title: reportMode ? 'ส่งเรื่องแล้ว' : 'สร้างงานแล้ว',
+        message: data.task?.ticket_no,
+      });
       onCreated();
       onClose();
     } catch (e) {
@@ -215,111 +231,129 @@ export function TaskFormModal({ roomId, members, stores, onClose, onCreated }: T
   };
 
   return (
-    <Modal isOpen onClose={onClose} title="เพิ่มงานใหม่" size="lg">
-      <div className="space-y-4">
-        <Input label="หัวข้องาน *" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="เช่น แอร์โซนครัวไม่เย็น" />
-        <Textarea label="รายละเอียด" value={detail} onChange={(e) => setDetail(e.target.value)} rows={3} placeholder="อธิบายงาน..." />
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Select
-            label="ประเภทการตอบกลับ"
-            value={responseType}
-            onChange={(e) => setResponseType(e.target.value as TaskResponseType)}
-            options={[
-              { value: 'submit', label: TASK_RESPONSE_TYPE_LABELS.submit },
-              { value: 'acknowledge', label: TASK_RESPONSE_TYPE_LABELS.acknowledge },
-              { value: 'notify', label: TASK_RESPONSE_TYPE_LABELS.notify },
-            ]}
-          />
-          <Input label="หมวด" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="เช่น ไฟฟ้า, ประปา" />
-          <Select
-            label="ความสำคัญ"
-            value={priority}
-            onChange={(e) => setPriority(e.target.value as TaskPriority)}
-            options={[
-              { value: 'low', label: 'ต่ำ' },
-              { value: 'med', label: 'กลาง' },
-              { value: 'high', label: 'สูง' },
-            ]}
-          />
-          {stores.length > 0 && (
-            <Select
-              label="สาขา (Venue)"
-              value={storeId}
-              onChange={(e) => setStoreId(e.target.value)}
-              placeholder="— ไม่ระบุ —"
-              options={stores.map((s) => ({ value: s.id, label: s.name }))}
-            />
-          )}
-          <Input label="วันเริ่มงาน (เว้นว่าง = เริ่มทันที)" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-          <Input label="กำหนดเสร็จ" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+    <Modal isOpen onClose={onClose} title={reportMode ? 'แจ้งเรื่องใหม่' : 'เพิ่มงานใหม่'} size="lg">
+      {!cfgLoaded ? (
+        <div className="flex justify-center py-12">
+          <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
         </div>
+      ) : (
+        <div className="space-y-4">
+          {reportMode && (
+            <p className="rounded-lg bg-indigo-50 p-3 text-xs text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300">
+              📣 แจ้งเรื่องเข้าห้องนี้ — กรอกสั้น ๆ ว่าเกิดอะไร ที่ไหน แล้วแนบรูป ระบบจะส่งต่อให้ผู้รับผิดชอบเอง
+            </p>
+          )}
 
-        {assignMode === 'manual' ? (
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">ผู้รับผิดชอบ</label>
-            <MemberPicker
-              members={members}
-              selected={assigneeIds}
-              onToggle={(id) => setAssigneeIds((s) => toggle(s, id))}
-              empty="ยังไม่มีสมาชิกในห้องนี้"
-            />
-          </div>
-        ) : (
-          <div className="rounded-lg bg-indigo-50 p-3 text-xs text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300">
-            {assignMode === 'claim'
-              ? '🔔 งานนี้จะแจ้งให้ "กลุ่มผู้รับผิดชอบของห้อง" มารับงานเอง — ไม่ต้องเลือกผู้รับผิดชอบ'
-              : '👥 งานนี้จะมอบหมายให้ "กลุ่มผู้รับผิดชอบของห้อง" ทุกคนอัตโนมัติ'}
-          </div>
-        )}
+          <Input label="หัวข้องาน *" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="เช่น แอร์โซนครัวไม่เย็น" />
+          <Textarea label="รายละเอียด" value={detail} onChange={(e) => setDetail(e.target.value)} rows={3} placeholder={reportMode ? 'เล่าอาการ/สิ่งที่เจอเพิ่มเติม...' : 'อธิบายงาน...'} />
 
-        {responseType === 'submit' && (
-          <>
-            <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-              <input type="checkbox" checked={requiresApproval} onChange={(e) => setRequiresApproval(e.target.checked)} className="h-4 w-4 rounded" />
-              ต้องอนุมัติเมื่อทำเสร็จ
-            </label>
-
-            {requiresApproval && (
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  ผู้อนุมัติ / ตรวจงาน <span className="font-normal text-gray-400">(ใครก็ได้ในรายชื่ออนุมัติได้ · ว่าง = เจ้าของอนุมัติ)</span>
-                </label>
-                <MemberPicker
-                  members={members}
-                  selected={approverIds}
-                  onToggle={(id) => setApproverIds((s) => toggle(s, id))}
-                  empty="ยังไม่มีสมาชิกในห้องนี้"
-                />
-              </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {!reportMode && (
+              <Select
+                label="ประเภทการตอบกลับ"
+                value={responseType}
+                onChange={(e) => setResponseType(e.target.value as TaskResponseType)}
+                options={[
+                  { value: 'submit', label: TASK_RESPONSE_TYPE_LABELS.submit },
+                  { value: 'acknowledge', label: TASK_RESPONSE_TYPE_LABELS.acknowledge },
+                  { value: 'notify', label: TASK_RESPONSE_TYPE_LABELS.notify },
+                ]}
+              />
             )}
+            <Input label="หมวด" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="เช่น ไฟฟ้า, ประปา" />
+            <Select
+              label="ความสำคัญ"
+              value={priority}
+              onChange={(e) => setPriority(e.target.value as TaskPriority)}
+              options={[
+                { value: 'low', label: 'ต่ำ' },
+                { value: 'med', label: 'กลาง' },
+                { value: 'high', label: 'สูง' },
+              ]}
+            />
+            {stores.length > 0 && (
+              <Select
+                label="สาขา (Venue)"
+                value={storeId}
+                onChange={(e) => setStoreId(e.target.value)}
+                placeholder="— ไม่ระบุ —"
+                options={stores.map((s) => ({ value: s.id, label: s.name }))}
+              />
+            )}
+            {!reportMode && (
+              <Input label="วันเริ่มงาน (เว้นว่าง = เริ่มทันที)" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+            )}
+            {!reportMode && (
+              <Input label="กำหนดเสร็จ" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+            )}
+          </div>
 
-            <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-              <input type="checkbox" checked={requireAttachment} onChange={(e) => setRequireAttachment(e.target.checked)} className="h-4 w-4 rounded" />
-              บังคับให้ผู้ทำแนบไฟล์/รูปก่อนปิดงาน
-            </label>
-          </>
-        )}
+          {assignMode === 'manual' ? (
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">ผู้รับผิดชอบ</label>
+              <MemberPicker
+                members={members}
+                selected={assigneeIds}
+                onToggle={(id) => setAssigneeIds((s) => toggle(s, id))}
+                empty="ยังไม่มีสมาชิกในห้องนี้"
+              />
+            </div>
+          ) : (
+            <div className="rounded-lg bg-emerald-50 p-3 text-xs text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">
+              {assignMode === 'claim'
+                ? '🔔 ระบบจะแจ้งกลุ่มผู้รับผิดชอบของห้องให้มารับเรื่องเอง — คุณไม่ต้องเลือกคน'
+                : '👥 ระบบจะส่งเรื่องนี้ให้กลุ่มผู้รับผิดชอบของห้องทุกคนอัตโนมัติ'}
+            </div>
+          )}
 
-        {responseType !== 'submit' && (
-          <p className="rounded-lg bg-gray-50 p-3 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-            {responseType === 'acknowledge'
-              ? 'พนักงานเพียงกด "รับทราบ" เพื่อปิดงาน — ไม่ต้องส่งงาน/อนุมัติ'
-              : 'งานแจ้งเพื่อทราบ — พนักงานเปิดอ่านแล้วกด "รับทราบว่าอ่านแล้ว" เพื่อปิด'}
-          </p>
-        )}
+          {!reportMode && responseType === 'submit' && (
+            <>
+              <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                <input type="checkbox" checked={requiresApproval} onChange={(e) => setRequiresApproval(e.target.checked)} className="h-4 w-4 rounded" />
+                ต้องอนุมัติเมื่อทำเสร็จ
+              </label>
 
-        {/* ไฟล์/รูป/ลิงก์ที่เจ้าของแนบให้ผู้รับงานดู — ได้ทุกประเภทงาน */}
-        <AttachmentInput
-          value={attachments}
-          onChange={setAttachments}
-          label="ไฟล์/รูป/ลิงก์ประกอบงาน (ให้ผู้รับงานดู)"
-        />
-      </div>
+              {requiresApproval && (
+                <div>
+                  <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    ผู้อนุมัติ / ตรวจงาน <span className="font-normal text-gray-400">(ใครก็ได้ในรายชื่ออนุมัติได้ · ว่าง = เจ้าของอนุมัติ)</span>
+                  </label>
+                  <MemberPicker
+                    members={members}
+                    selected={approverIds}
+                    onToggle={(id) => setApproverIds((s) => toggle(s, id))}
+                    empty="ยังไม่มีสมาชิกในห้องนี้"
+                  />
+                </div>
+              )}
+
+              <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                <input type="checkbox" checked={requireAttachment} onChange={(e) => setRequireAttachment(e.target.checked)} className="h-4 w-4 rounded" />
+                บังคับให้ผู้ทำแนบไฟล์/รูปก่อนปิดงาน
+              </label>
+            </>
+          )}
+
+          {!reportMode && responseType !== 'submit' && (
+            <p className="rounded-lg bg-gray-50 p-3 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+              {responseType === 'acknowledge'
+                ? 'พนักงานเพียงกด "รับทราบ" เพื่อปิดงาน — ไม่ต้องส่งงาน/อนุมัติ'
+                : 'งานแจ้งเพื่อทราบ — พนักงานเปิดอ่านแล้วกด "รับทราบว่าอ่านแล้ว" เพื่อปิด'}
+            </p>
+          )}
+
+          {/* แนบรูป/ไฟล์ — โหมดแจ้งเรื่องเน้นถ่ายรูปจุดที่เสีย */}
+          <AttachmentInput
+            value={attachments}
+            onChange={setAttachments}
+            label={reportMode ? 'แนบรูป/ไฟล์ (แนะนำให้ถ่ายรูปจุดที่เสียประกอบ)' : 'ไฟล์/รูป/ลิงก์ประกอบงาน (ให้ผู้รับงานดู)'}
+          />
+        </div>
+      )}
 
       <ModalFooter>
         <Button variant="ghost" onClick={onClose}>ยกเลิก</Button>
-        <Button onClick={submit} isLoading={saving}>สร้างงาน</Button>
+        <Button onClick={submit} isLoading={saving}>{reportMode ? 'ส่งเรื่อง' : 'สร้างงาน'}</Button>
       </ModalFooter>
     </Modal>
   );
