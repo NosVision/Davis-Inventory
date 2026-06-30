@@ -7,6 +7,9 @@ import { createClient } from '@/lib/supabase/client';
 import { useAuthStore } from '@/stores/auth-store';
 import { CatalogTab } from '@/components/inventory/catalog-tab';
 import { StockTab } from '@/components/inventory/stock-tab';
+import { RequisitionsTab } from '@/components/inventory/requisitions-tab';
+import { PurchaseOrdersTab } from '@/components/inventory/purchase-orders-tab';
+import { SuppliersTab } from '@/components/inventory/suppliers-tab';
 
 const MGMT_ROLES = ['owner', 'manager', 'accountant'];
 
@@ -52,6 +55,9 @@ export default function InventoryPage() {
         tabs={[
           { id: 'catalog', label: 'แคตตาล็อก (HQ)' },
           { id: 'stock', label: 'สต๊อกสาขา' },
+          { id: 'requisitions', label: 'ใบเบิก' },
+          { id: 'purchase-orders', label: 'ใบสั่งซื้อ' },
+          { id: 'suppliers', label: 'ซัพพลายเออร์' },
         ]}
         activeTab={tab}
         onChange={setTab}
@@ -59,6 +65,9 @@ export default function InventoryPage() {
 
       {tab === 'catalog' && <CatalogTab isMgmt={isMgmt} />}
       {tab === 'stock' && <StockTab isMgmt={isMgmt} stores={stores} />}
+      {tab === 'requisitions' && <RequisitionsTab isMgmt={isMgmt} stores={stores} />}
+      {tab === 'purchase-orders' && <PurchaseOrdersTab isMgmt={isMgmt} />}
+      {tab === 'suppliers' && <SuppliersTab isMgmt={isMgmt} />}
     </div>
   );
 }
