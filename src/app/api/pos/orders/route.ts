@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient } from '@/lib/supabase/server';
 
 interface OpenOrderBody {
   storeId?: string;
@@ -34,7 +34,9 @@ export async function POST(request: NextRequest) {
     if (existing) return NextResponse.json({ order: existing, reused: true });
   }
 
-  const { data: no, error: noErr } = await supabase.rpc('next_pos_order_no', { p_store: body.storeId });
+  // เลขบิลรันต่อสาขา — เรียกผ่าน service role (RPC ถูกปิดจาก authenticated ใน 00062)
+  const svc = createServiceClient();
+  const { data: no, error: noErr } = await svc.rpc('next_pos_order_no', { p_store: body.storeId });
   if (noErr) return NextResponse.json({ error: noErr.message }, { status: 500 });
 
   const { data: order, error } = await supabase
