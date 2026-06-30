@@ -1,12 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Loader2, Search, Plus, Minus, Trash2, Move, Percent, Wallet, Ticket } from 'lucide-react';
+import { ArrowLeft, Loader2, Search, Plus, Minus, Trash2, Move, Percent, Wallet, Ticket, ChefHat } from 'lucide-react';
 import { Button, Input, Select, Modal, ModalFooter, toast } from '@/components/ui';
 import { formatBaht, bahtToSatang } from '@/lib/pos/money';
 import { CheckoutModal } from './checkout-modal';
 import { ModifierDialog } from './modifier-dialog';
 import { useRealtime } from '@/hooks/use-realtime';
+import { createClient } from '@/lib/supabase/client';
+import { broadcastToChannel } from '@/lib/supabase/broadcast';
 import type { MenuAvailability, MenuCategory, MenuItem, PosOrder, PosOrderItem, PosTable } from '@/types/pos';
 
 interface AeOption { id: string; name: string; nickname?: string | null }
@@ -108,6 +110,30 @@ export function OrderScreen({ orderId, storeId, categories, items, modifierMenuI
   const tapMenu = (m: MenuItem) => {
     if (modSet.has(m.id)) setModMenu(m);
     else addItem(m.id);
+  };
+
+  // ส่งครัว/บาร์ (KOT) + broadcast ให้ KDS เด้ง
+  const [sending, setSending] = useState(false);
+  const sendKitchen = async () => {
+    setSending(true);
+    try {
+      const res = await fetch(`/api/pos/orders/${orderId}/send`, { method: 'POST' });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'ส่งครัวไม่สำเร็จ');
+      toast({ type: 'success', title: d.sent > 0 ? `ส่งครัวแล้ว ${d.sent} รายการ` : 'ส่งครัวครบแล้ว' });
+      if (d.sent > 0) {
+        try {
+          await broadcastToChannel(createClient(), `pos:kds:${storeId}`, 'kds_update', {});
+        } catch {
+          // ignore
+        }
+      }
+      await load();
+    } catch (e) {
+      toast({ type: 'error', title: 'ผิดพลาด', message: e instanceof Error ? e.message : '' });
+    } finally {
+      setSending(false);
+    }
   };
 
   const setQty = async (itemId: string, qty: number) => {
@@ -219,7 +245,10 @@ export function OrderScreen({ orderId, storeId, categories, items, modifierMenuI
               cart.map((it) => (
                 <div key={it.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700/40">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm text-gray-900 dark:text-white">{it.name}</p>
+                    <p className="truncate text-sm text-gray-900 dark:text-white">
+                      {it.name}
+                      {it.sent_at && <span className="ml-1 text-[10px] font-normal text-emerald-500">• ส่งแล้ว</span>}
+                    </p>
                     {it.modifiers && it.modifiers.length > 0 && (
                       <p className="truncate text-[10px] text-gray-400">{it.modifiers.map((x) => x.name).join(', ')}</p>
                     )}
@@ -256,6 +285,9 @@ export function OrderScreen({ orderId, storeId, categories, items, modifierMenuI
               <Button variant="outline" size="sm" icon={<Percent className="h-4 w-4" />} onClick={() => setModal('discount')}>ส่วนลด</Button>
               <Button variant="outline" size="sm" icon={<Ticket className="h-4 w-4" />} onClick={() => setModal('promo')}>โค้ดโปร</Button>
             </div>
+            <Button variant="outline" className="mt-1 w-full" icon={<ChefHat className="h-4 w-4" />} disabled={cart.length === 0 || sending} onClick={sendKitchen}>
+              ส่งครัว/บาร์
+            </Button>
             <Button className="mt-1 w-full" icon={<Wallet className="h-4 w-4" />} disabled={cart.length === 0} onClick={() => setModal('checkout')}>
               คิดเงิน ฿{formatBaht(order.total_satang)}
             </Button>

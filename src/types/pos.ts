@@ -104,6 +104,9 @@ export interface PosOrderItem {
   line_total_satang: number;
   note: string | null;
   is_void: boolean;
+  sent_at: string | null;
+  station: string | null;
+  done_at: string | null;
   created_by: string | null;
   created_at: string;
   modifiers?: PosOrderItemModifier[];

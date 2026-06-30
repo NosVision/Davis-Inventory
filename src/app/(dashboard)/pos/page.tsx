@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Loader2, Monitor, LayoutGrid, ListChecks } from 'lucide-react';
+import { Loader2, Monitor, LayoutGrid, ListChecks, ChefHat } from 'lucide-react';
 import { Select, toast } from '@/components/ui';
 import { useAuthStore } from '@/stores/auth-store';
 import { useRealtime } from '@/hooks/use-realtime';
@@ -96,6 +96,9 @@ export default function PosPage() {
             <button onClick={() => setShowAvail(true)} className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300">
               <ListChecks className="h-4 w-4" /> ความพร้อม
             </button>
+            <Link href="/pos/kds" className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300">
+              <ChefHat className="h-4 w-4" /> จอครัว
+            </Link>
             {['owner', 'manager'].includes(user?.role ?? '') && (
               <Link href="/pos/manage" className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300">
                 <LayoutGrid className="h-4 w-4" /> ตั้งค่าผัง
