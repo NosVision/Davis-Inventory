@@ -33,7 +33,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const { data: order } = await supabase
     .from('pos_orders')
-    .select('id, store_id, status')
+    .select('id, store_id, status, promo_id')
     .eq('id', id)
     .maybeSingle();
   if (!order) return NextResponse.json({ error: 'ไม่พบบิล' }, { status: 404 });
@@ -68,6 +68,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     .select('*')
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // นับการใช้โปรโมชั่น (best-effort)
+  const promoId = (order as { promo_id?: string | null }).promo_id;
+  if (promoId) {
+    try {
+      const svcP = createServiceClient();
+      const { data: pr } = await svcP.from('pos_promotions').select('uses').eq('id', promoId).maybeSingle();
+      if (pr) await svcP.from('pos_promotions').update({ uses: Number((pr as { uses: number }).uses) + 1 }).eq('id', promoId);
+    } catch {
+      // ignore
+    }
+  }
 
   // ── ตัดสต๊อกตาม BOM (post ledger reason='sale') — best-effort ไม่ให้การตัดสต๊อกล้มการขาย ──
   try {

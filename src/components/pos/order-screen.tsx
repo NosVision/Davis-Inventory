@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Loader2, Search, Plus, Minus, Trash2, Move, Percent, Wallet } from 'lucide-react';
+import { ArrowLeft, Loader2, Search, Plus, Minus, Trash2, Move, Percent, Wallet, Ticket } from 'lucide-react';
 import { Button, Input, Select, Modal, ModalFooter, toast } from '@/components/ui';
 import { formatBaht, bahtToSatang } from '@/lib/pos/money';
 import { CheckoutModal } from './checkout-modal';
@@ -28,7 +28,7 @@ export function OrderScreen({ orderId, storeId, categories, items, modifierMenuI
   const [activeCat, setActiveCat] = useState('all');
   const [q, setQ] = useState('');
   const [aes, setAes] = useState<AeOption[]>([]);
-  const [modal, setModal] = useState<'checkout' | 'move' | 'discount' | null>(null);
+  const [modal, setModal] = useState<'checkout' | 'move' | 'discount' | 'promo' | null>(null);
   const [avail, setAvail] = useState<Map<string, { sellable: boolean; remaining: number | null }>>(new Map());
   const [modMenu, setModMenu] = useState<MenuItem | null>(null);
   const modSet = useMemo(() => new Set(modifierMenuIds ?? []), [modifierMenuIds]);
@@ -251,9 +251,10 @@ export function OrderScreen({ orderId, storeId, categories, items, modifierMenuI
               <span>ยอดสุทธิ</span>
               <span className="font-mono text-indigo-600 dark:text-indigo-400">฿{formatBaht(order.total_satang)}</span>
             </div>
-            <div className="grid grid-cols-2 gap-2 pt-2">
+            <div className="grid grid-cols-3 gap-2 pt-2">
               <Button variant="outline" size="sm" icon={<Move className="h-4 w-4" />} onClick={() => setModal('move')}>ย้ายโต๊ะ</Button>
               <Button variant="outline" size="sm" icon={<Percent className="h-4 w-4" />} onClick={() => setModal('discount')}>ส่วนลด</Button>
+              <Button variant="outline" size="sm" icon={<Ticket className="h-4 w-4" />} onClick={() => setModal('promo')}>โค้ดโปร</Button>
             </div>
             <Button className="mt-1 w-full" icon={<Wallet className="h-4 w-4" />} disabled={cart.length === 0} onClick={() => setModal('checkout')}>
               คิดเงิน ฿{formatBaht(order.total_satang)}
@@ -270,6 +271,9 @@ export function OrderScreen({ orderId, storeId, categories, items, modifierMenuI
       )}
       {modal === 'discount' && (
         <DiscountModal current={order.discount_satang} onClose={() => setModal(null)} onApply={async (satang) => { await patchOrder({ discountSatang: satang }); setModal(null); }} />
+      )}
+      {modal === 'promo' && (
+        <PromoModal orderId={orderId} hasPromo={!!order.promo_id} onClose={() => setModal(null)} onChanged={(o) => { setOrder(o); setModal(null); }} />
       )}
       {modMenu && (
         <ModifierDialog
@@ -366,6 +370,58 @@ function DiscountModal({ current, onClose, onApply }: { current: number; onClose
       <ModalFooter>
         <Button variant="ghost" onClick={onClose}>ยกเลิก</Button>
         <Button onClick={() => onApply(val ? bahtToSatang(Number(val)) : 0)}>ใช้ส่วนลด</Button>
+      </ModalFooter>
+    </Modal>
+  );
+}
+
+function PromoModal({ orderId, hasPromo, onClose, onChanged }: { orderId: string; hasPromo: boolean; onClose: () => void; onChanged: (order: PosOrder) => void }) {
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const apply = async () => {
+    if (!code.trim()) return toast({ type: 'error', title: 'ใส่โค้ด' });
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/pos/orders/${orderId}/promo`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'ใช้โค้ดไม่สำเร็จ');
+      toast({ type: 'success', title: 'ใช้โค้ดแล้ว' });
+      onChanged(d.order);
+    } catch (e) {
+      toast({ type: 'error', title: 'ผิดพลาด', message: e instanceof Error ? e.message : '' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/pos/orders/${orderId}/promo`, { method: 'DELETE' });
+      const d = await res.json();
+      if (res.ok) {
+        toast({ type: 'success', title: 'เอาโค้ดออกแล้ว' });
+        onChanged(d.order);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal isOpen onClose={onClose} title="โค้ดโปรโมชั่น" size="sm">
+      {hasPromo ? (
+        <div className="space-y-3">
+          <p className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">บิลนี้ใช้โค้ดส่วนลดอยู่แล้ว</p>
+          <Button variant="danger" onClick={remove} isLoading={busy} className="w-full">เอาโค้ดออก</Button>
+        </div>
+      ) : (
+        <Input label="โค้ด" value={code} onChange={(e) => setCode(e.target.value)} placeholder="เช่น SAVE10" />
+      )}
+      <ModalFooter>
+        <Button variant="ghost" onClick={onClose}>ปิด</Button>
+        {!hasPromo && <Button onClick={apply} isLoading={busy}>ใช้โค้ด</Button>}
       </ModalFooter>
     </Modal>
   );

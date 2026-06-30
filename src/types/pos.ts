@@ -85,6 +85,7 @@ export interface PosOrder {
   total_satang: number;
   note: string | null;
   ae_id: string | null;
+  promo_id: string | null;
   opened_by: string | null;
   opened_at: string;
   closed_by: string | null;
@@ -148,6 +149,23 @@ export interface PosModifierOption {
 
 export interface ModifierGroupWithOptions extends PosModifierGroup {
   options: PosModifierOption[];
+}
+
+export interface PosPromotion {
+  id: string;
+  store_id: string;
+  code: string;
+  name: string | null;
+  kind: 'percent' | 'amount';
+  percent: number | null;
+  amount_satang: number | null;
+  min_spend_satang: number;
+  starts_at: string | null;
+  ends_at: string | null;
+  max_uses: number | null;
+  uses: number;
+  active: boolean;
+  created_at: string;
 }
 
 export interface PosOrderItemModifier {
