@@ -9,6 +9,7 @@ import { useAuthStore } from '@/stores/auth-store';
 import { FloorPlanBuilder } from '@/components/pos/floor-plan-builder';
 import { MenuManager } from '@/components/pos/menu-manager';
 import { ModifierManager } from '@/components/pos/modifier-manager';
+import { PosSettingsPanel } from '@/components/pos/pos-settings-panel';
 
 export default function PosManagePage() {
   const { user } = useAuthStore();
@@ -57,6 +58,7 @@ export default function PosManagePage() {
           { id: 'floor', label: 'ผังโต๊ะ' },
           { id: 'menu', label: 'เมนู + สูตร' },
           { id: 'modifiers', label: 'ตัวเลือก' },
+          { id: 'settings', label: 'ตั้งค่า' },
         ]}
         activeTab={tab}
         onChange={setTab}
@@ -65,6 +67,7 @@ export default function PosManagePage() {
       {storeId && tab === 'floor' && <FloorPlanBuilder storeId={storeId} isManager={isManager} />}
       {storeId && tab === 'menu' && <MenuManager storeId={storeId} isManager={isManager} />}
       {storeId && tab === 'modifiers' && <ModifierManager storeId={storeId} isManager={isManager} />}
+      {storeId && tab === 'settings' && <PosSettingsPanel storeId={storeId} isManager={isManager} />}
     </div>
   );
 }

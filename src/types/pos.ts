@@ -2,6 +2,16 @@
 // เงินทุกช่องเป็น "สตางค์" (integer) — แปลงเป็นบาทตอนแสดงผลเท่านั้น
 
 export type PosOrderStatus = 'open' | 'paid' | 'void';
+
+export interface PosSettings {
+  store_id: string;
+  service_rate: number;
+  vat_rate: number;
+  vat_inclusive: boolean;
+  service_charge_taxable: boolean;
+  business_day_cutoff_hour: number;
+  updated_at: string;
+}
 export type PosPaymentMethod = 'cash' | 'promptpay' | 'card';
 export type PosPaymentStatus = 'paid' | 'pending' | 'failed' | 'void';
 
@@ -70,6 +80,8 @@ export interface PosOrder {
   status: PosOrderStatus;
   subtotal_satang: number;
   discount_satang: number;
+  service_charge_satang: number;
+  vat_satang: number;
   total_satang: number;
   note: string | null;
   ae_id: string | null;

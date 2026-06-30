@@ -245,6 +245,8 @@ export function OrderScreen({ orderId, storeId, categories, items, modifierMenuI
           <div className="space-y-1 border-t border-gray-100 p-3 text-sm dark:border-gray-700">
             <Row label="รวมย่อย" value={`฿${formatBaht(order.subtotal_satang)}`} />
             {order.discount_satang > 0 && <Row label="ส่วนลด" value={`−฿${formatBaht(order.discount_satang)}`} muted />}
+            {order.service_charge_satang > 0 && <Row label="Service Charge" value={`฿${formatBaht(order.service_charge_satang)}`} />}
+            {order.vat_satang > 0 && <Row label="VAT" value={`฿${formatBaht(order.vat_satang)}`} />}
             <div className="flex justify-between pt-1 text-base font-bold">
               <span>ยอดสุทธิ</span>
               <span className="font-mono text-indigo-600 dark:text-indigo-400">฿{formatBaht(order.total_satang)}</span>
