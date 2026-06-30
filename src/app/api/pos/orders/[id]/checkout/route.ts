@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { recomputeOrderTotals } from '@/lib/pos/orders';
 import type { PosPaymentMethod } from '@/types/pos';
 
@@ -68,6 +68,47 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     .select('*')
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // ── ตัดสต๊อกตาม BOM (post ledger reason='sale') — best-effort ไม่ให้การตัดสต๊อกล้มการขาย ──
+  try {
+    const svc = createServiceClient();
+    const { data: itemRows } = await svc
+      .from('pos_order_items')
+      .select('menu_item_id, qty, is_void')
+      .eq('order_id', id);
+    const sold = ((itemRows as { menu_item_id: string | null; qty: number; is_void: boolean }[]) ?? []).filter(
+      (i) => !i.is_void && i.menu_item_id,
+    );
+    const menuIds = [...new Set(sold.map((i) => i.menu_item_id as string))];
+    if (menuIds.length > 0) {
+      const { data: recipeRows } = await svc
+        .from('pos_recipes')
+        .select('menu_item_id, inv_product_id, qty')
+        .in('menu_item_id', menuIds);
+      const recipes = (recipeRows as { menu_item_id: string; inv_product_id: string; qty: number }[]) ?? [];
+      const deduct = new Map<string, number>();
+      for (const it of sold) {
+        for (const r of recipes) {
+          if (r.menu_item_id !== it.menu_item_id) continue;
+          deduct.set(r.inv_product_id, (deduct.get(r.inv_product_id) ?? 0) + Number(it.qty) * Number(r.qty));
+        }
+      }
+      if (deduct.size > 0) {
+        const moves = [...deduct.entries()].map(([pid, q]) => ({
+          store_id: (order as { store_id: string }).store_id,
+          product_id: pid,
+          qty: -q,
+          reason: 'sale',
+          ref_type: 'pos_order',
+          ref_id: id,
+          created_by: user.id,
+        }));
+        await svc.from('inv_stock_movements').insert(moves);
+      }
+    }
+  } catch {
+    // sale บันทึกแล้ว — การตัดสต๊อกล้มไม่ควรทำให้ checkout ล้ม (reconcile ภายหลังได้)
+  }
 
   const changeSatang =
     method === 'cash' && typeof body.tenderedSatang === 'number'
