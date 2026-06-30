@@ -59,10 +59,23 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   });
   if (payErr) return NextResponse.json({ error: payErr.message }, { status: 500 });
 
+  // ผูกบิลเข้ากะที่เปิดอยู่ (ถ้ามี) สำหรับ Z-report
+  const { data: shift } = await supabase
+    .from('pos_shifts')
+    .select('id')
+    .eq('store_id', (order as { store_id: string }).store_id)
+    .eq('status', 'open')
+    .maybeSingle();
+
   // ปิดบิล (กันปิดซ้ำด้วย eq status open)
   const { data: paid, error } = await supabase
     .from('pos_orders')
-    .update({ status: 'paid', closed_by: user.id, closed_at: new Date().toISOString() })
+    .update({
+      status: 'paid',
+      closed_by: user.id,
+      closed_at: new Date().toISOString(),
+      shift_id: (shift as { id: string } | null)?.id ?? null,
+    })
     .eq('id', id)
     .eq('status', 'open')
     .select('*')

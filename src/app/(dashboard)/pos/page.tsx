@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Loader2, Monitor, LayoutGrid, ListChecks, ChefHat } from 'lucide-react';
+import { Loader2, Monitor, LayoutGrid, ListChecks, ChefHat, Clock } from 'lucide-react';
 import { Select, toast } from '@/components/ui';
 import { useAuthStore } from '@/stores/auth-store';
 import { useRealtime } from '@/hooks/use-realtime';
 import { TableMap } from '@/components/pos/table-map';
 import { OrderScreen } from '@/components/pos/order-screen';
 import { MenuAvailabilityPanel } from '@/components/pos/menu-availability-panel';
+import { PosShiftPanel } from '@/components/pos/pos-shift-panel';
 import type { MenuCategory, MenuItem, PosOrder, PosTable, PosZone } from '@/types/pos';
 
 interface Bootstrap {
@@ -28,6 +29,7 @@ export default function PosPage() {
   const [loading, setLoading] = useState(true);
   const [orderId, setOrderId] = useState<string | null>(null);
   const [showAvail, setShowAvail] = useState(false);
+  const [showShift, setShowShift] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -99,6 +101,9 @@ export default function PosPage() {
             <Link href="/pos/kds" className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300">
               <ChefHat className="h-4 w-4" /> จอครัว
             </Link>
+            <button onClick={() => setShowShift(true)} className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300">
+              <Clock className="h-4 w-4" /> กะ
+            </button>
             {['owner', 'manager'].includes(user?.role ?? '') && (
               <Link href="/pos/manage" className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300">
                 <LayoutGrid className="h-4 w-4" /> ตั้งค่าผัง
@@ -133,6 +138,7 @@ export default function PosPage() {
       {showAvail && storeId && (
         <MenuAvailabilityPanel storeId={storeId} onClose={() => { setShowAvail(false); load(); }} />
       )}
+      {showShift && storeId && <PosShiftPanel storeId={storeId} onClose={() => setShowShift(false)} />}
     </div>
   );
 }

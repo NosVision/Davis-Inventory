@@ -3,6 +3,21 @@
 
 export type PosOrderStatus = 'open' | 'paid' | 'void';
 
+export interface PosShift {
+  id: string;
+  store_id: string;
+  status: 'open' | 'closed';
+  opened_by: string | null;
+  opened_at: string;
+  opening_cash_satang: number;
+  closed_by: string | null;
+  closed_at: string | null;
+  closing_cash_satang: number | null;
+  expected_cash_satang: number | null;
+  note: string | null;
+  created_at: string;
+}
+
 export interface PosSettings {
   store_id: string;
   service_rate: number;
@@ -86,6 +101,7 @@ export interface PosOrder {
   note: string | null;
   ae_id: string | null;
   promo_id: string | null;
+  shift_id: string | null;
   opened_by: string | null;
   opened_at: string;
   closed_by: string | null;
