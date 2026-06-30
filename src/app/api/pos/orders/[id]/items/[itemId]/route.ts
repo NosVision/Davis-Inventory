@@ -28,7 +28,7 @@ export async function DELETE(
   const totals = await recomputeOrderTotals(id);
   const { data: items } = await supabase
     .from('pos_order_items')
-    .select('*')
+    .select('*, modifiers:pos_order_item_modifiers(*)')
     .eq('order_id', id)
     .order('created_at');
   return NextResponse.json({ items: items ?? [], totals });
@@ -83,6 +83,10 @@ export async function PATCH(
   }
 
   const totals = await recomputeOrderTotals(id);
-  const { data: items } = await supabase.from('pos_order_items').select('*').eq('order_id', id).order('created_at');
+  const { data: items } = await supabase
+    .from('pos_order_items')
+    .select('*, modifiers:pos_order_item_modifiers(*)')
+    .eq('order_id', id)
+    .order('created_at');
   return NextResponse.json({ items: items ?? [], totals });
 }

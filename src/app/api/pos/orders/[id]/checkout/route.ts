@@ -74,37 +74,55 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const svc = createServiceClient();
     const { data: itemRows } = await svc
       .from('pos_order_items')
-      .select('menu_item_id, qty, is_void')
+      .select('id, menu_item_id, qty, is_void')
       .eq('order_id', id);
-    const sold = ((itemRows as { menu_item_id: string | null; qty: number; is_void: boolean }[]) ?? []).filter(
-      (i) => !i.is_void && i.menu_item_id,
+    const sold = ((itemRows as { id: string; menu_item_id: string | null; qty: number; is_void: boolean }[]) ?? []).filter(
+      (i) => !i.is_void,
     );
-    const menuIds = [...new Set(sold.map((i) => i.menu_item_id as string))];
+    const deduct = new Map<string, number>();
+    const itemQty = new Map<string, number>();
+    for (const it of sold) itemQty.set(it.id, Number(it.qty));
+
+    // (1) ตัดตามสูตรเมนู
+    const menuIds = [...new Set(sold.filter((i) => i.menu_item_id).map((i) => i.menu_item_id as string))];
     if (menuIds.length > 0) {
-      const { data: recipeRows } = await svc
-        .from('pos_recipes')
-        .select('menu_item_id, inv_product_id, qty')
-        .in('menu_item_id', menuIds);
+      const { data: recipeRows } = await svc.from('pos_recipes').select('menu_item_id, inv_product_id, qty').in('menu_item_id', menuIds);
       const recipes = (recipeRows as { menu_item_id: string; inv_product_id: string; qty: number }[]) ?? [];
-      const deduct = new Map<string, number>();
       for (const it of sold) {
+        if (!it.menu_item_id) continue;
         for (const r of recipes) {
           if (r.menu_item_id !== it.menu_item_id) continue;
           deduct.set(r.inv_product_id, (deduct.get(r.inv_product_id) ?? 0) + Number(it.qty) * Number(r.qty));
         }
       }
-      if (deduct.size > 0) {
-        const moves = [...deduct.entries()].map(([pid, q]) => ({
-          store_id: (order as { store_id: string }).store_id,
-          product_id: pid,
-          qty: -q,
-          reason: 'sale',
-          ref_type: 'pos_order',
-          ref_id: id,
-          created_by: user.id,
-        }));
-        await svc.from('inv_stock_movements').insert(moves);
+    }
+
+    // (2) ตัดตามตัวเลือก (modifiers) ที่ผูกวัตถุดิบ — qty option × จำนวนจาน
+    const itemIds = sold.map((i) => i.id);
+    if (itemIds.length > 0) {
+      const { data: modRows } = await svc
+        .from('pos_order_item_modifiers')
+        .select('order_item_id, inv_product_id, qty')
+        .in('order_item_id', itemIds)
+        .not('inv_product_id', 'is', null);
+      for (const m of (modRows as { order_item_id: string; inv_product_id: string | null; qty: number | null }[]) ?? []) {
+        if (!m.inv_product_id || !m.qty) continue;
+        const pq = itemQty.get(m.order_item_id) ?? 1;
+        deduct.set(m.inv_product_id, (deduct.get(m.inv_product_id) ?? 0) + Number(m.qty) * pq);
       }
+    }
+
+    if (deduct.size > 0) {
+      const moves = [...deduct.entries()].map(([pid, q]) => ({
+        store_id: (order as { store_id: string }).store_id,
+        product_id: pid,
+        qty: -q,
+        reason: 'sale',
+        ref_type: 'pos_order',
+        ref_id: id,
+        created_by: user.id,
+      }));
+      await svc.from('inv_stock_movements').insert(moves);
     }
   } catch {
     // sale บันทึกแล้ว — การตัดสต๊อกล้มไม่ควรทำให้ checkout ล้ม (reconcile ภายหลังได้)

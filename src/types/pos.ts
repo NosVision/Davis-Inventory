@@ -93,6 +93,7 @@ export interface PosOrderItem {
   is_void: boolean;
   created_by: string | null;
   created_at: string;
+  modifiers?: PosOrderItemModifier[];
 }
 
 export interface PosPayment {
@@ -106,6 +107,45 @@ export interface PosPayment {
   status: PosPaymentStatus;
   paid_at: string;
   created_by: string | null;
+  created_at: string;
+}
+
+export interface PosModifierGroup {
+  id: string;
+  store_id: string;
+  name: string;
+  min_select: number;
+  max_select: number;
+  required: boolean;
+  sort: number;
+  active: boolean;
+  created_at: string;
+}
+
+export interface PosModifierOption {
+  id: string;
+  group_id: string;
+  name: string;
+  price_satang: number;
+  inv_product_id: string | null;
+  qty: number | null;
+  sort: number;
+  active: boolean;
+  created_at: string;
+}
+
+export interface ModifierGroupWithOptions extends PosModifierGroup {
+  options: PosModifierOption[];
+}
+
+export interface PosOrderItemModifier {
+  id: string;
+  order_item_id: string;
+  option_id: string | null;
+  name: string;
+  price_satang: number;
+  inv_product_id: string | null;
+  qty: number | null;
   created_at: string;
 }
 

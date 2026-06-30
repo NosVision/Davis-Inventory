@@ -170,7 +170,22 @@ function ItemModal({ storeId, item, categories, onClose, onSaved }: { storeId: s
   const [active, setActive] = useState(mi?.active ?? true);
   const [lines, setLines] = useState<ItemLine[]>([]);
   const [recipeLoaded, setRecipeLoaded] = useState(!isEdit);
+  const [groups, setGroups] = useState<{ id: string; name: string }[]>([]);
+  const [attached, setAttached] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetch(`/api/pos/modifier-groups?storeId=${storeId}`)
+      .then((r) => r.json())
+      .then((d) => setGroups(((d.groups ?? []) as { id: string; name: string }[]).map((g) => ({ id: g.id, name: g.name }))))
+      .catch(() => {});
+    if (mi) {
+      fetch(`/api/pos/menu-items/${mi.id}/modifiers`)
+        .then((r) => r.json())
+        .then((d) => setAttached(((d.groups ?? []) as { id: string }[]).map((g) => g.id)))
+        .catch(() => {});
+    }
+  }, [storeId, mi]);
 
   useEffect(() => {
     if (mi) {
@@ -221,6 +236,12 @@ function ItemModal({ storeId, item, categories, onClose, onSaved }: { storeId: s
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ lines: lines.map((l) => ({ invProductId: l.productId, qty: Number(l.qty) })).filter((l) => l.qty > 0) }),
       });
+      // ตัวเลือก (modifiers) ที่ผูก
+      await fetch(`/api/pos/menu-items/${itemId}/modifiers`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ groupIds: attached }),
+      });
       toast({ type: 'success', title: isEdit ? 'บันทึกแล้ว' : 'เพิ่มเมนูแล้ว' });
       onSaved();
     } catch (e) {
@@ -264,6 +285,27 @@ function ItemModal({ storeId, item, categories, onClose, onSaved }: { storeId: s
             <InvItemPicker value={lines} onChange={setLines} />
           )}
         </div>
+
+        {groups.length > 0 && (
+          <div className="rounded-xl border border-gray-200 p-3 dark:border-gray-700">
+            <p className="mb-2 text-sm font-semibold text-gray-700 dark:text-gray-200">ตัวเลือกที่ใช้กับเมนูนี้</p>
+            <div className="flex flex-wrap gap-1.5">
+              {groups.map((g) => {
+                const on = attached.includes(g.id);
+                return (
+                  <button
+                    key={g.id}
+                    type="button"
+                    onClick={() => setAttached((a) => (on ? a.filter((x) => x !== g.id) : [...a, g.id]))}
+                    className={`rounded-full px-3 py-1 text-xs font-medium ${on ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'}`}
+                  >
+                    {on ? '✓ ' : ''}{g.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {isEdit && <button onClick={del} className="text-sm text-rose-500 hover:underline">ลบเมนูนี้</button>}
       </div>

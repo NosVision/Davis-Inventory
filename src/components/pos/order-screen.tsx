@@ -5,6 +5,7 @@ import { ArrowLeft, Loader2, Search, Plus, Minus, Trash2, Move, Percent, Wallet 
 import { Button, Input, Select, Modal, ModalFooter, toast } from '@/components/ui';
 import { formatBaht, bahtToSatang } from '@/lib/pos/money';
 import { CheckoutModal } from './checkout-modal';
+import { ModifierDialog } from './modifier-dialog';
 import { useRealtime } from '@/hooks/use-realtime';
 import type { MenuAvailability, MenuCategory, MenuItem, PosOrder, PosOrderItem, PosTable } from '@/types/pos';
 
@@ -15,10 +16,11 @@ interface Props {
   storeId: string;
   categories: MenuCategory[];
   items: MenuItem[];
+  modifierMenuIds?: string[];
   onBack: () => void;
 }
 
-export function OrderScreen({ orderId, storeId, categories, items, onBack }: Props) {
+export function OrderScreen({ orderId, storeId, categories, items, modifierMenuIds, onBack }: Props) {
   const [order, setOrder] = useState<PosOrder | null>(null);
   const [cart, setCart] = useState<PosOrderItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -28,6 +30,8 @@ export function OrderScreen({ orderId, storeId, categories, items, onBack }: Pro
   const [aes, setAes] = useState<AeOption[]>([]);
   const [modal, setModal] = useState<'checkout' | 'move' | 'discount' | null>(null);
   const [avail, setAvail] = useState<Map<string, { sellable: boolean; remaining: number | null }>>(new Map());
+  const [modMenu, setModMenu] = useState<MenuItem | null>(null);
+  const modSet = useMemo(() => new Set(modifierMenuIds ?? []), [modifierMenuIds]);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/pos/orders/${orderId}`);
@@ -80,13 +84,13 @@ export function OrderScreen({ orderId, storeId, categories, items, onBack }: Pro
     if (res.ok) setOrder(d.order);
   }, [orderId]);
 
-  const addItem = async (menuItemId: string) => {
+  const addItem = async (menuItemId: string, optionIds: string[] = []) => {
     setBusy(true);
     try {
       const res = await fetch(`/api/pos/orders/${orderId}/items`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ menuItemId }),
+        body: JSON.stringify({ menuItemId, optionIds }),
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || 'เพิ่มไม่สำเร็จ');
@@ -98,6 +102,12 @@ export function OrderScreen({ orderId, storeId, categories, items, onBack }: Pro
     } finally {
       setBusy(false);
     }
+  };
+
+  // แตะเมนู: ถ้ามีตัวเลือก → เปิด dialog, ไม่งั้นเพิ่มเลย
+  const tapMenu = (m: MenuItem) => {
+    if (modSet.has(m.id)) setModMenu(m);
+    else addItem(m.id);
   };
 
   const setQty = async (itemId: string, qty: number) => {
@@ -166,7 +176,7 @@ export function OrderScreen({ orderId, storeId, categories, items, onBack }: Pro
                 <button
                   key={m.id}
                   disabled={busy || !sellable}
-                  onClick={() => addItem(m.id)}
+                  onClick={() => tapMenu(m)}
                   className={`flex flex-col items-start justify-between rounded-xl border bg-white p-3 text-left transition disabled:cursor-not-allowed dark:bg-gray-800 ${sellable ? 'border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/40 dark:border-gray-700' : 'border-gray-200 opacity-50 dark:border-gray-700'}`}
                 >
                   <span className="line-clamp-2 text-sm font-medium text-gray-900 dark:text-white">{m.name}</span>
@@ -210,6 +220,9 @@ export function OrderScreen({ orderId, storeId, categories, items, onBack }: Pro
                 <div key={it.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-700/40">
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm text-gray-900 dark:text-white">{it.name}</p>
+                    {it.modifiers && it.modifiers.length > 0 && (
+                      <p className="truncate text-[10px] text-gray-400">{it.modifiers.map((x) => x.name).join(', ')}</p>
+                    )}
                     <p className="font-mono text-[11px] text-gray-400">฿{formatBaht(it.line_total_satang)}</p>
                   </div>
                   <div className="flex items-center gap-1">
@@ -217,7 +230,7 @@ export function OrderScreen({ orderId, storeId, categories, items, onBack }: Pro
                       <Minus className="h-3 w-3" />
                     </button>
                     <span className="w-6 text-center text-sm font-medium">{Number(it.qty)}</span>
-                    <button onClick={() => addItem(it.menu_item_id!)} disabled={!it.menu_item_id || busy} className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:bg-gray-100 disabled:opacity-40 dark:border-gray-600">
+                    <button onClick={() => setQty(it.id, Number(it.qty) + 1)} disabled={busy} className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:bg-gray-100 disabled:opacity-40 dark:border-gray-600">
                       <Plus className="h-3 w-3" />
                     </button>
                     <button onClick={() => setQty(it.id, 0)} className="ml-1 text-gray-300 hover:text-rose-500">
@@ -255,6 +268,19 @@ export function OrderScreen({ orderId, storeId, categories, items, onBack }: Pro
       )}
       {modal === 'discount' && (
         <DiscountModal current={order.discount_satang} onClose={() => setModal(null)} onApply={async (satang) => { await patchOrder({ discountSatang: satang }); setModal(null); }} />
+      )}
+      {modMenu && (
+        <ModifierDialog
+          menuItemId={modMenu.id}
+          menuName={modMenu.name}
+          basePriceSatang={modMenu.price_satang}
+          onClose={() => setModMenu(null)}
+          onConfirm={(optionIds) => {
+            const m = modMenu;
+            setModMenu(null);
+            addItem(m.id, optionIds);
+          }}
+        />
       )}
     </div>
   );

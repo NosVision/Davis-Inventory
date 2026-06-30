@@ -17,7 +17,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   if (!order) return NextResponse.json({ error: 'ไม่พบบิล' }, { status: 404 });
 
   const [{ data: items }, { data: payments }] = await Promise.all([
-    supabase.from('pos_order_items').select('*').eq('order_id', id).order('created_at'),
+    supabase.from('pos_order_items').select('*, modifiers:pos_order_item_modifiers(*)').eq('order_id', id).order('created_at'),
     supabase.from('pos_payments').select('*').eq('order_id', id).order('created_at'),
   ]);
 

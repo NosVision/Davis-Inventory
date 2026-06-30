@@ -42,6 +42,17 @@ export async function GET(request: NextRequest) {
     supabase.from('pos_orders').select('*').eq('store_id', storeId).eq('status', 'open'),
   ]);
 
+  // เมนูไหนมีตัวเลือก (modifiers) — จอขายจะเปิด dialog เมื่อแตะเมนูเหล่านี้
+  const menuItems = (itemsRes.data ?? []) as { id: string }[];
+  let modifierMenuIds: string[] = [];
+  if (menuItems.length > 0) {
+    const { data: mim } = await supabase
+      .from('pos_menu_item_modifiers')
+      .select('menu_item_id')
+      .in('menu_item_id', menuItems.map((m) => m.id));
+    modifierMenuIds = [...new Set(((mim as { menu_item_id: string }[]) ?? []).map((r) => r.menu_item_id))];
+  }
+
   return NextResponse.json({
     stores,
     zones: zonesRes.data ?? [],
@@ -49,5 +60,6 @@ export async function GET(request: NextRequest) {
     categories: catsRes.data ?? [],
     items: itemsRes.data ?? [],
     openOrders: ordersRes.data ?? [],
+    modifierMenuIds,
   });
 }

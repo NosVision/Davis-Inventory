@@ -18,6 +18,7 @@ interface Bootstrap {
   categories: MenuCategory[];
   items: MenuItem[];
   openOrders: PosOrder[];
+  modifierMenuIds: string[];
 }
 
 export default function PosPage() {
@@ -110,6 +111,7 @@ export default function PosPage() {
           storeId={storeId}
           categories={data.categories}
           items={data.items}
+          modifierMenuIds={data.modifierMenuIds}
           onBack={() => {
             setOrderId(null);
             load();

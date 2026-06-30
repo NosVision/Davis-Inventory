@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useAuthStore } from '@/stores/auth-store';
 import { FloorPlanBuilder } from '@/components/pos/floor-plan-builder';
 import { MenuManager } from '@/components/pos/menu-manager';
+import { ModifierManager } from '@/components/pos/modifier-manager';
 
 export default function PosManagePage() {
   const { user } = useAuthStore();
@@ -55,6 +56,7 @@ export default function PosManagePage() {
         tabs={[
           { id: 'floor', label: 'ผังโต๊ะ' },
           { id: 'menu', label: 'เมนู + สูตร' },
+          { id: 'modifiers', label: 'ตัวเลือก' },
         ]}
         activeTab={tab}
         onChange={setTab}
@@ -62,6 +64,7 @@ export default function PosManagePage() {
 
       {storeId && tab === 'floor' && <FloorPlanBuilder storeId={storeId} isManager={isManager} />}
       {storeId && tab === 'menu' && <MenuManager storeId={storeId} isManager={isManager} />}
+      {storeId && tab === 'modifiers' && <ModifierManager storeId={storeId} isManager={isManager} />}
     </div>
   );
 }
