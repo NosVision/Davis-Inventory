@@ -1,0 +1,105 @@
+'use client';
+
+import { useCallback, useEffect, useState } from 'react';
+import { Loader2, Monitor } from 'lucide-react';
+import { Select, toast } from '@/components/ui';
+import { useAuthStore } from '@/stores/auth-store';
+import { TableMap } from '@/components/pos/table-map';
+import { OrderScreen } from '@/components/pos/order-screen';
+import type { MenuCategory, MenuItem, PosOrder, PosTable, PosZone } from '@/types/pos';
+
+interface Bootstrap {
+  stores: { id: string; name: string }[];
+  zones: PosZone[];
+  tables: PosTable[];
+  categories: MenuCategory[];
+  items: MenuItem[];
+  openOrders: PosOrder[];
+}
+
+export default function PosPage() {
+  const { user } = useAuthStore();
+  const [storeId, setStoreId] = useState('');
+  const [data, setData] = useState<Bootstrap | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [orderId, setOrderId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/pos/bootstrap${storeId ? `?storeId=${storeId}` : ''}`);
+      const d = await res.json();
+      if (res.ok) {
+        setData(d);
+        if (!storeId && d.stores?.[0]) setStoreId(d.stores[0].id);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [storeId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const openTable = async (tableId: string | null) => {
+    if (!storeId) return;
+    try {
+      const res = await fetch('/api/pos/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storeId, tableId }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'เปิดบิลไม่สำเร็จ');
+      setOrderId(d.order.id);
+    } catch (e) {
+      toast({ type: 'error', title: 'ผิดพลาด', message: e instanceof Error ? e.message : '' });
+    }
+  };
+
+  if (loading && !data) {
+    return <div className="flex justify-center py-20"><Loader2 className="h-7 w-7 animate-spin text-indigo-500" /></div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      {!orderId && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30">
+              <Monitor className="h-5 w-5" />
+            </span>
+            <h1 className="text-lg font-bold text-gray-900 dark:text-white">หน้าขาย (POS)</h1>
+          </div>
+          {data && data.stores.length > 1 && (
+            <div className="w-52">
+              <Select value={storeId} onChange={(e) => setStoreId(e.target.value)} options={data.stores.map((s) => ({ value: s.id, label: s.name }))} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {data && orderId ? (
+        <OrderScreen
+          orderId={orderId}
+          storeId={storeId}
+          categories={data.categories}
+          items={data.items}
+          onBack={() => {
+            setOrderId(null);
+            load();
+          }}
+        />
+      ) : data ? (
+        <TableMap
+          zones={data.zones}
+          tables={data.tables}
+          openOrders={data.openOrders}
+          onOpenTable={openTable}
+          onQuickSale={() => openTable(null)}
+        />
+      ) : null}
+    </div>
+  );
+}

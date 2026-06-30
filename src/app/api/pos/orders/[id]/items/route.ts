@@ -48,17 +48,37 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   }
 
   const qty = body.qty && body.qty > 0 ? body.qty : 1;
-  const { error } = await supabase.from('pos_order_items').insert({
-    order_id: id,
-    menu_item_id: body.menuItemId,
-    name: menu.name,
-    unit_price_satang: menu.price_satang,
-    qty,
-    line_total_satang: lineTotalSatang(menu.price_satang, qty),
-    note: body.note?.trim() || null,
-    created_by: user.id,
-  });
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // มีบรรทัดเดิมของเมนูนี้ (ยังไม่ยกเลิก) → เพิ่มจำนวน (cart สะอาด 1 เมนู 1 บรรทัด)
+  const { data: existingRows } = await supabase
+    .from('pos_order_items')
+    .select('id, qty')
+    .eq('order_id', id)
+    .eq('menu_item_id', body.menuItemId)
+    .eq('is_void', false)
+    .limit(1);
+  const existing = (existingRows as { id: string; qty: number }[] | null)?.[0];
+
+  if (existing) {
+    const newQty = Number(existing.qty) + qty;
+    const { error } = await supabase
+      .from('pos_order_items')
+      .update({ qty: newQty, line_total_satang: lineTotalSatang(menu.price_satang, newQty) })
+      .eq('id', existing.id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  } else {
+    const { error } = await supabase.from('pos_order_items').insert({
+      order_id: id,
+      menu_item_id: body.menuItemId,
+      name: menu.name,
+      unit_price_satang: menu.price_satang,
+      qty,
+      line_total_satang: lineTotalSatang(menu.price_satang, qty),
+      note: body.note?.trim() || null,
+      created_by: user.id,
+    });
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 
   const totals = await recomputeOrderTotals(id);
   const { data: items } = await supabase
