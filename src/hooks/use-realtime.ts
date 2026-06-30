@@ -12,7 +12,11 @@ type TableName =
   | 'announcements'
   | 'transfers'
   | 'hq_deposits'
-  | 'borrows';
+  | 'borrows'
+  | 'pos_orders'
+  | 'pos_order_items'
+  | 'inv_stock_movements'
+  | 'menu_items';
 
 interface UseRealtimeOptions<T> {
   table: TableName;

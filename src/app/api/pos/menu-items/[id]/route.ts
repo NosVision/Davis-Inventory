@@ -7,6 +7,8 @@ interface PatchBody {
   categoryId?: string | null;
   priceSatang?: number;
   active?: boolean;
+  available?: boolean;
+  dailyLimit?: number | null;
 }
 
 // PATCH /api/pos/menu-items/[id]
@@ -27,6 +29,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if ('categoryId' in body) update.category_id = body.categoryId ?? null;
   if (typeof body.priceSatang === 'number') update.price_satang = Math.max(0, Math.round(body.priceSatang));
   if (typeof body.active === 'boolean') update.active = body.active;
+  if (typeof body.available === 'boolean') update.available = body.available;
+  if ('dailyLimit' in body) update.daily_limit = typeof body.dailyLimit === 'number' && body.dailyLimit > 0 ? Math.round(body.dailyLimit) : null;
   if (Object.keys(update).length === 0) return NextResponse.json({ error: 'ไม่มีข้อมูลที่จะแก้ไข' }, { status: 400 });
 
   const { data, error } = await supabase.from('menu_items').update(update).eq('id', id).select('*').single();

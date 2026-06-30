@@ -5,7 +5,8 @@ import { ArrowLeft, Loader2, Search, Plus, Minus, Trash2, Move, Percent, Wallet 
 import { Button, Input, Select, Modal, ModalFooter, toast } from '@/components/ui';
 import { formatBaht, bahtToSatang } from '@/lib/pos/money';
 import { CheckoutModal } from './checkout-modal';
-import type { MenuCategory, MenuItem, PosOrder, PosOrderItem, PosTable } from '@/types/pos';
+import { useRealtime } from '@/hooks/use-realtime';
+import type { MenuAvailability, MenuCategory, MenuItem, PosOrder, PosOrderItem, PosTable } from '@/types/pos';
 
 interface AeOption { id: string; name: string; nickname?: string | null }
 
@@ -26,6 +27,7 @@ export function OrderScreen({ orderId, storeId, categories, items, onBack }: Pro
   const [q, setQ] = useState('');
   const [aes, setAes] = useState<AeOption[]>([]);
   const [modal, setModal] = useState<'checkout' | 'move' | 'discount' | null>(null);
+  const [avail, setAvail] = useState<Map<string, { sellable: boolean; remaining: number | null }>>(new Map());
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/pos/orders/${orderId}`);
@@ -47,6 +49,31 @@ export function OrderScreen({ orderId, storeId, categories, items, onBack }: Pro
       .catch(() => {});
   }, [storeId]);
 
+  // ความพร้อมขาย (เหลือ/หมด จากโควตาวัน + สต๊อก)
+  const fetchAvail = useCallback(async () => {
+    const res = await fetch(`/api/pos/menu-availability?storeId=${storeId}`);
+    const d = await res.json();
+    if (!res.ok) return;
+    const m = new Map<string, { sellable: boolean; remaining: number | null }>();
+    for (const a of (d.availability ?? []) as MenuAvailability[]) {
+      const dailyRem = a.daily_limit != null ? Math.max(0, a.daily_limit - Number(a.sold_today)) : null;
+      const stockRem = a.stock_makeable != null ? Number(a.stock_makeable) : null;
+      const finite = [dailyRem, stockRem].filter((x): x is number => x != null);
+      const remaining = finite.length ? Math.min(...finite) : null;
+      const sellable = a.available && (dailyRem == null || dailyRem > 0) && (stockRem == null || stockRem > 0);
+      m.set(a.menu_item_id, { sellable, remaining });
+    }
+    setAvail(m);
+  }, [storeId]);
+  useEffect(() => {
+    fetchAvail();
+  }, [fetchAvail]);
+
+  // realtime (Postgres Changes) — ขายที่เครื่องอื่น/สต๊อกขยับ/86 → อัปเดตความพร้อมสด
+  useRealtime({ table: 'pos_order_items', onInsert: fetchAvail, onUpdate: fetchAvail, onDelete: fetchAvail });
+  useRealtime({ table: 'inv_stock_movements', filter: `store_id=eq.${storeId}`, onInsert: fetchAvail });
+  useRealtime({ table: 'menu_items', filter: `store_id=eq.${storeId}`, onUpdate: fetchAvail });
+
   const refreshOrder = useCallback(async () => {
     const res = await fetch(`/api/pos/orders/${orderId}`);
     const d = await res.json();
@@ -65,6 +92,7 @@ export function OrderScreen({ orderId, storeId, categories, items, onBack }: Pro
       if (!res.ok) throw new Error(d.error || 'เพิ่มไม่สำเร็จ');
       setCart(d.items ?? []);
       await refreshOrder();
+      fetchAvail();
     } catch (e) {
       toast({ type: 'error', title: 'ผิดพลาด', message: e instanceof Error ? e.message : '' });
     } finally {
@@ -131,17 +159,28 @@ export function OrderScreen({ orderId, storeId, categories, items, onBack }: Pro
             ))}
           </div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
-            {filteredMenu.map((m) => (
-              <button
-                key={m.id}
-                disabled={busy}
-                onClick={() => addItem(m.id)}
-                className="flex flex-col items-start justify-between rounded-xl border border-gray-200 bg-white p-3 text-left transition hover:border-indigo-300 hover:bg-indigo-50/40 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800"
-              >
-                <span className="text-sm font-medium text-gray-900 dark:text-white line-clamp-2">{m.name}</span>
-                <span className="mt-1 font-mono text-xs text-indigo-600 dark:text-indigo-400">฿{formatBaht(m.price_satang)}</span>
-              </button>
-            ))}
+            {filteredMenu.map((m) => {
+              const av = avail.get(m.id);
+              const sellable = av ? av.sellable : true;
+              return (
+                <button
+                  key={m.id}
+                  disabled={busy || !sellable}
+                  onClick={() => addItem(m.id)}
+                  className={`flex flex-col items-start justify-between rounded-xl border bg-white p-3 text-left transition disabled:cursor-not-allowed dark:bg-gray-800 ${sellable ? 'border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/40 dark:border-gray-700' : 'border-gray-200 opacity-50 dark:border-gray-700'}`}
+                >
+                  <span className="line-clamp-2 text-sm font-medium text-gray-900 dark:text-white">{m.name}</span>
+                  <div className="mt-1 flex w-full items-center justify-between">
+                    <span className="font-mono text-xs text-indigo-600 dark:text-indigo-400">฿{formatBaht(m.price_satang)}</span>
+                    {!sellable ? (
+                      <span className="rounded bg-rose-100 px-1.5 text-[10px] font-semibold text-rose-600 dark:bg-rose-900/40 dark:text-rose-300">หมด</span>
+                    ) : av?.remaining != null ? (
+                      <span className="rounded bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">เหลือ {av.remaining}</span>
+                    ) : null}
+                  </div>
+                </button>
+              );
+            })}
             {filteredMenu.length === 0 && <p className="col-span-full py-8 text-center text-sm text-gray-400">ไม่มีเมนู</p>}
           </div>
         </div>

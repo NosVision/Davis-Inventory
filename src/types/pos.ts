@@ -48,7 +48,18 @@ export interface MenuItem {
   price_satang: number;
   sort: number;
   active: boolean;
+  available: boolean;
+  daily_limit: number | null;
   created_at: string;
+}
+
+/** ความพร้อมขายต่อเมนู (จาก RPC pos_menu_availability) */
+export interface MenuAvailability {
+  menu_item_id: string;
+  available: boolean;
+  daily_limit: number | null;
+  sold_today: number;
+  stock_makeable: number | null;
 }
 
 export interface PosOrder {

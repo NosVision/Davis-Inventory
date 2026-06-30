@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Loader2, Monitor, LayoutGrid } from 'lucide-react';
+import { Loader2, Monitor, LayoutGrid, ListChecks } from 'lucide-react';
 import { Select, toast } from '@/components/ui';
 import { useAuthStore } from '@/stores/auth-store';
+import { useRealtime } from '@/hooks/use-realtime';
 import { TableMap } from '@/components/pos/table-map';
 import { OrderScreen } from '@/components/pos/order-screen';
+import { MenuAvailabilityPanel } from '@/components/pos/menu-availability-panel';
 import type { MenuCategory, MenuItem, PosOrder, PosTable, PosZone } from '@/types/pos';
 
 interface Bootstrap {
@@ -24,6 +26,7 @@ export default function PosPage() {
   const [data, setData] = useState<Bootstrap | null>(null);
   const [loading, setLoading] = useState(true);
   const [orderId, setOrderId] = useState<string | null>(null);
+  const [showAvail, setShowAvail] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -42,6 +45,16 @@ export default function PosPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // realtime (CDC) — บิลเปิด/ปิด/ย้ายโต๊ะที่เครื่องอื่น → ผังโต๊ะอัปเดตสด
+  useRealtime({
+    table: 'pos_orders',
+    filter: storeId ? `store_id=eq.${storeId}` : undefined,
+    onInsert: load,
+    onUpdate: load,
+    onDelete: load,
+    enabled: !!storeId && !orderId,
+  });
 
   const openTable = async (tableId: string | null) => {
     if (!storeId) return;
@@ -79,6 +92,9 @@ export default function PosPage() {
                 <Select value={storeId} onChange={(e) => setStoreId(e.target.value)} options={data.stores.map((s) => ({ value: s.id, label: s.name }))} />
               </div>
             )}
+            <button onClick={() => setShowAvail(true)} className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300">
+              <ListChecks className="h-4 w-4" /> ความพร้อม
+            </button>
             {['owner', 'manager'].includes(user?.role ?? '') && (
               <Link href="/pos/manage" className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300">
                 <LayoutGrid className="h-4 w-4" /> ตั้งค่าผัง
@@ -108,6 +124,10 @@ export default function PosPage() {
           onQuickSale={() => openTable(null)}
         />
       ) : null}
+
+      {showAvail && storeId && (
+        <MenuAvailabilityPanel storeId={storeId} onClose={() => { setShowAvail(false); load(); }} />
+      )}
     </div>
   );
 }
