@@ -32,6 +32,7 @@ export interface MenuCategory {
   id: string;
   store_id: string;
   name: string;
+  station: string | null;
   sort: number;
   active: boolean;
   created_at: string;

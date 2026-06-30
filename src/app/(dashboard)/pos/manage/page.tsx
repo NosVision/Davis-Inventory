@@ -3,16 +3,18 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, LayoutGrid } from 'lucide-react';
-import { Select } from '@/components/ui';
+import { Select, Tabs } from '@/components/ui';
 import { createClient } from '@/lib/supabase/client';
 import { useAuthStore } from '@/stores/auth-store';
 import { FloorPlanBuilder } from '@/components/pos/floor-plan-builder';
+import { MenuManager } from '@/components/pos/menu-manager';
 
 export default function PosManagePage() {
   const { user } = useAuthStore();
   const isManager = ['owner', 'manager'].includes(user?.role ?? '');
   const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
   const [storeId, setStoreId] = useState('');
+  const [tab, setTab] = useState('floor');
 
   useEffect(() => {
     const sb = createClient();
@@ -38,8 +40,8 @@ export default function PosManagePage() {
             <LayoutGrid className="h-5 w-5" />
           </span>
           <div>
-            <h1 className="text-lg font-bold text-gray-900 dark:text-white">ตั้งค่าผังโต๊ะ</h1>
-            <p className="text-xs text-gray-500 dark:text-gray-400">ผังแยกแต่ละสาขา · หลายชั้น/โซน · ลากวางโต๊ะ</p>
+            <h1 className="text-lg font-bold text-gray-900 dark:text-white">ตั้งค่า POS</h1>
+            <p className="text-xs text-gray-500 dark:text-gray-400">ผังโต๊ะ (หลายชั้น/โซน) · เมนู + สูตร</p>
           </div>
         </div>
         {stores.length > 1 && (
@@ -49,7 +51,17 @@ export default function PosManagePage() {
         )}
       </div>
 
-      {storeId && <FloorPlanBuilder storeId={storeId} isManager={isManager} />}
+      <Tabs
+        tabs={[
+          { id: 'floor', label: 'ผังโต๊ะ' },
+          { id: 'menu', label: 'เมนู + สูตร' },
+        ]}
+        activeTab={tab}
+        onChange={setTab}
+      />
+
+      {storeId && tab === 'floor' && <FloorPlanBuilder storeId={storeId} isManager={isManager} />}
+      {storeId && tab === 'menu' && <MenuManager storeId={storeId} isManager={isManager} />}
     </div>
   );
 }
