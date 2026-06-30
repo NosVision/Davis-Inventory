@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { getInvContext, isInvMgmt } from '@/lib/inventory/guard';
+import { notifyStoreStaff } from '@/lib/notifications/service';
+import { sendBotMessage } from '@/lib/chat/bot';
 
 const PO_SELECT =
   '*, items:inv_purchase_order_items(*, product:inv_products(id, sku, name, unit, kind)), supplier:inv_suppliers(name)';
@@ -76,6 +78,29 @@ export async function POST(request: NextRequest) {
   if (itemsErr) {
     await svc.from('inv_purchase_orders').delete().eq('id', po.id);
     return NextResponse.json({ error: itemsErr.message }, { status: 500 });
+  }
+
+  // แจ้งเตือน HQ — in-app + chat (LINE flex เพิ่มตอน go-live)
+  const { data: hq } = await svc.from('stores').select('id').eq('is_central', true).maybeSingle();
+  const hqId = (hq as { id: string } | null)?.id;
+  if (hqId) {
+    try {
+      await notifyStoreStaff({
+        storeId: hqId,
+        type: 'approval_request',
+        title: '🧾 เปิดใบสั่งซื้อใหม่',
+        body: `${poCode} · ${items.length} รายการ`,
+        data: { poId: po.id, url: '/inventory' },
+        excludeUserId: user.id,
+      });
+    } catch {
+      // ignore
+    }
+    try {
+      await sendBotMessage({ storeId: hqId, type: 'system', content: `🧾 ใบสั่งซื้อใหม่ ${poCode} · ${items.length} รายการ` });
+    } catch {
+      // ignore
+    }
   }
 
   try {

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { getInvContext, isInvMgmt } from '@/lib/inventory/guard';
+import { sendBotMessage } from '@/lib/chat/bot';
 
 const PO_SELECT =
   '*, items:inv_purchase_order_items(*, product:inv_products(id, sku, name, unit, kind)), supplier:inv_suppliers(name)';
@@ -114,6 +115,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     });
     await svc.from('inv_purchase_orders').update({ status: fullyReceived ? 'received' : 'partial' }).eq('id', id);
     await audit('INV_PO_RECEIVED', { lines: moves.length, fully: fullyReceived });
+    try {
+      await sendBotMessage({
+        storeId: hqId,
+        type: 'system',
+        content: `📦 รับของ ${po.po_code} เข้าคลัง HQ แล้ว${fullyReceived ? ' (ครบ)' : ' (บางส่วน)'}`,
+      });
+    } catch {
+      // ignore
+    }
 
     const { data } = await svc.from('inv_purchase_orders').select(PO_SELECT).eq('id', id).single();
     return NextResponse.json({ purchaseOrder: data });

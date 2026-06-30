@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { notifyStoreStaff } from '@/lib/notifications/service';
+import { sendBotMessage } from '@/lib/chat/bot';
 
 const REQ_SELECT =
   '*, items:inv_requisition_items(*, product:inv_products(id, sku, name, unit, kind)), store:stores(store_name, store_code)';
@@ -71,6 +72,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         data: { reqId: id, url: '/inventory/requisitions' },
         excludeUserId: user.id,
       });
+    } catch {
+      // ignore
+    }
+    try {
+      await sendBotMessage({ storeId: req.store_id, type: 'system', content: `${title} — ${bodyText}` });
     } catch {
       // ignore
     }

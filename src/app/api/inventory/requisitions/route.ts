@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { notifyStoreStaff } from '@/lib/notifications/service';
+import { sendBotMessage } from '@/lib/chat/bot';
 
 const REQ_SELECT =
   '*, items:inv_requisition_items(*, product:inv_products(id, sku, name, unit, kind)), store:stores(store_name, store_code)';
@@ -102,17 +103,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: itemsErr.message }, { status: 500 });
   }
 
-  // แจ้งเตือน HQ (in-app) — comms LINE/chat เพิ่มในเฟสถัดไป
+  // แจ้งเตือน HQ — in-app + chat (LINE flex/การ์ดกดได้ เพิ่มตอน go-live)
   const { data: hq } = await svc.from('stores').select('id').eq('is_central', true).maybeSingle();
-  if (hq) {
+  const hqId = (hq as { id: string } | null)?.id;
+  if (hqId) {
     try {
       await notifyStoreStaff({
-        storeId: (hq as { id: string }).id,
+        storeId: hqId,
         type: 'approval_request',
         title: '📦 มีใบเบิกใหม่รออนุมัติ',
         body: `${reqCode} · ${items.length} รายการ`,
         data: { reqId: req.id, url: '/inventory/requisitions' },
         excludeUserId: user.id,
+      });
+    } catch {
+      // ignore
+    }
+    try {
+      await sendBotMessage({
+        storeId: hqId,
+        type: 'system',
+        content: `📦 ใบเบิกใหม่ ${reqCode} · ${items.length} รายการ — รออนุมัติที่ /inventory`,
       });
     } catch {
       // ignore
