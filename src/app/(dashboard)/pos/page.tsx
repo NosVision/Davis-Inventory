@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Loader2, Monitor } from 'lucide-react';
+import Link from 'next/link';
+import { Loader2, Monitor, LayoutGrid } from 'lucide-react';
 import { Select, toast } from '@/components/ui';
 import { useAuthStore } from '@/stores/auth-store';
 import { TableMap } from '@/components/pos/table-map';
@@ -72,11 +73,18 @@ export default function PosPage() {
             </span>
             <h1 className="text-lg font-bold text-gray-900 dark:text-white">หน้าขาย (POS)</h1>
           </div>
-          {data && data.stores.length > 1 && (
-            <div className="w-52">
-              <Select value={storeId} onChange={(e) => setStoreId(e.target.value)} options={data.stores.map((s) => ({ value: s.id, label: s.name }))} />
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {data && data.stores.length > 1 && (
+              <div className="w-44">
+                <Select value={storeId} onChange={(e) => setStoreId(e.target.value)} options={data.stores.map((s) => ({ value: s.id, label: s.name }))} />
+              </div>
+            )}
+            {['owner', 'manager'].includes(user?.role ?? '') && (
+              <Link href="/pos/manage" className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300">
+                <LayoutGrid className="h-4 w-4" /> ตั้งค่าผัง
+              </Link>
+            )}
+          </div>
         </div>
       )}
 

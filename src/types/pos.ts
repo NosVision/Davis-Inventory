@@ -22,6 +22,9 @@ export interface PosTable {
   seats: number | null;
   sort: number;
   active: boolean;
+  pos_x: number | null;
+  pos_y: number | null;
+  shape: string;
   created_at: string;
 }
 
