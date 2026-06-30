@@ -28,6 +28,7 @@ interface PatchBody {
   note?: string;
   discountSatang?: number;
   tableId?: string | null;
+  aeId?: string | null;
 }
 
 // PATCH /api/pos/orders/[id] — แก้โน้ต/ส่วนลด/ย้ายโต๊ะ (table = pointer)
@@ -50,6 +51,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (typeof body.note === 'string') update.note = body.note.trim() || null;
   if (typeof body.discountSatang === 'number') update.discount_satang = Math.max(0, Math.round(body.discountSatang));
   if ('tableId' in body) update.table_id = body.tableId ?? null;
+  if ('aeId' in body) update.ae_id = body.aeId ?? null; // AE คนพาลูกค้ามา (groundwork — ยังไม่ generate คอม)
 
   if (Object.keys(update).length > 0) {
     const { error } = await supabase.from('pos_orders').update(update).eq('id', id).eq('status', 'open');

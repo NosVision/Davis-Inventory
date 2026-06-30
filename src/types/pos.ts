@@ -57,6 +57,7 @@ export interface PosOrder {
   discount_satang: number;
   total_satang: number;
   note: string | null;
+  ae_id: string | null;
   opened_by: string | null;
   opened_at: string;
   closed_by: string | null;
