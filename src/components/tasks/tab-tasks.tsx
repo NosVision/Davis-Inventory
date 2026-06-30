@@ -21,12 +21,14 @@ interface TabTasksProps {
   members: ProfileLite[];
   stores: StoreOption[];
   currentUserId: string;
+  /** ผู้ใช้คนนี้มีสิทธิ์เปิดเรื่อง/สร้างงานในห้องนี้ไหม (ตาม creator_target ของห้อง) */
+  canCreate?: boolean;
   onTasksChanged?: () => void;
 }
 
 type FilterKey = 'open' | 'upcoming' | 'closed' | 'all';
 
-export function TabTasks({ roomId, members, stores, currentUserId, onTasksChanged }: TabTasksProps) {
+export function TabTasks({ roomId, members, stores, currentUserId, canCreate = false, onTasksChanged }: TabTasksProps) {
   const [tasks, setTasks] = useState<TaskWithRelations[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterKey>('open');
@@ -97,9 +99,11 @@ export function TabTasks({ roomId, members, stores, currentUserId, onTasksChange
             <input type="checkbox" checked={mineOnly} onChange={(e) => setMineOnly(e.target.checked)} className="h-4 w-4 rounded" />
             ของฉัน
           </label>
-          <Button size="sm" icon={<Plus className="h-4 w-4" />} onClick={() => setShowCreate(true)}>
-            เพิ่มงาน
-          </Button>
+          {canCreate && (
+            <Button size="sm" icon={<Plus className="h-4 w-4" />} onClick={() => setShowCreate(true)}>
+              เพิ่มงาน
+            </Button>
+          )}
         </div>
       </div>
 
@@ -169,7 +173,7 @@ export function TabTasks({ roomId, members, stores, currentUserId, onTasksChange
         </ul>
       )}
 
-      {showCreate && (
+      {showCreate && canCreate && (
         <TaskFormModal
           roomId={roomId}
           members={members}

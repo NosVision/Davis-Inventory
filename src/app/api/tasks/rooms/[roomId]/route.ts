@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { sanitizeTarget } from '@/lib/tasks/target';
+import { userMatchesTarget } from '@/lib/tasks/resolve-target';
 import type { TaskAssignMode, TaskResponseType, TaskRoom, TaskRoomMember, TaskTarget } from '@/types/tasks';
 
 const ASSIGN_MODES: TaskAssignMode[] = ['manual', 'claim', 'all'];
@@ -36,11 +37,18 @@ export async function GET(
   if (!room) return NextResponse.json({ error: 'ไม่พบห้องงาน' }, { status: 404 });
 
   const memberList = (members ?? []) as TaskRoomMember[];
+  // สิทธิ์เปิดเรื่องของผู้ใช้คนนี้ — เจ้าของข้ามได้เสมอ ที่เหลือเทียบกับ creator_target
+  // (logic เดียวกับฝั่งสร้างงานใน POST /api/tasks เพื่อให้ UI ตรงกับ backend)
+  const creatorTarget = (room as { creator_target?: TaskTarget | null }).creator_target ?? null;
+  const canCreate =
+    profile?.role === 'owner' || (await userMatchesTarget(user.id, creatorTarget));
+
   return NextResponse.json({
     room: room as TaskRoom,
     members: memberList,
     isOwner: profile?.role === 'owner',
     isMember: memberList.some((m) => m.user_id === user.id),
+    canCreate,
   });
 }
 

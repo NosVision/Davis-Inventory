@@ -32,6 +32,7 @@ export default function RoomPage() {
   const [room, setRoom] = useState<TaskRoom | null>(null);
   const [members, setMembers] = useState<TaskRoomMember[]>([]);
   const [isOwner, setIsOwner] = useState(false);
+  const [canCreate, setCanCreate] = useState(false);
   const [stores, setStores] = useState<StoreOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('overview');
@@ -44,6 +45,7 @@ export default function RoomPage() {
       setRoom(data.room);
       setMembers(data.members ?? []);
       setIsOwner(!!data.isOwner);
+      setCanCreate(!!data.canCreate);
     }
     setLoading(false);
   }, [roomId]);
@@ -158,7 +160,7 @@ export default function RoomPage() {
       )}
 
       {tab === 'tasks' && user && (
-        <TabTasks roomId={roomId} members={memberProfiles} stores={stores} currentUserId={user.id} onTasksChanged={loadRoom} />
+        <TabTasks roomId={roomId} members={memberProfiles} stores={stores} currentUserId={user.id} canCreate={canCreate} onTasksChanged={loadRoom} />
       )}
 
       {tab === 'recurring' && <TabRecurring roomId={roomId} members={memberProfiles} isOwner={isOwner} />}
