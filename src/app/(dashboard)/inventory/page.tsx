@@ -10,6 +10,7 @@ import { StockTab } from '@/components/inventory/stock-tab';
 import { RequisitionsTab } from '@/components/inventory/requisitions-tab';
 import { PurchaseOrdersTab } from '@/components/inventory/purchase-orders-tab';
 import { SuppliersTab } from '@/components/inventory/suppliers-tab';
+import { RecipesTab } from '@/components/inventory/recipes-tab';
 
 const MGMT_ROLES = ['owner', 'manager', 'accountant'];
 
@@ -57,6 +58,7 @@ export default function InventoryPage() {
           { id: 'stock', label: 'สต๊อกสาขา' },
           { id: 'requisitions', label: 'ใบเบิก' },
           { id: 'purchase-orders', label: 'ใบสั่งซื้อ' },
+          { id: 'recipes', label: 'สูตร (BOM)' },
           { id: 'suppliers', label: 'ซัพพลายเออร์' },
         ]}
         activeTab={tab}
@@ -67,6 +69,7 @@ export default function InventoryPage() {
       {tab === 'stock' && <StockTab isMgmt={isMgmt} stores={stores} />}
       {tab === 'requisitions' && <RequisitionsTab isMgmt={isMgmt} stores={stores} />}
       {tab === 'purchase-orders' && <PurchaseOrdersTab isMgmt={isMgmt} />}
+      {tab === 'recipes' && <RecipesTab isMgmt={isMgmt} stores={stores} />}
       {tab === 'suppliers' && <SuppliersTab isMgmt={isMgmt} />}
     </div>
   );
