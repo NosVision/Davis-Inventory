@@ -68,6 +68,8 @@
   .toolbar .cnt b{ font-family:"Outfit"; color:var(--indigo); font-size:15px; }
   .tbtn{ border:1px solid var(--line); background:#fff; border-radius:7px; padding:4px 11px; font:600 10.5px "Noto Sans Thai",sans-serif; color:var(--soft); cursor:pointer; }
   .tbtn:hover{ border-color:var(--indigo); color:var(--indigo); }
+  .tbtn.demo{ color:#15803d; border-color:#bbe8c9; background:#f2fbf5; }
+  .tbtn.demo:hover{ border-color:var(--green); color:#15803d; }
   .autosave{ margin-left:auto; font-size:9.5px; color:var(--muted); }
   .tinp{ border:1px solid var(--line); border-radius:7px; padding:4px 9px; font:600 11px "Noto Sans Thai",sans-serif; color:var(--ink); min-width:130px; }
   .tinp:focus{ outline:none; border-color:var(--indigo); }
@@ -135,6 +137,7 @@
   <div class="toolbar">
     <span class="cnt">เลือกไว้ <b id="selCount">—</b> / <span id="selTotal">70</span> ฟีเจอร์</span>
     <input id="respName" class="tinp" placeholder="ชื่อผู้เลือก (ถ้ามี)" maxlength="120" />
+    <button class="tbtn demo" id="selDemo">✓ มีในเดโม่</button>
     <button class="tbtn" id="selAll">เลือกทั้งหมด</button>
     <button class="tbtn" id="selNone">ล้างทั้งหมด</button>
     <span class="autosave" id="saveStatus">🔄 ซิงก์อัตโนมัติทุกเครื่อง</span>
@@ -373,6 +376,7 @@
     rows.forEach(function(r,i){ r.addEventListener('click', function(){ if (sel.has(i)) sel.delete(i); else sel.add(i); render(); scheduleSave(); }); });
     var a = document.getElementById('selAll'); if (a) a.addEventListener('click', function(){ sel = new Set(); for (var i = 0; i < N; i++) sel.add(i); render(); scheduleSave(); });
     var z = document.getElementById('selNone'); if (z) z.addEventListener('click', function(){ sel = new Set(); render(); scheduleSave(); });
+    var dm = document.getElementById('selDemo'); if (dm) dm.addEventListener('click', function(){ sel = new Set(); rows.forEach(function(r,i){ if (r.querySelector('.p-demo')) sel.add(i); }); render(); scheduleSave(); });
     if (nameEl) nameEl.addEventListener('input', function(){ try { localStorage.setItem(NKEY, nameEl.value); } catch (e) {} scheduleSave(); });
 
     render();
