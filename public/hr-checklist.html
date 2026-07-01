@@ -137,7 +137,7 @@
     <input id="respName" class="tinp" placeholder="ชื่อผู้เลือก (ถ้ามี)" maxlength="120" />
     <button class="tbtn" id="selAll">เลือกทั้งหมด</button>
     <button class="tbtn" id="selNone">ล้างทั้งหมด</button>
-    <span class="autosave" id="saveStatus">💾 บันทึกอัตโนมัติ + ส่งให้ทีม</span>
+    <span class="autosave" id="saveStatus">🔄 ซิงก์อัตโนมัติทุกเครื่อง</span>
   </div>
 
   <div class="calc">
@@ -320,63 +320,64 @@
 
   <script>
   (function(){
-    var KEY = 'davis-hr-checklist-v1', SKEY = 'davis-hr-session', NKEY = 'davis-hr-name';
-    var saved = {};
-    try { saved = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) {}
-    var sid = '';
-    try { sid = localStorage.getItem(SKEY) || ''; } catch (e) {}
-    if (!sid) { sid = 'own-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8); try { localStorage.setItem(SKEY, sid); } catch (e) {} }
-
+    // สถานะร่วม (sync ข้ามเครื่อง): ทุกเครื่องอ่าน/เขียน row เดียว ('shared-checklist')
+    var LKEY = 'davis-hr-selected-v2', NKEY = 'davis-hr-name';
     var rows = [].slice.call(document.querySelectorAll('.row'));
     var countEl = document.getElementById('selCount');
     var totalEl = document.getElementById('selTotal');
     var statusEl = document.getElementById('saveStatus');
     var nameEl = document.getElementById('respName');
-    if (totalEl) totalEl.textContent = rows.length;
+    var N = rows.length;
+    if (totalEl) totalEl.textContent = N;
+
+    var sel = new Set();
+    (function initLocal(){
+      var loaded = null;
+      try { var raw = localStorage.getItem(LKEY); if (raw) loaded = JSON.parse(raw); } catch (e) {}
+      if (Array.isArray(loaded)) loaded.forEach(function(i){ sel.add(i); });
+      else for (var i = 0; i < N; i++) sel.add(i); // default: all selected
+    })();
     if (nameEl) { try { nameEl.value = localStorage.getItem(NKEY) || ''; } catch (e) {} }
 
-    function isSel(i){ return saved[i] !== undefined ? !!saved[i] : true; } // default: selected
-    function saveLocal(){ try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) {} }
-    function selectedLabels(){
-      var out = [];
-      rows.forEach(function(r, i){ if (isSel(i)) { var b = r.querySelector('.nm b'); out.push(b ? b.textContent.trim() : ('#' + (i + 1))); } });
-      return out;
-    }
-    function render(){
-      var n = 0;
-      rows.forEach(function(r, i){
-        var box = r.querySelector('.box'); if (!box) return;
-        var sel = isSel(i);
-        box.classList.remove('on'); box.classList.toggle('sel', sel);
-        box.textContent = sel ? '✓' : '';
-        r.classList.toggle('row-off', !sel);
-        if (sel) n++;
-      });
-      if (countEl) countEl.textContent = n;
-    }
+    function indices(){ var a = []; sel.forEach(function(i){ a.push(i); }); a.sort(function(x,y){ return x - y; }); return a; }
+    function labels(){ var out = []; rows.forEach(function(r,i){ if (sel.has(i)) { var b = r.querySelector('.nm b'); out.push(b ? b.textContent.trim() : ('#' + (i+1))); } }); return out; }
+    function saveLocal(){ try { localStorage.setItem(LKEY, JSON.stringify(indices())); } catch (e) {} }
+    function render(){ var n = 0; rows.forEach(function(r,i){ var box = r.querySelector('.box'); if (!box) return; var s = sel.has(i); box.classList.remove('on'); box.classList.toggle('sel', s); box.textContent = s ? '✓' : ''; r.classList.toggle('row-off', !s); if (s) n++; }); if (countEl) countEl.textContent = n; }
+    function applyIndices(arr){ sel = new Set(); (arr || []).forEach(function(i){ if (i >= 0 && i < N) sel.add(i); }); saveLocal(); render(); }
 
-    var timer = null;
     function setStatus(t){ if (statusEl) statusEl.textContent = t; }
-    function scheduleSave(){ saveLocal(); setStatus('💾 กำลังบันทึก…'); if (timer) clearTimeout(timer); timer = setTimeout(sendServer, 700); }
-    function sendServer(){
-      var keys = selectedLabels();
+    function time(){ return new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }); }
+    var lastWrite = 0, lastApplied = null, timer = null;
+
+    function push(){
+      setStatus('💾 กำลังซิงก์…'); lastWrite = Date.now();
       fetch('/api/hr-checklist', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: sid, name: nameEl ? nameEl.value.trim() : '', selectedKeys: keys, selectedCount: keys.length, totalCount: rows.length })
-      }).then(function(res){
-        setStatus(res.ok ? ('✓ ส่งให้ทีมแล้ว ' + new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })) : '⚠️ ส่งไม่สำเร็จ (เก็บในเครื่องแล้ว)');
-      }).catch(function(){ setStatus('⚠️ ออฟไลน์ — เก็บในเครื่องแล้ว'); });
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: 'shared-checklist', name: nameEl ? nameEl.value.trim() : '', selectedIndices: indices(), selectedKeys: labels(), selectedCount: sel.size, totalCount: N })
+      }).then(function(res){ setStatus(res.ok ? ('✓ ซิงก์แล้ว ' + time()) : '⚠️ ซิงก์ไม่สำเร็จ (เก็บในเครื่อง)'); })
+        .catch(function(){ setStatus('⚠️ ออฟไลน์ — เก็บในเครื่อง'); });
+    }
+    function scheduleSave(){ saveLocal(); if (timer) clearTimeout(timer); timer = setTimeout(push, 500); }
+
+    function pull(initial){
+      fetch('/api/hr-checklist?shared=1', { cache: 'no-store' }).then(function(r){ return r.json(); }).then(function(d){
+        if (!d || !d.updatedAt || d.updatedAt === lastApplied) return;
+        if (!initial && Date.now() - lastWrite < 2500) return; // เพิ่งเขียนเอง อย่าทับ
+        lastApplied = d.updatedAt;
+        if (Array.isArray(d.selectedIndices)) applyIndices(d.selectedIndices);
+        if (nameEl && d.name && document.activeElement !== nameEl) { nameEl.value = d.name; try { localStorage.setItem(NKEY, d.name); } catch (e) {} }
+        if (!initial) setStatus('🔄 อัปเดตจากอีกเครื่อง ' + time());
+      }).catch(function(){});
     }
 
-    rows.forEach(function(r, i){ r.addEventListener('click', function(){ saved[i] = !isSel(i); render(); scheduleSave(); }); });
-    var a = document.getElementById('selAll');
-    if (a) a.addEventListener('click', function(){ rows.forEach(function(r, i){ saved[i] = true; }); render(); scheduleSave(); });
-    var z = document.getElementById('selNone');
-    if (z) z.addEventListener('click', function(){ rows.forEach(function(r, i){ saved[i] = false; }); render(); scheduleSave(); });
+    rows.forEach(function(r,i){ r.addEventListener('click', function(){ if (sel.has(i)) sel.delete(i); else sel.add(i); render(); scheduleSave(); }); });
+    var a = document.getElementById('selAll'); if (a) a.addEventListener('click', function(){ sel = new Set(); for (var i = 0; i < N; i++) sel.add(i); render(); scheduleSave(); });
+    var z = document.getElementById('selNone'); if (z) z.addEventListener('click', function(){ sel = new Set(); render(); scheduleSave(); });
     if (nameEl) nameEl.addEventListener('input', function(){ try { localStorage.setItem(NKEY, nameEl.value); } catch (e) {} scheduleSave(); });
 
     render();
+    pull(true);              // โหลดสถานะร่วมตอนเปิด
+    setInterval(pull, 4000); // ซิงก์ต่อเนื่องทุกเครื่อง
   })();
   </script>
 </body>
