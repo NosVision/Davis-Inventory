@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslations, useLocale } from 'next-intl';
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { MonthCalendar, type CalendarItem } from '@/components/maintenance/month-calendar';
 import { TaskStatusBadge } from './task-status-badge';
@@ -13,6 +14,8 @@ const TH_MONTHS_FULL = [
   'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
   'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
 ];
+
+const EN_MONTHS_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 function calStatus(s: TaskStatus): CalendarItem['status'] {
   if (s === 'done') return 'completed';
@@ -33,6 +36,8 @@ interface TabOverviewProps {
 }
 
 export function TabOverview({ roomId, roomName, currentUserId, canExport, onChanged }: TabOverviewProps) {
+  const t = useTranslations('tasks');
+  const locale = useLocale();
   const [tasks, setTasks] = useState<TaskWithRelations[]>([]);
   const [loading, setLoading] = useState(true);
   const now = new Date();
@@ -99,15 +104,15 @@ export function TabOverview({ roomId, roomName, currentUserId, canExport, onChan
       <div className="grid grid-cols-3 gap-3">
         <div className="rounded-xl border border-amber-100 bg-amber-50 p-3 dark:border-amber-900/40 dark:bg-amber-900/10">
           <p className="text-2xl font-bold text-amber-700 dark:text-amber-400">{counts.pending}</p>
-          <p className="text-xs text-amber-600 dark:text-amber-500">รออนุมัติ</p>
+          <p className="text-xs text-amber-600 dark:text-amber-500">{t('stats.kpiPendingApproval')}</p>
         </div>
         <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-3 dark:border-indigo-900/40 dark:bg-indigo-900/10">
           <p className="text-2xl font-bold text-indigo-700 dark:text-indigo-400">{counts.doing}</p>
-          <p className="text-xs text-indigo-600 dark:text-indigo-500">กำลังดำเนินการ</p>
+          <p className="text-xs text-indigo-600 dark:text-indigo-500">{t('status.in_progress')}</p>
         </div>
         <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3 dark:border-emerald-900/40 dark:bg-emerald-900/10">
           <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-400">{counts.done}</p>
-          <p className="text-xs text-emerald-600 dark:text-emerald-500">เสร็จสิ้น</p>
+          <p className="text-xs text-emerald-600 dark:text-emerald-500">{t('status.done')}</p>
         </div>
       </div>
 
@@ -116,7 +121,7 @@ export function TabOverview({ roomId, roomName, currentUserId, canExport, onChan
         <div className="flex items-center gap-2">
           <button onClick={prevMonth} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"><ChevronLeft className="h-4 w-4" /></button>
           <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-            {TH_MONTHS_FULL[month - 1]} {year + 543}
+            {locale === 'en' ? `${EN_MONTHS_FULL[month - 1]} ${year}` : `${TH_MONTHS_FULL[month - 1]} ${year + 543}`}
           </span>
           <button onClick={nextMonth} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"><ChevronRight className="h-4 w-4" /></button>
         </div>
@@ -128,9 +133,9 @@ export function TabOverview({ roomId, roomName, currentUserId, canExport, onChan
       {/* Day detail list */}
       {selectedDate && (
         <div className="space-y-1.5 pb-10 sm:pb-20">
-          <p className="text-sm font-medium text-gray-700 dark:text-gray-300">งานวันที่เลือก</p>
+          <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{t('taskList.selectedDayTasks')}</p>
           {dayTasks.length === 0 ? (
-            <p className="text-xs text-gray-400">ไม่มีงานในวันนี้</p>
+            <p className="text-xs text-gray-400">{t('calendar.noTasksToday')}</p>
           ) : (
             dayTasks.map((t) => (
               <button

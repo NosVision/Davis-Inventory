@@ -1,6 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocale } from 'next-intl';
+import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { ArrowLeft, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { MonthCalendar, type CalendarItem } from '@/components/maintenance/month-calendar';
@@ -15,6 +17,8 @@ const TH_MONTHS_FULL = [
   'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
 ];
 
+const EN_MONTHS_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
 function calStatus(s: TaskStatus): CalendarItem['status'] {
   if (s === 'done') return 'completed';
   if (s === 'cancelled' || s === 'rejected') return 'skipped';
@@ -25,6 +29,8 @@ function taskDate(t: TaskWithRelations): string {
 }
 
 export default function MyCalendarPage() {
+  const locale = useLocale();
+  const t = useTranslations('tasks');
   const { user } = useAuthStore();
   const [tasks, setTasks] = useState<TaskWithRelations[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,12 +73,12 @@ export default function MyCalendarPage() {
         <Link href="/tasks" className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700">
           <ArrowLeft className="h-5 w-5" />
         </Link>
-        <h1 className="text-lg font-bold text-gray-900 dark:text-white">ปฏิทินงานของฉัน</h1>
+        <h1 className="text-lg font-bold text-gray-900 dark:text-white">{t('calendar.title')}</h1>
       </div>
 
       <div className="flex items-center gap-2">
         <button onClick={prevMonth} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"><ChevronLeft className="h-4 w-4" /></button>
-        <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">{TH_MONTHS_FULL[month - 1]} {year + 543}</span>
+        <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">{locale === 'en' ? `${EN_MONTHS_FULL[month - 1]} ${year}` : `${TH_MONTHS_FULL[month - 1]} ${year + 543}`}</span>
         <button onClick={nextMonth} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"><ChevronRight className="h-4 w-4" /></button>
       </div>
 
@@ -84,7 +90,7 @@ export default function MyCalendarPage() {
           {selectedDate && (
             <div className="space-y-1.5 pb-10 sm:pb-20">
               {dayTasks.length === 0 ? (
-                <p className="text-xs text-gray-400">ไม่มีงานในวันนี้</p>
+                <p className="text-xs text-gray-400">{t('calendar.noTasksToday')}</p>
               ) : (
                 dayTasks.map((t) => (
                   <button

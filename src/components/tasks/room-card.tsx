@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { Users, MapPin, Star } from 'lucide-react';
 import { RoomIcon } from './room-icon';
@@ -9,6 +10,7 @@ import { cn } from '@/lib/utils/cn';
 import type { TaskRoomWithStats } from '@/types/tasks';
 
 export function RoomCard({ room, onChanged }: { room: TaskRoomWithStats; onChanged?: () => void }) {
+  const t = useTranslations('tasks');
   const c = getRoomColor(room.color);
   const [busy, setBusy] = useState(false);
 
@@ -36,7 +38,7 @@ export function RoomCard({ room, onChanged }: { room: TaskRoomWithStats; onChang
         type="button"
         onClick={toggleFav}
         disabled={busy}
-        title={room.is_favorite ? 'เอาออกจากใช้บ่อย' : 'ติดดาว (ใช้บ่อย)'}
+        title={room.is_favorite ? t('room.removeFromFavorite') : t('room.addToFavorite')}
         className="absolute right-2 top-2 rounded-lg p-1.5 text-gray-300 transition-colors hover:bg-gray-100 hover:text-amber-400 disabled:opacity-50 dark:hover:bg-gray-700"
       >
         <Star className={cn('h-4 w-4', room.is_favorite && 'fill-amber-400 text-amber-400')} />
@@ -59,13 +61,13 @@ export function RoomCard({ room, onChanged }: { room: TaskRoomWithStats; onChang
 
       <div className="flex items-center gap-3 text-xs">
         <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
-          <b className="text-sm">{room.pending}</b> รออนุมัติ
+          <b className="text-sm">{room.pending}</b> {t('room.pendingApproval')}
         </span>
         <span className="flex items-center gap-1 text-indigo-600 dark:text-indigo-400">
-          <b className="text-sm">{room.in_progress}</b> ดำเนินการ
+          <b className="text-sm">{room.in_progress}</b> {t('room.inProgress')}
         </span>
         <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
-          <b className="text-sm">{room.done}</b> เสร็จ
+          <b className="text-sm">{room.done}</b> {t('room.done')}
         </span>
       </div>
 
@@ -75,7 +77,7 @@ export function RoomCard({ room, onChanged }: { room: TaskRoomWithStats; onChang
             <MapPin className="h-3.5 w-3.5 shrink-0" />
             <span className="truncate">
               {room.has_all_branch
-                ? 'ทุกสาขา'
+                ? t('roomsList.allBranches')
                 : room.branches.slice(0, 3).join(' · ') +
                   (room.branches.length > 3 ? ` +${room.branches.length - 3}` : '')}
             </span>
@@ -83,7 +85,7 @@ export function RoomCard({ room, onChanged }: { room: TaskRoomWithStats; onChang
         )}
         <div className="flex items-center gap-1">
           <Users className="h-3.5 w-3.5" />
-          {room.members_count} คน
+          {t('room.peopleCount', { count: room.members_count })}
         </div>
       </div>
     </Link>

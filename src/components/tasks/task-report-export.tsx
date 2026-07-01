@@ -1,10 +1,21 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { FileDown, Loader2 } from 'lucide-react';
 import { Button, Modal, ModalFooter, toast } from '@/components/ui';
-import { TASK_STATUS_LABELS, CLOSED_TASK_STATUSES } from '@/lib/tasks/status';
-import type { TaskWithRelations } from '@/types/tasks';
+import { CLOSED_TASK_STATUSES } from '@/lib/tasks/status';
+import type { TaskStatus, TaskWithRelations } from '@/types/tasks';
+
+// รายงาน PDF เป็นภาษาไทยเสมอ (นอกขอบเขต i18n) — เก็บป้ายสถานะไทยไว้ในไฟล์นี้เอง
+const TASK_STATUS_LABELS_TH: Record<TaskStatus, string> = {
+  scheduled: 'รอเริ่ม',
+  pending_approval: 'รออนุมัติ',
+  in_progress: 'กำลังดำเนินการ',
+  done: 'เสร็จสิ้น',
+  rejected: 'ไม่อนุมัติ',
+  cancelled: 'ยกเลิก',
+};
 
 function currentMonth(): string {
   const d = new Date();
@@ -12,6 +23,8 @@ function currentMonth(): string {
 }
 
 export function TaskReportExport({ roomId, roomName }: { roomId: string; roomName: string }) {
+  const t = useTranslations('tasks');
+  const tc = useTranslations('common');
   const [open, setOpen] = useState(false);
   const [month, setMonth] = useState(currentMonth());
   const [exporting, setExporting] = useState(false);
@@ -38,7 +51,7 @@ export function TaskReportExport({ roomId, roomName }: { roomId: string; roomNam
           ticket: t.ticket_no,
           date: (t.created_at ?? '').slice(0, 10),
           title: t.title,
-          status: TASK_STATUS_LABELS[t.status],
+          status: TASK_STATUS_LABELS_TH[t.status],
           assignee:
             (t.assignees ?? [])
               .map((a) => a.profile?.display_name || a.profile?.username)
@@ -58,7 +71,7 @@ export function TaskReportExport({ roomId, roomName }: { roomId: string; roomNam
       setOpen(false);
     } catch (err) {
       console.error('Task PDF export error:', err);
-      toast({ type: 'error', title: 'สร้าง PDF ล้มเหลว' });
+      toast({ type: 'error', title: t('report.failed') });
     } finally {
       setExporting(false);
     }
@@ -67,11 +80,11 @@ export function TaskReportExport({ roomId, roomName }: { roomId: string; roomNam
   return (
     <>
       <Button size="sm" variant="outline" icon={<FileDown className="h-3.5 w-3.5" />} onClick={() => setOpen(true)}>
-        รายงาน PDF
+        {t('report.button')}
       </Button>
-      <Modal isOpen={open} onClose={() => setOpen(false)} title="ดาวน์โหลดรายงานเดือน" description="สรุปงานของห้องในเดือนที่เลือก" size="sm">
+      <Modal isOpen={open} onClose={() => setOpen(false)} title={t('report.title')} description={t('report.desc')} size="sm">
         <div className="flex items-center gap-2">
-          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">เดือน</label>
+          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">{t('report.month')}</label>
           <input
             type="month"
             value={month}
@@ -80,9 +93,9 @@ export function TaskReportExport({ roomId, roomName }: { roomId: string; roomNam
           />
         </div>
         <ModalFooter>
-          <Button variant="ghost" onClick={() => setOpen(false)}>ยกเลิก</Button>
+          <Button variant="ghost" onClick={() => setOpen(false)}>{tc('cancel')}</Button>
           <Button onClick={handleExport} disabled={exporting} icon={exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}>
-            ดาวน์โหลด PDF
+            {t('report.download')}
           </Button>
         </ModalFooter>
       </Modal>

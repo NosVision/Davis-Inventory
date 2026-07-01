@@ -1,6 +1,7 @@
 'use client';
 
-import { ROLE_LABELS, type UserRole } from '@/types/roles';
+import { useTranslations } from 'next-intl';
+import { type UserRole } from '@/types/roles';
 import type { ProfileLite, TaskTarget, TaskTargetMode } from '@/types/tasks';
 import { MemberPicker } from './task-form-modal';
 import { cn } from '@/lib/utils/cn';
@@ -15,12 +16,13 @@ const DEFAULT_ROLE_OPTIONS: UserRole[] = [
   'staff',
 ];
 
-const MODE_LABELS: Record<TaskTargetMode, string> = {
-  manual: 'เลือกตอนสร้างงาน',
-  everyone: 'ทุกคน',
-  stores: 'เฉพาะสาขา',
-  roles: 'เฉพาะตำแหน่ง',
-  users: 'เฉพาะคน',
+/** map จาก mode -> คีย์ i18n ใน tasks.targetPicker */
+const MODE_LABEL_KEYS: Record<TaskTargetMode, string> = {
+  manual: 'modeManual',
+  everyone: 'modeEveryone',
+  stores: 'modeStores',
+  roles: 'modeRoles',
+  users: 'modeUsers',
 };
 
 interface TargetPickerProps {
@@ -59,6 +61,8 @@ export function TargetPicker({
   label,
   hint,
 }: TargetPickerProps) {
+  const t = useTranslations('tasks.targetPicker');
+  const tr = useTranslations('roles');
   const modes: TaskTargetMode[] = [
     ...(allowManual ? (['manual'] as TaskTargetMode[]) : []),
     'everyone',
@@ -96,7 +100,7 @@ export function TargetPicker({
                 : 'bg-white text-gray-600 ring-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:ring-gray-700',
             )}
           >
-            {MODE_LABELS[m]}
+            {t(MODE_LABEL_KEYS[m])}
           </button>
         ))}
       </div>
@@ -106,7 +110,7 @@ export function TargetPicker({
       {value.mode === 'stores' && (
         <div className="flex flex-wrap gap-1.5 rounded-lg border border-gray-200 p-2 dark:border-gray-700">
           {stores.length === 0 ? (
-            <p className="text-xs text-gray-400">ไม่มีสาขา</p>
+            <p className="text-xs text-gray-400">{t('noStores')}</p>
           ) : (
             stores.map((s) => {
               const on = (value.storeIds ?? []).includes(s.id);
@@ -129,14 +133,14 @@ export function TargetPicker({
               return (
                 <button key={r} type="button" onClick={() => toggleArr('roles', r)} className={chip(on)}>
                   {on ? '✓ ' : ''}
-                  {ROLE_LABELS[r]}
+                  {tr(r)}
                 </button>
               );
             })}
           </div>
           {stores.length > 0 && (
             <div className="border-t border-gray-100 pt-2 dark:border-gray-700">
-              <p className="mb-1 text-[11px] text-gray-400">จำกัดสาขา (เว้น = ทุกสาขา)</p>
+              <p className="mb-1 text-[11px] text-gray-400">{t('limitStores')}</p>
               <div className="flex flex-wrap gap-1.5">
                 {stores.map((s) => {
                   const on = (value.storeIds ?? []).includes(s.id);
@@ -158,7 +162,7 @@ export function TargetPicker({
           members={members}
           selected={value.userIds ?? []}
           onToggle={(id) => toggleArr('userIds', id)}
-          empty="ไม่มีสมาชิกให้เลือก"
+          empty={t('noMembersToSelect')}
         />
       )}
     </div>

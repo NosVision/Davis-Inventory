@@ -1,15 +1,7 @@
 import type {
   TaskStatus,
   TaskPriority,
-  TaskAssigneeState,
-  TaskResponseType,
 } from '@/types/tasks';
-
-export const TASK_RESPONSE_TYPE_LABELS: Record<TaskResponseType, string> = {
-  notify: 'แจ้งเพื่อทราบ',
-  acknowledge: 'ให้กดรับทราบ',
-  submit: 'ทำ + ส่งงาน',
-};
 
 export type BadgeVariant =
   | 'default'
@@ -18,15 +10,6 @@ export type BadgeVariant =
   | 'danger'
   | 'info'
   | 'outline';
-
-export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
-  scheduled: 'รอเริ่ม',
-  pending_approval: 'รออนุมัติ',
-  in_progress: 'กำลังดำเนินการ',
-  done: 'เสร็จสิ้น',
-  rejected: 'ไม่อนุมัติ',
-  cancelled: 'ยกเลิก',
-};
 
 export const TASK_STATUS_VARIANT: Record<TaskStatus, BadgeVariant> = {
   scheduled: 'outline',
@@ -37,24 +20,11 @@ export const TASK_STATUS_VARIANT: Record<TaskStatus, BadgeVariant> = {
   cancelled: 'default',
 };
 
-export const TASK_PRIORITY_LABELS: Record<TaskPriority, string> = {
-  low: 'ต่ำ',
-  med: 'กลาง',
-  high: 'สูง',
-};
-
 /** สีจุดความสำคัญ (ตรงกับ mockup PRI) */
 export const TASK_PRIORITY_DOT: Record<TaskPriority, string> = {
   low: '#94a3b8',
   med: '#f59e0b',
   high: '#ef4444',
-};
-
-export const TASK_ASSIGNEE_STATE_LABELS: Record<TaskAssigneeState, string> = {
-  pending: 'รอเริ่ม',
-  acknowledged: 'รับทราบแล้ว',
-  submitted: 'ส่งงานแล้ว',
-  done: 'เสร็จแล้ว',
 };
 
 /** สถานะที่ยังไม่ปิดงาน + ถึงวันเริ่มแล้ว (ค้าง) */

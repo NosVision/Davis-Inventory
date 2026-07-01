@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { PhotoUpload, Button, Input } from '@/components/ui';
 import { Link2, X, FileText, ImageIcon } from 'lucide-react';
 import type { TaskAttachmentInput } from '@/types/tasks';
@@ -18,7 +19,9 @@ interface AttachmentInputProps {
  * แนบไฟล์ได้ 3 แบบ: รูปภาพ (อัปโหลด) / ลิงก์ URL (เอกสาร/ลิงก์ภายนอก)
  * ไม่บังคับ — แนบกี่อันก็ได้ คละชนิดได้
  */
-export function AttachmentInput({ value, onChange, required, label = 'ไฟล์แนบ' }: AttachmentInputProps) {
+export function AttachmentInput({ value, onChange, required, label }: AttachmentInputProps) {
+  const t = useTranslations('tasks.attachments');
+  const resolvedLabel = label ?? t('defaultLabel');
   const [linkUrl, setLinkUrl] = useState('');
   const [linkName, setLinkName] = useState('');
 
@@ -40,9 +43,9 @@ export function AttachmentInput({ value, onChange, required, label = 'ไฟล�
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-          {label}
+          {resolvedLabel}
           {required && <span className="ml-0.5 text-red-500">*</span>}
-          {!required && <span className="ml-1 text-xs font-normal text-gray-400">(ไม่บังคับ)</span>}
+          {!required && <span className="ml-1 text-xs font-normal text-gray-400">{t('optional')}</span>}
         </label>
       </div>
 
@@ -77,24 +80,24 @@ export function AttachmentInput({ value, onChange, required, label = 'ไฟล�
       )}
 
       {/* เพิ่มรูป */}
-      <PhotoUpload value={null} onChange={addImage} folder="tasks" compact placeholder="แนบรูปภาพ" />
+      <PhotoUpload value={null} onChange={addImage} folder="tasks" compact placeholder={t('uploadPhoto')} />
 
       {/* เพิ่มลิงก์ / ไฟล์ */}
       <div className="flex flex-col gap-2 sm:flex-row">
         <Input
           value={linkUrl}
           onChange={(e) => setLinkUrl(e.target.value)}
-          placeholder="วางลิงก์ไฟล์ / เอกสาร (URL)"
+          placeholder={t('linkPlaceholder')}
           className="flex-1"
         />
         <Input
           value={linkName}
           onChange={(e) => setLinkName(e.target.value)}
-          placeholder="ชื่อ (ถ้ามี)"
+          placeholder={t('linkNamePlaceholder')}
           className="sm:w-40"
         />
         <Button type="button" variant="outline" size="md" onClick={addLink} icon={<Link2 className="h-4 w-4" />}>
-          เพิ่มลิงก์
+          {t('addLink')}
         </Button>
       </div>
     </div>

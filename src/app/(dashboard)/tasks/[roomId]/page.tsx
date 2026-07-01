@@ -2,14 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import Link from 'next/link';
-import { ArrowLeft, Loader2, Users, ChevronDown, ChevronUp } from 'lucide-react';
-import { Tabs } from '@/components/ui';
+import { ArrowLeft, Loader2, Users, ChevronDown, ChevronUp, Plus } from 'lucide-react';
+import { Tabs, Button } from '@/components/ui';
 import { createClient } from '@/lib/supabase/client';
 import { useAuthStore } from '@/stores/auth-store';
 import { RoomIcon } from '@/components/tasks/room-icon';
 import { getRoomColor } from '@/lib/tasks/colors';
 import { TabTasks } from '@/components/tasks/tab-tasks';
+import { TaskFormModal } from '@/components/tasks/task-form-modal';
 import { TabOverview } from '@/components/tasks/tab-overview';
 import { TabRecurring } from '@/components/tasks/tab-recurring';
 import { TabHistory } from '@/components/tasks/tab-history';
@@ -25,6 +27,7 @@ interface StoreOption {
 }
 
 export default function RoomPage() {
+  const t = useTranslations('tasks');
   const params = useParams<{ roomId: string }>();
   const roomId = params.roomId;
   const { user } = useAuthStore();
@@ -37,6 +40,8 @@ export default function RoomPage() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('overview');
   const [membersOpen, setMembersOpen] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+  const [taskRefresh, setTaskRefresh] = useState(0);
 
   const loadRoom = useCallback(async () => {
     const res = await fetch(`/api/tasks/rooms/${roomId}`);
@@ -79,21 +84,23 @@ export default function RoomPage() {
   if (!room) {
     return (
       <div className="mx-auto max-w-3xl p-6 text-center">
-        <p className="text-gray-500">ไม่พบห้องงาน หรือคุณไม่มีสิทธิ์เข้าถึง</p>
-        <Link href="/tasks" className="mt-3 inline-block text-sm text-indigo-600">← กลับไปหน้าห้องงาน</Link>
+        <p className="text-gray-500">{t('room.notFound')}</p>
+        <Link href="/tasks" className="mt-3 inline-block text-sm text-indigo-600">{t('room.backToRooms')}</Link>
       </div>
     );
   }
 
   const canExport = isOwner || user?.role === 'manager' || user?.role === 'accountant';
+  // ห้องแบบ claim/all = พนักงาน "แจ้งเรื่อง", ห้อง manual = เจ้าของ "เพิ่มงาน"
+  const isReport = !!room.assign_mode && room.assign_mode !== 'manual';
   const tabs = [
-    { id: 'overview', label: 'ภาพรวม' },
-    { id: 'tasks', label: 'งาน' },
-    { id: 'recurring', label: 'งานประจำ' },
-    { id: 'history', label: 'ประวัติ' },
-    { id: 'stats', label: 'สถิติ' },
-    ...(isOwner ? [{ id: 'members', label: 'สมาชิก', count: members.length }] : []),
-    ...(isOwner ? [{ id: 'settings', label: 'ตั้งค่า' }] : []),
+    { id: 'overview', label: t('tabs.overview') },
+    { id: 'tasks', label: t('tabs.tasks') },
+    { id: 'recurring', label: t('tabs.recurring') },
+    { id: 'history', label: t('tabs.history') },
+    { id: 'stats', label: t('tabs.stats') },
+    ...(isOwner ? [{ id: 'members', label: t('tabs.members'), count: members.length }] : []),
+    ...(isOwner ? [{ id: 'settings', label: t('tabs.settings') }] : []),
   ];
 
   return (
@@ -110,6 +117,12 @@ export default function RoomPage() {
           <h1 className="truncate text-lg font-bold text-gray-900 dark:text-white">{room.name}</h1>
           {room.description && <p className="truncate text-xs text-gray-500">{room.description}</p>}
         </div>
+        {/* ปุ่มสร้าง/แจ้งเรื่อง — อยู่บนหัวเพื่อกดได้จากทุกแท็บ */}
+        {canCreate && (
+          <Button size="sm" icon={<Plus className="h-4 w-4" />} onClick={() => setShowCreate(true)} className="shrink-0">
+            {isReport ? t('room.report') : t('room.addTask')}
+          </Button>
+        )}
       </div>
 
       <Tabs tabs={tabs} activeTab={tab} onChange={setTab} />
@@ -122,14 +135,14 @@ export default function RoomPage() {
               className="flex w-full items-center justify-between p-4 text-sm font-medium text-gray-700 dark:text-gray-300"
             >
               <span className="flex items-center gap-2">
-                <Users className="h-4 w-4" /> สมาชิกในห้อง ({members.length})
+                <Users className="h-4 w-4" /> {t('room.membersInRoom', { count: members.length })}
               </span>
               {membersOpen ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
             </button>
             {membersOpen && (
               <div className="flex max-h-60 flex-wrap gap-2 overflow-y-auto px-4 pb-4">
                 {memberProfiles.map((m) => {
-                  const name = m.display_name || m.username || 'ผู้ใช้';
+                  const name = m.display_name || m.username || t('detail.defaultUser');
                   return (
                     <span key={m.id} className="flex items-center gap-1.5 rounded-full bg-gray-100 py-1 pl-1 pr-3 text-xs dark:bg-gray-700">
                       <span className="flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold text-white" style={{ backgroundColor: avatarColor(m.id) }}>
@@ -139,7 +152,7 @@ export default function RoomPage() {
                     </span>
                   );
                 })}
-                {members.length === 0 && <p className="text-xs text-gray-400">ยังไม่มีสมาชิก</p>}
+                {members.length === 0 && <p className="text-xs text-gray-400">{t('room.noMembers')}</p>}
               </div>
             )}
           </div>
@@ -160,7 +173,7 @@ export default function RoomPage() {
       )}
 
       {tab === 'tasks' && user && (
-        <TabTasks roomId={roomId} members={memberProfiles} stores={stores} currentUserId={user.id} canCreate={canCreate} onTasksChanged={loadRoom} />
+        <TabTasks roomId={roomId} currentUserId={user.id} refreshKey={taskRefresh} onTasksChanged={loadRoom} />
       )}
 
       {tab === 'recurring' && <TabRecurring roomId={roomId} members={memberProfiles} isOwner={isOwner} />}
@@ -171,6 +184,19 @@ export default function RoomPage() {
 
       {tab === 'members' && isOwner && (
         <TabMembers roomId={roomId} members={members} canManage={isOwner} onChanged={loadRoom} />
+      )}
+
+      {showCreate && user && canCreate && (
+        <TaskFormModal
+          roomId={roomId}
+          members={memberProfiles}
+          stores={stores}
+          onClose={() => setShowCreate(false)}
+          onCreated={() => {
+            setTaskRefresh((k) => k + 1);
+            loadRoom();
+          }}
+        />
       )}
     </div>
   );

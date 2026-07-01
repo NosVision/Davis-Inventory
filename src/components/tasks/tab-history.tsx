@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslations, useLocale } from 'next-intl';
 import { Loader2 } from 'lucide-react';
 import { TaskStatusBadge } from './task-status-badge';
 import { TaskDetailModal } from './task-detail-modal';
@@ -8,6 +9,8 @@ import { fmtThaiDate } from '@/lib/tasks/format';
 import type { TaskWithRelations } from '@/types/tasks';
 
 export function TabHistory({ roomId, currentUserId }: { roomId: string; currentUserId: string }) {
+  const tt = useTranslations('tasks');
+  const locale = useLocale();
   const [tasks, setTasks] = useState<TaskWithRelations[]>([]);
   const [loading, setLoading] = useState(true);
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -32,7 +35,7 @@ export function TabHistory({ roomId, currentUserId }: { roomId: string; currentU
   }
 
   if (tasks.length === 0) {
-    return <p className="py-10 text-center text-sm text-gray-400">ยังไม่มีงานที่ปิดแล้ว</p>;
+    return <p className="py-10 text-center text-sm text-gray-400">{tt('taskList.noClosedTasks')}</p>;
   }
 
   return (
@@ -46,7 +49,7 @@ export function TabHistory({ roomId, currentUserId }: { roomId: string; currentU
             >
               <span className="font-mono text-xs text-gray-400">#{t.ticket_no}</span>
               <span className="flex-1 truncate text-sm text-gray-800 dark:text-gray-200">{t.title}</span>
-              <span className="text-xs text-gray-400">{fmtThaiDate(t.completed_at || t.approved_at || t.updated_at)}</span>
+              <span className="text-xs text-gray-400">{fmtThaiDate(t.completed_at || t.approved_at || t.updated_at, true, locale as 'th' | 'en')}</span>
               <TaskStatusBadge status={t.status} size="sm" />
             </button>
           </li>

@@ -13,7 +13,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
-import { TASK_STATUS_LABELS } from '@/lib/tasks/status';
+import { useTranslations } from 'next-intl';
 import { initial, avatarColor } from '@/lib/tasks/format';
 import { todayBangkok } from '@/lib/utils/date';
 import { cn } from '@/lib/utils/cn';
@@ -64,6 +64,7 @@ function Panel({ title, icon: Icon, children }: { title: string; icon: LucideIco
 }
 
 export function TabStats({ roomId }: { roomId: string }) {
+  const t = useTranslations('tasks');
   const [tasks, setTasks] = useState<TaskWithRelations[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -99,23 +100,23 @@ export function TabStats({ roomId }: { roomId: string }) {
 
   const byStatus = useMemo(
     () =>
-      STATUS_ORDER.map((s) => ({ status: s, label: TASK_STATUS_LABELS[s], value: counts[s] ?? 0 }))
+      STATUS_ORDER.map((s) => ({ status: s, label: t(`status.${s}`), value: counts[s] ?? 0 }))
         .filter((d) => d.value > 0),
-    [counts],
+    [counts, t],
   );
 
   const byAssignee = useMemo(() => {
     const m = new Map<string, { name: string; value: number }>();
-    for (const t of tasks) {
-      for (const a of t.assignees ?? []) {
-        const name = a.profile?.display_name || a.profile?.username || 'ผู้ใช้';
+    for (const task of tasks) {
+      for (const a of task.assignees ?? []) {
+        const name = a.profile?.display_name || a.profile?.username || t('stats.defaultUser');
         const cur = m.get(a.user_id) ?? { name, value: 0 };
         cur.value += 1;
         m.set(a.user_id, cur);
       }
     }
     return [...m.entries()].map(([id, v]) => ({ id, ...v })).sort((a, b) => b.value - a.value).slice(0, 8);
-  }, [tasks]);
+  }, [tasks, t]);
 
   if (loading) {
     return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-indigo-500" /></div>;
@@ -125,7 +126,7 @@ export function TabStats({ roomId }: { roomId: string }) {
     return (
       <div className="flex flex-col items-center gap-2 py-14 text-center text-sm text-gray-400">
         <BarChart3 className="h-9 w-9 text-gray-300" />
-        ยังไม่มีข้อมูลสถิติในห้องนี้
+        {t('stats.empty')}
       </div>
     );
   }
@@ -136,18 +137,18 @@ export function TabStats({ roomId }: { roomId: string }) {
     <div className="space-y-4">
       {/* KPI cards — 2 คอลัมน์มือถือ, 3/6 จอใหญ่ */}
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
-        <Kpi icon={ListTodo} label="ทั้งหมด" value={total} tone="slate" />
-        <Kpi icon={Clock3} label="กำลังทำ" value={counts['in_progress'] ?? 0} tone="indigo" />
-        <Kpi icon={CalendarClock} label="รออนุมัติ" value={counts['pending_approval'] ?? 0} tone="amber" />
-        <Kpi icon={CheckCircle2} label="เสร็จสิ้น" value={done} tone="emerald" />
-        <Kpi icon={CalendarClock} label="รอเริ่ม" value={counts['scheduled'] ?? 0} tone="sky" />
-        <Kpi icon={AlertTriangle} label="เลยกำหนด" value={overdue} tone="red" />
+        <Kpi icon={ListTodo} label={t('stats.kpiTotal')} value={total} tone="slate" />
+        <Kpi icon={Clock3} label={t('stats.kpiInProgress')} value={counts['in_progress'] ?? 0} tone="indigo" />
+        <Kpi icon={CalendarClock} label={t('stats.kpiPendingApproval')} value={counts['pending_approval'] ?? 0} tone="amber" />
+        <Kpi icon={CheckCircle2} label={t('stats.kpiDone')} value={done} tone="emerald" />
+        <Kpi icon={CalendarClock} label={t('stats.kpiScheduled')} value={counts['scheduled'] ?? 0} tone="sky" />
+        <Kpi icon={AlertTriangle} label={t('stats.kpiOverdue')} value={overdue} tone="red" />
       </div>
 
       {/* อัตราเสร็จสิ้น */}
       <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
         <div className="mb-2 flex items-center justify-between text-sm">
-          <span className="font-semibold text-gray-700 dark:text-gray-200">อัตราเสร็จสิ้น</span>
+          <span className="font-semibold text-gray-700 dark:text-gray-200">{t('stats.completionRate')}</span>
           <span className="font-bold text-emerald-600 dark:text-emerald-400">{completionRate}%</span>
         </div>
         <div className="h-2.5 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
@@ -156,12 +157,12 @@ export function TabStats({ roomId }: { roomId: string }) {
             style={{ width: `${completionRate}%` }}
           />
         </div>
-        <p className="mt-1.5 text-xs text-gray-400">{done} จาก {total} งาน</p>
+        <p className="mt-1.5 text-xs text-gray-400">{t('stats.completionSummary', { done, total })}</p>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         {/* โดนัทสถานะ */}
-        <Panel title="งานตามสถานะ" icon={BarChart3}>
+        <Panel title={t('stats.byStatus')} icon={BarChart3}>
           <div className="flex items-center gap-4">
             <div className="relative h-36 w-36 shrink-0">
               <ResponsiveContainer width="100%" height="100%">
@@ -180,14 +181,14 @@ export function TabStats({ roomId }: { roomId: string }) {
                     ))}
                   </Pie>
                   <Tooltip
-                    formatter={(value, name) => [`${value} งาน`, name as string]}
+                    formatter={(value, name) => [t('stats.tasksUnit', { value: value as number }), name as string]}
                     contentStyle={{ borderRadius: 12, border: '1px solid #e5e7eb', fontSize: 12 }}
                   />
                 </PieChart>
               </ResponsiveContainer>
               <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
                 <span className="text-xl font-bold text-gray-900 dark:text-white">{total}</span>
-                <span className="text-[10px] text-gray-400">งาน</span>
+                <span className="text-[10px] text-gray-400">{t('stats.taskUnit')}</span>
               </div>
             </div>
 
@@ -205,9 +206,9 @@ export function TabStats({ roomId }: { roomId: string }) {
         </Panel>
 
         {/* ผู้รับผิดชอบ — แถบ custom (responsive) */}
-        <Panel title="งานตามผู้รับผิดชอบ" icon={Users}>
+        <Panel title={t('stats.byAssignee')} icon={Users}>
           {byAssignee.length === 0 ? (
-            <p className="py-4 text-center text-xs text-gray-400">ยังไม่มีการมอบหมาย</p>
+            <p className="py-4 text-center text-xs text-gray-400">{t('stats.noAssignment')}</p>
           ) : (
             <ul className="space-y-2.5">
               {byAssignee.map((a) => (

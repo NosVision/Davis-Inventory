@@ -2,15 +2,12 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { Button, Input, Textarea, Select, toast } from '@/components/ui';
 import { Archive } from 'lucide-react';
 import { TargetPicker } from './target-picker';
-import {
-  ICON_OPTIONS,
-  COLOR_OPTIONS,
-  ASSIGN_MODE_OPTIONS,
-  RESPONSE_TYPE_OPTIONS,
-} from '@/lib/tasks/room-options';
+import { IconPicker, ColorPicker } from './icon-color-picker';
+import { ASSIGN_MODE_VALUES, RESPONSE_TYPE_VALUES } from '@/lib/tasks/room-options';
 import type {
   ProfileLite,
   TaskAssignMode,
@@ -28,6 +25,8 @@ interface RoomSettingsProps {
 
 export function RoomSettings({ room, onUpdated, stores = [], members = [] }: RoomSettingsProps) {
   const router = useRouter();
+  const t = useTranslations('tasks');
+  const tc = useTranslations('common');
   const [name, setName] = useState(room.name);
   const [description, setDescription] = useState(room.description ?? '');
   const [icon, setIcon] = useState(room.icon);
@@ -66,18 +65,18 @@ export function RoomSettings({ room, onUpdated, stores = [], members = [] }: Roo
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'บันทึกไม่สำเร็จ');
-      toast({ type: 'success', title: 'บันทึกแล้ว' });
+      if (!res.ok) throw new Error(data.error || t('settings.saveFailed'));
+      toast({ type: 'success', title: t('settings.saved') });
       onUpdated();
     } catch (e) {
-      toast({ type: 'error', title: 'ผิดพลาด', message: e instanceof Error ? e.message : '' });
+      toast({ type: 'error', title: tc('error'), message: e instanceof Error ? e.message : '' });
     } finally {
       setSaving(false);
     }
   };
 
   const archive = async () => {
-    if (!confirm('เก็บห้องนี้? ห้องจะถูกซ่อนจากทุกคน (ไม่ลบข้อมูล)')) return;
+    if (!confirm(t('settings.confirmArchive'))) return;
     setSaving(true);
     try {
       const res = await fetch(`/api/tasks/rooms/${room.id}`, {
@@ -86,48 +85,48 @@ export function RoomSettings({ room, onUpdated, stores = [], members = [] }: Roo
         body: JSON.stringify({ isArchived: true }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'เก็บห้องไม่สำเร็จ');
-      toast({ type: 'success', title: 'เก็บห้องแล้ว' });
+      if (!res.ok) throw new Error(data.error || t('settings.archiveFailed'));
+      toast({ type: 'success', title: t('settings.archived') });
       router.push('/tasks');
     } catch (e) {
-      toast({ type: 'error', title: 'ผิดพลาด', message: e instanceof Error ? e.message : '' });
+      toast({ type: 'error', title: tc('error'), message: e instanceof Error ? e.message : '' });
       setSaving(false);
     }
   };
 
   return (
     <div className="space-y-4">
-      <Input label="ชื่อห้อง" value={name} onChange={(e) => setName(e.target.value)} />
-      <Textarea label="คำอธิบาย" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
-      <div className="grid grid-cols-2 gap-3">
-        <Select label="ไอคอน" value={icon} onChange={(e) => setIcon(e.target.value)} options={ICON_OPTIONS} />
-        <Select label="สี" value={color} onChange={(e) => setColor(e.target.value)} options={COLOR_OPTIONS} />
+      <Input label={t('settings.roomNameLabel')} value={name} onChange={(e) => setName(e.target.value)} />
+      <Textarea label={t('settings.descriptionLabel')} value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <IconPicker value={icon} onChange={setIcon} color={color} />
+        <ColorPicker value={color} onChange={setColor} />
       </div>
 
       {/* ── คอนฟิกโฟลงานของห้องนี้ (ยืดหยุ่นต่อห้อง) ── */}
       <div className="space-y-4 rounded-xl border border-gray-200 p-4 dark:border-gray-700">
-        <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">โฟลงานของห้องนี้</p>
+        <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">{t('settings.roomWorkflow')}</p>
 
         <Select
-          label="วิธีมอบหมายเมื่อมีงานเข้า"
+          label={t('settings.assignModeLabel')}
           value={assignMode}
           onChange={(e) => setAssignMode(e.target.value as TaskAssignMode)}
-          options={ASSIGN_MODE_OPTIONS}
+          options={ASSIGN_MODE_VALUES.map((v) => ({ value: v, label: t(`assignModeOption.${v}`) }))}
         />
 
         {assignMode !== 'manual' && (
           <TargetPicker
-            label="ผู้รับผิดชอบ (กลุ่มที่ถูกแจ้ง/มอบหมาย)"
+            label={t('settings.responsibleLabel')}
             value={responsibleTarget}
             onChange={setResponsibleTarget}
             stores={stores}
             members={members}
-            hint="เช่น ตำแหน่ง = ช่าง (เลือกสาขาเพิ่มได้)"
+            hint={t('settings.responsibleHint')}
           />
         )}
 
         <TargetPicker
-          label="ใครเปิดเรื่อง/สร้างงานในห้องนี้ได้"
+          label={t('settings.creatorLabel')}
           value={creatorTarget}
           onChange={setCreatorTarget}
           stores={stores}
@@ -135,10 +134,10 @@ export function RoomSettings({ room, onUpdated, stores = [], members = [] }: Roo
         />
 
         <Select
-          label="โหมดตอบกลับเริ่มต้น (แก้รายงานได้)"
+          label={t('settings.defaultResponseTypeLabel')}
           value={defaultResponseType}
           onChange={(e) => setDefaultResponseType(e.target.value as TaskResponseType)}
-          options={RESPONSE_TYPE_OPTIONS}
+          options={RESPONSE_TYPE_VALUES.map((v) => ({ value: v, label: t(`responseTypeOption.${v}`) }))}
         />
 
         <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
@@ -148,20 +147,20 @@ export function RoomSettings({ room, onUpdated, stores = [], members = [] }: Roo
             onChange={(e) => setRequireAttachmentDefault(e.target.checked)}
             className="h-4 w-4 rounded"
           />
-          บังคับแนบไฟล์/รูปก่อนปิดงาน (ค่าเริ่มต้นของห้อง)
+          {t('settings.requireAttachmentDefault')}
         </label>
       </div>
 
       <div className="flex justify-end">
-        <Button onClick={save} isLoading={saving}>บันทึก</Button>
+        <Button onClick={save} isLoading={saving}>{tc('save')}</Button>
       </div>
 
       {!room.is_system && (
         <div className="mt-6 rounded-xl border border-red-200 bg-red-50/50 p-4 dark:border-red-900/40 dark:bg-red-900/10">
-          <p className="mb-1 text-sm font-medium text-red-700 dark:text-red-400">โซนอันตราย</p>
-          <p className="mb-3 text-xs text-red-500">เก็บห้องนี้จะซ่อนห้องจากสมาชิกทั้งหมด (ข้อมูลยังอยู่)</p>
+          <p className="mb-1 text-sm font-medium text-red-700 dark:text-red-400">{t('settings.dangerZone')}</p>
+          <p className="mb-3 text-xs text-red-500">{t('settings.archiveHint')}</p>
           <Button variant="danger" size="sm" icon={<Archive className="h-4 w-4" />} onClick={archive} disabled={saving}>
-            เก็บห้องนี้
+            {t('settings.archiveButton')}
           </Button>
         </div>
       )}

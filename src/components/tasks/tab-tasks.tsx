@@ -1,40 +1,34 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Plus, Search, Loader2, Pin } from 'lucide-react';
-import { Button, Tabs, Input } from '@/components/ui';
+import { useTranslations, useLocale } from 'next-intl';
+import { Search, Loader2, Pin } from 'lucide-react';
+import { Tabs, Input } from '@/components/ui';
 import { TaskStatusBadge } from './task-status-badge';
 import { TaskPriorityDot } from './task-priority-dot';
-import { TaskFormModal } from './task-form-modal';
 import { TaskDetailModal } from './task-detail-modal';
 import { initial, avatarColor, fmtThaiDate } from '@/lib/tasks/format';
 import { OPEN_TASK_STATUSES, CLOSED_TASK_STATUSES, UPCOMING_TASK_STATUSES } from '@/lib/tasks/status';
-import type { ProfileLite, TaskWithRelations } from '@/types/tasks';
-
-interface StoreOption {
-  id: string;
-  name: string;
-}
+import type { TaskWithRelations } from '@/types/tasks';
 
 interface TabTasksProps {
   roomId: string;
-  members: ProfileLite[];
-  stores: StoreOption[];
   currentUserId: string;
-  /** ผู้ใช้คนนี้มีสิทธิ์เปิดเรื่อง/สร้างงานในห้องนี้ไหม (ตาม creator_target ของห้อง) */
-  canCreate?: boolean;
+  /** bump ค่านี้จากหน้าแม่เพื่อสั่งโหลดรายการใหม่ (เช่น หลังสร้างงานจากปุ่มบนหัว) */
+  refreshKey?: number;
   onTasksChanged?: () => void;
 }
 
 type FilterKey = 'open' | 'upcoming' | 'closed' | 'all';
 
-export function TabTasks({ roomId, members, stores, currentUserId, canCreate = false, onTasksChanged }: TabTasksProps) {
+export function TabTasks({ roomId, currentUserId, refreshKey = 0, onTasksChanged }: TabTasksProps) {
+  const tt = useTranslations('tasks');
+  const locale = useLocale();
   const [tasks, setTasks] = useState<TaskWithRelations[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterKey>('open');
   const [search, setSearch] = useState('');
   const [mineOnly, setMineOnly] = useState(false);
-  const [showCreate, setShowCreate] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -50,7 +44,7 @@ export function TabTasks({ roomId, members, stores, currentUserId, canCreate = f
 
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, refreshKey]);
 
   const counts = useMemo(
     () => ({
@@ -86,31 +80,24 @@ export function TabTasks({ roomId, members, stores, currentUserId, canCreate = f
       <div className="flex flex-wrap items-center gap-2">
         <Tabs
           tabs={[
-            { id: 'open', label: 'ค้าง', count: counts.open },
-            { id: 'upcoming', label: 'ล่วงหน้า', count: counts.upcoming },
-            { id: 'closed', label: 'เสร็จ/ปิด', count: counts.closed },
-            { id: 'all', label: 'ทั้งหมด', count: counts.all },
+            { id: 'open', label: tt('taskList.filterOpen'), count: counts.open },
+            { id: 'upcoming', label: tt('taskList.filterUpcoming'), count: counts.upcoming },
+            { id: 'closed', label: tt('taskList.filterClosed'), count: counts.closed },
+            { id: 'all', label: tt('taskList.filterAll'), count: counts.all },
           ]}
           activeTab={filter}
           onChange={(t) => setFilter(t as FilterKey)}
         />
-        <div className="ml-auto flex items-center gap-2">
-          <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
-            <input type="checkbox" checked={mineOnly} onChange={(e) => setMineOnly(e.target.checked)} className="h-4 w-4 rounded" />
-            ของฉัน
-          </label>
-          {canCreate && (
-            <Button size="sm" icon={<Plus className="h-4 w-4" />} onClick={() => setShowCreate(true)}>
-              เพิ่มงาน
-            </Button>
-          )}
-        </div>
+        <label className="ml-auto flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
+          <input type="checkbox" checked={mineOnly} onChange={(e) => setMineOnly(e.target.checked)} className="h-4 w-4 rounded" />
+          {tt('taskList.mine')}
+        </label>
       </div>
 
       <Input
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        placeholder="ค้นหา เลข ticket / หัวข้อ / รายละเอียด"
+        placeholder={tt('taskList.searchPlaceholder')}
         leftIcon={<Search className="h-4 w-4" />}
       />
 
@@ -119,7 +106,7 @@ export function TabTasks({ roomId, members, stores, currentUserId, canCreate = f
           <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
         </div>
       ) : filtered.length === 0 ? (
-        <p className="py-10 text-center text-sm text-gray-400">ไม่มีงานในมุมมองนี้</p>
+        <p className="py-10 text-center text-sm text-gray-400">{tt('taskList.emptyView')}</p>
       ) : (
         <ul className="divide-y divide-gray-100 overflow-hidden rounded-xl border border-gray-200 dark:divide-gray-700 dark:border-gray-700">
           {filtered.map((t) => (
@@ -135,16 +122,16 @@ export function TabTasks({ roomId, members, stores, currentUserId, canCreate = f
                     <TaskPriorityDot priority={t.priority} showLabel={false} />
                     {t.is_mine && (
                       <span className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300">
-                        ของฉัน
+                        {tt('taskList.mine')}
                       </span>
                     )}
                   </div>
                   <p className="mt-0.5 truncate font-medium text-gray-900 dark:text-white">{t.title}</p>
                   <p className="text-xs text-gray-400">
                     {t.category ? `${t.category} · ` : ''}
-                    {t.due_date ? `กำหนด ${fmtThaiDate(t.due_date)}` : `จ่าย ${fmtThaiDate(t.assigned_at)}`}
+                    {t.due_date ? tt('taskList.due', { date: fmtThaiDate(t.due_date, true, locale as 'th' | 'en') }) : tt('taskList.assigned', { date: fmtThaiDate(t.assigned_at, true, locale as 'th' | 'en') })}
                     {(t.assignees?.length ?? 0) > 1 &&
-                      ` · ${t.response_type === 'submit' ? 'ส่งแล้ว' : 'รับทราบ'} ${
+                      ` · ${t.response_type === 'submit' ? tt('taskList.submitted') : tt('taskList.acknowledged')} ${
                         (t.assignees ?? []).filter((a) => a.state === 'submitted' || a.state === 'done').length
                       }/${t.assignees?.length ?? 0}`}
                   </p>
@@ -152,7 +139,7 @@ export function TabTasks({ roomId, members, stores, currentUserId, canCreate = f
                 <div className="flex shrink-0 items-center gap-2">
                   <div className="flex -space-x-2">
                     {(t.assignees ?? []).slice(0, 3).map((a) => {
-                      const name = a.profile?.display_name || a.profile?.username || 'ผู้ใช้';
+                      const name = a.profile?.display_name || a.profile?.username || tt('detail.defaultUser');
                       return (
                         <span
                           key={a.id}
@@ -173,15 +160,6 @@ export function TabTasks({ roomId, members, stores, currentUserId, canCreate = f
         </ul>
       )}
 
-      {showCreate && canCreate && (
-        <TaskFormModal
-          roomId={roomId}
-          members={members}
-          stores={stores}
-          onClose={() => setShowCreate(false)}
-          onCreated={handleChanged}
-        />
-      )}
       {detailId && (
         <TaskDetailModal
           taskId={detailId}

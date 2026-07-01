@@ -1,13 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { Search, Loader2 } from 'lucide-react';
 import { Modal, ModalFooter, Button, Input, Textarea, Select, toast } from '@/components/ui';
 import { AttachmentInput } from './attachment-input';
 import { initial, avatarColor } from '@/lib/tasks/format';
 import { cn } from '@/lib/utils/cn';
-import { ROLE_LABELS, type UserRole } from '@/types/roles';
-import { TASK_RESPONSE_TYPE_LABELS } from '@/lib/tasks/status';
+import { RESPONSE_TYPE_VALUES } from '@/lib/tasks/room-options';
 import type {
   ProfileLite,
   TaskAssignMode,
@@ -40,6 +40,8 @@ export function MemberPicker({
   onToggle: (id: string) => void;
   empty: string;
 }) {
+  const t = useTranslations('tasks.form');
+  const tr = useTranslations('roles');
   const [q, setQ] = useState('');
   const [roleF, setRoleF] = useState('all');
 
@@ -68,7 +70,7 @@ export function MemberPicker({
     <div className="space-y-2">
       <div className="flex gap-2">
         <div className="min-w-0 flex-1">
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหาชื่อ" leftIcon={<Search className="h-4 w-4" />} />
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('searchName')} leftIcon={<Search className="h-4 w-4" />} />
         </div>
         {roles.length > 1 && (
           <div className="w-36 shrink-0">
@@ -76,8 +78,8 @@ export function MemberPicker({
               value={roleF}
               onChange={(e) => setRoleF(e.target.value)}
               options={[
-                { value: 'all', label: 'ทุกตำแหน่ง' },
-                ...roles.map((r) => ({ value: r, label: ROLE_LABELS[r as UserRole] ?? r })),
+                { value: 'all', label: t('allRoles') },
+                ...roles.map((r) => ({ value: r as string, label: tr(r as Parameters<typeof tr>[0]) })),
               ]}
             />
           </div>
@@ -86,17 +88,17 @@ export function MemberPicker({
 
       <div className="flex items-center justify-between px-0.5 text-xs">
         <button type="button" onClick={bulkToggle} className="font-medium text-indigo-600 hover:underline dark:text-indigo-400">
-          {allSelected ? 'ล้างที่กรอง' : 'เลือกทั้งหมดที่กรอง'}
+          {allSelected ? t('clearFiltered') : t('selectAllFiltered')}
         </button>
-        <span className="text-gray-400">เลือกแล้ว {selected.length} · แสดง {filtered.length}</span>
+        <span className="text-gray-400">{t('selectedShown', { selected: selected.length, shown: filtered.length })}</span>
       </div>
 
       <div className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-gray-200 p-1.5 dark:border-gray-700">
         {filtered.length === 0 ? (
-          <p className="p-2 text-xs text-gray-400">ไม่พบสมาชิก</p>
+          <p className="p-2 text-xs text-gray-400">{t('noMembersFound')}</p>
         ) : (
           filtered.map((m) => {
-            const name = m.display_name || m.username || 'ผู้ใช้';
+            const name = m.display_name || m.username || t('defaultUser');
             const on = selected.includes(m.id);
             return (
               <button
@@ -115,7 +117,7 @@ export function MemberPicker({
                   {initial(name)}
                 </span>
                 <span className="flex-1 truncate text-gray-700 dark:text-gray-200">{name}</span>
-                <span className="shrink-0 text-[10px] text-gray-400">{ROLE_LABELS[m.role as UserRole] ?? m.role}</span>
+                <span className="shrink-0 text-[10px] text-gray-400">{tr(m.role as Parameters<typeof tr>[0])}</span>
                 <span
                   className={cn(
                     'flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px]',
@@ -134,6 +136,8 @@ export function MemberPicker({
 }
 
 export function TaskFormModal({ roomId, members, stores, onClose, onCreated }: TaskFormModalProps) {
+  const t = useTranslations('tasks');
+  const tc = useTranslations('common');
   const [title, setTitle] = useState('');
   const [detail, setDetail] = useState('');
   const [category, setCategory] = useState('');
@@ -189,7 +193,7 @@ export function TaskFormModal({ roomId, members, stores, onClose, onCreated }: T
 
   const submit = async () => {
     if (!title.trim()) {
-      toast({ type: 'error', title: 'กรุณาระบุหัวข้องาน' });
+      toast({ type: 'error', title: t('form.titleRequired') });
       return;
     }
     setSaving(true);
@@ -215,23 +219,23 @@ export function TaskFormModal({ roomId, members, stores, onClose, onCreated }: T
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'สร้างงานไม่สำเร็จ');
+      if (!res.ok) throw new Error(data.error || t('form.createTaskFailed'));
       toast({
         type: 'success',
-        title: reportMode ? 'ส่งเรื่องแล้ว' : 'สร้างงานแล้ว',
+        title: reportMode ? t('form.reportSent') : t('form.taskCreated'),
         message: data.task?.ticket_no,
       });
       onCreated();
       onClose();
     } catch (e) {
-      toast({ type: 'error', title: 'ผิดพลาด', message: e instanceof Error ? e.message : '' });
+      toast({ type: 'error', title: tc('error'), message: e instanceof Error ? e.message : '' });
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <Modal isOpen onClose={onClose} title={reportMode ? 'แจ้งเรื่องใหม่' : 'เพิ่มงานใหม่'} size="lg">
+    <Modal isOpen onClose={onClose} title={reportMode ? t('form.reportNewTitle') : t('form.addTaskTitle')} size="lg">
       {!cfgLoaded ? (
         <div className="flex justify-center py-12">
           <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
@@ -240,69 +244,63 @@ export function TaskFormModal({ roomId, members, stores, onClose, onCreated }: T
         <div className="space-y-4">
           {reportMode && (
             <p className="rounded-lg bg-indigo-50 p-3 text-xs text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300">
-              📣 แจ้งเรื่องเข้าห้องนี้ — กรอกสั้น ๆ ว่าเกิดอะไร ที่ไหน แล้วแนบรูป ระบบจะส่งต่อให้ผู้รับผิดชอบเอง
+              {t('form.reportBanner')}
             </p>
           )}
 
-          <Input label="หัวข้องาน *" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="เช่น แอร์โซนครัวไม่เย็น" />
-          <Textarea label="รายละเอียด" value={detail} onChange={(e) => setDetail(e.target.value)} rows={3} placeholder={reportMode ? 'เล่าอาการ/สิ่งที่เจอเพิ่มเติม...' : 'อธิบายงาน...'} />
+          <Input label={t('form.taskTitleLabel')} value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t('form.taskTitlePlaceholder')} />
+          <Textarea label={t('form.taskDetailLabel')} value={detail} onChange={(e) => setDetail(e.target.value)} rows={3} placeholder={reportMode ? t('form.taskDetailPlaceholderReport') : t('form.taskDetailPlaceholder')} />
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {!reportMode && (
               <Select
-                label="ประเภทการตอบกลับ"
+                label={t('form.responseTypeLabel')}
                 value={responseType}
                 onChange={(e) => setResponseType(e.target.value as TaskResponseType)}
-                options={[
-                  { value: 'submit', label: TASK_RESPONSE_TYPE_LABELS.submit },
-                  { value: 'acknowledge', label: TASK_RESPONSE_TYPE_LABELS.acknowledge },
-                  { value: 'notify', label: TASK_RESPONSE_TYPE_LABELS.notify },
-                ]}
+                options={RESPONSE_TYPE_VALUES.map((v) => ({ value: v, label: t(`responseType.${v}`) }))}
               />
             )}
-            <Input label="หมวด" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="เช่น ไฟฟ้า, ประปา" />
+            <Input label={t('form.categoryLabel')} value={category} onChange={(e) => setCategory(e.target.value)} placeholder={t('form.categoryPlaceholder')} />
             <Select
-              label="ความสำคัญ"
+              label={t('form.priorityLabel')}
               value={priority}
               onChange={(e) => setPriority(e.target.value as TaskPriority)}
               options={[
-                { value: 'low', label: 'ต่ำ' },
-                { value: 'med', label: 'กลาง' },
-                { value: 'high', label: 'สูง' },
+                { value: 'low', label: t('priority.low') },
+                { value: 'med', label: t('priority.med') },
+                { value: 'high', label: t('priority.high') },
               ]}
             />
             {stores.length > 0 && (
               <Select
-                label="สาขา (Venue)"
+                label={t('form.storeLabel')}
                 value={storeId}
                 onChange={(e) => setStoreId(e.target.value)}
-                placeholder="— ไม่ระบุ —"
+                placeholder={t('form.storePlaceholder')}
                 options={stores.map((s) => ({ value: s.id, label: s.name }))}
               />
             )}
             {!reportMode && (
-              <Input label="วันเริ่มงาน (เว้นว่าง = เริ่มทันที)" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+              <Input label={t('form.startDateLabel')} type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
             )}
             {!reportMode && (
-              <Input label="กำหนดเสร็จ" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+              <Input label={t('form.dueDateLabel')} type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             )}
           </div>
 
           {assignMode === 'manual' ? (
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">ผู้รับผิดชอบ</label>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">{t('form.responsiblePeople')}</label>
               <MemberPicker
                 members={members}
                 selected={assigneeIds}
                 onToggle={(id) => setAssigneeIds((s) => toggle(s, id))}
-                empty="ยังไม่มีสมาชิกในห้องนี้"
+                empty={t('form.noMembersInRoom')}
               />
             </div>
           ) : (
             <div className="rounded-lg bg-emerald-50 p-3 text-xs text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">
-              {assignMode === 'claim'
-                ? '🔔 ระบบจะแจ้งกลุ่มผู้รับผิดชอบของห้องให้มารับเรื่องเอง — คุณไม่ต้องเลือกคน'
-                : '👥 ระบบจะส่งเรื่องนี้ให้กลุ่มผู้รับผิดชอบของห้องทุกคนอัตโนมัติ'}
+              {assignMode === 'claim' ? t('form.claimNotice') : t('form.allNotice')}
             </div>
           )}
 
@@ -310,35 +308,33 @@ export function TaskFormModal({ roomId, members, stores, onClose, onCreated }: T
             <>
               <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
                 <input type="checkbox" checked={requiresApproval} onChange={(e) => setRequiresApproval(e.target.checked)} className="h-4 w-4 rounded" />
-                ต้องอนุมัติเมื่อทำเสร็จ
+                {t('form.requireApproval')}
               </label>
 
               {requiresApproval && (
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    ผู้อนุมัติ / ตรวจงาน <span className="font-normal text-gray-400">(ใครก็ได้ในรายชื่ออนุมัติได้ · ว่าง = เจ้าของอนุมัติ)</span>
+                    {t('form.approverLabel')} <span className="font-normal text-gray-400">{t('form.approverHint')}</span>
                   </label>
                   <MemberPicker
                     members={members}
                     selected={approverIds}
                     onToggle={(id) => setApproverIds((s) => toggle(s, id))}
-                    empty="ยังไม่มีสมาชิกในห้องนี้"
+                    empty={t('form.noMembersInRoom')}
                   />
                 </div>
               )}
 
               <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
                 <input type="checkbox" checked={requireAttachment} onChange={(e) => setRequireAttachment(e.target.checked)} className="h-4 w-4 rounded" />
-                บังคับให้ผู้ทำแนบไฟล์/รูปก่อนปิดงาน
+                {t('form.requireAttachmentTask')}
               </label>
             </>
           )}
 
           {!reportMode && responseType !== 'submit' && (
             <p className="rounded-lg bg-gray-50 p-3 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-              {responseType === 'acknowledge'
-                ? 'พนักงานเพียงกด "รับทราบ" เพื่อปิดงาน — ไม่ต้องส่งงาน/อนุมัติ'
-                : 'งานแจ้งเพื่อทราบ — พนักงานเปิดอ่านแล้วกด "รับทราบว่าอ่านแล้ว" เพื่อปิด'}
+              {responseType === 'acknowledge' ? t('form.acknowledgeNote') : t('form.notifyNote')}
             </p>
           )}
 
@@ -346,14 +342,14 @@ export function TaskFormModal({ roomId, members, stores, onClose, onCreated }: T
           <AttachmentInput
             value={attachments}
             onChange={setAttachments}
-            label={reportMode ? 'แนบรูป/ไฟล์ (แนะนำให้ถ่ายรูปจุดที่เสียประกอบ)' : 'ไฟล์/รูป/ลิงก์ประกอบงาน (ให้ผู้รับงานดู)'}
+            label={reportMode ? t('form.attachmentLabelReport') : t('form.attachmentLabelTask')}
           />
         </div>
       )}
 
       <ModalFooter>
-        <Button variant="ghost" onClick={onClose}>ยกเลิก</Button>
-        <Button onClick={submit} isLoading={saving}>{reportMode ? 'ส่งเรื่อง' : 'สร้างงาน'}</Button>
+        <Button variant="ghost" onClick={onClose}>{tc('cancel')}</Button>
+        <Button onClick={submit} isLoading={saving}>{reportMode ? t('form.sendReport') : t('form.createTask')}</Button>
       </ModalFooter>
     </Modal>
   );
