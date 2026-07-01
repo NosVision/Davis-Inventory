@@ -4,13 +4,16 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Card, CardHeader, CardContent } from '@/components/ui';
-import { Inbox, ClipboardCheck, ClipboardList, FileText, ScanLine, Wine, Package, Repeat, Truck, ArrowRight, Loader2, RefreshCw, TrendingUp, AlertTriangle, Banknote, ChevronDown, ChevronUp } from 'lucide-react';
+import { Card, CardHeader, CardContent, toast } from '@/components/ui';
+import { Inbox, ClipboardCheck, ClipboardList, FileText, ScanLine, Wine, Package, Repeat, Truck, ArrowRight, Loader2, RefreshCw, TrendingUp, AlertTriangle, Banknote, ChevronDown, ChevronUp, CheckCheck } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuthStore } from '@/stores/auth-store';
 import { useAppStore } from '@/stores/app-store';
 import { cn } from '@/lib/utils/cn';
 import { formatThaiDate } from '@/lib/utils/format';
+import { logAudit, AUDIT_ACTIONS } from '@/lib/audit';
+import { sendNotification } from '@/lib/notifications/client';
+import { maybeCompleteStockApproveCard } from '@/lib/chat/bot-client';
 
 // Stock variance flow surfaces three different waiting states to the
 // owner — staff still needs to write an explanation, staff still needs
@@ -107,6 +110,7 @@ export default function InboxPage() {
   const [summary, setSummary] = useState<DailySummary | null>(null);
   // Collapsed store cards — set of store_ids whose card is hidden.
   const [collapsedStores, setCollapsedStores] = useState<Set<string>>(new Set());
+  const [approvingStore, setApprovingStore] = useState<string | null>(null);
   const toggleStoreCollapsed = useCallback((storeId: string) => {
     setCollapsedStores((prev) => {
       const next = new Set(prev);
@@ -480,6 +484,76 @@ export default function InboxPage() {
 
   const isPrivileged = user?.role === 'owner' || user?.role === 'accountant';
 
+  // อนุมัติค่าชี้แจงผลต่างทั้งหมดของสาขา (เฉพาะแถวที่ status='explained')
+  // ใช้ลอจิก + side-effect เดียวกับหน้า /stock/approval (batch approve)
+  const handleApproveAllStock = async (storeId: string, storeName: string) => {
+    const supabase = createClient();
+    const { data: rows } = await supabase
+      .from('comparisons')
+      .select('id, comp_date, product_name, explained_by')
+      .eq('store_id', storeId)
+      .eq('status', 'explained');
+    const list = (rows || []) as Array<{ id: string; comp_date: string; product_name: string | null; explained_by: string | null }>;
+    if (list.length === 0) {
+      toast({ type: 'info', title: t('inbox.approveAllNone') });
+      return;
+    }
+    if (!window.confirm(t('inbox.approveAllConfirm', { count: list.length, store: storeName }))) return;
+
+    setApprovingStore(storeId);
+    try {
+      const { error } = await supabase
+        .from('comparisons')
+        .update({ status: 'approved', approved_by: user?.id || null, approval_status: 'approved' })
+        .eq('store_id', storeId)
+        .eq('status', 'explained');
+      if (error) throw error;
+
+      await logAudit({
+        store_id: storeId,
+        action_type: AUDIT_ACTIONS.STOCK_BATCH_APPROVED,
+        table_name: 'comparisons',
+        new_value: { count: list.length, status: 'approved', products: list.map((r) => r.product_name).filter(Boolean).slice(0, 10) },
+        changed_by: user?.id || null,
+      });
+
+      // แจ้งพนักงานที่เขียนชี้แจง (รวมจำนวนต่อคน)
+      const staff = new Map<string, number>();
+      list.forEach((r) => { if (r.explained_by) staff.set(r.explained_by, (staff.get(r.explained_by) || 0) + 1); });
+      staff.forEach((count, staffId) => {
+        sendNotification({
+          userId: staffId,
+          storeId,
+          type: 'approval_result',
+          title: t('approval.notifyApproved'),
+          body: t('approval.batchApproveSuccessMsg', { count }),
+          data: { result: 'approved', count, url: '/stock/explanation' },
+        });
+      });
+
+      // ปิดการ์ด stock_approve ในแชทของแต่ละวันที่ได้รับอนุมัติครบแล้ว
+      if (user) {
+        const dates = Array.from(new Set(list.map((r) => r.comp_date)));
+        dates.forEach((d) =>
+          maybeCompleteStockApproveCard({
+            storeId,
+            compDate: d,
+            byUserId: user.id,
+            byUserName: user.displayName || user.username || 'Owner',
+          }),
+        );
+      }
+
+      toast({ type: 'success', title: t('approval.approveSuccess'), message: t('approval.batchApproveSuccessMsg', { count: list.length }) });
+      fetchPending();
+      fetchSummary();
+    } catch {
+      toast({ type: 'error', title: t('approval.errorTitle'), message: t('approval.errorApprove') });
+    } finally {
+      setApprovingStore(null);
+    }
+  };
+
   if (!isPrivileged) {
     return (
       <div className="mx-auto max-w-3xl space-y-4 p-4">
@@ -738,11 +812,25 @@ export default function InboxPage() {
                   if (catItems.length === 0) return null;
                   const meta = CATEGORY_META[cat];
                   const Icon = meta.icon;
+                  const catTotal = catItems.reduce((s, x) => s + x.count, 0);
                   return (
                     <div key={cat}>
-                      <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-gray-400">
-                        <Icon className={cn('h-3.5 w-3.5', `text-${meta.color}-500`)} />
-                        {t(meta.titleKey)}
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-gray-400">
+                          <Icon className={cn('h-3.5 w-3.5', `text-${meta.color}-500`)} />
+                          {t(meta.titleKey)}
+                        </div>
+                        {cat === 'stock_approve' && (
+                          <button
+                            type="button"
+                            onClick={() => handleApproveAllStock(g.store_id, g.store_name)}
+                            disabled={approvingStore === g.store_id}
+                            className="inline-flex items-center gap-1 rounded-md bg-violet-600 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-violet-700 disabled:opacity-50"
+                          >
+                            {approvingStore === g.store_id ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCheck className="h-3 w-3" />}
+                            {t('inbox.approveAllBtn', { count: catTotal })}
+                          </button>
+                        )}
                       </div>
                       <div className="space-y-1">
                         {catItems.map((item) => (

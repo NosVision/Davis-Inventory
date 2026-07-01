@@ -583,6 +583,9 @@
     }
   },
   "inbox": {
+    "approveAllBtn": "Approve all ({count})",
+    "approveAllConfirm": "Approve all {count} explained variance items for {store}?",
+    "approveAllNone": "Nothing to approve",
     "title": "Approvals",
     "subtitle": "Items awaiting owner approval — across all stores and types",
     "ownerOnly": "Only owner / accountant can access",
