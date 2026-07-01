@@ -211,6 +211,14 @@
   @keyframes flash{0%{opacity:0}20%{opacity:.9}100%{opacity:0}}
   .selfiethumb{width:44px;height:44px;border-radius:10px;overflow:hidden;background:linear-gradient(160deg,#c9d3e0,#9fb0c5);display:grid;place-items:center;flex:none;border:2px solid #fff;box-shadow:var(--shadow)}
   .selfiethumb .face{width:24px;height:24px;border-radius:50%;background:radial-gradient(circle at 50% 38%,#f2d3b8,#e5b48c)}
+  .selfiethumb.wm{border-color:#5eead4}
+  /* watermarked selfie: live preview caption + captured shot + thumbnail */
+  .wmpreview{position:absolute;left:8px;right:8px;bottom:8px;background:rgba(8,12,20,.6);color:#e6faf5;border-radius:8px;padding:6px 9px;font-size:10px;line-height:1.45;font-weight:600;border-left:3px solid #5eead4;font-family:"Outfit","Noto Sans Thai",sans-serif;text-align:left}
+  .wmpreview b{font-size:11.5px;color:#fff}
+  .wmshot{width:100%;max-width:230px;border-radius:16px;overflow:hidden;border:3px solid #fff;box-shadow:var(--shadow-lift);line-height:0}
+  .wmshot img{width:100%;display:block}
+  .wmthumb{width:58px;height:58px;border-radius:12px;overflow:hidden;flex:none;border:2px solid #5eead4;box-shadow:var(--shadow);cursor:pointer;line-height:0}
+  .wmthumb img{width:100%;height:100%;object-fit:cover}
 
   /* mini map */
   .map{position:relative;height:150px;border-radius:16px;overflow:hidden;border:1px solid var(--line);background:linear-gradient(0deg,rgba(13,148,136,.05),rgba(79,70,229,.05)),#eaf0f4}
@@ -506,6 +514,10 @@ th:{
   gpsFinding:"กำลังหาตำแหน่ง (GPS)…", gpsFindingSub:"ตรวจสอบว่าอยู่ในพื้นที่ร้าน",
   selfieTitle:"ถ่ายรูปยืนยันตัวตน", selfieSub:"ถ่ายรูปหน้าตรงเพื่อยืนยันว่าเป็นตัวจริง", selfieBtn:"ถ่ายรูป", selfieRetake:"ถ่ายใหม่", selfieOk:"ถ่ายรูปแล้ว ✓", selfieConfirm:"ยืนยันเข้างาน",
   geoOk:"อยู่ในพื้นที่สาขา ✓", geoPin:"Upper House",
+  geoInFence:"อยู่ในรัศมีที่อนุญาต", geoInRange:"อยู่ในพื้นที่ {branch} · ห่าง {dist} ม. / รัศมี {radius} ม. ✓",
+  wmLivePreview:"กำลังอ่านเวลา + พิกัด…", wmWillBurn:"ระบบจะฝังลายน้ำเวลา+พิกัดลงรูป", wmBurned:"ฝังลายน้ำลงรูปแล้ว (แก้ไขไม่ได้)",
+  wmSavedNote:"บันทึกลงระบบแล้ว (รูป+เวลา+พิกัด)", wmProof:"รูปเซลฟี่มีลายน้ำเวลา+ตำแหน่งจริง แก้ไขไม่ได้",
+  wmModalTitle:"รูปเช็คอิน (ฝังลายน้ำ)", wmModalSub:"ลายน้ำวันเวลา+พิกัด GPS+สาขา ถูกฝังลงรูปตอนถ่าย ใช้เป็นหลักฐาน",
   checkedIn:"เข้างานแล้ว", clockInAt:"เข้างาน", todayShift:"กะวันนี้", nightShift:"กะดึก 17:00–01:00",
   workedFor:"ทำงานมาแล้ว", clockOutBtn:"ออกงาน", askLeave:"ขอลา", viewSlip:"ดูสลิป", myShifts:"ตารางกะ",
   tapOtNote:"เกิน 8 ชม. คิด OT ×1.5 อัตโนมัติ",
@@ -641,8 +653,10 @@ th:{
   assetAssignedToast:"มอบทรัพย์สินแล้ว", assetTotal:"มูลค่าทรัพย์สินรวม", printAssets:"พิมพ์ทะเบียน", assetNone:"ยังไม่มีทรัพย์สินที่ถือครอง",
   /* ===== Geofence ===== */
   geoH1:"ตั้งค่าสถานที่ (Geofence)", geoLede:"กำหนดพิกัดและรัศมีรั้ว GPS ของแต่ละสาขา — ข้อความเช็คอินจะอ้างอิงค่านี้ กันเช็คอินนอกพื้นที่",
-  geoBranch:"สาขา", geoLat:"ละติจูด (Lat)", geoLng:"ลองจิจูด (Lng)", geoRadius:"รัศมี (เมตร)", geoSave:"บันทึกพิกัด",
+  geoBranch:"สาขา", geoLat:"ละติจูด (Lat)", geoLng:"ลองจิจูด (Lng)", geoRadius:"รัศมีที่อนุญาต (เมตร)", geoSave:"บันทึกพิกัด",
   geoSavedToast:"บันทึกพิกัด Geofence แล้ว", geoCurrent:"รั้วปัจจุบัน", geoMapNote:"หมุดคือจุดศูนย์กลางสาขา · วงกลมคือรัศมีที่อนุญาตให้เช็คอิน", geoRadiusM:"เมตร",
+  geoPinLabel:"จุดปักหมุดสาขา (Lat / Lng)", geoRadiusHint:"เช่น 50 เมตร — พนักงานต้องอยู่ในรัศมีนี้จึงเช็คอินได้",
+  geoCheckLink:"ค่านี้ใช้จริงตอนเช็คอิน", geoCheckLinkP:"ระบบวัดระยะจากจุดปักหมุด ถ้าเกินรัศมีจะเตือน/บล็อก",
   /* ===== nav (new screens) ===== */
   navMyschedule:"ตารางงานของฉัน", navLeavepolicy:"เงื่อนไขการลา", navAudit:"บันทึกการแก้ไข",
   myscheduleSub:"กะของฉันรายสัปดาห์", leavepolicySub:"ตั้งกฎการลาต่อประเภท", auditSub:"ประวัติการแก้ไขข้อมูล",
@@ -699,6 +713,10 @@ en:{
   gpsFinding:"Finding location (GPS)…", gpsFindingSub:"Verifying you’re at the venue",
   selfieTitle:"Take an identity photo", selfieSub:"Take a front-facing selfie to confirm it’s really you", selfieBtn:"Take photo", selfieRetake:"Retake", selfieOk:"Photo taken ✓", selfieConfirm:"Confirm clock-in",
   geoOk:"Inside the branch fence ✓", geoPin:"Upper House",
+  geoInFence:"Inside the allowed radius", geoInRange:"Inside {branch} · {dist} m away / radius {radius} m ✓",
+  wmLivePreview:"Reading time + coordinates…", wmWillBurn:"Time + GPS watermark will be burned onto the photo", wmBurned:"Watermark burned into photo (immutable)",
+  wmSavedNote:"Saved to system (photo + time + GPS)", wmProof:"Selfie carries a real time + location watermark that can’t be edited",
+  wmModalTitle:"Check-in photo (watermarked)", wmModalSub:"Date-time + GPS + branch watermark is burned into the photo at capture — used as proof.",
   checkedIn:"Clocked in", clockInAt:"Clocked in", todayShift:"Today’s shift", nightShift:"Night 17:00–01:00",
   workedFor:"Worked for", clockOutBtn:"Clock out", askLeave:"Leave", viewSlip:"Payslip", myShifts:"Shifts",
   tapOtNote:"Beyond 8 hrs counts as OT ×1.5 automatically",
@@ -820,8 +838,10 @@ en:{
   assetFName:"Asset name", assetFCat:"Category", assetFVal:"Value (฿)", assetFHolder:"Assign to", assetNamePh:"e.g. Uniform shirt",
   assetAssignedToast:"Asset assigned", assetTotal:"Total asset value", printAssets:"Print register", assetNone:"No assets currently held",
   geoH1:"Locations (Geofence)", geoLede:"Set the GPS fence coordinates and radius for each branch — the check-in text references these, blocking check-in outside the area.",
-  geoBranch:"Branch", geoLat:"Latitude (Lat)", geoLng:"Longitude (Lng)", geoRadius:"Radius (m)", geoSave:"Save coordinates",
+  geoBranch:"Branch", geoLat:"Latitude (Lat)", geoLng:"Longitude (Lng)", geoRadius:"Allowed radius (metres)", geoSave:"Save coordinates",
   geoSavedToast:"Geofence coordinates saved", geoCurrent:"Current fence", geoMapNote:"The pin is the branch centre · the circle is the allowed check-in radius", geoRadiusM:"m",
+  geoPinLabel:"Branch pin (Lat / Lng)", geoRadiusHint:"e.g. 50 metres — staff must be within this radius to check in",
+  geoCheckLink:"This value is used at check-in", geoCheckLinkP:"The system measures distance from the pin; beyond the radius it warns/blocks.",
   /* ===== nav (new screens) ===== */
   navMyschedule:"My schedule", navLeavepolicy:"Leave policy", navAudit:"Audit log",
   myscheduleSub:"My weekly shifts", leavepolicySub:"Rules per leave type", auditSub:"Change history",
@@ -973,12 +993,15 @@ let annFilter = "all";
 let policyAcked = false;
 let policyAckedAt = null;
 
-/* geofence */
+/* geofence — HR sets pinned lat/lng + allowed radius (metres) per branch */
 let geofences = {
-  upper:   {lat:13.7401, lng:100.5698, radius:12},
-  terrace: {lat:13.7220, lng:100.5670, radius:15}
+  upper:   {lat:13.72840, lng:100.56900, radius:50, addr:{th:"สุขุมวิท 24",en:"Sukhumvit 24"}},
+  terrace: {lat:13.72200, lng:100.56700, radius:60, addr:{th:"สาทรใต้",en:"South Sathon"}}
 };
 let geoBranch = "upper";
+const CHECKIN_DISTANCE = 8;   // mock live distance from pin (metres) — inside radius
+/* latest burned-in watermarked selfie data URLs (mock capture) */
+let nanSelfieWM = null, nanClockOutWM = null;
 
 /* ---- Company config (multi-entity, shared payslip template) ---- */
 const COMPANIES = {
@@ -1158,7 +1181,75 @@ let svcApplied = false;
    Rendering helpers
    ============================================================ */
 function avatar(id, cls=""){ const e=EMP[id]; return `<div class="avatar ${cls}" style="background:${e.color}">${e.init}</div>`; }
-function selfieThumb(){ return `<div class="selfiethumb"><div class="face"></div></div>`; }
+/* selfieThumb: if a watermarked data-URL is passed, render the real burned-in photo */
+function selfieThumb(dataUrl){
+  if(dataUrl) return `<div class="selfiethumb wm" title="${t("wmProof")}"><img src="${dataUrl}" alt="selfie" style="width:100%;height:100%;object-fit:cover"></div>`;
+  return `<div class="selfiethumb"><div class="face"></div></div>`;
+}
+
+/* ---- Watermark / GPS-selfie helpers (burn-in via canvas) ---- */
+/* Buddhist-era timestamp "dd/mm/พ.ศ. HH:MM:SS" (Asia/Bangkok tone, mock) */
+function wmTimestamp(d){
+  d = d || new Date();
+  const p = n => String(n).padStart(2,"0");
+  const be = d.getFullYear()+543;
+  return `${p(d.getDate())}/${p(d.getMonth()+1)}/${be} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+/* jitter a base coord slightly so the GPS reading looks live */
+function wmCoords(branch){
+  const g = geofences[branch] || geofences.upper;
+  const j = () => (Math.random()-0.5)*0.0006;
+  return { lat:+(g.lat + j()).toFixed(5), lng:+(g.lng + j()).toFixed(5) };
+}
+/* draw a watermarked "selfie" onto a canvas and return a data URL (burned in, immutable) */
+function makeWatermarkedSelfie(opts){
+  const { time, lat, lng, branch, addr, size=300 } = opts;
+  const c = document.createElement("canvas");
+  c.width = size; c.height = size;
+  const ctx = c.getContext("2d");
+  if(!ctx) return null;
+  // photo backdrop (dark, like a night selfie)
+  const bg = ctx.createLinearGradient(0,0,size,size);
+  bg.addColorStop(0,"#1b2436"); bg.addColorStop(1,"#0e1420");
+  ctx.fillStyle = bg; ctx.fillRect(0,0,size,size);
+  // simple face
+  const cx=size/2, cy=size*0.42, r=size*0.17;
+  const fg = ctx.createRadialGradient(cx,cy-r*0.3,r*0.2,cx,cy,r);
+  fg.addColorStop(0,"#f2d3b8"); fg.addColorStop(1,"#c99b74");
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.fillStyle=fg; ctx.fill();
+  ctx.fillStyle="#5a4636";
+  ctx.beginPath(); ctx.arc(cx-r*0.4,cy-r*0.1,r*0.09,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx+r*0.4,cy-r*0.1,r*0.09,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle="#b07a52"; ctx.lineWidth=size*0.014; ctx.lineCap="round";
+  ctx.beginPath(); ctx.arc(cx,cy+r*0.15,r*0.45,0.15*Math.PI,0.85*Math.PI); ctx.stroke();
+  // shoulders
+  ctx.fillStyle="#2a3446";
+  ctx.beginPath(); ctx.ellipse(cx,cy+r*2.2,r*1.9,r*1.1,0,Math.PI,0); ctx.fill();
+  // red REC dot + label (CCTV feel)
+  ctx.fillStyle="#ef4444"; ctx.beginPath(); ctx.arc(size*0.09,size*0.09,size*0.018,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle="#fff"; ctx.font=`700 ${size*0.045}px 'Outfit',sans-serif`; ctx.textBaseline="middle";
+  ctx.fillText("REC", size*0.13, size*0.092);
+  // watermark caption bar (semi-transparent, burned in)
+  const barH = size*0.30, by = size-barH;
+  ctx.fillStyle="rgba(8,12,20,0.62)"; ctx.fillRect(0,by,size,barH);
+  ctx.fillStyle="rgba(94,234,212,0.9)"; ctx.fillRect(0,by,size*0.012,barH); // teal edge
+  ctx.textBaseline="alphabetic"; ctx.textAlign="left";
+  const px = size*0.05; let ly = by + size*0.075;
+  ctx.fillStyle="#e6faf5"; ctx.font=`700 ${size*0.052}px 'Outfit','Noto Sans Thai',sans-serif`;
+  ctx.fillText(time, px, ly);
+  ly += size*0.068;
+  ctx.fillStyle="#c7d2e0"; ctx.font=`600 ${size*0.042}px 'Outfit','Noto Sans Thai',sans-serif`;
+  ctx.fillText(`GPS ${lat.toFixed(5)}, ${lng.toFixed(5)}`, px, ly);
+  ly += size*0.062;
+  ctx.fillStyle="#9fb0c5"; ctx.font=`600 ${size*0.040}px 'Noto Sans Thai',sans-serif`;
+  const label = `${branch} · ${addr}`;
+  // clip long address
+  let txt = label;
+  while(ctx.measureText(txt).width > size-px*2 && txt.length>4){ txt = txt.slice(0,-2); }
+  if(txt!==label) txt = txt.slice(0,-1)+"…";
+  ctx.fillText(txt, px, ly);
+  return c.toDataURL("image/png");
+}
 
 function toast(msg, sub="", kind="ok"){
   const el = document.createElement("div");
@@ -1375,13 +1466,15 @@ MOUNTERS.dash = () => {
     lv.innerHTML = `<div style="text-align:center;color:var(--muted);padding:18px 0;font-size:13px">${svgIc("check","width:26px;height:26px;color:var(--green);margin-bottom:4px")}<div>${t("dwLeaveEmpty")}</div></div>`;
   }
 
-  /* who's clocked in now */
+  /* who's clocked in now — link watermarked selfie thumb when present */
   const live = $("#dwLive");
-  live.innerHTML = liveIn.slice(0,5).map(l=>`
+  live.innerHTML = liveIn.slice(0,5).map((l,idx)=>`
     <div class="liverow" style="padding:8px 4px">${avatar(l.id)}
       <div class="nm">${empName(l.id)}<small>${empRole(l.id)}</small></div>
       <div class="tm" style="margin-left:auto"><b class="num">${l.at}</b><small>${t("clockInAt")}</small></div>
+      ${l.wm?`<span data-dwwm="${idx}" style="cursor:pointer">${selfieThumb(l.wm)}</span>`:selfieThumb()}
       <span class="pulse-dot" style="margin-left:8px"></span></div>`).join("");
+  $$('[data-dwwm]').forEach(s=> s.addEventListener("click", ()=>{ const l=liveIn[+s.dataset.dwwm]; if(l&&l.wm) viewWatermark(l.wm,l.at); }));
 
   /* warnings / discipline */
   const w = $("#dwWarn");
@@ -1472,15 +1565,19 @@ function startScan(){
     scanStep(t("gpsFinding"), t("gpsFindingSub"), `<div class="spin"></div>`);
     setTimeout(()=>{
       const gf=geofences.upper; const b=essBody(); if(!b) return;
+      const inRange = t("geoInRange")
+        .replace("{branch}", t("geoPin"))
+        .replace("{dist}", nf(CHECKIN_DISTANCE))
+        .replace("{radius}", nf(gf.radius));
       b.innerHTML = `
         <div class="scanstate">
           <div class="map" style="width:100%;height:140px">
             <div class="road" style="left:0;right:0;top:48%;height:8px"></div><div class="road" style="top:0;bottom:0;left:56%;width:8px"></div>
             <div class="geoc"></div>${svgIc("geo","width:26px;height:26px").replace('class="ic"','class="geopin ic"')}
             <div class="geodot"></div>
-            <div class="maptag">${svgIc("check","width:14px;height:14px")}${t("geoOk")} · ${nf(gf.radius)}${t("geoRadiusM")}</div>
+            <div class="maptag">${svgIc("check","width:14px;height:14px")}${t("geoPin")} · ${nf(CHECKIN_DISTANCE)} / ${nf(gf.radius)} ${t("geoRadiusM")} ✓</div>
           </div>
-          <div><div class="statetitle" style="color:var(--teal)">${t("geoPin")}</div><div class="statesub">${t("gpsFindingSub")}</div></div>
+          <div><div class="statetitle" style="color:var(--teal)">${svgIc("check","width:16px;height:16px")} ${t("geoInFence")}</div><div class="statesub">${inRange}</div></div>
         </div>`;
       setTimeout(renderSelfieStep, 1100);
     }, 1200);
@@ -1488,13 +1585,21 @@ function startScan(){
 }
 function renderSelfieStep(){
   const b=essBody(); if(!b) return;
+  const gf=geofences.upper;
   b.innerHTML = `
     <div class="scanstate">
+      <div class="pill p-teal" style="align-self:center">${svgIc("geo","width:13px;height:13px")}${t("geoPin")} · ${nf(CHECKIN_DISTANCE)} / ${nf(gf.radius)} ${t("geoRadiusM")} ✓</div>
       <div class="statetitle">${t("selfieTitle")}</div>
-      <div class="selfiebox" id="selfieBox"><div class="frameline"></div><div class="face"><span class="eye l"></span><span class="eye r"></span></div><div class="flash" id="selfieFlash"></div></div>
-      <div class="statesub">${t("selfieSub")}</div>
+      <div class="selfiebox" id="selfieBox"><div class="frameline"></div><div class="face"><span class="eye l"></span><span class="eye r"></span></div>
+        <div class="wmpreview" id="wmPreview">${t("wmLivePreview")}</div>
+        <div class="flash" id="selfieFlash"></div></div>
+      <div class="statesub">${t("selfieSub")} · ${t("wmWillBurn")}</div>
       <button class="btn btn-primary btn-block" id="selfieBtn">${svgIc("cam")}${t("selfieBtn")}</button>
     </div>`;
+  // live-updating watermark preview text
+  const upd=()=>{ const el=$("#wmPreview"); if(!el) return; const co=wmCoords("upper");
+    el.innerHTML=`<b>${wmTimestamp()}</b><br>GPS ${co.lat.toFixed(5)}, ${co.lng.toFixed(5)}<br>${t("geoPin")} · ${geofences.upper.addr[lang]}`; };
+  upd(); if(window.__wmTick) clearInterval(window.__wmTick); window.__wmTick=setInterval(upd,1000);
   $("#selfieBtn").addEventListener("click", takeSelfie);
 }
 function takeSelfie(){
@@ -1502,6 +1607,13 @@ function takeSelfie(){
   if(!box||!flash) return;
   if(!selfieTaken){
     flash.classList.add("go");
+    if(window.__wmTick){ clearInterval(window.__wmTick); window.__wmTick=null; }
+    // BURN the watermark into the photo now (immutable capture)
+    const co = wmCoords("upper");
+    nanSelfieWM = makeWatermarkedSelfie({
+      time: wmTimestamp(), lat: co.lat, lng: co.lng,
+      branch: t("geoPin"), addr: geofences.upper.addr[lang], size: 340
+    });
     setTimeout(()=>{
       const b=essBody(); if(!b) return;
       selfieTaken=true;
@@ -1509,23 +1621,28 @@ function takeSelfie(){
       b.innerHTML = `
         <div class="scanstate">
           <div class="statetitle" style="color:var(--green)">${t("selfieOk")}</div>
-          <div class="selfiebox captured"><div class="face" style="opacity:.9"><span class="eye l"></span><span class="eye r"></span></div>
-            <div style="position:absolute;bottom:8px;left:8px;right:8px;background:rgba(255,255,255,.9);border-radius:8px;padding:5px 8px;font-size:10.5px;font-weight:700;color:#137a37;display:flex;align-items:center;gap:5px">${svgIc("check","width:12px;height:12px")}${t("photoOnRec")}</div></div>
+          <div class="wmshot"><img src="${nanSelfieWM}" alt="watermarked selfie"></div>
+          <div class="pill p-green" style="align-self:center">${svgIc("check","width:12px;height:12px")}${t("wmBurned")}</div>
           <div style="display:flex;gap:8px;width:100%">
             <button class="btn btn-outline" id="retakeBtn" style="flex:1">${svgIc("cam")}${t("selfieRetake")}</button>
             <button class="btn btn-primary" id="confirmBtn" style="flex:1.4">${svgIc("check")}${t("selfieConfirm")}</button>
           </div>
         </div>`;
-      $("#retakeBtn").addEventListener("click", renderSelfieStep);
+      $("#retakeBtn").addEventListener("click", ()=>{ selfieTaken=false; renderSelfieStep(); });
       $("#confirmBtn").addEventListener("click", finishCheckIn);
     }, 420);
   }
 }
 function finishCheckIn(){
   nanCheckedIn = true; workStart = Date.now();
-  if(!liveIn.find(l=>l.id==="nan")) liveIn.push({id:"nan", at:nanCheckInTime, isNew:true});
+  const li = liveIn.find(l=>l.id==="nan");
+  if(!li) liveIn.push({id:"nan", at:nanCheckInTime, isNew:true, wm:nanSelfieWM});
+  else li.wm = nanSelfieWM;
+  // record attendance with the watermarked selfie
+  const rec = attendance.find(a=>a.id==="nan");
+  if(rec){ rec.in=nanCheckInTime; rec.photo=true; rec.wm=nanSelfieWM; rec.gps=wmCoords("upper"); rec.dist=CHECKIN_DISTANCE; rec.inFence=true; }
   renderEssCheckedIn();
-  toast(lang==="th"?"เข้างาน 17:02 ✓":"Clocked in 17:02 ✓", (lang==="th"?"แนน · Upper House · ":"Nan · Upper House · ")+t("photoOnRec"), "ok");
+  toast(lang==="th"?"เข้างาน 17:02 ✓":"Clocked in 17:02 ✓", t("wmSavedNote"), "ok");
   setTimeout(()=>toast(t("notifyLine"), lang==="th"?"แจ้งหัวหน้ากะอัตโนมัติ":"Auto-notified shift lead","info"), 700);
   syncBadges();
 }
@@ -1540,6 +1657,12 @@ function renderEssCheckedIn(){
       <div style="font-size:12.5px;color:var(--ink-soft);display:flex;gap:6px;justify-content:center;margin-top:4px;flex-wrap:wrap">
         <span class="pill p-green">${svgIc("check")}${t("geoPin")} · GPS ✓</span><span class="pill p-indigo">${svgIc("cam")}${lang==="th"?"รูปถ่าย ✓":"Photo ✓"}</span></div></div>
     </div>
+    ${nanSelfieWM?`<div class="esscard" style="display:flex;align-items:center;gap:12px">
+      <div class="wmthumb" id="essWmThumb"><img src="${nanSelfieWM}" alt="selfie"></div>
+      <div style="flex:1"><div class="lab">${t("photoOnRec")}</div>
+        <div style="font-size:11.5px;color:#137a37;font-weight:700;display:flex;align-items:center;gap:5px;margin-top:3px">${svgIc("check","width:13px;height:13px")}${t("wmSavedNote")}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px">${t("wmProof")}</div></div>
+    </div>`:""}
     <div class="esscard" style="text-align:center">
       <div class="lab">${t("workedFor")}</div><div class="liveclock" id="liveWork">0h 00m</div>
       <div style="font-size:11.5px;color:var(--muted)">${t("todayShift")} · 17:00 – 01:00</div>
@@ -1553,13 +1676,40 @@ function renderEssCheckedIn(){
     <div style="font-size:11px;color:var(--muted);text-align:center">${t("tapOtNote")}</div>`;
   $("#clockOutBtn").addEventListener("click", clockOut);
   $$('[data-mini]').forEach(b=> b.addEventListener("click", ()=>go(b.dataset.mini)) );
+  const wt=$("#essWmThumb"); if(wt) wt.addEventListener("click", ()=>viewWatermark(nanSelfieWM, nanCheckInTime));
   workTimer=setInterval(()=>{ const base=3*3600*1000+47*60*1000; const d=fmtDur(Date.now()-workStart+base); const el=$("#liveWork"); if(el) el.textContent=`${d.h}h ${String(d.m).padStart(2,"0")}m ${String(d.sec).padStart(2,"0")}s`; else {clearInterval(workTimer);workTimer=null;} }, 1000);
+}
+/* modal that shows the burned-in watermarked selfie full-size */
+function viewWatermark(dataUrl, timeLabel){
+  if(!dataUrl) return;
+  openModal(`
+    <div class="mh"><h3>${t("wmModalTitle")}</h3>${closeBtn()}</div>
+    <div class="mb" style="text-align:center">
+      <div class="wmshot" style="max-width:320px;margin:0 auto"><img src="${dataUrl}" alt="watermarked selfie"></div>
+      <div class="pill p-green" style="margin-top:12px">${svgIc("check","width:12px;height:12px")}${t("wmProof")}</div>
+      <p style="font-size:12px;color:var(--muted);margin:10px 0 0">${t("wmModalSub")}</p>
+    </div>
+    <div class="mf"><button class="btn btn-primary" onclick="closeModal()">${t("close")}</button></div>`);
 }
 function clockOut(){
   if(workTimer){ clearInterval(workTimer); workTimer=null; }
+  // burn a fresh clock-out watermark (real time + GPS + branch)
+  const co = wmCoords("upper");
+  nanClockOutWM = makeWatermarkedSelfie({
+    time: wmTimestamp(), lat: co.lat, lng: co.lng,
+    branch: t("geoPin"), addr: geofences.upper.addr[lang], size: 300
+  });
   openModal(`
     <div class="mh"><h3>${t("clockOutTitle")}</h3>${closeBtn()}</div>
-    <div class="mb"><div style="text-align:center;margin-bottom:14px"><div class="checkbubble" style="margin:0 auto 8px;background:var(--indigo-tint);color:var(--indigo)"><svg class="ic" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg></div><b>${t("clockOutSum")}</b></div>
+    <div class="mb">
+      <div style="display:flex;gap:14px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+        <div class="wmshot" style="width:132px;flex:none"><img src="${nanClockOutWM}" alt="clock-out selfie"></div>
+        <div style="flex:1;min-width:150px">
+          <b>${t("clockOutSum")}</b>
+          <div style="font-size:11.5px;color:#137a37;font-weight:700;display:flex;align-items:center;gap:5px;margin-top:5px">${svgIc("check","width:13px;height:13px")}${t("wmSavedNote")}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:3px">${t("geoPin")} · ${nf(CHECKIN_DISTANCE)} / ${nf(geofences.upper.radius)} ${t("geoRadiusM")} ✓</div>
+        </div>
+      </div>
       <table><tbody>
         <tr><td style="color:var(--ink-soft)">${t("cIn")}</td><td style="text-align:right;font-weight:700" class="num">17:02</td></tr>
         <tr><td style="color:var(--ink-soft)">${t("cOut")}</td><td style="text-align:right;font-weight:700" class="num">01:12</td></tr>
@@ -1693,13 +1843,17 @@ function renderAtt(){
 }
 function showPhoto(i){
   const a=attendance[i];
+  const photoHtml = a.wm
+    ? `<div class="wmshot" style="width:230px;margin:0 auto"><img src="${a.wm}" alt="watermarked selfie"></div>
+       <div class="pill p-green" style="margin-top:10px">${svgIc("check","width:12px;height:12px")}${t("wmProof")}</div>`
+    : `<div class="selfiebox" style="width:220px;height:220px;margin:0 auto;background:#0e1420"><div class="face" style="opacity:.92"><span class="eye l"></span><span class="eye r"></span></div>
+        <div style="position:absolute;bottom:8px;left:8px;right:8px;background:rgba(255,255,255,.92);border-radius:8px;padding:6px 9px;font-size:11px;font-weight:700;color:#0f766e;display:flex;align-items:center;gap:5px">${svgIc("geo","width:13px;height:13px")}Upper House · GPS ✓ · ${a.in}</div></div>`;
   openModal(`
     <div class="mh"><h3>${t("photoModalTitle")}</h3>${closeBtn()}</div>
     <div class="mb" style="text-align:center">
       <div class="empname" style="justify-content:center;margin-bottom:12px">${avatar(a.id)} <span>${empName(a.id)} · <span class="num">${a.in}</span></span></div>
-      <div class="selfiebox" style="width:220px;height:220px;margin:0 auto;background:#0e1420"><div class="face" style="opacity:.92"><span class="eye l"></span><span class="eye r"></span></div>
-        <div style="position:absolute;bottom:8px;left:8px;right:8px;background:rgba(255,255,255,.92);border-radius:8px;padding:6px 9px;font-size:11px;font-weight:700;color:#0f766e;display:flex;align-items:center;gap:5px">${svgIc("geo","width:13px;height:13px")}Upper House · GPS ✓ · ${a.in}</div></div>
-      <p style="font-size:12.5px;color:var(--muted);margin:12px 0 0">${t("photoModalSub")}</p>
+      ${photoHtml}
+      <p style="font-size:12.5px;color:var(--muted);margin:12px 0 0">${a.wm?t("wmModalSub"):t("photoModalSub")}</p>
     </div>
     <div class="mf"><button class="btn btn-primary" onclick="closeModal()">${t("close")}</button></div>`);
 }
@@ -2539,12 +2693,19 @@ RENDERERS.geo = () => `
     <div class="card pad">
       <label class="fld" style="margin-top:0">${t("geoBranch")}</label>
       <select class="inp" id="geoBranchSel"><option value="upper">${t("branchUpper")}</option><option value="terrace">${t("branchTerrace")}</option></select>
+      <div style="font-size:12px;color:var(--muted);margin:8px 0 2px">${t("geoPinLabel")}</div>
       <div class="row" style="gap:12px">
-        <div style="flex:1"><label class="fld">${t("geoLat")}</label><input class="inp num" id="geoLat" step="0.0001"></div>
-        <div style="flex:1"><label class="fld">${t("geoLng")}</label><input class="inp num" id="geoLng" step="0.0001"></div>
+        <div style="flex:1"><label class="fld" style="margin-top:4px">${t("geoLat")}</label><input class="inp num" id="geoLat" step="0.0001"></div>
+        <div style="flex:1"><label class="fld" style="margin-top:4px">${t("geoLng")}</label><input class="inp num" id="geoLng" step="0.0001"></div>
       </div>
-      <label class="fld">${t("geoRadius")}</label><input class="inp num" id="geoRad" type="number" step="1">
+      <label class="fld">${t("geoRadius")}</label>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input class="inp num" id="geoRad" type="number" step="1" min="1" style="flex:1">
+        <span style="font-weight:700;color:var(--ink-soft)">${t("geoRadiusM")}</span>
+      </div>
+      <div style="font-size:11.5px;color:var(--muted);margin-top:6px">${t("geoRadiusHint")}</div>
       <button class="btn btn-primary btn-block" id="geoSaveBtn" style="margin-top:16px">${svgIc("check")}${t("geoSave")}</button>
+      <div class="banner" style="margin:14px 0 0"><div class="bi">${svgIc("geo")}</div><div><b>${t("geoCheckLink")}</b><p>${t("geoCheckLinkP")}</p></div></div>
     </div>
     <div class="card pad">
       <div class="sectitle">${svgIc("geo")}<span>${t("geoCurrent")}</span></div>
@@ -2567,7 +2728,7 @@ MOUNTERS.geo = () => {
   $("#geoSaveBtn").addEventListener("click", ()=>{
     const g=geofences[geoBranch];
     g.lat=+$("#geoLat").value||g.lat; g.lng=+$("#geoLng").value||g.lng; g.radius=+$("#geoRad").value||g.radius;
-    renderGeoMap(); toast(t("geoSavedToast"), branchName(geoBranch)+" · "+nf(g.radius)+" "+t("geoRadiusM"), "ok");
+    renderGeoMap(); toast(t("geoSavedToast"), branchName(geoBranch)+" · "+t("geoRadius")+" "+nf(g.radius)+" "+t("geoRadiusM"), "ok");
   });
   load();
 };
