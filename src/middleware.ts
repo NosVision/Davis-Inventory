@@ -21,6 +21,7 @@ const PUBLIC_ROUTES = [
   '/api/chat/bot-message',
   '/api/system-settings/public', // central bot/LIFF id (whitelisted keys only)
   '/api/public',                 // /api/public/store-lookup etc.
+  '/api/hr-checklist',           // owner saves checklist picks (no login); GET self-guards auth
   '/api/customer',               // /api/customer/* — each route does its own auth
   '/customer',                   // LIFF customer page itself
 ];
@@ -107,6 +108,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|icons|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|icons|.*\\.(?:svg|png|jpg|jpeg|gif|webp|html)$).*)',
   ],
 };
