@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<title>Davis HR — เช็คลิสต์ฟีเจอร์ระบบ HR</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700;800&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet" />
+<style>
+  @page { size: A4; margin: 14mm 12mm; }
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  :root{
+    --ink:#1a2230; --soft:#4a5568; --muted:#8b95a5; --line:#e6eaf1;
+    --indigo:#4f46e5; --teal:#0d9488; --green:#16a34a; --amber:#d97706; --rose:#e11d48; --slate:#64748b;
+  }
+  body{ font-family:"Noto Sans Thai",sans-serif; color:var(--ink); margin:0; font-size:11px; line-height:1.5; }
+  .display{ font-family:"Outfit","Noto Sans Thai",sans-serif; }
+
+  /* header */
+  .head{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding-bottom:10px; border-bottom:2px solid var(--ink); margin-bottom:12px; }
+  .brand{ display:flex; align-items:center; gap:10px; }
+  .logo{ width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--indigo),var(--teal));display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-family:"Outfit";font-size:15px; }
+  h1{ font-size:19px; margin:0; font-weight:800; letter-spacing:-.01em; }
+  .sub{ font-size:10.5px; color:var(--soft); margin-top:1px; }
+  .meta{ text-align:right; font-size:9.5px; color:var(--muted); white-space:nowrap; }
+
+  /* legend + summary */
+  .legend{ display:flex; flex-wrap:wrap; gap:6px 14px; margin-bottom:12px; align-items:center; }
+  .lg{ display:inline-flex; align-items:center; gap:5px; font-size:9.5px; font-weight:600; color:var(--soft); }
+  .swatch{ width:12px;height:12px;border-radius:3px;border:1.5px solid; }
+  .pill{ display:inline-block; font-size:8.5px; font-weight:800; padding:1.5px 6px; border-radius:999px; letter-spacing:.02em; }
+  .p-demo{ background:#dcfce7; color:#15803d; } .p-must{ background:#fee2e2; color:#b91c1c; }
+  .p-should{ background:#fef3c7; color:#b45309; } .p-edge{ background:#ccfbf1; color:#0f766e; }
+  .summary{ display:flex; gap:8px; margin-bottom:14px; }
+  .kpi{ flex:1; border:1px solid var(--line); border-radius:9px; padding:8px 10px; }
+  .kpi .n{ font-family:"Outfit"; font-weight:800; font-size:18px; }
+  .kpi .l{ font-size:9px; color:var(--muted); }
+
+  /* payroll calc box (page 1) */
+  .calc{ margin-bottom:14px; border:1px solid var(--line); border-radius:11px; overflow:hidden; break-inside:avoid; }
+  .calc-h{ background:linear-gradient(90deg,#eef0fe,#e6f7f4); padding:7px 12px; font-weight:800; font-size:12.5px; display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .calc-h .src{ font-size:9px; font-weight:600; color:var(--soft); }
+  .calc-grid{ display:grid; grid-template-columns:1.15fr .85fr; }
+  .calc-col{ padding:9px 12px; }
+  .calc-col.ex{ background:#f6fbf8; border-left:1px solid var(--line); }
+  .calc-col .ct{ font-size:9px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:4px; }
+  .cl{ font-size:10.5px; padding:1.5px 0; color:var(--soft); }
+  .cl b{ color:var(--ink); }
+  .eq{ font-family:"Outfit",sans-serif; }
+  .calc-note{ grid-column:1/-1; border-top:1px dashed var(--line); padding:6px 12px; font-size:9px; color:var(--soft); background:#fff; }
+  .calc-note b{ color:var(--ink); }
+
+  /* sections */
+  .sec{ border:1px solid var(--line); border-radius:10px; margin-bottom:9px; overflow:hidden; break-inside:avoid; }
+  .sec.big{ break-inside:auto; }
+  .sec-h{ display:flex; align-items:center; gap:8px; padding:6px 11px; background:var(--tint); border-left:4px solid var(--acc); }
+  .sec-h .no{ font-family:"Outfit"; font-weight:800; font-size:12px; color:var(--acc); }
+  .sec-h .t{ font-size:12px; font-weight:800; }
+  .sec-h .en{ font-size:9px; color:var(--muted); font-weight:600; }
+  .items{ padding:3px 11px 7px; }
+  .row{ display:flex; align-items:flex-start; gap:8px; padding:3px 0; border-bottom:1px dashed #eef1f6; break-inside:avoid; }
+  .row:last-child{ border-bottom:none; }
+  .box{ width:15px;height:15px;border-radius:4px;border:1.7px solid #cbd5e1;flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center; cursor:pointer; transition:all .12s; }
+  .box.on,.box.sel{ background:var(--indigo); border-color:var(--indigo); color:#fff; font-size:11px; font-weight:900; }
+  .row{ cursor:pointer; }
+  .row:hover .box{ border-color:var(--indigo); }
+  .row-off{ opacity:.4; }
+  .toolbar{ display:flex; flex-wrap:wrap; align-items:center; gap:8px 14px; margin-bottom:12px; padding:8px 12px; border:1px solid var(--line); border-radius:10px; background:#fff; font-size:11px; }
+  .toolbar .cnt b{ font-family:"Outfit"; color:var(--indigo); font-size:15px; }
+  .tbtn{ border:1px solid var(--line); background:#fff; border-radius:7px; padding:4px 11px; font:600 10.5px "Noto Sans Thai",sans-serif; color:var(--soft); cursor:pointer; }
+  .tbtn:hover{ border-color:var(--indigo); color:var(--indigo); }
+  .autosave{ margin-left:auto; font-size:9.5px; color:var(--muted); }
+  @media print{ .toolbar .tbtn{ display:none; } }
+  @media screen{ body{ max-width:1000px; margin:0 auto; padding:18px 16px 40px; } }
+  @media(max-width:640px){ .calc-grid{ grid-template-columns:1fr } .calc-col.ex{ border-left:none; border-top:1px solid var(--line) } .summary{ flex-wrap:wrap } .kpi{ min-width:30% } }
+  .nm{ flex:1; }
+  .nm b{ font-weight:600; }
+  .nm .d{ font-size:9px; color:var(--muted); }
+  .tag{ flex-shrink:0; margin-top:.5px; }
+
+  .foot{ margin-top:8px; font-size:8.5px; color:var(--muted); text-align:center; border-top:1px solid var(--line); padding-top:6px; }
+
+  /* section accent colors */
+  .c-a{--acc:var(--indigo);--tint:#eef0fe} .c-b{--acc:var(--teal);--tint:#e6f7f4}
+  .c-c{--acc:var(--amber);--tint:#fff5e6} .c-d{--acc:var(--rose);--tint:#ffe9ee}
+  .c-e{--acc:#7c3aed;--tint:#f2ecfe} .c-f{--acc:#0891b2;--tint:#e0f7fb}
+</style>
+</head>
+<body>
+  <div class="head">
+    <div class="brand">
+      <div class="logo">HR</div>
+      <div>
+        <h1 class="display">Davis HR — เช็คลิสต์ฟีเจอร์ระบบ</h1>
+        <div class="sub">ระบบบุคคล/เงินเดือน สำหรับกลุ่มร้านอาหาร & บาร์ · ต่อยอดระบบเดิม (POS · ค่าคอม · สาขา · สิทธิ์)</div>
+      </div>
+    </div>
+    <div class="meta">เอกสารนำเสนอ<br/>อัปเดต: ก.ค. 2569</div>
+  </div>
+
+  <div class="legend">
+    <span class="lg"><span class="swatch" style="background:#dcfce7;border-color:#16a34a"></span>สถานะ:</span>
+    <span class="lg"><span class="pill p-demo">มีในเดโม่</span> ทำเดโม่กดได้แล้ว</span>
+    <span class="lg"><span class="pill p-must">ต้องมี</span> จำเป็นสำหรับจ่ายจริงตามกฎหมายไทย</span>
+    <span class="lg"><span class="pill p-should">ควรมี</span> ให้ครบระบบ HR เต็ม</span>
+    <span class="lg"><span class="pill p-edge">จุดเด่น</span> ได้เปรียบเพราะเชื่อม POS</span>
+  </div>
+
+  <div class="summary">
+    <div class="kpi"><div class="n display" style="color:var(--green)">31</div><div class="l">มีในเดโม่แล้ว</div></div>
+    <div class="kpi"><div class="n display" style="color:var(--rose)">7</div><div class="l">ต้องมี (กฎหมายไทย)</div></div>
+    <div class="kpi"><div class="n display" style="color:var(--amber)">28</div><div class="l">ควรมี (ครบระบบ)</div></div>
+    <div class="kpi"><div class="n display" style="color:var(--teal)">4</div><div class="l">จุดเด่นเชื่อม POS</div></div>
+    <div class="kpi"><div class="n display">70</div><div class="l">รวมทั้งหมด</div></div>
+  </div>
+
+  <div class="toolbar">
+    <span class="cnt">เลือกไว้ <b id="selCount">—</b> / <span id="selTotal">70</span> ฟีเจอร์</span>
+    <button class="tbtn" id="selAll">เลือกทั้งหมด</button>
+    <button class="tbtn" id="selNone">ล้างทั้งหมด</button>
+    <span class="autosave">💾 ติ๊กเลือกฟีเจอร์ที่ต้องการ — บันทึกอัตโนมัติ</span>
+  </div>
+
+  <div class="calc">
+    <div class="calc-h">🧮 ลอจิกการคำนวณเงินเดือน (อ้างอิงไฟล์จริง)<span class="src">รอบตัด 26–25 · จ่ายวันสุดท้ายของเดือน · โอน BBL</span></div>
+    <div class="calc-grid">
+      <div class="calc-col">
+        <div class="ct">สูตร</div>
+        <div class="cl"><b>เงินเดือน</b> = ฐาน ÷ 30 × วันทำงาน</div>
+        <div class="cl"><b>OT</b> = (ฐาน ÷ 30 ÷ 8) × ตัวคูณ × ชม. <span style="color:var(--muted)">(วันปกติ ×1.5 · วันหยุด ×2 · OT วันหยุด ×3)</span></div>
+        <div class="cl"><b>รายได้รวม</b> = เงินเดือน + OT + เบี้ยเลี้ยง + Service charge</div>
+        <div class="cl"><b>ประกันสังคม</b> = min(ฐาน × 5%, <b>875</b>) <span style="color:var(--muted)">(เพดานฐาน 17,500)</span></div>
+        <div class="cl"><b>ภาษี</b> = ขั้นบันได (PND1) / หัก ณ ที่จ่าย 3%</div>
+        <div class="cl"><b>เงินสุทธิ</b> = รายได้รวม − (ปกส. + ภาษี + มาสาย + ลา + เบิกล่วงหน้า + ใบเตือน + อื่นๆ)</div>
+      </div>
+      <div class="calc-col ex">
+        <div class="ct">ตัวอย่าง — เงินเดือน 28,000 · ทำงาน 25 วัน</div>
+        <div class="cl eq">เงินเดือน = 28,000 ÷ 30 × 25 = <b>23,333.33</b></div>
+        <div class="cl eq">ประกันสังคม = min(1,400, 875) = <b>875</b></div>
+        <div class="cl eq" style="border-top:1px solid var(--line);margin-top:3px;padding-top:4px">เงินสุทธิ = 23,333.33 − 875 = <b style="color:var(--indigo)">22,458.33</b></div>
+      </div>
+      <div class="calc-note"><b>กติกาหักเด่น (จากคู่มือพนักงาน):</b> มาสาย &gt;15น. −50 · &gt;30น. −100 · &gt;1ชม. −250 · มาสายซ้ำครั้งที่ 5/6/7 หัก Service 25/50/100% · ลาป่วยมีใบรับรอง = ไม่หักเงินเดือน (แต่หัก Service) · ลากิจ = หักทั้งเงินเดือน+Service · Service charge จ่ายวันที่ 15 เดือนถัดไป</div>
+    </div>
+  </div>
+
+  <!-- 1 -->
+  <div class="sec c-a">
+    <div class="sec-h"><span class="no">01</span><span class="t">ข้อมูลพนักงาน & องค์กร</span><span class="en">People</span></div>
+    <div class="items">
+      <div class="row"><span class="box on">✓</span><span class="nm"><b>โปรไฟล์พนักงานเต็ม</b> <span class="d">— ส่วนตัว / การจ้าง / บัญชี+เลข ปกส.+ภาษี / ผู้ติดต่อฉุกเฉิน / เอกสาร</span></span><span class="tag"><span class="pill p-demo">มีในเดโม่</span></span></div>
+      <div class="row"><span class="box on">✓</span><span class="nm"><b>นโยบายบริษัท / คู่มือพนักงาน</b> <span class="d">— อ่าน + กดรับทราบ</span></span><span class="tag"><span class="pill p-demo">มีในเดโม่</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>โครงสร้างองค์กร (Org chart)</b></span><span class="tag"><span class="pill p-should">ควรมี</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>ประวัติปรับเงินเดือน / เลื่อนตำแหน่ง</b></span><span class="tag"><span class="pill p-should">ควรมี</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>สัญญาจ้าง + ทดลองงาน (Probation)</b> <span class="d">— แจ้งเตือนครบกำหนด</span></span><span class="tag"><span class="pill p-should">ควรมี</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>แจ้งเตือนวันเกิด / ครบรอบงาน</b></span><span class="tag"><span class="pill p-edge">จุดเด่น</span></span></div>
+    </div>
+  </div>
+
+  <!-- 2 -->
+  <div class="sec c-b big">
+    <div class="sec-h"><span class="no">02</span><span class="t">เวลาทำงาน & เข้างาน</span><span class="en">Time & Attendance</span></div>
+    <div class="items">
+      <div class="row"><span class="box on">✓</span><span class="nm"><b>เช็คอิน/เอาต์ QR + GPS geofence</b></span><span class="tag"><span class="pill p-demo">มีในเดโม่</span></span></div>
+      <div class="row"><span class="box on">✓</span><span class="nm"><b>ถ่ายรูป (selfie) ตอนเช็คอิน</b></span><span class="tag"><span class="pill p-demo">มีในเดโม่</span></span></div>
+      <div class="row"><span class="box on">✓</span><span class="nm"><b>ตั้งพิกัด/รัศมีสาขาเอง</b></span><span class="tag"><span class="pill p-demo">มีในเดโม่</span></span></div>
+      <div class="row"><span class="box on">✓</span><span class="nm"><b>ตารางกะ</b> <span class="d">— กะดึกข้ามคืน · ตัดรอบตี 6 เหมือนระบบเดิม</span></span><span class="tag"><span class="pill p-demo">มีในเดโม่</span></span></div>
+      <div class="row"><span class="box on">✓</span><span class="nm"><b>บันทึกเวลา + แก้ไขโดยผู้จัดการ</b> <span class="d">— มีเหตุผล/audit</span></span><span class="tag"><span class="pill p-demo">มีในเดโม่</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>เชื่อมเครื่องสแกนนิ้ว / สแกนหน้า</b></span><span class="tag"><span class="pill p-should">ควรมี</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>ขออนุมัติ OT ล่วงหน้า</b></span><span class="tag"><span class="pill p-should">ควรมี</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>แลกกะ / สลับกะ (Shift swap)</b></span><span class="tag"><span class="pill p-should">ควรมี</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>ปฏิทินวันหยุดนักขัตฤกษ์</b> <span class="d">— ตั้งต่อปี/ต่อสาขา</span></span><span class="tag"><span class="pill p-should">ควรมี</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>นโยบายมาสาย/ขาด อัตโนมัติ + หักเบี้ยขยัน</b></span><span class="tag"><span class="pill p-should">ควรมี</span></span></div>
+    </div>
+  </div>
+
+  <!-- 3 -->
+  <div class="sec c-c">
+    <div class="sec-h"><span class="no">03</span><span class="t">การลา & คำขอ</span><span class="en">Leave & Requests</span></div>
+    <div class="items">
+      <div class="row"><span class="box on">✓</span><span class="nm"><b>ขอลาหลายประเภท</b> <span class="d">— ลากิจ / ลาป่วย / นักขัตฤกษ์ / พักร้อน</span></span><span class="tag"><span class="pill p-demo">มีในเดโม่</span></span></div>
+      <div class="row"><span class="box on">✓</span><span class="nm"><b>แนบใบรับรองแพทย์ (รูป)</b></span><span class="tag"><span class="pill p-demo">มีในเดโม่</span></span></div>
+      <div class="row"><span class="box on">✓</span><span class="nm"><b>อนุมัติโดยหัวหน้า</b> <span class="d">— requested → approved/rejected</span></span><span class="tag"><span class="pill p-demo">มีในเดโม่</span></span></div>
+      <div class="row"><span class="box on">✓</span><span class="nm"><b>โควตาวันลารายประเภท</b></span><span class="tag"><span class="pill p-demo">มีในเดโม่</span></span></div>
+      <div class="row"><span class="box on">✓</span><span class="nm"><b>HR ตั้งเงื่อนไขการลาเอง</b> <span class="d">— ยื่นล่วงหน้ากี่วัน / เอกสารที่ต้องใช้ / ใบรับรองถ้าเกิน N วัน / โควตา / ย้อนหลัง</span></span><span class="tag"><span class="pill p-demo">มีในเดโม่</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>วันหยุดชดเชย (Compensate leave)</b></span><span class="tag"><span class="pill p-should">ควรมี</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>เบิกค่าใช้จ่าย (eClaims) + แนบบิล</b></span><span class="tag"><span class="pill p-should">ควรมี</span></span></div>
+    </div>
+  </div>
+
+  <!-- 4 -->
+  <div class="sec c-d">
+    <div class="sec-h"><span class="no">04</span><span class="t">วินัย & เอกสาร</span><span class="en">Discipline & Documents</span></div>
+    <div class="items">
+      <div class="row"><span class="box on">✓</span><span class="nm"><b>ออกใบเตือน</b> <span class="d">— ระดับ (วาจา/เตือน 1-2/สุดท้าย) + เหตุ</span></span><span class="tag"><span class="pill p-demo">มีในเดโม่</span></span></div>
+      <div class="row"><span class="box on">✓</span><span class="nm"><b>เซ็นรับทราบด้วยลายเซ็น</b> <span class="d">— signature pad + ล็อกวันเวลา</span></span><span class="tag"><span class="pill p-demo">มีในเดโม่</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>ขอเอกสารเอง</b> <span class="d">— หนังสือรับรองเงินเดือน / 50 ทวิ</span></span><span class="tag"><span class="pill p-should">ควรมี</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>e-Sign สัญญา / เอกสาร</b></span><span class="tag"><span class="pill p-should">ควรมี</span></span></div>
+    </div>
+  </div>
+
+  <!-- 5 -->
+  <div class="sec c-a big">
+    <div class="sec-h"><span class="no">05</span><span class="t">เงินเดือน & ภาษี</span><span class="en">Payroll & Tax</span></div>
+    <div class="items">
+      <div class="row"><span class="box on">✓</span><span class="nm"><b>สร้างสลิปเงินเดือนอัตโนมัติต่อรอบ</b> <span class="d">— เงินเดือน = ฐาน ÷ 30 × วัน · ดึงวันมา/OT จากเวลาเข้างานจริง · รอบตัด 25 จ่าย 30 · header หลายบริษัท</span></span><span class="tag"><span class="pill p-demo">มีในเดโม่</span></span></div>
+      <div class="row"><span class="box on">✓</span><span class="nm"><b>หักประกันสังคม 5% (เพดาน ฿875 · ฐาน 17,500 ปี 2026)</b></span><span class="tag"><span class="pill p-demo">มีในเดโม่</span></span></div>
+      <div class="row"><span class="box on">✓</span><span class="nm"><b>หักภาษี 2 โหมด</b> <span class="d">— ขั้นบันได (PND1) / หัก ณ ที่จ่าย 3% (ต่างชาติ/ผู้บริหาร)</span></span><span class="tag"><span class="pill p-demo">มีในเดโม่</span></span></div>
+      <div class="row"><span class="box on">✓</span><span class="nm"><b>บันทึกการหักเงินแบบมีรายละเอียด</b> <span class="d">— ที่มา/เหตุผล/อ้างอิง (มาสาย/ใบเตือน/เบิกล่วงหน้า) · แสดง<b>แยกบรรทัด</b>ทั้งบน<b>เว็บ</b>และ<b>สลิปที่พิมพ์</b></span></span><span class="tag"><span class="pill p-demo">มีในเดโม่</span></span></div>
+      <div class="row"><span class="box on">✓</span><span class="nm"><b>ตั้งค่ารายการเบี้ย/หัก</b></span><span class="tag"><span class="pill p-demo">มีในเดโม่</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>คำนวณภาษีขั้นบันได + ลดหย่อน (ล.ย.01)</b></span><span class="tag"><span class="pill p-must">ต้องมี</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>เอกสารภาษี: ภ.ง.ด.1 / 1ก / หนังสือรับรองหัก ณ ที่จ่าย 50 ทวิ</b></span><span class="tag"><span class="pill p-must">ต้องมี</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>ยื่นประกันสังคม สปส.1-10 (e-filing)</b> <span class="d">+ กองทุนเงินทดแทน</span></span><span class="tag"><span class="pill p-must">ต้องมี</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>ไฟล์โอนเงินเข้าธนาคาร</b> <span class="d">— SCB / KBank / BBL</span></span><span class="tag"><span class="pill p-must">ต้องมี</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>OT ตามกฎหมายแรงงาน</b> <span class="d">— ×1.5 วันทำงาน / ×2 วันหยุด / ×3 วันหยุดนักขัตฤกษ์</span></span><span class="tag"><span class="pill p-must">ต้องมี</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>e-Payslip ส่ง LINE / อีเมล</b> <span class="d">— มีรหัสเปิด</span></span><span class="tag"><span class="pill p-must">ต้องมี</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>เงินเบิกล่วงหน้า / เงินกู้ / ผ่อนหัก</b> + เงินประกัน</span><span class="tag"><span class="pill p-must">ต้องมี</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>กองทุนสำรองเลี้ยงชีพ (PVD)</b> <span class="d">— หัก + สมทบ</span></span><span class="tag"><span class="pill p-should">ควรมี</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>โบนัส / จ่ายย้อนหลัง / pro-rate เข้า-ออกกลางเดือน</b></span><span class="tag"><span class="pill p-should">ควรมี</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>เงินชดเชยเลิกจ้าง / ค่าบอกกล่าวล่วงหน้า</b></span><span class="tag"><span class="pill p-should">ควรมี</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>หลายงวดจ่าย</b> <span class="d">— รายเดือน / รายวัน / รอบ 15-30</span></span><span class="tag"><span class="pill p-should">ควรมี</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>Payslip ประวัติย้อนหลัง + เปรียบเทียบงวด</b></span><span class="tag"><span class="pill p-should">ควรมี</span></span></div>
+    </div>
+  </div>
+
+  <!-- 6 -->
+  <div class="sec c-b">
+    <div class="sec-h"><span class="no">06</span><span class="t">Service Charge & เชื่อม POS</span><span class="en">POS Integration</span></div>
+    <div class="items">
+      <div class="row"><span class="box on">✓</span><span class="nm"><b>Service charge pool จากยอด POS → แบ่งพนักงาน → เข้าสลิป</b></span><span class="tag"><span class="pill p-demo">มีในเดโม่</span></span></div>
+      <div class="row"><span class="box on">✓</span><span class="nm"><b>% ต้นทุนแรงงาน vs ยอดขาย เรียลไทม์</b></span><span class="tag"><span class="pill p-demo">มีในเดโม่</span></span></div>
+      <div class="row"><span class="box on">✓</span><span class="nm"><b>ดึงค่าคอมจากระบบเดิม (Commission)</b></span><span class="tag"><span class="pill p-demo">มีในเดโม่</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>แบ่งทิป (Tip pool)</b></span><span class="tag"><span class="pill p-edge">จุดเด่น</span></span></div>
+    </div>
+  </div>
+
+  <!-- 7 -->
+  <div class="sec c-e">
+    <div class="sec-h"><span class="no">07</span><span class="t">ประเมินผล & พัฒนา</span><span class="en">Performance</span></div>
+    <div class="items">
+      <div class="row"><span class="box on">✓</span><span class="nm"><b>ประเมินผลพนักงาน</b> <span class="d">— ให้ดาวหลายเกณฑ์ → เกรด + ประวัติ</span></span><span class="tag"><span class="pill p-demo">มีในเดโม่</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>KPI / OKR ต่อเนื่อง</b></span><span class="tag"><span class="pill p-should">ควรมี</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>360° feedback / ประเมินทดลองงาน</b></span><span class="tag"><span class="pill p-should">ควรมี</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>แผนอบรม / พัฒนา (Training)</b></span><span class="tag"><span class="pill p-edge">จุดเด่น</span></span></div>
+    </div>
+  </div>
+
+  <!-- 8 -->
+  <div class="sec c-c">
+    <div class="sec-h"><span class="no">08</span><span class="t">ทรัพย์สินบริษัท</span><span class="en">Assets</span></div>
+    <div class="items">
+      <div class="row"><span class="box on">✓</span><span class="nm"><b>ทะเบียนทรัพย์สิน + มูลค่า + ผู้ถือครอง + สถานะ</b></span><span class="tag"><span class="pill p-demo">มีในเดโม่</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>มอบ/คืนทรัพย์สิน + หักกรณีสูญหาย → เข้าสลิป</b></span><span class="tag"><span class="pill p-should">ควรมี</span></span></div>
+    </div>
+  </div>
+
+  <!-- 9 -->
+  <div class="sec c-f">
+    <div class="sec-h"><span class="no">09</span><span class="t">ประกาศ & สื่อสาร</span><span class="en">Communication</span></div>
+    <div class="items">
+      <div class="row"><span class="box on">✓</span><span class="nm"><b>ประกาศตามสาขา + นับผู้อ่าน</b></span><span class="tag"><span class="pill p-demo">มีในเดโม่</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>แจ้งเตือน LINE</b> <span class="d">— สลิป / อนุมัติ / ประกาศ (ใช้ LINE เดิม)</span></span><span class="tag"><span class="pill p-should">ควรมี</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>Google Calendar sync</b> <span class="d">— กะ / วันลา</span></span><span class="tag"><span class="pill p-edge">จุดเด่น</span></span></div>
+    </div>
+  </div>
+
+  <!-- 10 -->
+  <div class="sec c-e">
+    <div class="sec-h"><span class="no">10</span><span class="t">สรรหา & เข้า-ออกงาน</span><span class="en">Recruitment / Onboarding</span></div>
+    <div class="items">
+      <div class="row"><span class="box"></span><span class="nm"><b>สรรหา (Recruitment)</b> <span class="d">— ประกาศรับ / ผู้สมัคร / นัดสัมภาษณ์</span></span><span class="tag"><span class="pill p-should">ควรมี</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>Onboarding checklist</b> <span class="d">— เอกสาร / อบรม / มอบทรัพย์สิน</span></span><span class="tag"><span class="pill p-should">ควรมี</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>Offboarding</b> <span class="d">— คืนของ / สัมภาษณ์ลาออก / คำนวณเงินก้อนสุดท้าย</span></span><span class="tag"><span class="pill p-should">ควรมี</span></span></div>
+    </div>
+  </div>
+
+  <!-- 11 -->
+  <div class="sec c-d">
+    <div class="sec-h"><span class="no">11</span><span class="t">รายงาน & Admin & Compliance</span><span class="en">Reports & Admin</span></div>
+    <div class="items">
+      <div class="row"><span class="box on">✓</span><span class="nm"><b>ทุกเอกสารพิมพ์ได้</b> <span class="d">— สลิป / ใบเตือน / ผลประเมิน / ทรัพย์สิน / โปรไฟล์</span></span><span class="tag"><span class="pill p-demo">มีในเดโม่</span></span></div>
+      <div class="row"><span class="box on">✓</span><span class="nm"><b>HR เห็น/แก้ไขข้อมูล + สิทธิ์ can_manage_hr</b></span><span class="tag"><span class="pill p-demo">มีในเดโม่</span></span></div>
+      <div class="row"><span class="box on">✓</span><span class="nm"><b>Audit log ทุกการแก้ไข</b> <span class="d">— ผู้แก้ / ค่าเดิม→ค่าใหม่ / เหตุผล / เวลา</span></span><span class="tag"><span class="pill p-demo">มีในเดโม่</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>รายงานผู้บริหาร</b> <span class="d">— ต้นทุนแรงงาน/สาขา · turnover · ขาด-ลา-สาย · OT</span></span><span class="tag"><span class="pill p-should">ควรมี</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>สิทธิ์ละเอียดต่อโมดูล / หลายสาขา</b> <span class="d">— ต่อยอด RBAC เดิม</span></span><span class="tag"><span class="pill p-should">ควรมี</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>PDPA</b> <span class="d">— ความยินยอม / จัดเก็บเอกสารส่วนบุคคล</span></span><span class="tag"><span class="pill p-should">ควรมี</span></span></div>
+    </div>
+  </div>
+
+  <!-- 12 -->
+  <div class="sec c-b">
+    <div class="sec-h"><span class="no">12</span><span class="t">Self-service & มือถือ</span><span class="en">ESS & Mobile</span></div>
+    <div class="items">
+      <div class="row"><span class="box on">✓</span><span class="nm"><b>Self-service (ESS)</b> <span class="d">— ดูกะ / เช็คอิน / ขอลา / ดูสลิป / ทรัพย์สิน</span></span><span class="tag"><span class="pill p-demo">มีในเดโม่</span></span></div>
+      <div class="row"><span class="box on">✓</span><span class="nm"><b>พนักงานดูตารางงานของตัวเอง</b> <span class="d">— My schedule (ปฏิทินกะตัวเอง)</span></span><span class="tag"><span class="pill p-demo">มีในเดโม่</span></span></div>
+      <div class="row"><span class="box on">✓</span><span class="nm"><b>สลับภาษา EN / TH ทุกจอ</b></span><span class="tag"><span class="pill p-demo">มีในเดโม่</span></span></div>
+      <div class="row"><span class="box"></span><span class="nm"><b>แอปมือถือเต็มรูป (PWA/Native)</b></span><span class="tag"><span class="pill p-should">ควรมี</span></span></div>
+    </div>
+  </div>
+
+  <div class="foot">Davis HR Feature Checklist · ติ๊ก ✓ = ฟีเจอร์ที่เจ้าของเลือก (บันทึกอัตโนมัติ) · ป้ายสถานะ: มีในเดโม่ / ต้องมี / ควรมี / จุดเด่น</div>
+
+  <script>
+  (function(){
+    var KEY = 'davis-hr-checklist-v1';
+    var saved = {};
+    try { saved = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) {}
+    var rows = [].slice.call(document.querySelectorAll('.row'));
+    var countEl = document.getElementById('selCount');
+    var totalEl = document.getElementById('selTotal');
+    if (totalEl) totalEl.textContent = rows.length;
+    function isSel(i){ return saved[i] !== undefined ? !!saved[i] : true; } // default: selected
+    function save(){ try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) {} }
+    function render(){
+      var n = 0;
+      rows.forEach(function(r, i){
+        var box = r.querySelector('.box'); if (!box) return;
+        var sel = isSel(i);
+        box.classList.remove('on');
+        box.classList.toggle('sel', sel);
+        box.textContent = sel ? '✓' : '';
+        r.classList.toggle('row-off', !sel);
+        if (sel) n++;
+      });
+      if (countEl) countEl.textContent = n;
+    }
+    rows.forEach(function(r, i){
+      r.addEventListener('click', function(){ saved[i] = !isSel(i); save(); render(); });
+    });
+    var a = document.getElementById('selAll');
+    if (a) a.addEventListener('click', function(){ rows.forEach(function(r,i){ saved[i]=true; }); save(); render(); });
+    var z = document.getElementById('selNone');
+    if (z) z.addEventListener('click', function(){ rows.forEach(function(r,i){ saved[i]=false; }); save(); render(); });
+    render();
+  })();
+  </script>
+</body>
+</html>
