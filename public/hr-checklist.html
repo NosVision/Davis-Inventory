@@ -69,6 +69,8 @@
   .tbtn{ border:1px solid var(--line); background:#fff; border-radius:7px; padding:4px 11px; font:600 10.5px "Noto Sans Thai",sans-serif; color:var(--soft); cursor:pointer; }
   .tbtn:hover{ border-color:var(--indigo); color:var(--indigo); }
   .autosave{ margin-left:auto; font-size:9.5px; color:var(--muted); }
+  .tinp{ border:1px solid var(--line); border-radius:7px; padding:4px 9px; font:600 11px "Noto Sans Thai",sans-serif; color:var(--ink); min-width:130px; }
+  .tinp:focus{ outline:none; border-color:var(--indigo); }
   @media print{ .toolbar .tbtn{ display:none; } }
   /* on-screen: scale up from print sizes so it's readable on web/mobile */
   @media screen{
@@ -132,9 +134,10 @@
 
   <div class="toolbar">
     <span class="cnt">เลือกไว้ <b id="selCount">—</b> / <span id="selTotal">70</span> ฟีเจอร์</span>
+    <input id="respName" class="tinp" placeholder="ชื่อผู้เลือก (ถ้ามี)" maxlength="120" />
     <button class="tbtn" id="selAll">เลือกทั้งหมด</button>
     <button class="tbtn" id="selNone">ล้างทั้งหมด</button>
-    <span class="autosave">💾 ติ๊กเลือกฟีเจอร์ที่ต้องการ — บันทึกอัตโนมัติ</span>
+    <span class="autosave" id="saveStatus">💾 บันทึกอัตโนมัติ + ส่งให้ทีม</span>
   </div>
 
   <div class="calc">
@@ -317,35 +320,62 @@
 
   <script>
   (function(){
-    var KEY = 'davis-hr-checklist-v1';
+    var KEY = 'davis-hr-checklist-v1', SKEY = 'davis-hr-session', NKEY = 'davis-hr-name';
     var saved = {};
     try { saved = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) {}
+    var sid = '';
+    try { sid = localStorage.getItem(SKEY) || ''; } catch (e) {}
+    if (!sid) { sid = 'own-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8); try { localStorage.setItem(SKEY, sid); } catch (e) {} }
+
     var rows = [].slice.call(document.querySelectorAll('.row'));
     var countEl = document.getElementById('selCount');
     var totalEl = document.getElementById('selTotal');
+    var statusEl = document.getElementById('saveStatus');
+    var nameEl = document.getElementById('respName');
     if (totalEl) totalEl.textContent = rows.length;
+    if (nameEl) { try { nameEl.value = localStorage.getItem(NKEY) || ''; } catch (e) {} }
+
     function isSel(i){ return saved[i] !== undefined ? !!saved[i] : true; } // default: selected
-    function save(){ try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) {} }
+    function saveLocal(){ try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) {} }
+    function selectedLabels(){
+      var out = [];
+      rows.forEach(function(r, i){ if (isSel(i)) { var b = r.querySelector('.nm b'); out.push(b ? b.textContent.trim() : ('#' + (i + 1))); } });
+      return out;
+    }
     function render(){
       var n = 0;
       rows.forEach(function(r, i){
         var box = r.querySelector('.box'); if (!box) return;
         var sel = isSel(i);
-        box.classList.remove('on');
-        box.classList.toggle('sel', sel);
+        box.classList.remove('on'); box.classList.toggle('sel', sel);
         box.textContent = sel ? '✓' : '';
         r.classList.toggle('row-off', !sel);
         if (sel) n++;
       });
       if (countEl) countEl.textContent = n;
     }
-    rows.forEach(function(r, i){
-      r.addEventListener('click', function(){ saved[i] = !isSel(i); save(); render(); });
-    });
+
+    var timer = null;
+    function setStatus(t){ if (statusEl) statusEl.textContent = t; }
+    function scheduleSave(){ saveLocal(); setStatus('💾 กำลังบันทึก…'); if (timer) clearTimeout(timer); timer = setTimeout(sendServer, 700); }
+    function sendServer(){
+      var keys = selectedLabels();
+      fetch('/api/hr-checklist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: sid, name: nameEl ? nameEl.value.trim() : '', selectedKeys: keys, selectedCount: keys.length, totalCount: rows.length })
+      }).then(function(res){
+        setStatus(res.ok ? ('✓ ส่งให้ทีมแล้ว ' + new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })) : '⚠️ ส่งไม่สำเร็จ (เก็บในเครื่องแล้ว)');
+      }).catch(function(){ setStatus('⚠️ ออฟไลน์ — เก็บในเครื่องแล้ว'); });
+    }
+
+    rows.forEach(function(r, i){ r.addEventListener('click', function(){ saved[i] = !isSel(i); render(); scheduleSave(); }); });
     var a = document.getElementById('selAll');
-    if (a) a.addEventListener('click', function(){ rows.forEach(function(r,i){ saved[i]=true; }); save(); render(); });
+    if (a) a.addEventListener('click', function(){ rows.forEach(function(r, i){ saved[i] = true; }); render(); scheduleSave(); });
     var z = document.getElementById('selNone');
-    if (z) z.addEventListener('click', function(){ rows.forEach(function(r,i){ saved[i]=false; }); save(); render(); });
+    if (z) z.addEventListener('click', function(){ rows.forEach(function(r, i){ saved[i] = false; }); render(); scheduleSave(); });
+    if (nameEl) nameEl.addEventListener('input', function(){ try { localStorage.setItem(NKEY, nameEl.value); } catch (e) {} scheduleSave(); });
+
     render();
   })();
   </script>
