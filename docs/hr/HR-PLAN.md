@@ -27,10 +27,10 @@
 ---
 
 ## Data model (ร่าง)
-- `hr_employees` (ต่อ profiles): position, department, employment_type, base_wage_satang, ot_multiplier, start_date, bank, sso_no, tax_id, emergency_contact, supervisor_id
+- `hr_employees` (ต่อ profiles): **position_id → `hr_positions` (ลิสต์ตำแหน่งงาน CRUD ได้ — ไม่ใช่ role ระบบ, ดู §I)**, department, employment_type, base_wage_satang, **work_hours_per_day (8|9) + break_hours + ot_eligible (§I)**, ot_multiplier, start_date, bank, sso_no, tax_id, emergency_contact, supervisor_id
 - `hr_policies` (นโยบาย/คู่มือ, scope: ทั้งบริษัท/สาขา) · `hr_announcements` (ประกาศ, scope สาขา, read receipts)
 - `hr_shifts` / `hr_schedule` (เทมเพลตกะ + ตารางกะ) · `hr_locations` (พิกัด+รัศมี geofence ต่อสาขา — หรือฝังใน stores)
-- `hr_attendance` (event เข้า/ออก + gps + photo_url + late/ot/absent) · `hr_leave_types` / `hr_leaves` (+attachment ใบรับรอง, approver)
+- `hr_attendance` (event เข้า/ออก/**เริ่มพัก/เลิกพัก** + gps + photo_url + late/ot/absent — §F, §I) · `hr_leave_types` / `hr_leaves` (+attachment ใบรับรอง, approver) · `hr_dayoff_swaps` (คู่สลับ+วัน, HR approve — §C)
 - `hr_warnings` (ใบเตือน + signature_url + acknowledged_at) · **เอนจินประเมิน (ดู §G):** `hr_eval_periods` / `hr_eval_period_stores` / `hr_eval_criteria` / `hr_eval_assignments` / `hr_eval_scores` / `hr_eval_results` / `hr_eval_payout_rules` / `hr_eval_payout_tiers` / `hr_eval_payouts` (แทน `hr_evaluations` เดิม)
 - `hr_assets` (ทรัพย์สิน + value_satang + holder employee + status) 
 - `hr_payruns` / `hr_payslips` (base, ot, allowances[], service_charge_satang, commission_satang, sso_satang, tax_satang, deductions[], gross, net)
@@ -79,9 +79,12 @@ Net        = Total − Total Deduction
 - แสดง **"ประวัติการแก้ไข" ต่อระเบียน** + หน้า audit รวมสำหรับ HR/เจ้าของ
 - แก้ค่าอ่อนไหว (rate, บัญชี, รายการหัก, ปลดล็อก payrun) = **ต้องกรอกเหตุผล**
 
-## C. ตารางงาน (Schedule)
-- **ฝั่ง HR** `hr_shift_templates` (เช้า/ดึก 17:00–01:00) + `hr_schedule`(employee_id, date, shift_id, status) — จัดกะรายสัปดาห์/เดือนต่อสาขา, copy สัปดาห์ก่อน, assign หลายคน, **publish** แล้วพนักงานเห็น
-- **ฝั่งพนักงาน (ESS)** หน้า **"ตารางงานของฉัน"** — เห็นเฉพาะกะตัวเอง (ปฏิทิน), แจ้งเตือน LINE เมื่อตารางเปลี่ยน, (ออปชัน) ขอแลกกะ
+## C. ตารางงาน (Schedule) — อัปเดต 2026-07-02: **ผู้จัดการร้านเป็นคนจัด**
+- **ผู้จัดการร้าน (ต่อ venue) จัดตารางรายเดือน** — กำหนดใครทำ/หยุดวันไหน โดย**อ้างอิงโปรไฟล์เวลาทำงานหลักของพนักงาน (§I: 8+1 / 9+1)** → **บันทึกส่งให้ HR รับทราบ** (`hr_schedule` state: draft → submitted → acknowledged)
+- `hr_shift_templates` (เช้า/ดึก 17:00–01:00) + `hr_schedule`(employee_id, date, shift_id, status) — copy สัปดาห์ก่อน, assign หลายคน, publish แล้วพนักงานเห็น
+- **ตัวช่วยภาพรวมในหน้าจัดตาราง (ลอจิกช่วยผู้จัดการ):** จำนวนคนต่อวัน/กะ · วันหยุดกระจายสมดุลไหม · ชม.รวมต่อคนเทียบชั่วโมงมาตรฐานของแต่ละคน · ไฮไลต์วันที่คนขาด/ล้น
+- **ฝั่งพนักงาน (ESS)** หน้า **"ตารางงานของฉัน"** — เห็นเฉพาะกะตัวเอง (ปฏิทิน), แจ้งเตือน LINE เมื่อตารางเปลี่ยน
+- **สลับวันหยุด (day-off swap):** พนักงาน**ตกลงกันเองนอกระบบ** → **คนขอสลับยื่นคำขอในระบบ** (ระบุคู่สลับ + วัน) → **HR อนุมัติ** → ตาราง/บันทึกเวลาอัปเดตตาม ⚠️ *batch ก่อนหน้า (07-02) บอก "เปลี่ยนวันหยุด approve by Manager" — ล่าสุดบอก HR อนุมัติ → น่าจะเป็นสาย Manager→HR หรือเปลี่ยนเป็น HR อย่างเดียว ต้องยืนยัน*
 - **บันทึกเวลา ผูกกับ schedule** → คิดสาย/ขาด/OT เทียบกับกะที่ลง (ตัดรอบตี 6)
 
 ## D. เอนจินการลา — HR ตั้งเงื่อนไขได้ (configurable)
@@ -156,6 +159,12 @@ Net        = Total − Total Deduction
 - **เงินเดือน**: หักแค่ **ลากิจ / ลาป่วย / สาย** (÷30 ตามวัน — ยืนยันซ้ำ: 10,000÷30×28)
 - **ค่าเดินทางรายเดือน**: อยู่ในสูตรฟิค · **ไม่จ่ายวันลาป่วย/ลากิจ** (ตรง §E)
 - ❓ **ค้างถาม 1 ข้อ:** "หักฟิค ลาป่วย/ลากิจ" ของบัญชี = หักตามวันเรต ÷30 แต่แสดงเป็นบรรทัดแยก (ฐานเต็ม−รายการหัก) หรือเรตฟิคต่อวันที่ HR ตั้งเลขเอง — ต้องเลือกทางเดียว กันหักซ้ำ
+
+## I. โปรไฟล์เวลาทำงานต่อคน + ตำแหน่งงาน + เวลาพัก (อัปเดต 2026-07-02 รอบสาม)
+- **ชั่วโมงทำงานต่อคน — ตั้งตอนเพิ่มพนักงาน:** บางคนทำ **8+1** บางคน **9+1** (+1 = ชั่วโมงพัก) → `hr_employees.work_hours_per_day` (8|9) + `break_hours` (default 1)
+- **สิทธิ์ OT ต่อคน:** บางคนได้ OT บางคนไม่ได้ → `hr_employees.ot_eligible (bool)` ตั้งตอนเพิ่มพนักงาน — เอนจิน OT (§A) คิดให้เฉพาะคนที่เปิดสิทธิ์
+- **ตำแหน่งงาน ≠ role ระบบ:** ตำแหน่งในลิสต์ HR (กัปตัน/บาร์เทนเดอร์/เชฟ/…) **ไม่ใช่ role RBAC** (owner/manager/bar/…) → ตาราง **`hr_positions` CRUD ได้โดย HR** · `hr_employees.position_id` FK · ใช้ต่อกับ: ตัวกรองตำแหน่งหน้าประเมิน (§G), ตั้งผู้ประเมินต่อแผนก, รายงาน
+- **เวลาพักต้องกดในระบบ:** พนักงานกด **เริ่มพัก / เลิกพัก** โดยเช็ค **GPS geofence เหมือนเช็คอิน/เอาต์ (§F)** → `hr_attendance.type` ขยายเป็น `in | out | break_start | break_end` (+ gps, distance_m, in_geofence) · ชั่วโมงพักจริงเทียบ `break_hours` ของโปรไฟล์ (เกิน/ขาด → ขึ้นรายงาน) · *(สมมติฐาน: พักใช้ GPS อย่างเดียว ไม่ต้อง selfie — ลูกค้าไม่ได้ระบุ ถ้าต้องการค่อยเปิด)*
 
 ---
 
