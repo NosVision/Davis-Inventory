@@ -1,10 +1,11 @@
 # HR Build — State Tracker
 
 > loop อ่านไฟล์นี้ก่อนเริ่มทุกครั้ง · ติ๊ก [x] เมื่อ e2e ผ่าน + typecheck เขียว + commit local แล้วเท่านั้น
-> อัปเดตล่าสุด: 2026-07-02 (จบ Round 8 — **P1.3 เสร็จครบ** (policies + announcements) → ถัดไป P1.4 assets)
+> อัปเดตล่าสุด: 2026-07-02 (จบ Round 9 — **P1.4 assets เสร็จ** → ถัดไป P1.5 (Addendum A) + P1 gate)
 
 ## สถานะรวม
-- เฟสปัจจุบัน: **P1.1 + P1.2 + P1.3 ✅ เสร็จครบ → ถัดไป P1.4 assets (ทะเบียนทรัพย์สิน)**
+- เฟสปัจจุบัน: **P1.1–P1.4 ✅ เสร็จครบ → ถัดไป P1.5 (Addendum A) + P1 gate (nav tiles + P1-wide review)**
+- **เลขไมเกรชันถัดไป = 00085** (ถึง 00084_hr_assets applied)
 - **เลขไมเกรชันถัดไป = 00083** (ถึง 00082_hr_announcements applied)
 - **เลขไมเกรชันถัดไป = 00082** (ถึง 00081_hr_policies applied)
 - **ESS pattern**: ESS pages อยู่ใต้ `/me/*` (ไม่ใช่ `/hr/*` เพราะ /hr guard กันพนักงาน) · ESS API `/api/hr/ess/*` = auth-any (createClient+getUser, ไม่ใช่ requireHrManager) · signature/private upload ทำ server-side (พนักงานไม่มีสิทธิ์ bucket ตรง) · reusable `@/components/ui/signature-pad` (ref API: toDataURL/clear/isEmpty)
@@ -30,7 +31,7 @@
   - หมายเหตุ tech-debt: form modal 871 บรรทัด (เกิน 800 — แตก sub-components ทีหลัง) · profile avatar_url ยังไม่รองรับใน create/edit (เลื่อน P1.5)
 - [x] P1.2 positions/departments CRUD + audit-log page (435cb92) — API (list/create/update/delete, 409 dup + 409 FK-in-use, logHrAudit ทุก mutation) + `/hr/org` (tabs + add/rename/reorder/toggle active) + audit API (filter table/action/record_id, paginated) + `/hr/audit` page · i18n th/en (org 21/21, audit 17/17) · e2e ผ่าน API+UI (create/dup-409/rename/toggle + org+audit render สะท้อนข้อมูลจริง incl transfer reasons) · **review ผ่าน 0 CRIT/HIGH** แก้ 2 MED (DELETE 404 กัน phantom audit, active ต้อง boolean) + LOW (DRY db-errors, org fetch catch) verify แล้ว (c0b8076)
 - [x] P1.3 policies + announcements — **เสร็จครบ** · **policies** (f2ad1d2/e0ce04d): 00081 migration + SignaturePad + HR /hr/policies (CRUD, version-bump→re-ack, acks view) + ESS /me/policies (read+sign) · e2e: HR create → staff(non-HR) read /me/policies + sign → ack+signature ลง DB (verify แล้ว) · **review ผ่าน 0 CRIT** แก้ 1 HIGH (upload size cap+magic กัน DoS) + 4 MED (orphan cleanup, version-race guard, SignaturePad pointerleave, HR sig viewer) verify แล้ว (e0ce04d) · **announcements เสร็จ** (d821e48): 00082 migration (announcements + stores scope + receipts) + HR /hr/announcements (branch multi-select + receipts) + ESS /me/announcements (ack/later) · re-prompt: snooze→snoozed_date=todayBangkok, เด้งซ้ำเมื่อ business day เปลี่ยน · e2e ผ่าน: scope isolation (own-store+companywide เห็น, other-store ไม่เห็น), snooze hide today, backdate→re-surface, ack removes, HR receipts · **review: 1 CRIT + 1 HIGH + 2 MED แก้** (00083 + 7045c91): scope-aware RLS (กัน browser client อ่าน out-of-scope), atomic scope RPC (dedupe, กัน fail-open), ack/snooze in-scope 403 · verify แล้ว · **P1.3 ปิดครบ**
-- [ ] P1.4 assets
+- [x] P1.4 assets (ee6fd4f) — 00084 hr_assets (holder_id, value_satang, status in_stock/issued/returned/lost/damaged, RLS HR-only) + CRUD API (search/status/holder filters, value_baht→satang) + /hr/assets page (filters + editor modal + holder select) · i18n 32/32 · e2e: create 500฿→50000 satang + holder embed + status filter + PUT returned 550฿→55000 + page render · (review agent กำลังรัน)
 - [ ] P1.5 (Addendum A) org chart + view ประวัติปรับเงินเดือน/ตำแหน่ง + แจ้งเตือนครบทดลองงาน 119 วัน + วันเกิด/ครบรอบงาน + ปุ่มพิมพ์โปรไฟล์/ทะเบียนทรัพย์สิน + เอกสารส่วนตัว = private bucket (PDPA)
 - [ ] P1 e2e ครบ + gate review
 
@@ -100,4 +101,5 @@
 - 2026-07-02 · Round 6: P1.2 **positions/departments CRUD + audit-log** (2 parallel agents) — 5 API routes + org page + audit page + i18n · e2e: pos create/dup-409/rename/toggle + dept create + org/audit render สะท้อนข้อมูลจริง · typecheck เขียว · 435cb92 + review fixes c0b8076 · **P1.2 ปิดครบ** · (→ P1.3)
 - 2026-07-02 · Round 7: P1.3 **policies** (2 parallel agents) — 00081 migration + reusable SignaturePad + HR editor + ESS /me/policies sign-to-ack · e2e: non-HR staff อ่าน+เซ็น→ack+signature ลง private bucket (DB verify), bad-sig 400, re-ack idempotent · typecheck เขียว · f2ad1d2 + review fixes e0ce04d (review ผ่าน 0 CRIT, 1 HIGH+4 MED แก้) · (announcements → Round 8)
 - 2026-07-02 · Round 8: P1.3 **announcements** (2 parallel agents) — 00082 migration (scope stores + receipts) + HR editor + ESS /me/announcements ack/snooze · **re-prompt-next-day** logic (snooze=todayBangkok) · e2e ผ่านครบ: scope isolation, snooze hide today, backdate→re-surface, ack removes, HR receipts · typecheck เขียว · d821e48 + review fixes 00083/7045c91 (1 CRIT scope-leak + 1 HIGH + 2 MED แก้) · **P1.3 ปิดครบ** · (→ P1.4 Round 9)
+- 2026-07-02 · Round 9: P1.4 **assets** (1 agent) — 00084 hr_assets + CRUD API (filters, value satang) + /hr/assets page · e2e: create 500฿→50000 satang, holder embed, status filter, PUT returned 550฿→55000, page render · typecheck เขียว · ee6fd4f · (review + P1.5/gate → Round 10)
 - (assumption แก้แล้ว) announcements scope บังคับที่ **RLS** (ไม่ใช่แค่ route) — ยกเลิก assumption เดิมที่ว่า "announcements low-sensitivity อ่านได้ทั้งหมด"
