@@ -123,6 +123,19 @@
   .toast .ic{width:17px;height:17px;color:var(--green);flex:none;margin-top:1px}
   @keyframes tin{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:none}}
   .foot{text-align:center;color:var(--muted);font-size:12px;padding:20px 0 6px}
+  /* venue filter chips */
+  .venuebar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+  .vchip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:7px 15px;font-size:13px;font-weight:700;color:var(--ink-soft);box-shadow:var(--shadow);transition:all var(--dur)}
+  .vchip.on{background:var(--indigo);color:#fff;border-color:var(--indigo);box-shadow:0 8px 18px -10px rgba(79,70,229,.6)}
+  .vchip:not(.on):hover{border-color:#c9d2e3}
+  /* evaluator queue rows */
+  .evrow{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:10px;box-shadow:var(--shadow);transition:all var(--dur)}
+  .evrow:hover{border-color:#c9d2e3;transform:translateY(-1px)}
+  .evrow .avatar{width:36px;height:36px;font-size:14px}
+  .evrow-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+  .evrow-name{font-weight:700;font-size:14.5px}
+  .evrow-sub{font-size:12px;color:var(--muted)}
+  .evchev{width:18px;height:18px;color:#c9d2e3;flex:none}
   @media (max-width:640px){ .critrow{flex-direction:column;align-items:stretch} .critrow .cn{min-width:0} .barwrap{width:100%;flex:none} }
 </style>
 </head>
@@ -165,6 +178,7 @@
       <span data-t="hrRibbon">หน้านี้เจ้าของ/HR ตั้งเกณฑ์ประเมิน มอบหมายผู้ประเมิน และตั้งกติกาจ่ายเงิน — ทำได้อิสระใหม่ทุกเดือน ไม่ต้องแก้โค้ด</span>
     </div>
 
+    <div class="venuebar" id="hrVenueBar"></div>
     <div class="kpis" id="hrKpis"></div>
 
     <div class="card"><div class="pad">
@@ -247,10 +261,26 @@
     </div>
     <div class="fieldrow" style="margin-bottom:14px">
       <label style="min-width:220px;flex:1"><span class="secsub" style="margin:0" data-t="viewAs">ดูในมุมของหัวหน้า</span>
-        <select id="evaluatorPicker" onchange="renderEvaluator()"></select>
+        <select id="evaluatorPicker" onchange="evPickEvaluator()"></select>
       </label>
     </div>
-    <div id="evList"></div>
+
+    <!-- LIST MODE: การ์ดสรุป + ค้นหา + รายการเป็นคิว -->
+    <div id="evListMode">
+      <div class="kpis" id="evSummary"></div>
+      <div class="fieldrow" style="margin-bottom:14px">
+        <div style="flex:1;min-width:170px">
+          <input type="text" id="evSearch" oninput="evOnSearch(this.value)">
+        </div>
+        <select id="evRoleFilter" onchange="evOnRole(this.value)" style="width:auto;min-width:140px"></select>
+      </div>
+      <div id="evPeopleList"></div>
+    </div>
+
+    <!-- SCORE MODE: ประเมินทีละคน -->
+    <div id="evScoreMode" style="display:none">
+      <div id="evScoreCard"></div>
+    </div>
   </div>
 
   <!-- ================= EMPLOYEE SCREEN ================= -->
@@ -350,16 +380,23 @@ function applyStaticI18n(){
 }
 
 /* ============ sample cast ============ */
+const VENUE = {
+  uh:  {th:"Upper House", en:"Upper House"},
+  bcr: {th:"Baccarat",    en:"Baccarat"},
+};
 const EMP = {
-  nan:  {name:{th:"แนน", en:"Nan"},   role:{th:"บาร์เทนเดอร์", en:"Bartender"}, color:"#0d9488", init:"น"},
-  ek:   {name:{th:"เอก", en:"Ek"},    role:{th:"เชฟ", en:"Chef"},               color:"#d97706", init:"อ"},
-  fai:  {name:{th:"ฝ้าย", en:"Fai"},  role:{th:"เสิร์ฟ", en:"Server"},          color:"#7c3aed", init:"ฝ"},
-  tong: {name:{th:"โต้ง", en:"Tong"}, role:{th:"เสิร์ฟ", en:"Server"},          color:"#2563eb", init:"ต"},
-  min:  {name:{th:"มิ้น", en:"Min"},  role:{th:"แคชเชียร์", en:"Cashier"},      color:"#16a34a", init:"ม"},
+  nan:  {name:{th:"แนน", en:"Nan"},   role:{th:"บาร์เทนเดอร์", en:"Bartender"}, venue:"uh",  color:"#0d9488", init:"น"},
+  ek:   {name:{th:"เอก", en:"Ek"},    role:{th:"เชฟ", en:"Chef"},               venue:"uh",  color:"#d97706", init:"อ"},
+  fai:  {name:{th:"ฝ้าย", en:"Fai"},  role:{th:"เสิร์ฟ", en:"Server"},          venue:"uh",  color:"#7c3aed", init:"ฝ"},
+  bee:  {name:{th:"บี", en:"Bee"},    role:{th:"ผู้ช่วยบาร์", en:"Barback"},    venue:"uh",  color:"#0891b2", init:"บ"},
+  tong: {name:{th:"โต้ง", en:"Tong"}, role:{th:"เสิร์ฟ", en:"Server"},          venue:"bcr", color:"#2563eb", init:"ต"},
+  min:  {name:{th:"มิ้น", en:"Min"},  role:{th:"แคชเชียร์", en:"Cashier"},      venue:"bcr", color:"#16a34a", init:"ม"},
+  som:  {name:{th:"ส้ม", en:"Som"},   role:{th:"เสิร์ฟ", en:"Server"},          venue:"bcr", color:"#db2777", init:"ส"},
+  lek:  {name:{th:"เล็ก", en:"Lek"},  role:{th:"บาร์เทนเดอร์", en:"Bartender"}, venue:"bcr", color:"#9333ea", init:"ล"},
 };
 const EVAL = {
-  somchai: {name:{th:"สมชาย", en:"Somchai"}, role:{th:"กัปตัน", en:"Captain"}, color:"#e11d48", init:"ส"},
-  neung:   {name:{th:"หนึ่ง", en:"Neung"},  role:{th:"ผู้จัดการ", en:"Manager"}, color:"#4f46e5", init:"น1"},
+  somchai: {name:{th:"สมชาย", en:"Somchai"}, role:{th:"กัปตัน · Upper House", en:"Captain · Upper House"}, color:"#e11d48", init:"ส"},
+  neung:   {name:{th:"หนึ่ง", en:"Neung"},  role:{th:"ผู้จัดการ · Baccarat", en:"Manager · Baccarat"}, color:"#4f46e5", init:"ห"},
 };
 const EMP_LIST = Object.keys(EMP);
 const EVAL_LIST = Object.keys(EVAL);
@@ -383,6 +420,18 @@ const HANDBOOK_CRITERIA = [
   {id:'c14', name:{th:'วินัย',              en:'Discipline'},                      max:10},
   {id:'c15', name:{th:'ตรงเวลา',            en:'Punctuality'},                     max:10},
 ];
+// ตัวช่วยสร้างคะแนน 15 หัวข้อจากค่าฐาน (ใส่ jitter เล็กน้อยให้ดูสมจริง ไม่ใช่เลขเท่ากันหมด)
+const SCORE_JITTER = [0,1,-1,0,1,-1,0,1,0,-1,1,0,-1,0,1];
+function mkScore(base, comment){
+  const s = { submitted:true, comment: comment || {th:'',en:''} };
+  HANDBOOK_CRITERIA.forEach((c,i)=>{ s[c.id] = Math.max(0, Math.min(10, base + SCORE_JITTER[i])); });
+  return s;
+}
+function emptyScore(){
+  const s = { submitted:false, comment:{th:'',en:''} };
+  HANDBOOK_CRITERIA.forEach(c=>{ s[c.id] = null; });
+  return s;
+}
 function defaultState(){
   return {
     criteria: HANDBOOK_CRITERIA.map(c=>({...c, name:{...c.name}})),
@@ -397,42 +446,48 @@ function defaultState(){
       linearFlat: 0,
       linearPerPct: 25,
     },
+    // Upper House → สมชาย · Baccarat → หนึ่ง · แนน มี 2 ผู้ประเมิน (โชว์การเฉลี่ย)
     assignments: {
       nan:  ['somchai','neung'],
       ek:   ['somchai'],
-      fai:  ['neung'],
+      fai:  ['somchai'],
+      bee:  ['somchai'],
       tong: ['neung'],
-      min:  ['somchai'],
+      min:  ['neung'],
+      som:  ['neung'],
+      lek:  ['neung'],
     },
     scores: {
-      // ค่าดิบรวม 15 หัวข้อ (เต็ม 150) เท่ากับ % เดิมที่ใช้โชว์ตัวอย่าง: แนน 86%, เอก 92%, ฝ้าย 68%, มิ้น 88%
-      nan:  {
-        somchai:{c1:9,c2:8,c3:9,c4:9,c5:8,c6:9,c7:8,c8:9,c9:8,c10:8,c11:10,c12:9,c13:8,c14:9,c15:8, submitted:true, comment:{th:'ทำงานดีมาก ตรงเวลาเกือบตลอด',en:'Great work, punctual almost every day'}},
-        neung:{c1:null,c2:null,c3:null,c4:null,c5:null,c6:null,c7:null,c8:null,c9:null,c10:null,c11:null,c12:null,c13:null,c14:null,c15:null, submitted:false, comment:{th:'',en:''}},
-      },
-      ek:   { somchai:{c1:10,c2:9,c3:9,c4:9,c5:9,c6:10,c7:9,c8:9,c9:9,c10:9,c11:10,c12:9,c13:9,c14:9,c15:9, submitted:true, comment:{th:'',en:''}} },
-      fai:  { neung:{c1:7,c2:6,c3:8,c4:7,c5:6,c6:7,c7:6,c8:7,c9:8,c10:6,c11:8,c12:7,c13:6,c14:7,c15:6, submitted:true, comment:{th:'',en:''}} },
-      tong: { neung:{c1:null,c2:null,c3:null,c4:null,c5:null,c6:null,c7:null,c8:null,c9:null,c10:null,c11:null,c12:null,c13:null,c14:null,c15:null, submitted:false, comment:{th:'',en:''}} },
-      min:  { somchai:{c1:9,c2:9,c3:9,c4:9,c5:8,c6:9,c7:9,c8:9,c9:9,c10:8,c11:9,c12:9,c13:8,c14:9,c15:9, submitted:true, comment:{th:'',en:''}} },
+      nan:  { somchai: mkScore(9, {th:'ทำงานดีมาก ตรงเวลาเกือบตลอด',en:'Great work, punctual almost every day'}), neung: emptyScore() },
+      ek:   { somchai: mkScore(9) },
+      fai:  { somchai: mkScore(7) },
+      bee:  { somchai: emptyScore() },
+      tong: { neung: emptyScore() },
+      min:  { neung: mkScore(9) },
+      som:  { neung: mkScore(8) },
+      lek:  { neung: emptyScore() },
     },
     trend: {
       nan:  [{p:{th:'ก.พ. 69',en:'Feb 26'}, pct:72},{p:{th:'มี.ค. 69',en:'Mar 26'}, pct:null},{p:{th:'เม.ย. 69',en:'Apr 26'}, pct:65},{p:{th:'พ.ค. 69',en:'May 26'}, pct:81, note:{th:'เต็ม 100 คะแนนเดือนนี้',en:'Max was 100 pts this month'}},{p:{th:'มิ.ย. 69',en:'Jun 26'}, pct:75}],
       ek:   [{p:{th:'มี.ค. 69',en:'Mar 26'}, pct:88},{p:{th:'เม.ย. 69',en:'Apr 26'}, pct:83},{p:{th:'พ.ค. 69',en:'May 26'}, pct:null},{p:{th:'มิ.ย. 69',en:'Jun 26'}, pct:90}],
       fai:  [{p:{th:'เม.ย. 69',en:'Apr 26'}, pct:60},{p:{th:'พ.ค. 69',en:'May 26'}, pct:68},{p:{th:'มิ.ย. 69',en:'Jun 26'}, pct:64}],
+      bee:  [{p:{th:'พ.ค. 69',en:'May 26'}, pct:70},{p:{th:'มิ.ย. 69',en:'Jun 26'}, pct:73}],
       tong: [{p:{th:'พ.ค. 69',en:'May 26'}, pct:55},{p:{th:'มิ.ย. 69',en:'Jun 26'}, pct:null}],
       min:  [{p:{th:'มี.ค. 69',en:'Mar 26'}, pct:92},{p:{th:'เม.ย. 69',en:'Apr 26'}, pct:95},{p:{th:'พ.ค. 69',en:'May 26'}, pct:89},{p:{th:'มิ.ย. 69',en:'Jun 26'}, pct:94}],
+      som:  [{p:{th:'เม.ย. 69',en:'Apr 26'}, pct:78},{p:{th:'พ.ค. 69',en:'May 26'}, pct:82},{p:{th:'มิ.ย. 69',en:'Jun 26'}, pct:80}],
+      lek:  [{p:{th:'พ.ค. 69',en:'May 26'}, pct:66},{p:{th:'มิ.ย. 69',en:'Jun 26'}, pct:71}],
     },
   };
 }
 let state = loadState();
 function loadState(){
   try{
-    const raw = localStorage.getItem('davis-eval-mockup-v1');
+    const raw = localStorage.getItem('davis-eval-mockup-v2');
     if(raw) return JSON.parse(raw);
   }catch(e){}
   return defaultState();
 }
-function saveState(){ localStorage.setItem('davis-eval-mockup-v1', JSON.stringify(state)); }
+function saveState(){ localStorage.setItem('davis-eval-mockup-v2', JSON.stringify(state)); }
 function resetDemo(){
   if(!confirm(lang==='th' ? 'รีเซ็ตข้อมูลเดโม่กลับเป็นค่าเริ่มต้น?' : 'Reset demo data to defaults?')) return;
   state = defaultState(); saveState(); renderAll(); toast(t('resetToast'));
@@ -458,7 +513,7 @@ function employeeAverage(empId){
 function scorePct(empId){
   const avg = employeeAverage(empId);
   if(avg===null) return null;
-  return Math.round((avg/maxScore())*10000)/100;
+  return Math.min(100, Math.round((avg/maxScore())*10000)/100);
 }
 function payoutFor(pct){
   if(pct===null) return null;
@@ -484,13 +539,25 @@ function setRole(r){
 }
 
 /* ============ HR screen render ============ */
+let hrVenue = 'all'; // ตัวกรองร้าน/สาขา (แบ่งห้อง)
+function hrEmpList(){ return hrVenue==='all' ? EMP_LIST : EMP_LIST.filter(id=>EMP[id].venue===hrVenue); }
+function setHrVenue(v){ hrVenue = v; renderHR(); }
+function renderHrVenueBar(){
+  const venues = ['all', ...Object.keys(VENUE)];
+  document.getElementById('hrVenueBar').innerHTML = venues.map(v=>{
+    const label = v==='all' ? (lang==='th'?'ทุกร้าน':'All venues') : VENUE[v][lang];
+    return `<button class="vchip ${hrVenue===v?'on':''}" onclick="setHrVenue('${v}')">${label}</button>`;
+  }).join('');
+}
 function renderHR(){
   document.getElementById('totalMaxVal').textContent = maxScore();
+  renderHrVenueBar();
+  const emps = hrEmpList();
 
   document.getElementById('hrKpis').innerHTML = `
     <div class="kpi" style="--k:var(--indigo)"><div class="kl">${lang==='th'?'คะแนนเต็มงวดนี้':"This period's max"}</div><div class="kv num">${maxScore()} <small>${t('pointsUnit')}</small></div></div>
-    <div class="kpi" style="--k:var(--teal)"><div class="kl">${lang==='th'?'พนักงานที่ถูกประเมิน':'Employees in scope'}</div><div class="kv num">${EMP_LIST.length}</div></div>
-    <div class="kpi" style="--k:var(--amber)"><div class="kl">${lang==='th'?'ให้คะแนนแล้ว':'Scores submitted'}</div><div class="kv num">${EMP_LIST.reduce((s,e)=>s+submittedCount(e),0)} <small>/ ${EMP_LIST.reduce((s,e)=>s+(state.assignments[e]||[]).length,0)}</small></div></div>
+    <div class="kpi" style="--k:var(--teal)"><div class="kl">${lang==='th'?'พนักงานที่ถูกประเมิน':'Employees in scope'}</div><div class="kv num">${emps.length}</div></div>
+    <div class="kpi" style="--k:var(--amber)"><div class="kl">${lang==='th'?'ให้คะแนนแล้ว':'Scores submitted'}</div><div class="kv num">${emps.reduce((s,e)=>s+submittedCount(e),0)} <small>/ ${emps.reduce((s,e)=>s+(state.assignments[e]||[]).length,0)}</small></div></div>
     <div class="kpi" style="--k:var(--green)"><div class="kl">${lang==='th'?'สถานะงวด':'Period status'}</div><div class="kv" style="font-size:1.05rem">${state.periodClosed ? (lang==='th'?'ปิดแล้ว':'Closed') : (lang==='th'?'เปิดอยู่':'Open')}</div></div>
   `;
   document.getElementById('periodStatusPill').className = 'pill ' + (state.periodClosed ? 'p-slate' : 'p-green');
@@ -507,7 +574,7 @@ function renderHR(){
     </tr>`).join('');
 
   // assignments table
-  document.getElementById('assignBody').innerHTML = EMP_LIST.map(id=>{
+  document.getElementById('assignBody').innerHTML = emps.map(id=>{
     const evs = state.assignments[id]||[];
     const done = submittedCount(id);
     const chips = evs.map(ev=>{
@@ -516,7 +583,7 @@ function renderHR(){
         <span class="cst" style="color:${submitted?'#137a37':'#a65a06'}">${submitted?'✓':'⏳'}</span></span>`;
     }).join('');
     return `<tr>
-      <td><span class="empname"><span class="avatar" style="background:${EMP[id].color}">${EMP[id].init}</span>${EMP[id].name[lang]}<span style="color:var(--muted);font-weight:500"> · ${EMP[id].role[lang]}</span></span></td>
+      <td><span class="empname"><span class="avatar" style="background:${EMP[id].color}">${EMP[id].init}</span>${EMP[id].name[lang]}<span style="color:var(--muted);font-weight:500"> · ${EMP[id].role[lang]} · ${VENUE[EMP[id].venue][lang]}</span></span></td>
       <td><div class="chips">${chips || '<span style="color:var(--muted)">'+t('noneYet')+'</span>'}
         <select onchange="addEvaluator('${id}', this.value); this.value=''" style="width:auto;font-size:11.5px;padding:3px 6px">
           <option value="">+ ${lang==='th'?'เพิ่มผู้ประเมิน':'add evaluator'}</option>
@@ -545,10 +612,10 @@ function renderHR(){
   document.getElementById('payoutExample').textContent = `${t('monthlyExFrom')} ${examplePct.toFixed(1)}% ${t('monthlyExMid')} ${fmtBaht(payoutFor(examplePct))}`;
 
   // results table
-  document.getElementById('resultBody').innerHTML = EMP_LIST.map(id=>{
+  document.getElementById('resultBody').innerHTML = emps.map(id=>{
     const pct = scorePct(id); const avg = employeeAverage(id);
     return `<tr>
-      <td><span class="empname"><span class="avatar" style="background:${EMP[id].color}">${EMP[id].init}</span>${EMP[id].name[lang]}</span></td>
+      <td><span class="empname"><span class="avatar" style="background:${EMP[id].color}">${EMP[id].init}</span>${EMP[id].name[lang]}<span style="color:var(--muted);font-weight:500"> · ${VENUE[EMP[id].venue][lang]}</span></span></td>
       <td>${submittedCount(id)} / ${(state.assignments[id]||[]).length}</td>
       <td class="num">${avg===null? t('noneYet') : avg.toFixed(1)+' / '+maxScore()}</td>
       <td class="num">${fmtPct(pct)}</td>
@@ -591,43 +658,144 @@ function closePeriod(){
   state.periodClosed = true; saveState(); renderAll(); toast(t('closedToast'));
 }
 
-/* ============ Evaluator screen render ============ */
+/* ============ Evaluator screen ============ */
+// ประเมินทีละคน: มีการ์ดสรุป + ค้นหา/กรอง + รายการแบบคิว → กดคนไหนเข้าไปให้คะแนน → ส่ง → ไปคนถัดไปอัตโนมัติ
+let evUI = { evId:null, q:'', role:'all', focus:null };
+
+function evMyEmployees(evId){
+  return EMP_LIST.filter(id => (state.assignments[id]||[]).includes(evId));
+}
+function evIsDone(empId, evId){ return evaluatorTotal(empId, evId) !== null; }
+
 function renderEvaluator(){
   const picker = document.getElementById('evaluatorPicker');
   if(picker.options.length===0){
-    picker.innerHTML = EVAL_LIST.map(id=>`<option value="${id}">${EVAL[id].name[lang]} (${EVAL[id].role[lang]})</option>`).join('');
+    picker.innerHTML = EVAL_LIST.map(id=>`<option value="${id}">${EVAL[id].name[lang]}</option>`).join('');
   } else {
-    Array.from(picker.options).forEach((o,i)=> o.textContent = `${EVAL[EVAL_LIST[i]].name[lang]} (${EVAL[EVAL_LIST[i]].role[lang]})`);
+    Array.from(picker.options).forEach((o,i)=> o.textContent = EVAL[EVAL_LIST[i]].name[lang]);
   }
-  const evId = picker.value || EVAL_LIST[0];
-  const myEmployees = EMP_LIST.filter(id => (state.assignments[id]||[]).includes(evId));
+  const evId = evUI.evId || picker.value || EVAL_LIST[0];
+  evUI.evId = evId; picker.value = evId;
 
-  document.getElementById('evList').innerHTML = myEmployees.length ? myEmployees.map(empId=>{
-    const s = state.scores[empId][evId] || {submitted:false, comment:{th:'',en:''}};
-    const rows = state.criteria.map(c=>{
-      const val = s[c.id]==null ? '' : s[c.id];
-      return `<div class="critrow">
-        <span class="cn">${c.name[lang]} <span style="color:var(--muted);font-weight:500">/ ${c.max}</span></span>
-        <input type="number" class="inline-num" min="0" max="${c.max}" value="${val}" ${s.submitted?'disabled':''}
-          oninput="updateScore('${empId}','${evId}','${c.id}',this.value)">
-      </div>`;
-    }).join('');
-    return `<div class="card scoreblock ${s.submitted?'done':''}"><div class="pad">
+  const listMode = document.getElementById('evListMode');
+  const scoreMode = document.getElementById('evScoreMode');
+  document.getElementById('evSearch').placeholder = lang==='th' ? 'ค้นหาชื่อ / ตำแหน่ง' : 'Search name / role';
+
+  if(evUI.focus && (state.assignments[evUI.focus]||[]).includes(evId)){
+    listMode.style.display='none'; scoreMode.style.display='';
+    renderEvScoreCard(evUI.focus, evId);
+  } else {
+    evUI.focus = null;
+    listMode.style.display=''; scoreMode.style.display='none';
+    renderEvSummary(evId);
+    renderEvRoleFilter(evId);
+    renderEvPeople(evId);
+  }
+}
+
+function renderEvSummary(evId){
+  const mine = evMyEmployees(evId);
+  const done = mine.filter(id=>evIsDone(id,evId)).length;
+  document.getElementById('evSummary').innerHTML = `
+    <div class="kpi" style="--k:var(--indigo)"><div class="kl">${lang==='th'?'ต้องประเมินทั้งหมด':'Total to evaluate'}</div><div class="kv num">${mine.length} <small>${lang==='th'?'คน':'ppl'}</small></div></div>
+    <div class="kpi" style="--k:var(--green)"><div class="kl">${lang==='th'?'ประเมินแล้ว':'Evaluated'}</div><div class="kv num">${done}</div></div>
+    <div class="kpi" style="--k:var(--amber)"><div class="kl">${lang==='th'?'ยังไม่ประเมิน':'Not yet'}</div><div class="kv num">${mine.length-done}</div></div>
+  `;
+}
+
+function renderEvRoleFilter(evId){
+  const sel = document.getElementById('evRoleFilter');
+  const roles = [...new Set(evMyEmployees(evId).map(id=>EMP[id].role[lang]))];
+  sel.innerHTML = `<option value="all">${lang==='th'?'ทุกตำแหน่ง':'All roles'}</option>` + roles.map(r=>`<option value="${r}">${r}</option>`).join('');
+  sel.value = (evUI.role==='all' || roles.includes(evUI.role)) ? evUI.role : 'all';
+}
+
+function renderEvPeople(evId){
+  evId = evId || evUI.evId;
+  const q = evUI.q.trim().toLowerCase();
+  const mine = evMyEmployees(evId).filter(id=>{
+    if(evUI.role!=='all' && EMP[id].role[lang]!==evUI.role) return false;
+    if(q){
+      const hay = `${EMP[id].name.th} ${EMP[id].name.en} ${EMP[id].role[lang]}`.toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
+    return true;
+  });
+  // งานที่ค้าง (ยังไม่ประเมิน) ขึ้นก่อน เพื่อให้ไล่ทำเป็นคิว
+  mine.sort((a,b)=> Number(evIsDone(a,evId)) - Number(evIsDone(b,evId)));
+  const box = document.getElementById('evPeopleList');
+  if(mine.length===0){ box.innerHTML = `<div class="empty">${lang==='th'?'ไม่พบพนักงานตามที่ค้นหา':'No matching employees'}</div>`; return; }
+  box.innerHTML = mine.map(id=>{
+    const done = evIsDone(id,evId);
+    return `<button class="evrow" onclick="evOpenPerson('${id}')">
+      <span class="avatar" style="background:${EMP[id].color}">${EMP[id].init}</span>
+      <span class="evrow-main">
+        <span class="evrow-name">${EMP[id].name[lang]}</span>
+        <span class="evrow-sub">${EMP[id].role[lang]} · ${VENUE[EMP[id].venue][lang]}</span>
+      </span>
+      <span class="pill ${done?'p-green':'p-amber'}">${done?t('submittedBadge'):t('pendingBadge')}</span>
+      <svg class="ic evchev" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+    </button>`;
+  }).join('');
+}
+
+function evPickEvaluator(){
+  evUI.evId = document.getElementById('evaluatorPicker').value;
+  evUI.focus=null; evUI.q=''; evUI.role='all';
+  document.getElementById('evSearch').value='';
+  renderEvaluator();
+}
+function evOnSearch(v){ evUI.q=v; renderEvPeople(); }
+function evOnRole(v){ evUI.role=v; renderEvPeople(); }
+function evOpenPerson(empId){ evUI.focus=empId; renderEvaluator(); }
+function evBackToList(){ evUI.focus=null; renderEvaluator(); }
+
+function renderEvScoreCard(empId, evId){
+  const s = state.scores[empId][evId] || emptyScore();
+  const mine = evMyEmployees(evId);
+  const idx = mine.indexOf(empId);
+  const nextPending = mine.find(id=> id!==empId && !evIsDone(id,evId));
+  const rows = state.criteria.map(c=>{
+    const val = s[c.id]==null ? '' : s[c.id];
+    return `<div class="critrow">
+      <span class="cn">${c.name[lang]} <span style="color:var(--muted);font-weight:500">/ ${c.max}</span></span>
+      <input type="number" class="inline-num" min="0" max="${c.max}" value="${val}" ${s.submitted?'disabled':''}
+        oninput="this.value=updateScore('${empId}','${evId}','${c.id}',this.value)">
+    </div>`;
+  }).join('');
+  document.getElementById('evScoreCard').innerHTML = `
+    <div class="card"><div class="pad">
       <div class="sechead">
-        <span class="empname"><span class="avatar" style="background:${EMP[empId].color}">${EMP[empId].init}</span>${EMP[empId].name[lang]}
-          <span style="color:var(--muted);font-weight:500"> · ${EMP[empId].role[lang]}</span></span>
+        <button class="btn btn-ghost btn-sm" onclick="evBackToList()"><svg class="ic" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>${lang==='th'?'กลับรายการ':'Back to list'}</button>
+        <div class="spacer"></div>
+        <span class="secsub" style="margin:0">${lang==='th'?'คนที่':'No.'} ${idx+1} / ${mine.length}</span>
+      </div>
+      <div class="sechead" style="margin-top:10px">
+        <span class="empname" style="font-size:1.05rem"><span class="avatar" style="background:${EMP[empId].color};width:34px;height:34px;font-size:13px">${EMP[empId].init}</span>${EMP[empId].name[lang]}
+          <span style="color:var(--muted);font-weight:500"> · ${EMP[empId].role[lang]} · ${VENUE[EMP[empId].venue][lang]}</span></span>
         <div class="spacer"></div>
         <span class="pill ${s.submitted?'p-green':'p-amber'}">${s.submitted?t('submittedBadge'):t('pendingBadge')}</span>
       </div>
-      ${rows}
-      <textarea rows="2" placeholder="${t('commentPh')}" ${s.submitted?'disabled':''} style="margin-top:8px" oninput="updateComment('${empId}','${evId}',this.value)">${s.comment ? s.comment[lang] : ''}</textarea>
-      ${!s.submitted ? `<div style="margin-top:10px"><button class="btn btn-primary btn-sm" onclick="submitScore('${empId}','${evId}')"><svg class="ic" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>${t('submitBtn')}</button></div>` : ''}
+      <div style="margin-top:12px">${rows}</div>
+      <textarea rows="2" placeholder="${t('commentPh')}" ${s.submitted?'disabled':''} style="margin-top:10px" oninput="updateComment('${empId}','${evId}',this.value)">${s.comment ? s.comment[lang] : ''}</textarea>
+      <div class="fieldrow" style="margin-top:14px">
+        ${!s.submitted
+          ? `<button class="btn btn-primary" onclick="submitScore('${empId}','${evId}')"><svg class="ic" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>${t('submitBtn')}${nextPending?` · ${lang==='th'?'ไปคนถัดไป':'& next'}`:''}</button>`
+          : `<span class="pill p-green">✓ ${t('submittedBadge')}</span>`}
+        <div class="spacer"></div>
+        ${nextPending ? `<button class="btn btn-outline btn-sm" onclick="evOpenPerson('${nextPending}')">${lang==='th'?'ข้ามไปคนถัดไป':'Skip to next'} <svg class="ic" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></button>` : ''}
+      </div>
     </div></div>`;
-  }).join('') : `<div class="empty">${lang==='th'?'ยังไม่มีพนักงานที่ได้รับมอบหมายให้คุณประเมิน':'No employees assigned to you yet'}</div>`;
 }
+
+// คืนค่าที่ clamp แล้วเพื่อให้ช่องกรอกแก้ค่าเกิน max ให้ทันที (แก้บั๊ก 9.0/1)
 function updateScore(empId,evId,critId,val){
-  const n = val===''? null : Math.max(0, Number(val));
+  const c = state.criteria.find(x=>x.id===critId);
+  const maxp = c ? Number(c.max) : Infinity;
+  let n = val===''? null : Math.max(0, Number(val));
+  if(n!==null && n>maxp) n = maxp;
   state.scores[empId][evId][critId] = n; saveState();
+  return n===null ? '' : String(n);
 }
 function updateComment(empId,evId,val){
   if(!state.scores[empId][evId].comment) state.scores[empId][evId].comment = {th:'',en:''};
@@ -636,7 +804,13 @@ function updateComment(empId,evId,val){
 function submitScore(empId,evId){
   const missing = state.criteria.some(c => state.scores[empId][evId][c.id]==null);
   if(missing){ alert(lang==='th' ? 'กรุณาให้คะแนนครบทุกหัวข้อก่อนส่ง' : 'Please score every topic before submitting'); return; }
-  state.scores[empId][evId].submitted = true; saveState(); renderEvaluator(); toast(t('submittedToast'));
+  state.scores[empId][evId].submitted = true; saveState();
+  toast(t('submittedToast'));
+  // ไปคนถัดไปที่ยังไม่ประเมินอัตโนมัติ ถ้าครบแล้วกลับไปหน้ารายการ
+  const mine = evMyEmployees(evId);
+  const nextPending = mine.find(id=> id!==empId && !evIsDone(id,evId));
+  evUI.focus = nextPending || null;
+  renderEvaluator();
 }
 
 /* ============ Employee screen render ============ */
@@ -653,8 +827,10 @@ function renderEmployee(){
   const breakdownRows = state.criteria.map(c=>{
     const evs = (state.assignments[empId]||[]).filter(ev=> state.scores[empId][ev] && state.scores[empId][ev].submitted);
     const vals = evs.map(ev=> Number(state.scores[empId][ev][c.id])||0);
-    const avg = vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
-    const pctBar = avg===null ? 0 : (avg/c.max*100);
+    const avgRaw = vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
+    // clamp การแสดงผลไม่ให้เกินคะแนนเต็ม (กันเคส 9.0/1 เมื่อ HR ลดคะแนนเต็มทีหลัง)
+    const avg = avgRaw===null ? null : Math.min(avgRaw, c.max);
+    const pctBar = avg===null ? 0 : Math.min(100, avg/c.max*100);
     return `<div class="critrow">
       <span class="cn">${c.name[lang]}</span>
       <div class="barwrap"><div class="barfill" style="width:${pctBar}%"></div></div>
