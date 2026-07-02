@@ -2670,6 +2670,20 @@
         "withholding_3pct": "3% withholding",
         "none": "None"
       },
+      "transfer": {
+        "title": "Transfer company",
+        "action": "Transfer",
+        "current": "Current company",
+        "target": "New company",
+        "reason": "Reason",
+        "effectiveDate": "Effective date",
+        "submit": "Transfer",
+        "submitting": "Transferring...",
+        "success": "Employee transferred",
+        "requiredTarget": "Select a target company",
+        "requiredReason": "Reason is required",
+        "failed": "Transfer failed"
+      },
       "form": {
         "createTitle": "Add employee",
         "editTitle": "Edit employee",

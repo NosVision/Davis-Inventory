@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Plus } from 'lucide-react';
+import { Plus, ArrowLeftRight } from 'lucide-react';
 import { Button, Select, Badge } from '@/components/ui';
 import { DataTable, type Column } from '@/components/data/data-table';
 import { createClient } from '@/lib/supabase/client';
 import { EmployeeFormModal } from './_components/employee-form-modal';
+import { TransferModal } from './_components/transfer-modal';
 
 interface Ref {
   id: string;
@@ -63,6 +64,9 @@ export default function EmployeesPage() {
   // form modal
   const [formOpen, setFormOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
+
+  // transfer modal
+  const [transfer, setTransfer] = useState<{ id: string; companyId: string | null; companyName: string | null } | null>(null);
 
   useEffect(() => {
     const supabase = createClient();
@@ -158,6 +162,29 @@ export default function EmployeesPage() {
           </Badge>
         ),
       },
+      {
+        key: 'actions',
+        header: '',
+        className: 'w-10 text-right',
+        render: (e) => (
+          <button
+            type="button"
+            title={t('transfer.action')}
+            aria-label={t('transfer.action')}
+            onClick={(ev) => {
+              ev.stopPropagation();
+              setTransfer({
+                id: e.id,
+                companyId: (e.company_id as string) ?? null,
+                companyName: e.company?.name ?? null,
+              });
+            }}
+            className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-teal-600 dark:hover:bg-gray-700 dark:hover:text-teal-400"
+          >
+            <ArrowLeftRight className="h-4 w-4" />
+          </button>
+        ),
+      },
     ],
     [t]
   );
@@ -223,6 +250,18 @@ export default function EmployeesPage() {
         onClose={() => setFormOpen(false)}
         onSaved={() => {
           setFormOpen(false);
+          fetchEmployees();
+        }}
+      />
+
+      <TransferModal
+        isOpen={transfer !== null}
+        employeeId={transfer?.id ?? null}
+        currentCompanyId={transfer?.companyId ?? null}
+        currentCompanyName={transfer?.companyName ?? null}
+        onClose={() => setTransfer(null)}
+        onDone={() => {
+          setTransfer(null);
           fetchEmployees();
         }}
       />

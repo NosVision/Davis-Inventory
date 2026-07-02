@@ -2671,6 +2671,20 @@
         "withholding_3pct": "หัก ณ ที่จ่าย 3%",
         "none": "ไม่หัก"
       },
+      "transfer": {
+        "title": "ย้ายบริษัท",
+        "action": "ย้ายบริษัท",
+        "current": "บริษัทปัจจุบัน",
+        "target": "บริษัทใหม่",
+        "reason": "เหตุผล",
+        "effectiveDate": "มีผลวันที่",
+        "submit": "ย้าย",
+        "submitting": "กำลังย้าย...",
+        "success": "ย้ายบริษัทแล้ว",
+        "requiredTarget": "เลือกบริษัทปลายทาง",
+        "requiredReason": "ต้องระบุเหตุผล",
+        "failed": "ย้ายไม่สำเร็จ"
+      },
       "form": {
         "createTitle": "เพิ่มพนักงาน",
         "editTitle": "แก้ไขพนักงาน",
