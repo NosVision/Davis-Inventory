@@ -1,12 +1,12 @@
 # HR Build — State Tracker
 
 > loop อ่านไฟล์นี้ก่อนเริ่มทุกครั้ง · ติ๊ก [x] เมื่อ e2e ผ่าน + typecheck เขียว + commit local แล้วเท่านั้น
-> อัปเดตล่าสุด: 2026-07-02 (จบ Round 2 — P0.3 + P0.4 เสร็จ, e2e ผ่าน)
+> อัปเดตล่าสุด: 2026-07-02 (จบ Round 2 — **P0 ครบ ปิด gate แล้ว** → เริ่ม P1)
 
 ## สถานะรวม
-- เฟสปัจจุบัน: **P0 (เกือบจบ — เหลือปิด gate review) → ถัดไป P1**
+- เฟสปัจจุบัน: **P0 ✅ เสร็จครบ (ปิด gate + review fixes) → ถัดไป P1.1**
 - dev server: localhost:3000 (UP) · Supabase: oogyjqywuqmutkjnnsik (live)
-- **เลขไมเกรชันถัดไป = 00078** (00077_hr_core applied+verified)
+- **เลขไมเกรชันถัดไป = 00079** (00077_hr_core + 00078_hr_p0_review_fixes applied+verified)
 - test creds: `f:\tmp\hr-test-creds.json` (6 บัญชี hr-test-* + test venue store_code=HRTEST · re-seed ได้ด้วย `node scripts/seed-hr-test-users.mjs`) — ห้าม commit
 - handoff ล่าสุด: `f:\tmp\hr-handoff-latest.md`
 
@@ -15,7 +15,7 @@
 - [x] P0.2 core tables: hr_companies / hr_positions(seed16 ✓) / hr_departments / hr_employees / hr_audit_log / hr_manager_scopes — RLS 12 policies, verify SQL ✓, advisor clean สำหรับ hr_* (2b455b2)
 - [x] P0.3 can_manage_hr (4 sync points: type union + permissions route + i18n + registry) + โมดูล hr (กลุ่ม moduleGroups.hr) + /hr dashboard skeleton (12 tiles) + i18n `hr` namespace th/en + lib/hr/audit.ts (logHrAudit → hr_audit_log) — typecheck เขียว
 - [x] P0.4 test users 6 บัญชี (owner/hr+can_manage_hr/manager/staff8+1/staff9+1/parttime) + hr_employees time profiles + e2e chrome MCP: owner เห็น HR+เปิด /hr / staff ไม่เห็น / hr(perm) เห็น — ผ่านทั้ง desktop 1440 + mobile 390
-- [ ] P0 gate: review-agent (กำลังรีวิว)
+- [x] P0 gate: code-reviewer ผ่าน (0 CRITICAL) · แก้ 1 HIGH + 4 MED แล้วใน 00078 + guard: (1) canManageHr() helper + /hr server guard (กัน accountant wildcard split-brain — verify staff โดน redirect, owner/HR เข้าได้) (2) ลบ hr_audit_log INSERT policy ที่ปลอมได้ (3) hr_employees/hr_companies read = HR-only (4) profile_id FK cascade→restrict (5) seed ไม่ echo password · commits c6c6d55/5ffbda8/eddf957
 
 ## P1 — คน & นโยบาย
 - [ ] P1.1 ทะเบียนพนักงาน (list/create/edit + part-time auto-profile + ย้ายบริษัท)
@@ -60,10 +60,12 @@
 ## Open questions / assumptions ระหว่างทาง
 - (ตั้งต้น) ยอดหัก SC ต่อวันลา = สัดส่วน ÷30 ของ SC เดือนนั้น — configurable
 - (ตั้งต้น) part-time รายเดือน = ไม่มีใบเตือนเหมือน part-time อื่น
-- (P0.2) HR gate เป็น **global** ผ่าน `can_manage_hr()` — per-store scoping ผ่าน `hr_manager_scopes` เลื่อนไปเฟสหลัง (ตารางสร้างไว้แล้ว)
+- (P0.2) HR gate เป็น **global** ผ่าน `can_manage_hr()` — per-store scoping ผ่าน `hr_manager_scopes` เลื่อนไปเฟสหลัง (ตารางสร้างไว้แล้ว) · **⚠️ P5.5 บังคับ enforce จริงทุก endpoint ก่อนปิดโปรเจกต์ (ห้ามข้าม)**
+- (P0 gate) app-layer HR authz ใช้ `canManageHr()` (src/lib/hr/access.ts) เท่านั้น — **ห้ามใช้ `hasPermission(user,'can_manage_hr')`** เพราะ wildcard role (accountant) จะผ่าน app แต่ RLS บล็อก = split-brain
 - (P0.2) `hr_employees.rate_satang` ความหมายขึ้นกับ pay_type (full_monthly/pt_monthly=ราย ​เดือน, pt_daily=รายวัน, pt_hourly=รายชม.)
 - (P0.2) SSO ceiling เก็บเป็น satang (1,750,000 = 17,500 บาท → SSO สูงสุด 875) · ot_multipliers jsonb {ot1:1.5,ot2:2,ot3:3}
-- (รอเคาะ P1.1) รูปพนักงาน→ bucket public `deposit-photos` folder 'employees' ได้เลย · แต่ **เอกสารส่วนตัว (สำเนาบัตร/สัญญา) ยังไม่มี pattern private bucket ในโปรเจกต์** — ต้องตัดสินใจก่อน build part-time (บังคับแนบสำเนาบัตร)
+- (P0 gate) hr_employees ตอนนี้ HR-only read (ถอด self-view ออก) — **ESS "โปรไฟล์ฉัน" ต้องอ่านผ่าน view/API จำกัดคอลัมน์** (ไม่ให้เห็น notes/bank/tax/end_reason) เมื่อ build ESS (P2/P3)
+- (✅ เคาะแล้ว โดย Addendum A P1.5) เอกสารส่วนตัว (สำเนาบัตร/สัญญา) = **private bucket (PDPA)** ต้องสร้าง bucket ใหม่ + signed URLs ตอน P1.1 · รูปโปรไฟล์ทั่วไปยังใช้ public `deposit-photos` folder 'employees' ได้
 
 ## Post-loop backlog (งานเก็บหลัง loop จบ — ไม่อยู่ในขอบเขต loop)
 - [ ] รอบ feedback UI จากลูกค้า/ทีมจริง ทุกโมดูล (เหมือนรอบเทส eval mockup)
@@ -78,3 +80,4 @@
 
 ## Log ต่อรอบ (รอบละบรรทัด: วันที่ · ทำอะไร · commit hash)
 - 2026-07-02 · Round 1: P0.1 reconcile (next=00078) + P0.2 core schema 6 ตาราง+RLS+seed16, verify SQL ผ่าน, typecheck baseline เขียว · 2b455b2
+- 2026-07-02 · Round 2: P0.3 app wiring (can_manage_hr + module + /hr + i18n + audit) + P0.4 seed 6 test users + e2e (owner/staff/hr-perm × 1440+390 ผ่าน) + P0 gate review + fixes (00078 RLS/FK + canManageHr guard, verify staff redirect) → **P0 ปิดครบ** · c6c6d55 / 5ffbda8 / eddf957
