@@ -30,12 +30,17 @@ export async function GET() {
 
   if (ids.length > 0) {
     const [storesRes, receiptsRes] = await Promise.all([
-      service.from(STORES_TABLE).select('announcement_id, store_id').in('announcement_id', ids),
+      service
+        .from(STORES_TABLE)
+        .select('announcement_id, store_id')
+        .in('announcement_id', ids)
+        .limit(5000),
       service
         .from(RECEIPTS_TABLE)
         .select('announcement_id')
         .in('announcement_id', ids)
-        .not('acknowledged_at', 'is', null),
+        .not('acknowledged_at', 'is', null)
+        .limit(5000),
     ]);
 
     if (storesRes.error)
@@ -94,10 +99,14 @@ export async function POST(request: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  if (storeIds.length > 0) {
-    const { error: scopeErr } = await service
-      .from(STORES_TABLE)
-      .insert(storeIds.map((store_id) => ({ announcement_id: data.id, store_id })));
+  // Set scope atomically via the SECURITY DEFINER RPC (delete+insert in one txn,
+  // rolls back on any invalid store_id). Empty/absent = company-wide (no join rows).
+  const deduped = [...new Set(storeIds)];
+  if (deduped.length > 0) {
+    const { error: scopeErr } = await service.rpc('hr_set_announcement_stores', {
+      p_announcement_id: data.id,
+      p_store_ids: deduped,
+    });
     if (scopeErr) return NextResponse.json({ error: scopeErr.message }, { status: 500 });
   }
 
@@ -110,5 +119,5 @@ export async function POST(request: NextRequest) {
     after: data,
   });
 
-  return NextResponse.json({ ...data, store_ids: storeIds, acked_count: 0 }, { status: 201 });
+  return NextResponse.json({ ...data, store_ids: deduped, acked_count: 0 }, { status: 201 });
 }

@@ -34,6 +34,32 @@ export async function POST(
     return NextResponse.json({ error: 'Announcement not found or inactive' }, { status: 400 });
   }
 
+  // Scope enforcement (mirror the ESS list route): if the announcement has store
+  // rows the caller must be in at least one of them; no store rows = company-wide
+  // (allowed for everyone). Prevents snoozing an out-of-scope announcement by
+  // guessed id, which would pollute HR receipts.
+  const { data: scopeRows, error: scopeErr } = await service
+    .from('hr_announcement_stores')
+    .select('store_id')
+    .eq('announcement_id', id);
+  if (scopeErr) {
+    return NextResponse.json({ error: scopeErr.message }, { status: 500 });
+  }
+  if ((scopeRows ?? []).length > 0) {
+    const { data: myStoreRows, error: myStoresErr } = await service
+      .from('user_stores')
+      .select('store_id')
+      .eq('user_id', user.id);
+    if (myStoresErr) {
+      return NextResponse.json({ error: myStoresErr.message }, { status: 500 });
+    }
+    const myStoreIds = new Set((myStoreRows ?? []).map((r) => r.store_id as string));
+    const inScope = (scopeRows ?? []).some((r) => myStoreIds.has(r.store_id as string));
+    if (!inScope) {
+      return NextResponse.json({ error: 'Not in scope' }, { status: 403 });
+    }
+  }
+
   const { error: upsertErr } = await service.from('hr_announcement_receipts').upsert(
     {
       announcement_id: id,

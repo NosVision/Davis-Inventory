@@ -52,12 +52,14 @@ export async function GET() {
     service
       .from('hr_announcement_stores')
       .select('announcement_id,store_id')
-      .in('announcement_id', annIds),
+      .in('announcement_id', annIds)
+      .limit(5000),
     service
       .from('hr_announcement_receipts')
       .select('announcement_id,acknowledged_at,snoozed_date')
       .eq('user_id', user.id)
-      .in('announcement_id', annIds),
+      .in('announcement_id', annIds)
+      .limit(5000),
   ]);
   if (scopeRes.error) {
     return NextResponse.json({ error: scopeRes.error.message }, { status: 500 });

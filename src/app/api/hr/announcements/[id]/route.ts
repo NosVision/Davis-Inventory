@@ -65,25 +65,22 @@ export async function PUT(
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!updated) return NextResponse.json({ error: 'Announcement not found' }, { status: 404 });
 
-  // Replace scope when storeIds was supplied: clear existing join rows, then insert
-  // the new set. An empty array leaves zero rows = company-wide (all branches).
+  // Replace scope atomically when storeIds was supplied. The SECURITY DEFINER RPC
+  // deletes existing join rows and inserts the deduped set in one transaction and
+  // rolls back on any invalid store_id, so scope can never end up empty on partial
+  // failure. An empty array leaves zero rows = company-wide (all branches).
+  const deduped = [...new Set(storeIds.filter((s): s is string => typeof s === 'string'))];
   if (hasScope) {
-    const { error: delErr } = await service
-      .from(STORES_TABLE)
-      .delete()
-      .eq('announcement_id', id);
-    if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 });
-    if (storeIds.length > 0) {
-      const { error: insErr } = await service
-        .from(STORES_TABLE)
-        .insert(storeIds.map((store_id) => ({ announcement_id: id, store_id })));
-      if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
-    }
+    const { error: scopeErr } = await service.rpc('hr_set_announcement_stores', {
+      p_announcement_id: id,
+      p_store_ids: deduped,
+    });
+    if (scopeErr) return NextResponse.json({ error: scopeErr.message }, { status: 500 });
   }
 
   let finalStoreIds: string[];
   if (hasScope) {
-    finalStoreIds = storeIds;
+    finalStoreIds = deduped;
   } else {
     const { data: scopeRows } = await service
       .from(STORES_TABLE)
