@@ -1,10 +1,11 @@
 # HR Build — State Tracker
 
 > loop อ่านไฟล์นี้ก่อนเริ่มทุกครั้ง · ติ๊ก [x] เมื่อ e2e ผ่าน + typecheck เขียว + commit local แล้วเท่านั้น
-> อัปเดตล่าสุด: 2026-07-02 (จบ Round 10 — **P1 ปิดครบ** (core P1.1–P1.4 + gate); P1.5 Addendum A เลื่อนเป็น backlog → ถัดไป **P2 เวลา**)
+> อัปเดตล่าสุด: 2026-07-02 (จบ Round 11 — **P2.1a set-geofence เสร็จ** (schema + HR ตั้งพิกัด) → ถัดไป P2.1b check-in flow)
 
 ## สถานะรวม
-- เฟสปัจจุบัน: **P1 ✅ เสร็จ (nav wiring + advisor 0 hr_* lints) → ถัดไป P2.1 locations + เช็คอิน GPS+selfie+ลายน้ำ+กัน VPN**
+- เฟสปัจจุบัน: **P2.1a ✅ (00086 schema + /hr/locations) → ถัดไป P2.1b check-in ESS (GPS+geofence+selfie+watermark) แล้ว P2.1c anti-VPN**
+- **เลขไมเกรชันถัดไป = 00087** (ถึง 00086_hr_attendance applied)
 - **เลขไมเกรชันถัดไป = 00085** (ถึง 00084_hr_assets applied)
 - **เลขไมเกรชันถัดไป = 00083** (ถึง 00082_hr_announcements applied)
 - **เลขไมเกรชันถัดไป = 00082** (ถึง 00081_hr_policies applied)
@@ -36,7 +37,7 @@
 - [x] P1 gate (124f8d3) — nav tiles ทุก HR section (employees/org/assets/policies/announcements/audit) เชื่อมจาก /hr dashboard · security advisor: **0 lints บน hr_* tables/functions**, RLS ครบ 12 ตาราง · typecheck เขียว · (ESS nav /me/* → ทำใน P5.3 Staff ESS home)
 
 ## P2 — เวลา
-- [ ] P2.1 locations + เช็คอิน GPS+selfie+ลายน้ำ+กัน VPN + dev bypass กล้อง
+- [~] P2.1 locations + เช็คอิน — **P2.1a เสร็จ** (0e665d2): 00086 hr_locations (geofence/store) + hr_attendance (in/out/break, gps/distance/in_geofence/photo/ip/is_vpn_suspect/business_date) + RLS · /api/hr/locations + /hr/locations (ตั้ง lat/lng/radius ต่อสาขา, use-my-location) · e2e: set HRTEST 13.7563/100.5018/150 ✓, bad lat 400 · **เหลือ P2.1b check-in ESS (/me/checkin: GPS→geofence→selfie→canvas watermark เวลาไทย+พิกัด+สาขา→upload→insert; break flow เดียวกัน; dev bypass กล้อง) + P2.1c anti-VPN (ip-geo vs gps + datacenter range → is_vpn_suspect + รายงาน HR)** — fraud-sensitive, review หลัง P2.1b
 - [ ] P2.2 ตารางงาน (ผจก.จัด→HR รับทราบ + แผงสมดุล) + ESS ตารางของฉัน
 - [ ] P2.3 สลับวันหยุด (ผู้อนุมัติต่อร้าน) + เอนจินเวลา (สาย/ขาด/OT/พัก)
 - [ ] P2.4 hr_ot_requests + hr_attendance_requests + timesheet ต่อคน
@@ -103,4 +104,5 @@
 - 2026-07-02 · Round 8: P1.3 **announcements** (2 parallel agents) — 00082 migration (scope stores + receipts) + HR editor + ESS /me/announcements ack/snooze · **re-prompt-next-day** logic (snooze=todayBangkok) · e2e ผ่านครบ: scope isolation, snooze hide today, backdate→re-surface, ack removes, HR receipts · typecheck เขียว · d821e48 + review fixes 00083/7045c91 (1 CRIT scope-leak + 1 HIGH + 2 MED แก้) · **P1.3 ปิดครบ** · (→ P1.4 Round 9)
 - 2026-07-02 · Round 9: P1.4 **assets** (1 agent) — 00084 hr_assets + CRUD API (filters, value satang) + /hr/assets page · e2e: create 500฿→50000 satang, holder embed, status filter, PUT returned 550฿→55000, page render · typecheck เขียว · ee6fd4f + review fixes 00085/cd81afd (0 CRIT, 1 HIGH+4 MED แก้) · **P1.4 ปิดครบ** · (→ P1.5/gate Round 10)
 - 2026-07-02 · Round 10: **P1 gate** — wire /hr dashboard nav tiles (org/audit + link policies/announcements/assets, e2e 6 links verified) + security advisor (0 hr_* lints, RLS ครบ) · P1.5 Addendum A เลื่อน backlog · typecheck เขียว · 124f8d3 · **P1 ปิดครบ → P2**
+- 2026-07-02 · Round 11: P2.1a **attendance schema + set-geofence** (1 agent) — 00086 hr_locations + hr_attendance + RLS + /hr/locations page · e2e: set HRTEST geofence 200 + persisted, bad lat 400, page render 6 branches · typecheck เขียว · 0e665d2 · (→ P2.1b check-in Round 12)
 - (assumption แก้แล้ว) announcements scope บังคับที่ **RLS** (ไม่ใช่แค่ route) — ยกเลิก assumption เดิมที่ว่า "announcements low-sensitivity อ่านได้ทั้งหมด"
