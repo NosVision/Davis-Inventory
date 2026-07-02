@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import {
   Users,
@@ -18,11 +19,11 @@ import {
 } from 'lucide-react';
 
 /**
- * HR module landing / dashboard skeleton (P0.3).
- * Sub-sections are wired in later phases (P1–P5); tiles are placeholders for now.
+ * HR module landing / dashboard (P0.3). Tiles route to sub-sections as they land
+ * (P1–P5); tiles without an `href` are placeholders.
  */
-const NAV_TILES: { key: string; icon: LucideIcon }[] = [
-  { key: 'employees', icon: Users },
+const NAV_TILES: { key: string; icon: LucideIcon; href?: string }[] = [
+  { key: 'employees', icon: Users, href: '/hr/employees' },
   { key: 'attendance', icon: Clock },
   { key: 'schedule', icon: CalendarDays },
   { key: 'leave', icon: CalendarX },
@@ -47,20 +48,34 @@ export default function HrDashboardPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        {NAV_TILES.map(({ key, icon: Icon }) => (
-          <div
-            key={key}
-            className="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800"
-          >
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-50 text-teal-600 dark:bg-teal-900/30 dark:text-teal-400">
-              <Icon className="h-5 w-5" />
+        {NAV_TILES.map(({ key, icon: Icon, href }) => {
+          const inner = (
+            <>
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-50 text-teal-600 dark:bg-teal-900/30 dark:text-teal-400">
+                <Icon className="h-5 w-5" />
+              </div>
+              <span className="text-sm font-medium text-gray-900 dark:text-white">{t(`nav.${key}`)}</span>
+              <span className="text-xs text-gray-400 dark:text-gray-500">
+                {href ? '' : t('comingSoon')}
+              </span>
+            </>
+          );
+          const base =
+            'flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800';
+          return href ? (
+            <Link
+              key={key}
+              href={href}
+              className={`${base} transition-colors hover:border-teal-300 hover:bg-teal-50/40 dark:hover:border-teal-700 dark:hover:bg-teal-900/10`}
+            >
+              {inner}
+            </Link>
+          ) : (
+            <div key={key} className={base}>
+              {inner}
             </div>
-            <span className="text-sm font-medium text-gray-900 dark:text-white">
-              {t(`nav.${key}`)}
-            </span>
-            <span className="text-xs text-gray-400 dark:text-gray-500">{t('comingSoon')}</span>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
