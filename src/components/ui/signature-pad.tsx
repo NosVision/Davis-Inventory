@@ -185,7 +185,6 @@ export const SignaturePad = forwardRef<SignaturePadHandle, SignaturePadProps>(
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={stopDrawing}
-          onPointerLeave={stopDrawing}
           onPointerCancel={stopDrawing}
         />
       </div>

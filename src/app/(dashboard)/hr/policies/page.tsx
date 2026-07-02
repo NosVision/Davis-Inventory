@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Plus, Pencil, Users } from 'lucide-react';
+import { Plus, Pencil, Users, Eye } from 'lucide-react';
 import { Button, Badge, Input, Textarea, Modal, ModalFooter, toast } from '@/components/ui';
 
 interface Policy {
@@ -58,6 +58,7 @@ function formatDate(value: string | null): string {
 
 export default function PoliciesPage() {
   const t = useTranslations('hr.policies');
+  const tForm = useTranslations('hr.employees.form');
 
   const [rows, setRows] = useState<Policy[]>([]);
   const [loading, setLoading] = useState(true);
@@ -203,6 +204,21 @@ export default function PoliciesPage() {
       failToast(err instanceof Error ? err.message : undefined);
     } finally {
       setAcksLoading(false);
+    }
+  };
+
+  const viewSignature = async (path: string) => {
+    try {
+      const res = await fetch(`/api/hr/documents?path=${encodeURIComponent(path)}`);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.url) window.open(json.url, '_blank');
+      } else {
+        const json = await res.json().catch(() => ({}));
+        failToast(json.error);
+      }
+    } catch (err) {
+      failToast(err instanceof Error ? err.message : undefined);
     }
   };
 
@@ -358,9 +374,22 @@ export default function PoliciesPage() {
                   </div>
                   <div className="text-xs text-gray-400">{formatDate(ack.acked_at)}</div>
                 </div>
-                <Badge variant="default" size="sm">
-                  v{ack.policy_version}
-                </Badge>
+                <div className="flex shrink-0 items-center gap-2">
+                  {ack.signature_path && (
+                    <button
+                      type="button"
+                      onClick={() => viewSignature(ack.signature_path as string)}
+                      title={tForm('docView')}
+                      aria-label={tForm('docView')}
+                      className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-400"
+                    >
+                      <Eye className="h-4 w-4" />
+                    </button>
+                  )}
+                  <Badge variant="default" size="sm">
+                    v{ack.policy_version}
+                  </Badge>
+                </div>
               </li>
             ))}
           </ul>

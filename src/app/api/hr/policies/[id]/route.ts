@@ -60,13 +60,22 @@ export async function PUT(
 
   update.updated_by = auth.userId;
 
+  // Optimistic concurrency: only write if the row still holds the version we read.
+  // If another writer bumped it in between, 0 rows match and we surface a 409.
   const { data, error } = await service
     .from(TABLE)
     .update(update)
     .eq('id', id)
+    .eq('version', current.version)
     .select('*')
-    .single();
+    .maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!data) {
+    return NextResponse.json(
+      { error: 'Policy was modified by someone else, please reload' },
+      { status: 409 }
+    );
+  }
 
   await logHrAudit(service, {
     actorId: auth.userId,
