@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Davis HR — แบบประเมินประจำเดือน (ตัวอย่างระบบ)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700;800&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --ink:#151b23; --ink-soft:#4a5568; --muted:#8b95a5; --line:#e6eaf1; --card:#fff;
+    --indigo:#4f46e5; --indigo-tint:#eef0fe; --teal:#0d9488; --teal-tint:#d9f4f0;
+    --amber:#d97706; --amber-tint:#fdf0da; --green:#16a34a; --green-tint:#dcfce7; --rose:#e11d48; --rose-tint:#fde4ea;
+    --radius:18px;
+    --shadow:0 1px 2px rgba(20,27,35,.04),0 14px 34px -14px rgba(20,27,35,.16);
+    --dur:280ms; --ease:cubic-bezier(.16,1,.3,1);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Noto Sans Thai",system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);line-height:1.55;-webkit-font-smoothing:antialiased;
+    background:radial-gradient(1100px 520px at 88% -10%,#e7f7f3 0%,transparent 55%),radial-gradient(900px 460px at -5% 4%,#ece9ff 0%,transparent 50%),#f5f7fb;}
+  .display{font-family:"Outfit","Noto Sans Thai",sans-serif}
+  .num{font-family:"Outfit","Noto Sans Thai",sans-serif;font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+  .ic{width:1em;height:1em;vertical-align:-.125em;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  button,input,select,textarea{font-family:inherit}
+  button{cursor:pointer}
+  @media (prefers-reduced-motion:reduce){*{animation-duration:.001ms!important;transition-duration:.001ms!important}}
+
+  .topbar{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:14px;padding:12px clamp(14px,3vw,28px);background:rgba(255,255,255,.86);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .brand{display:flex;align-items:center;gap:11px}
+  .logo{width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,var(--indigo),#7c74f0);display:grid;place-items:center;color:#fff;font-weight:800;font-size:18px;box-shadow:0 6px 16px -6px rgba(79,70,229,.6);flex:none}
+  .brand .wm{font-weight:800;font-size:16.5px;letter-spacing:-.01em;line-height:1.15}
+  .brand .wm small{display:block;font-size:11.5px;font-weight:600;color:var(--muted)}
+  .topbar .spacer{margin-left:auto}
+  .langpill{display:inline-flex;background:#f1f3f9;border:1px solid var(--line);border-radius:999px;padding:3px;font-weight:700;font-size:13px}
+  .langpill button{border:none;background:none;padding:5px 12px;border-radius:999px;color:var(--muted);font-weight:700}
+  .langpill button.on{background:#fff;color:var(--indigo);box-shadow:var(--shadow)}
+  .badgewip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;color:#a65a06;background:var(--amber-tint);border:1px solid #f3ddb2;padding:4px 10px;border-radius:999px}
+
+  .roletabs{display:flex;gap:8px;padding:12px clamp(14px,3vw,28px) 0;max-width:1180px;margin:0 auto;width:100%;flex-wrap:wrap}
+  .roletab{display:flex;align-items:center;gap:9px;padding:11px 16px;border-radius:14px;border:1px solid var(--line);background:#fff;font-weight:700;font-size:13.5px;color:var(--ink-soft);transition:all var(--dur) var(--ease);box-shadow:var(--shadow)}
+  .roletab .ic{width:17px;height:17px}
+  .roletab.on{background:var(--indigo);color:#fff;border-color:var(--indigo);box-shadow:0 10px 22px -10px rgba(79,70,229,.6)}
+  .roletab:not(.on):hover{border-color:#c9d2e3}
+
+  .content{padding:16px clamp(14px,3vw,28px) 80px;max-width:1180px;width:100%;margin:0 auto}
+  .screen{display:none;animation:fade var(--dur) var(--ease)}
+  .screen.on{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+  .ribbon{display:flex;gap:10px;align-items:flex-start;background:var(--indigo-tint);border:1px solid #d7d9fb;border-radius:14px;padding:12px 14px;margin-bottom:16px;font-size:13px;color:#3730a3}
+  .ribbon .ic{width:18px;height:18px;flex:none;margin-top:1px}
+  .ribbon.teal{background:var(--teal-tint);border-color:#bfe8e2;color:#0f5f58}
+  .ribbon.amber{background:var(--amber-tint);border-color:#f3ddb2;color:#8a4d05}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:16px}
+  .pad{padding:clamp(14px,2.5vw,20px)}
+  .sechead{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+  .sechead .spacer{margin-left:auto}
+  .sectitle{display:flex;align-items:center;gap:9px;font-weight:800;font-size:1.02rem;margin:0}
+  .sectitle .ic{width:19px;height:19px;color:var(--indigo)}
+  .secsub{color:var(--muted);font-size:12.5px;margin:4px 0 14px}
+
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;border-radius:11px;font-weight:700;font-size:13.5px;padding:9px 15px;border:1px solid transparent;transition:all var(--dur)}
+  .btn:active{transform:translateY(1px)}
+  .btn .ic{width:16px;height:16px}
+  .btn-primary{background:var(--indigo);color:#fff;box-shadow:0 8px 18px -8px rgba(79,70,229,.7)}
+  .btn-primary:hover{background:#4338ca}
+  .btn-ghost{background:#f2f4fa;color:var(--ink)}
+  .btn-ghost:hover{background:#e9edf6}
+  .btn-outline{background:#fff;color:var(--ink);border-color:var(--line)}
+  .btn-outline:hover{border-color:#c9d2e3}
+  .btn-outline.on{border-color:var(--indigo);color:var(--indigo);background:var(--indigo-tint)}
+  .btn-rose{background:#fff;color:var(--rose);border-color:#f6c9d4}
+  .btn-sm{padding:6px 11px;font-size:12.5px;border-radius:9px}
+  .btn:disabled{opacity:.45;pointer-events:none}
+
+  .pill{display:inline-flex;align-items:center;gap:6px;font-weight:700;font-size:11.5px;padding:4px 10px;border-radius:999px;white-space:nowrap}
+  .p-green{background:var(--green-tint);color:#137a37}
+  .p-amber{background:var(--amber-tint);color:#a65a06}
+  .p-rose{background:var(--rose-tint);color:#be123c}
+  .p-indigo{background:var(--indigo-tint);color:var(--indigo)}
+  .p-slate{background:#eef1f6;color:#526079}
+
+  .kpis{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:16px}
+  .kpi{position:relative;overflow:hidden;background:#fff;border:1px solid var(--line);border-radius:16px;padding:14px 16px;box-shadow:var(--shadow)}
+  .kpi::before{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:var(--k,var(--indigo))}
+  .kpi .kl{font-size:12px;color:var(--ink-soft);font-weight:600}
+  .kpi .kv{font-size:1.55rem;font-weight:800;letter-spacing:-.02em;margin-top:4px}
+  .kpi .kv small{font-size:.82rem;color:var(--muted);font-weight:700}
+
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:left;padding:10px 10px;font-size:13px;border-bottom:1px solid var(--line);vertical-align:middle}
+  th{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);white-space:nowrap}
+  tbody tr:last-child td{border-bottom:none}
+  .twrap{overflow-x:auto;border-radius:var(--radius)}
+  .empname{display:flex;align-items:center;gap:8px;font-weight:700;white-space:nowrap}
+  .avatar{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:700;font-size:12px;flex:none;font-family:"Outfit",sans-serif}
+
+  input[type=text],input[type=number],textarea,select{border:1px solid var(--line);border-radius:9px;padding:7px 10px;font-size:13px;color:var(--ink);width:100%;background:#fff}
+  input[type=number]{font-family:"Outfit",sans-serif}
+  input:focus,textarea:focus,select:focus{outline:2px solid var(--indigo-tint);border-color:var(--indigo)}
+  .inline-num{width:76px}
+  .fieldrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .chip{display:inline-flex;align-items:center;gap:6px;background:#f2f4fa;border:1px solid var(--line);border-radius:999px;padding:4px 10px 4px 4px;font-size:12px;font-weight:700}
+  .chip .cav{width:20px;height:20px;font-size:10px}
+  .chip .cst{font-size:10.5px;font-weight:700}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .addchip{border:1px dashed #c9d2e3;background:#fff;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:700;color:var(--muted)}
+
+  .scoreblock{border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+  .scoreblock.done{background:#fbfdfc;border-color:#cdeee6}
+  .critrow{display:flex;align-items:center;gap:10px;padding:6px 0;flex-wrap:wrap}
+  .critrow .cn{flex:1;min-width:140px;font-size:13px;font-weight:600}
+  .barwrap{position:relative;flex:1;min-width:140px;height:8px;background:#eef1f6;border-radius:99px;overflow:hidden}
+  .barfill{position:absolute;inset:0 auto 0 0;background:linear-gradient(90deg,var(--indigo),#7c74f0);border-radius:99px}
+
+  .ring{width:112px;height:112px;flex:none}
+  .trendwrap{overflow-x:auto}
+  .empty{color:var(--muted);font-size:13px;padding:18px;text-align:center}
+  .toasts{position:fixed;top:12px;right:12px;z-index:120;display:flex;flex-direction:column;gap:8px;max-width:min(320px,90vw)}
+  .toast{display:flex;align-items:flex-start;gap:9px;background:#fff;border:1px solid var(--line);border-left:4px solid var(--green);border-radius:12px;padding:11px 13px;box-shadow:0 18px 40px -16px rgba(20,27,35,.4);animation:tin var(--dur) var(--ease);font-size:13px}
+  .toast .ic{width:17px;height:17px;color:var(--green);flex:none;margin-top:1px}
+  @keyframes tin{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:none}}
+  .foot{text-align:center;color:var(--muted);font-size:12px;padding:20px 0 6px}
+  @media (max-width:640px){ .critrow{flex-direction:column;align-items:stretch} .critrow .cn{min-width:0} .barwrap{width:100%;flex:none} }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="logo">D</div>
+    <div class="wm">Davis HR <small id="ttSub">แบบประเมินประจำเดือน • ตัวอย่างระบบ (ยังไม่ได้ใช้งานจริง)</small></div>
+  </div>
+  <div class="spacer"></div>
+  <span class="badgewip" id="wipBadge">🧪 Mockup — ข้อมูลจำลอง</span>
+  <div class="langpill" role="group" aria-label="language">
+    <button class="on" data-lang="th" onclick="setLang('th')">TH</button>
+    <button data-lang="en" onclick="setLang('en')">EN</button>
+  </div>
+  <button class="btn btn-outline btn-sm" onclick="resetDemo()"><svg class="ic" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg><span id="resetLbl">รีเซ็ตเดโม่</span></button>
+</div>
+
+<div class="roletabs">
+  <button class="roletab on" data-role="hr" onclick="setRole('hr')">
+    <svg class="ic" viewBox="0 0 24 24"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1M9 13h1M9 17h1M14 9h1M14 13h1M14 17h1"/></svg>
+    <span data-t="tabHR">เจ้าของ / HR</span>
+  </button>
+  <button class="roletab" data-role="ev" onclick="setRole('ev')">
+    <svg class="ic" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M17 11l2 2 4-4"/></svg>
+    <span data-t="tabEv">ผู้ประเมิน (หัวหน้า)</span>
+  </button>
+  <button class="roletab" data-role="emp" onclick="setRole('emp')">
+    <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0 1 16 0v1"/></svg>
+    <span data-t="tabEmp">พนักงาน</span>
+  </button>
+</div>
+
+<div class="content">
+
+  <!-- ================= HR / OWNER SCREEN ================= -->
+  <div class="screen on" id="scr-hr">
+    <div class="ribbon"><svg class="ic" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z"/><path d="M12 8v5l3 2"/></svg>
+      <span data-t="hrRibbon">หน้านี้เจ้าของ/HR ตั้งเกณฑ์ประเมิน มอบหมายผู้ประเมิน และตั้งกติกาจ่ายเงิน — ทำได้อิสระใหม่ทุกเดือน ไม่ต้องแก้โค้ด</span>
+    </div>
+
+    <div class="kpis" id="hrKpis"></div>
+
+    <div class="card"><div class="pad">
+      <div class="sechead">
+        <div class="sectitle"><svg class="ic" viewBox="0 0 24 24"><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg><span data-t="periodTitle">งวดประเมิน</span></div>
+        <div class="spacer"></div>
+        <span class="pill p-green" id="periodStatusPill">● <span data-t="statusOpen">เปิดให้คะแนนอยู่</span></span>
+      </div>
+      <p class="secsub" data-t="periodSub">กรกฎาคม 2569 — เดือนที่แล้วเกณฑ์อาจวัดเรื่องยอดขาย เดือนนี้วัดคุณภาพงานแทนได้เลย ตั้งใหม่อิสระทุกงวด</p>
+    </div></div>
+
+    <div class="card"><div class="pad">
+      <div class="sechead">
+        <div class="sectitle"><svg class="ic" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><span data-t="critTitle">เกณฑ์ประเมิน (พิมพ์เองอิสระทุกเดือน)</span></div>
+      </div>
+      <p class="secsub" data-t="critSub">หัวข้อและคะแนนเต็มตั้งใหม่ได้ทุกเดือน จำนวนหัวข้อไม่จำกัด</p>
+      <div class="twrap"><table>
+        <thead><tr><th data-t="thTopic">หัวข้อ</th><th style="width:110px" data-t="thMax">คะแนนเต็ม</th><th style="width:44px"></th></tr></thead>
+        <tbody id="critBody"></tbody>
+      </table></div>
+      <div class="fieldrow" style="margin-top:12px">
+        <button class="btn btn-ghost btn-sm" onclick="addCriterion()"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span data-t="addCrit">เพิ่มหัวข้อ</span></button>
+        <div class="spacer"></div>
+        <b><span data-t="totalMax">คะแนนเต็มงวดนี้:</span> <span class="num" id="totalMaxVal">50</span> <span data-t="pointsUnit">คะแนน</span></b>
+      </div>
+    </div></div>
+
+    <div class="card"><div class="pad">
+      <div class="sectitle"><svg class="ic" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg><span data-t="assignTitle">มอบหมายผู้ประเมิน</span></div>
+      <p class="secsub" data-t="assignSub">ผู้ประเมินคนไหนก็ได้ ประเมินพนักงานคนไหนก็ได้ — จะให้ 1 คนมีผู้ประเมินหลายคนก็ทำได้ (ระบบจะเฉลี่ยคะแนนให้อัตโนมัติ)</p>
+      <div class="twrap"><table>
+        <thead><tr><th data-t="thEmp">พนักงาน</th><th data-t="thEvaluators">ผู้ประเมิน</th><th style="width:150px" data-t="thProgress">ความคืบหน้า</th></tr></thead>
+        <tbody id="assignBody"></tbody>
+      </table></div>
+    </div></div>
+
+    <div class="card"><div class="pad">
+      <div class="sectitle"><svg class="ic" viewBox="0 0 24 24"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><span data-t="payoutTitle">กติกาจ่ายเงินเพิ่ม (ตั้งเองได้ทุกเดือน)</span></div>
+      <p class="secsub" data-t="payoutSub">เลือกรูปแบบและตัวเลขใหม่ได้ทุกเดือน โดยอิงจาก % คะแนน ไม่ใช่คะแนนดิบ (จะได้เทียบกันได้แม้คะแนนเต็มแต่ละเดือนไม่เท่ากัน)</p>
+      <div class="fieldrow" style="margin-bottom:12px">
+        <button class="btn btn-outline btn-sm" id="btnTiered" onclick="setPayoutType('tiered')" data-t="tiered">ขั้นบันได</button>
+        <button class="btn btn-outline btn-sm" id="btnLinear" onclick="setPayoutType('linear')" data-t="linear">เชิงเส้น</button>
+      </div>
+      <div id="payoutTiered">
+        <div class="twrap"><table>
+          <thead><tr><th data-t="thFrom">ตั้งแต่ %</th><th data-t="thTo">ถึง %</th><th data-t="thBaht">บาท</th><th style="width:44px"></th></tr></thead>
+          <tbody id="tierBody"></tbody>
+        </table></div>
+        <button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="addTier()"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span data-t="addTier">เพิ่มขั้น</span></button>
+      </div>
+      <div id="payoutLinear" style="display:none">
+        <div class="fieldrow">
+          <label style="flex:1;min-width:160px"><span class="secsub" style="margin:0" data-t="linearFlat">จำนวนคงที่ (บาท)</span><input type="number" id="linearFlatInput" oninput="updateLinear()"></label>
+          <label style="flex:1;min-width:160px"><span class="secsub" style="margin:0" data-t="linearPerPct">บาทต่อ 1% คะแนน</span><input type="number" id="linearPerPctInput" oninput="updateLinear()"></label>
+        </div>
+      </div>
+      <div class="ribbon teal" style="margin-top:14px"><svg class="ic" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        <span id="payoutExample" data-t="payoutExample">ตัวอย่าง: พนักงานได้คะแนน 78.0% เดือนนี้ → ได้เงินเพิ่ม 800 บาท</span>
+      </div>
+    </div></div>
+
+    <div class="card"><div class="pad">
+      <div class="sechead">
+        <div class="sectitle"><svg class="ic" viewBox="0 0 24 24"><path d="M18 20V10M12 20V4M6 20v-6"/></svg><span data-t="resultTitle">สรุปผลคะแนน &amp; เงินเพิ่ม</span></div>
+        <div class="spacer"></div>
+        <button class="btn btn-primary btn-sm" onclick="closePeriod()"><svg class="ic" viewBox="0 0 24 24"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19 15a2 2 0 0 0 .4 2.2l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a2 2 0 0 0-2.2-.4 2 2 0 0 0-1.2 1.8V22a2 2 0 0 1-4 0v-.1A2 2 0 0 0 8 20a2 2 0 0 0-2.2.4l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A2 2 0 0 0 3.4 15a2 2 0 0 0-1.8-1.2H1a2 2 0 0 1 0-4h.1A2 2 0 0 0 3 8a2 2 0 0 0-.4-2.2l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A2 2 0 0 0 8 3.4 2 2 0 0 0 9.2 1.6V1.5a2 2 0 0 1 4 0v.1A2 2 0 0 0 16 3.4a2 2 0 0 0 2.2-.4l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A2 2 0 0 0 20.6 8c.2.8.9 1.4 1.8 1.4H22a2 2 0 0 1 0 4h-.1a2 2 0 0 0-1.9 1.6z"/></svg><span data-t="closeBtn">ปิดงวด + คำนวณผล</span></button>
+      </div>
+      <p class="secsub" data-t="resultSub">คนที่ยังไม่ส่งคะแนนจะไม่ถูกนับเป็น 0 แต่จะถูกตัดออกจากการเฉลี่ย</p>
+      <div class="twrap"><table>
+        <thead><tr><th data-t="thEmp">พนักงาน</th><th data-t="thEvalCount">ผู้ประเมิน</th><th data-t="thAvg">คะแนนเฉลี่ย</th><th data-t="thPct">%</th><th data-t="thPayout">เงินเพิ่ม</th></tr></thead>
+        <tbody id="resultBody"></tbody>
+      </table></div>
+    </div></div>
+  </div>
+
+  <!-- ================= EVALUATOR SCREEN ================= -->
+  <div class="screen" id="scr-ev">
+    <div class="ribbon"><svg class="ic" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      <span data-t="evRibbon">คุณเห็นเฉพาะพนักงานที่ได้รับมอบหมายให้ตัวเองประเมินเท่านั้น ไม่เห็นรายชื่อของหัวหน้าคนอื่น</span>
+    </div>
+    <div class="fieldrow" style="margin-bottom:14px">
+      <label style="min-width:220px;flex:1"><span class="secsub" style="margin:0" data-t="viewAs">ดูในมุมของหัวหน้า</span>
+        <select id="evaluatorPicker" onchange="renderEvaluator()"></select>
+      </label>
+    </div>
+    <div id="evList"></div>
+  </div>
+
+  <!-- ================= EMPLOYEE SCREEN ================= -->
+  <div class="screen" id="scr-emp">
+    <div class="ribbon"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0 1 16 0v1"/></svg>
+      <span data-t="empRibbon">พนักงานเห็นคะแนนสรุปเดือนปัจจุบัน พร้อมกราฟเทรนด์ย้อนหลัง — เดือนที่คะแนนเต็มไม่เท่ากันก็เทียบกันได้เพราะระบบแปลงเป็น % ให้แล้ว</span>
+    </div>
+    <div class="fieldrow" style="margin-bottom:14px">
+      <label style="min-width:220px;flex:1"><span class="secsub" style="margin:0" data-t="viewAsEmp">ดูในมุมของพนักงาน</span>
+        <select id="employeePicker" onchange="renderEmployee()"></select>
+      </label>
+    </div>
+    <div id="empDetail"></div>
+  </div>
+
+</div>
+
+<div class="foot" data-t="footNote">Davis HR — ตัวอย่างระบบสำหรับพูดคุยกับทีมงานเท่านั้น ข้อมูลในหน้านี้เป็นข้อมูลจำลอง ยังไม่เชื่อมกับระบบจริง</div>
+<div class="toasts" id="toasts"></div>
+
+<script>
+/* ============ i18n dictionary ============ */
+const DICT = {
+  ttSub:{th:"แบบประเมินประจำเดือน • ตัวอย่างระบบ (ยังไม่ได้ใช้งานจริง)", en:"Monthly Evaluation • Concept mockup (not live yet)"},
+  wipBadge:{th:"🧪 Mockup — ข้อมูลจำลอง", en:"🧪 Mockup — sample data"},
+  resetLbl:{th:"รีเซ็ตเดโม่", en:"Reset demo"},
+  tabHR:{th:"เจ้าของ / HR", en:"Owner / HR"},
+  tabEv:{th:"ผู้ประเมิน (หัวหน้า)", en:"Evaluator (supervisor)"},
+  tabEmp:{th:"พนักงาน", en:"Employee"},
+  hrRibbon:{th:"หน้านี้เจ้าของ/HR ตั้งเกณฑ์ประเมิน มอบหมายผู้ประเมิน และตั้งกติกาจ่ายเงิน — ทำได้อิสระใหม่ทุกเดือน ไม่ต้องแก้โค้ด", en:"Owner/HR sets criteria, assigns evaluators, and sets the payout rule here — fully editable every month, no code changes needed."},
+  periodTitle:{th:"งวดประเมิน", en:"Evaluation period"},
+  periodSub:{th:"กรกฎาคม 2569 — เดือนที่แล้วเกณฑ์อาจวัดเรื่องยอดขาย เดือนนี้วัดคุณภาพงานแทนได้เลย ตั้งใหม่อิสระทุกงวด", en:"July 2026 — last month's criteria could measure sales, this month measures work quality instead. Fully free every period."},
+  statusOpen:{th:"เปิดให้คะแนนอยู่", en:"Open for scoring"},
+  critTitle:{th:"เกณฑ์ประเมิน (พิมพ์เองอิสระทุกเดือน)", en:"Evaluation criteria (freely typed every month)"},
+  critSub:{th:"หัวข้อและคะแนนเต็มตั้งใหม่ได้ทุกเดือน จำนวนหัวข้อไม่จำกัด", en:"Topics and point weights can be re-set every month, unlimited topics."},
+  thTopic:{th:"หัวข้อ", en:"Topic"},
+  thMax:{th:"คะแนนเต็ม", en:"Max points"},
+  addCrit:{th:"เพิ่มหัวข้อ", en:"Add topic"},
+  totalMax:{th:"คะแนนเต็มงวดนี้:", en:"This period's max score:"},
+  pointsUnit:{th:"คะแนน", en:"pts"},
+  assignTitle:{th:"มอบหมายผู้ประเมิน", en:"Evaluator assignment"},
+  assignSub:{th:"ผู้ประเมินคนไหนก็ได้ ประเมินพนักงานคนไหนก็ได้ — จะให้ 1 คนมีผู้ประเมินหลายคนก็ทำได้ (ระบบจะเฉลี่ยคะแนนให้อัตโนมัติ)", en:"Any evaluator can be assigned to any employee — one employee can have multiple evaluators (the system averages the scores automatically)."},
+  thEmp:{th:"พนักงาน", en:"Employee"},
+  thEvaluators:{th:"ผู้ประเมิน", en:"Evaluators"},
+  thProgress:{th:"ความคืบหน้า", en:"Progress"},
+  payoutTitle:{th:"กติกาจ่ายเงินเพิ่ม (ตั้งเองได้ทุกเดือน)", en:"Payout rule (freely set every month)"},
+  payoutSub:{th:"เลือกรูปแบบและตัวเลขใหม่ได้ทุกเดือน โดยอิงจาก % คะแนน ไม่ใช่คะแนนดิบ (จะได้เทียบกันได้แม้คะแนนเต็มแต่ละเดือนไม่เท่ากัน)", en:"Pick a new shape and numbers every month, based on % score rather than raw points, so months with different max scores stay comparable."},
+  tiered:{th:"ขั้นบันได", en:"Tiered"},
+  linear:{th:"เชิงเส้น", en:"Linear"},
+  thFrom:{th:"ตั้งแต่ %", en:"From %"},
+  thTo:{th:"ถึง %", en:"To %"},
+  thBaht:{th:"บาท", en:"Baht"},
+  addTier:{th:"เพิ่มขั้น", en:"Add tier"},
+  linearFlat:{th:"จำนวนคงที่ (บาท)", en:"Flat amount (baht)"},
+  linearPerPct:{th:"บาทต่อ 1% คะแนน", en:"Baht per 1% score"},
+  resultTitle:{th:"สรุปผลคะแนน & เงินเพิ่ม", en:"Score & payout summary"},
+  resultSub:{th:"คนที่ยังไม่ส่งคะแนนจะไม่ถูกนับเป็น 0 แต่จะถูกตัดออกจากการเฉลี่ย", en:"Anyone who hasn't submitted yet is excluded from the average — never counted as a zero."},
+  closeBtn:{th:"ปิดงวด + คำนวณผล", en:"Close period + compute results"},
+  thEvalCount:{th:"ผู้ประเมิน", en:"Evaluators"},
+  thAvg:{th:"คะแนนเฉลี่ย", en:"Avg score"},
+  thPct:{th:"%", en:"%"},
+  thPayout:{th:"เงินเพิ่ม", en:"Payout"},
+  evRibbon:{th:"คุณเห็นเฉพาะพนักงานที่ได้รับมอบหมายให้ตัวเองประเมินเท่านั้น ไม่เห็นรายชื่อของหัวหน้าคนอื่น", en:"You only see employees assigned to YOU — never another evaluator's list."},
+  viewAs:{th:"ดูในมุมของหัวหน้า", en:"View as supervisor"},
+  empRibbon:{th:"พนักงานเห็นคะแนนสรุปเดือนปัจจุบัน พร้อมกราฟเทรนด์ย้อนหลัง — เดือนที่คะแนนเต็มไม่เท่ากันก็เทียบกันได้เพราะระบบแปลงเป็น % ให้แล้ว", en:"Employees see this month's summary plus a trend chart — comparable across months with different max scores, since it's all normalized to %."},
+  viewAsEmp:{th:"ดูในมุมของพนักงาน", en:"View as employee"},
+  footNote:{th:"Davis HR — ตัวอย่างระบบสำหรับพูดคุยกับทีมงานเท่านั้น ข้อมูลในหน้านี้เป็นข้อมูลจำลอง ยังไม่เชื่อมกับระบบจริง", en:"Davis HR — concept mockup for internal discussion only. All data on this page is sample data, not connected to a live system."},
+  monthScore:{th:"คะแนนเดือนนี้", en:"This month's score"},
+  breakdown:{th:"รายละเอียดตามหัวข้อ (เฉลี่ยจากผู้ประเมินทุกคน)", en:"Breakdown by topic (averaged across evaluators)"},
+  trendTitle:{th:"เทรนด์คะแนนย้อนหลัง", en:"Historical score trend"},
+  trendGapNote:{th:"เดือนที่ไม่มีผู้ประเมิน = ช่องว่างในกราฟ ไม่ใช่ 0%", en:"Months with no evaluator show as a gap, never a 0%."},
+  scoredBy:{th:"ให้คะแนนโดย", en:"Scored by"},
+  submitBtn:{th:"ส่งคะแนน", en:"Submit score"},
+  submittedBadge:{th:"ส่งแล้ว", en:"Submitted"},
+  pendingBadge:{th:"ยังไม่ให้คะแนน", en:"Not scored yet"},
+  commentPh:{th:"หมายเหตุ (ถ้ามี)", en:"Comment (optional)"},
+  savedToast:{th:"บันทึกแล้ว", en:"Saved"},
+  submittedToast:{th:"ส่งคะแนนแล้ว", en:"Score submitted"},
+  resetToast:{th:"รีเซ็ตเดโม่กลับค่าเริ่มต้นแล้ว", en:"Demo reset to defaults"},
+  closedToast:{th:"ปิดงวดและคำนวณผลแล้ว", en:"Period closed & results computed"},
+  progressOf:{th:"จาก", en:"of"},
+  noneYet:{th:"—", en:"—"},
+  monthlyExFrom:{th:"ตัวอย่าง: พนักงานได้คะแนน", en:"Example: an employee scoring"},
+  monthlyExMid:{th:"เดือนนี้ → ได้เงินเพิ่ม", en:"this month → gets a payout of"},
+  bahtWord:{th:"บาท", en:"THB"},
+};
+let lang = localStorage.getItem('davis-eval-lang') || 'th';
+function t(k){ return (DICT[k] && DICT[k][lang]) || k; }
+function setLang(l){
+  lang = l; localStorage.setItem('davis-eval-lang', l);
+  document.querySelectorAll('.langpill button').forEach(b=>b.classList.toggle('on', b.dataset.lang===l));
+  applyStaticI18n(); renderAll();
+}
+function applyStaticI18n(){
+  document.querySelectorAll('[data-t]').forEach(el=>{ el.textContent = t(el.dataset.t); });
+  document.title = lang==='th' ? "Davis HR — แบบประเมินประจำเดือน (ตัวอย่างระบบ)" : "Davis HR — Monthly Evaluation (mockup)";
+}
+
+/* ============ sample cast ============ */
+const EMP = {
+  nan:  {name:{th:"แนน", en:"Nan"},   role:{th:"บาร์เทนเดอร์", en:"Bartender"}, color:"#0d9488", init:"น"},
+  ek:   {name:{th:"เอก", en:"Ek"},    role:{th:"เชฟ", en:"Chef"},               color:"#d97706", init:"อ"},
+  fai:  {name:{th:"ฝ้าย", en:"Fai"},  role:{th:"เสิร์ฟ", en:"Server"},          color:"#7c3aed", init:"ฝ"},
+  tong: {name:{th:"โต้ง", en:"Tong"}, role:{th:"เสิร์ฟ", en:"Server"},          color:"#2563eb", init:"ต"},
+  min:  {name:{th:"มิ้น", en:"Min"},  role:{th:"แคชเชียร์", en:"Cashier"},      color:"#16a34a", init:"ม"},
+};
+const EVAL = {
+  somchai: {name:{th:"สมชาย", en:"Somchai"}, role:{th:"กัปตัน", en:"Captain"}, color:"#e11d48", init:"ส"},
+  neung:   {name:{th:"หนึ่ง", en:"Neung"},  role:{th:"ผู้จัดการ", en:"Manager"}, color:"#4f46e5", init:"น1"},
+};
+const EMP_LIST = Object.keys(EMP);
+const EVAL_LIST = Object.keys(EVAL);
+
+/* ============ default state ============ */
+// เกณฑ์ประเมิน 15 หัวข้อ — ดึงจากคู่มือพนักงานจริง (docs/hr/HR-PLAN.md หมวด E)
+const HANDBOOK_CRITERIA = [
+  {id:'c1',  name:{th:'คำสั่งหัวหน้า',      en:'Follows supervisor instructions'}, max:10},
+  {id:'c2',  name:{th:'ขยัน',               en:'Diligence'},                       max:10},
+  {id:'c3',  name:{th:'แต่งกาย',            en:'Uniform & grooming'},              max:10},
+  {id:'c4',  name:{th:'บริการลูกค้า',       en:'Customer service'},                max:10},
+  {id:'c5',  name:{th:'ความสะอาด',          en:'Cleanliness'},                     max:10},
+  {id:'c6',  name:{th:'ความแม่นออร์เดอร์',  en:'Order accuracy'},                  max:10},
+  {id:'c7',  name:{th:'ความเร็ว',           en:'Speed'},                           max:10},
+  {id:'c8',  name:{th:'เรียนรู้',            en:'Willingness to learn'},            max:10},
+  {id:'c9',  name:{th:'สื่อสาร',            en:'Communication'},                   max:10},
+  {id:'c10', name:{th:'แก้ปัญหา',           en:'Problem solving'},                 max:10},
+  {id:'c11', name:{th:'ซื่อสัตย์ไม่ขอทิป',  en:'Honesty (no soliciting tips)'},    max:10},
+  {id:'c12', name:{th:'ทีมเวิร์ก',          en:'Teamwork'},                        max:10},
+  {id:'c13', name:{th:'ดูแลร้าน',           en:'Store upkeep'},                    max:10},
+  {id:'c14', name:{th:'วินัย',              en:'Discipline'},                      max:10},
+  {id:'c15', name:{th:'ตรงเวลา',            en:'Punctuality'},                     max:10},
+];
+function defaultState(){
+  return {
+    criteria: HANDBOOK_CRITERIA.map(c=>({...c, name:{...c.name}})),
+    periodClosed: false,
+    payoutRule: {
+      type: 'tiered',
+      tiers: [
+        {min:0, max:59.99, baht:0},
+        {min:60, max:79.99, baht:800},
+        {min:80, max:100, baht:1500},
+      ],
+      linearFlat: 0,
+      linearPerPct: 25,
+    },
+    assignments: {
+      nan:  ['somchai','neung'],
+      ek:   ['somchai'],
+      fai:  ['neung'],
+      tong: ['neung'],
+      min:  ['somchai'],
+    },
+    scores: {
+      // ค่าดิบรวม 15 หัวข้อ (เต็ม 150) เท่ากับ % เดิมที่ใช้โชว์ตัวอย่าง: แนน 86%, เอก 92%, ฝ้าย 68%, มิ้น 88%
+      nan:  {
+        somchai:{c1:9,c2:8,c3:9,c4:9,c5:8,c6:9,c7:8,c8:9,c9:8,c10:8,c11:10,c12:9,c13:8,c14:9,c15:8, submitted:true, comment:{th:'ทำงานดีมาก ตรงเวลาเกือบตลอด',en:'Great work, punctual almost every day'}},
+        neung:{c1:null,c2:null,c3:null,c4:null,c5:null,c6:null,c7:null,c8:null,c9:null,c10:null,c11:null,c12:null,c13:null,c14:null,c15:null, submitted:false, comment:{th:'',en:''}},
+      },
+      ek:   { somchai:{c1:10,c2:9,c3:9,c4:9,c5:9,c6:10,c7:9,c8:9,c9:9,c10:9,c11:10,c12:9,c13:9,c14:9,c15:9, submitted:true, comment:{th:'',en:''}} },
+      fai:  { neung:{c1:7,c2:6,c3:8,c4:7,c5:6,c6:7,c7:6,c8:7,c9:8,c10:6,c11:8,c12:7,c13:6,c14:7,c15:6, submitted:true, comment:{th:'',en:''}} },
+      tong: { neung:{c1:null,c2:null,c3:null,c4:null,c5:null,c6:null,c7:null,c8:null,c9:null,c10:null,c11:null,c12:null,c13:null,c14:null,c15:null, submitted:false, comment:{th:'',en:''}} },
+      min:  { somchai:{c1:9,c2:9,c3:9,c4:9,c5:8,c6:9,c7:9,c8:9,c9:9,c10:8,c11:9,c12:9,c13:8,c14:9,c15:9, submitted:true, comment:{th:'',en:''}} },
+    },
+    trend: {
+      nan:  [{p:{th:'ก.พ. 69',en:'Feb 26'}, pct:72},{p:{th:'มี.ค. 69',en:'Mar 26'}, pct:null},{p:{th:'เม.ย. 69',en:'Apr 26'}, pct:65},{p:{th:'พ.ค. 69',en:'May 26'}, pct:81, note:{th:'เต็ม 100 คะแนนเดือนนี้',en:'Max was 100 pts this month'}},{p:{th:'มิ.ย. 69',en:'Jun 26'}, pct:75}],
+      ek:   [{p:{th:'มี.ค. 69',en:'Mar 26'}, pct:88},{p:{th:'เม.ย. 69',en:'Apr 26'}, pct:83},{p:{th:'พ.ค. 69',en:'May 26'}, pct:null},{p:{th:'มิ.ย. 69',en:'Jun 26'}, pct:90}],
+      fai:  [{p:{th:'เม.ย. 69',en:'Apr 26'}, pct:60},{p:{th:'พ.ค. 69',en:'May 26'}, pct:68},{p:{th:'มิ.ย. 69',en:'Jun 26'}, pct:64}],
+      tong: [{p:{th:'พ.ค. 69',en:'May 26'}, pct:55},{p:{th:'มิ.ย. 69',en:'Jun 26'}, pct:null}],
+      min:  [{p:{th:'มี.ค. 69',en:'Mar 26'}, pct:92},{p:{th:'เม.ย. 69',en:'Apr 26'}, pct:95},{p:{th:'พ.ค. 69',en:'May 26'}, pct:89},{p:{th:'มิ.ย. 69',en:'Jun 26'}, pct:94}],
+    },
+  };
+}
+let state = loadState();
+function loadState(){
+  try{
+    const raw = localStorage.getItem('davis-eval-mockup-v1');
+    if(raw) return JSON.parse(raw);
+  }catch(e){}
+  return defaultState();
+}
+function saveState(){ localStorage.setItem('davis-eval-mockup-v1', JSON.stringify(state)); }
+function resetDemo(){
+  if(!confirm(lang==='th' ? 'รีเซ็ตข้อมูลเดโม่กลับเป็นค่าเริ่มต้น?' : 'Reset demo data to defaults?')) return;
+  state = defaultState(); saveState(); renderAll(); toast(t('resetToast'));
+}
+
+/* ============ compute helpers ============ */
+function maxScore(){ return state.criteria.reduce((s,c)=>s+Number(c.max||0),0); }
+function evaluatorTotal(empId, evId){
+  const s = state.scores[empId] && state.scores[empId][evId];
+  if(!s || !s.submitted) return null;
+  return state.criteria.reduce((sum,c)=> sum + (Number(s[c.id])||0), 0);
+}
+function submittedCount(empId){
+  const evs = state.assignments[empId]||[];
+  return evs.filter(ev=> evaluatorTotal(empId,ev)!==null).length;
+}
+function employeeAverage(empId){
+  const evs = state.assignments[empId]||[];
+  const totals = evs.map(ev=>evaluatorTotal(empId,ev)).filter(v=>v!==null);
+  if(totals.length===0) return null;
+  return totals.reduce((a,b)=>a+b,0)/totals.length;
+}
+function scorePct(empId){
+  const avg = employeeAverage(empId);
+  if(avg===null) return null;
+  return Math.round((avg/maxScore())*10000)/100;
+}
+function payoutFor(pct){
+  if(pct===null) return null;
+  const r = state.payoutRule;
+  if(r.type==='tiered'){
+    const tier = r.tiers.find(tr=> pct>=tr.min && (tr.max===null || pct<=tr.max));
+    return tier ? Math.round(tier.baht) : 0;
+  }
+  return Math.round((Number(r.linearFlat)||0) + (Number(r.linearPerPct)||0)*pct);
+}
+function fmtBaht(n){ return n===null ? t('noneYet') : n.toLocaleString(lang==='th'?'th-TH':'en-US')+' '+t('bahtWord'); }
+function fmtPct(p){ return p===null ? t('noneYet') : p.toFixed(1)+'%'; }
+
+/* ============ role switching ============ */
+let currentRole = 'hr';
+function setRole(r){
+  currentRole = r;
+  document.querySelectorAll('.roletab').forEach(b=>b.classList.toggle('on', b.dataset.role===r));
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on'));
+  document.getElementById('scr-'+r).classList.add('on');
+  if(r==='ev') renderEvaluator();
+  if(r==='emp') renderEmployee();
+}
+
+/* ============ HR screen render ============ */
+function renderHR(){
+  document.getElementById('totalMaxVal').textContent = maxScore();
+
+  document.getElementById('hrKpis').innerHTML = `
+    <div class="kpi" style="--k:var(--indigo)"><div class="kl">${lang==='th'?'คะแนนเต็มงวดนี้':"This period's max"}</div><div class="kv num">${maxScore()} <small>${t('pointsUnit')}</small></div></div>
+    <div class="kpi" style="--k:var(--teal)"><div class="kl">${lang==='th'?'พนักงานที่ถูกประเมิน':'Employees in scope'}</div><div class="kv num">${EMP_LIST.length}</div></div>
+    <div class="kpi" style="--k:var(--amber)"><div class="kl">${lang==='th'?'ให้คะแนนแล้ว':'Scores submitted'}</div><div class="kv num">${EMP_LIST.reduce((s,e)=>s+submittedCount(e),0)} <small>/ ${EMP_LIST.reduce((s,e)=>s+(state.assignments[e]||[]).length,0)}</small></div></div>
+    <div class="kpi" style="--k:var(--green)"><div class="kl">${lang==='th'?'สถานะงวด':'Period status'}</div><div class="kv" style="font-size:1.05rem">${state.periodClosed ? (lang==='th'?'ปิดแล้ว':'Closed') : (lang==='th'?'เปิดอยู่':'Open')}</div></div>
+  `;
+  document.getElementById('periodStatusPill').className = 'pill ' + (state.periodClosed ? 'p-slate' : 'p-green');
+  document.getElementById('periodStatusPill').innerHTML = state.periodClosed
+    ? `● ${lang==='th'?'ปิดงวดแล้ว':'Closed'}`
+    : `● ${t('statusOpen')}`;
+
+  // criteria table
+  document.getElementById('critBody').innerHTML = state.criteria.map(c=>`
+    <tr>
+      <td><input type="text" value="${c.name[lang]}" ${state.periodClosed?'disabled':''} oninput="updateCritName('${c.id}', this.value)"></td>
+      <td><input type="number" class="inline-num" min="1" value="${c.max}" ${state.periodClosed?'disabled':''} oninput="updateCritMax('${c.id}', this.value)"></td>
+      <td>${state.criteria.length>1 && !state.periodClosed ? `<button class="btn btn-rose btn-sm" onclick="removeCriterion('${c.id}')"><svg class="ic" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>` : ''}</td>
+    </tr>`).join('');
+
+  // assignments table
+  document.getElementById('assignBody').innerHTML = EMP_LIST.map(id=>{
+    const evs = state.assignments[id]||[];
+    const done = submittedCount(id);
+    const chips = evs.map(ev=>{
+      const submitted = evaluatorTotal(id,ev)!==null;
+      return `<span class="chip"><span class="avatar cav" style="background:${EVAL[ev].color}">${EVAL[ev].init}</span>${EVAL[ev].name[lang]}
+        <span class="cst" style="color:${submitted?'#137a37':'#a65a06'}">${submitted?'✓':'⏳'}</span></span>`;
+    }).join('');
+    return `<tr>
+      <td><span class="empname"><span class="avatar" style="background:${EMP[id].color}">${EMP[id].init}</span>${EMP[id].name[lang]}<span style="color:var(--muted);font-weight:500"> · ${EMP[id].role[lang]}</span></span></td>
+      <td><div class="chips">${chips || '<span style="color:var(--muted)">'+t('noneYet')+'</span>'}
+        <select onchange="addEvaluator('${id}', this.value); this.value=''" style="width:auto;font-size:11.5px;padding:3px 6px">
+          <option value="">+ ${lang==='th'?'เพิ่มผู้ประเมิน':'add evaluator'}</option>
+          ${EVAL_LIST.filter(ev=>!evs.includes(ev)).map(ev=>`<option value="${ev}">${EVAL[ev].name[lang]}</option>`).join('')}
+        </select></div></td>
+      <td>${done} ${t('progressOf')} ${evs.length}</td>
+    </tr>`;
+  }).join('');
+
+  // payout rule
+  document.getElementById('btnTiered').classList.toggle('on', state.payoutRule.type==='tiered');
+  document.getElementById('btnLinear').classList.toggle('on', state.payoutRule.type==='linear');
+  document.getElementById('payoutTiered').style.display = state.payoutRule.type==='tiered' ? '' : 'none';
+  document.getElementById('payoutLinear').style.display = state.payoutRule.type==='linear' ? '' : 'none';
+  document.getElementById('tierBody').innerHTML = state.payoutRule.tiers.map((tr,i)=>`
+    <tr>
+      <td><input type="number" class="inline-num" value="${tr.min}" oninput="updateTier(${i},'min',this.value)"></td>
+      <td><input type="number" class="inline-num" value="${tr.max===null?'':tr.max}" placeholder="${lang==='th'?'สูงสุด':'top'}" oninput="updateTier(${i},'max',this.value)"></td>
+      <td><input type="number" class="inline-num" value="${tr.baht}" oninput="updateTier(${i},'baht',this.value)"></td>
+      <td>${state.payoutRule.tiers.length>1 ? `<button class="btn btn-rose btn-sm" onclick="removeTier(${i})"><svg class="ic" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>` : ''}</td>
+    </tr>`).join('');
+  document.getElementById('linearFlatInput').value = state.payoutRule.linearFlat;
+  document.getElementById('linearPerPctInput').value = state.payoutRule.linearPerPct;
+
+  const examplePct = 78.0;
+  document.getElementById('payoutExample').textContent = `${t('monthlyExFrom')} ${examplePct.toFixed(1)}% ${t('monthlyExMid')} ${fmtBaht(payoutFor(examplePct))}`;
+
+  // results table
+  document.getElementById('resultBody').innerHTML = EMP_LIST.map(id=>{
+    const pct = scorePct(id); const avg = employeeAverage(id);
+    return `<tr>
+      <td><span class="empname"><span class="avatar" style="background:${EMP[id].color}">${EMP[id].init}</span>${EMP[id].name[lang]}</span></td>
+      <td>${submittedCount(id)} / ${(state.assignments[id]||[]).length}</td>
+      <td class="num">${avg===null? t('noneYet') : avg.toFixed(1)+' / '+maxScore()}</td>
+      <td class="num">${fmtPct(pct)}</td>
+      <td class="num">${state.periodClosed ? fmtBaht(payoutFor(pct)) : `<span class="pill p-slate">${lang==='th'?'รอปิดงวด':'awaiting close'}</span>`}</td>
+    </tr>`;
+  }).join('');
+}
+function updateCritName(id,val){ const c=state.criteria.find(c=>c.id===id); if(c){ c.name[lang]=val; saveState(); } }
+function updateCritMax(id,val){ const c=state.criteria.find(c=>c.id===id); if(c){ c.max=Math.max(1,Number(val)||1); saveState(); renderHR(); } }
+function addCriterion(){
+  const id = 'c'+(state.criteria.length+1)+'_'+Date.now()%1000;
+  state.criteria.push({id, name:{th:'หัวข้อใหม่',en:'New topic'}, max:10});
+  saveState(); renderHR(); toast(t('savedToast'));
+}
+function removeCriterion(id){ state.criteria = state.criteria.filter(c=>c.id!==id); saveState(); renderHR(); }
+function addEvaluator(empId, evId){
+  if(!evId) return;
+  state.assignments[empId] = [...(state.assignments[empId]||[]), evId];
+  if(!state.scores[empId]) state.scores[empId] = {};
+  if(!state.scores[empId][evId]) state.scores[empId][evId] = {submitted:false, comment:{th:'',en:''}};
+  saveState(); renderHR(); toast(t('savedToast'));
+}
+function setPayoutType(type){ state.payoutRule.type = type; saveState(); renderHR(); }
+function updateLinear(){
+  state.payoutRule.linearFlat = Number(document.getElementById('linearFlatInput').value)||0;
+  state.payoutRule.linearPerPct = Number(document.getElementById('linearPerPctInput').value)||0;
+  saveState(); renderHR();
+}
+function updateTier(i,field,val){
+  const tr = state.payoutRule.tiers[i];
+  tr[field] = field==='max' ? (val===''? null : Number(val)) : Number(val);
+  saveState(); renderHR();
+}
+function addTier(){
+  state.payoutRule.tiers.push({min:0,max:null,baht:0});
+  saveState(); renderHR();
+}
+function removeTier(i){ state.payoutRule.tiers.splice(i,1); saveState(); renderHR(); }
+function closePeriod(){
+  state.periodClosed = true; saveState(); renderAll(); toast(t('closedToast'));
+}
+
+/* ============ Evaluator screen render ============ */
+function renderEvaluator(){
+  const picker = document.getElementById('evaluatorPicker');
+  if(picker.options.length===0){
+    picker.innerHTML = EVAL_LIST.map(id=>`<option value="${id}">${EVAL[id].name[lang]} (${EVAL[id].role[lang]})</option>`).join('');
+  } else {
+    Array.from(picker.options).forEach((o,i)=> o.textContent = `${EVAL[EVAL_LIST[i]].name[lang]} (${EVAL[EVAL_LIST[i]].role[lang]})`);
+  }
+  const evId = picker.value || EVAL_LIST[0];
+  const myEmployees = EMP_LIST.filter(id => (state.assignments[id]||[]).includes(evId));
+
+  document.getElementById('evList').innerHTML = myEmployees.length ? myEmployees.map(empId=>{
+    const s = state.scores[empId][evId] || {submitted:false, comment:{th:'',en:''}};
+    const rows = state.criteria.map(c=>{
+      const val = s[c.id]==null ? '' : s[c.id];
+      return `<div class="critrow">
+        <span class="cn">${c.name[lang]} <span style="color:var(--muted);font-weight:500">/ ${c.max}</span></span>
+        <input type="number" class="inline-num" min="0" max="${c.max}" value="${val}" ${s.submitted?'disabled':''}
+          oninput="updateScore('${empId}','${evId}','${c.id}',this.value)">
+      </div>`;
+    }).join('');
+    return `<div class="card scoreblock ${s.submitted?'done':''}"><div class="pad">
+      <div class="sechead">
+        <span class="empname"><span class="avatar" style="background:${EMP[empId].color}">${EMP[empId].init}</span>${EMP[empId].name[lang]}
+          <span style="color:var(--muted);font-weight:500"> · ${EMP[empId].role[lang]}</span></span>
+        <div class="spacer"></div>
+        <span class="pill ${s.submitted?'p-green':'p-amber'}">${s.submitted?t('submittedBadge'):t('pendingBadge')}</span>
+      </div>
+      ${rows}
+      <textarea rows="2" placeholder="${t('commentPh')}" ${s.submitted?'disabled':''} style="margin-top:8px" oninput="updateComment('${empId}','${evId}',this.value)">${s.comment ? s.comment[lang] : ''}</textarea>
+      ${!s.submitted ? `<div style="margin-top:10px"><button class="btn btn-primary btn-sm" onclick="submitScore('${empId}','${evId}')"><svg class="ic" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>${t('submitBtn')}</button></div>` : ''}
+    </div></div>`;
+  }).join('') : `<div class="empty">${lang==='th'?'ยังไม่มีพนักงานที่ได้รับมอบหมายให้คุณประเมิน':'No employees assigned to you yet'}</div>`;
+}
+function updateScore(empId,evId,critId,val){
+  const n = val===''? null : Math.max(0, Number(val));
+  state.scores[empId][evId][critId] = n; saveState();
+}
+function updateComment(empId,evId,val){
+  if(!state.scores[empId][evId].comment) state.scores[empId][evId].comment = {th:'',en:''};
+  state.scores[empId][evId].comment[lang] = val; saveState();
+}
+function submitScore(empId,evId){
+  const missing = state.criteria.some(c => state.scores[empId][evId][c.id]==null);
+  if(missing){ alert(lang==='th' ? 'กรุณาให้คะแนนครบทุกหัวข้อก่อนส่ง' : 'Please score every topic before submitting'); return; }
+  state.scores[empId][evId].submitted = true; saveState(); renderEvaluator(); toast(t('submittedToast'));
+}
+
+/* ============ Employee screen render ============ */
+function renderEmployee(){
+  const picker = document.getElementById('employeePicker');
+  if(picker.options.length===0){
+    picker.innerHTML = EMP_LIST.map(id=>`<option value="${id}">${EMP[id].name[lang]} (${EMP[id].role[lang]})</option>`).join('');
+  } else {
+    Array.from(picker.options).forEach((o,i)=> o.textContent = `${EMP[EMP_LIST[i]].name[lang]} (${EMP[EMP_LIST[i]].role[lang]})`);
+  }
+  const empId = picker.value || EMP_LIST[0];
+  const pct = scorePct(empId);
+
+  const breakdownRows = state.criteria.map(c=>{
+    const evs = (state.assignments[empId]||[]).filter(ev=> state.scores[empId][ev] && state.scores[empId][ev].submitted);
+    const vals = evs.map(ev=> Number(state.scores[empId][ev][c.id])||0);
+    const avg = vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
+    const pctBar = avg===null ? 0 : (avg/c.max*100);
+    return `<div class="critrow">
+      <span class="cn">${c.name[lang]}</span>
+      <div class="barwrap"><div class="barfill" style="width:${pctBar}%"></div></div>
+      <span class="num" style="width:70px;text-align:right">${avg===null?t('noneYet'):avg.toFixed(1)+'/'+c.max}</span>
+    </div>`;
+  }).join('');
+
+  const trend = state.trend[empId] || [];
+  const W = 560, H = 140, PAD = 28;
+  const pts = trend.map((p,i)=> ({ x: PAD + i*((W-PAD*2)/Math.max(1,trend.length-1)), y: p.pct==null? null : H-PAD-(p.pct/100)*(H-PAD*1.6), pct:p.pct, label:p.p[lang], note:p.note?p.note[lang]:null }));
+  let pathD = ''; let started=false;
+  pts.forEach(pt=>{
+    if(pt.y===null){ started=false; return; }
+    pathD += (started? 'L':'M') + pt.x.toFixed(1) + ',' + pt.y.toFixed(1) + ' ';
+    started = true;
+  });
+  const dots = pts.filter(p=>p.y!==null).map(p=>`<circle cx="${p.x}" cy="${p.y}" r="4" fill="#4f46e5"/>`).join('');
+  const labels = pts.map(p=>`<text x="${p.x}" y="${H-6}" font-size="10.5" fill="#8b95a5" text-anchor="middle">${p.label}</text>`).join('');
+  const svgTrend = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;max-width:${W}px">
+    <line x1="${PAD}" y1="${H-PAD}" x2="${W-PAD}" y2="${H-PAD}" stroke="#e6eaf1"/>
+    <path d="${pathD}" fill="none" stroke="#4f46e5" stroke-width="2.5"/>
+    ${dots}${labels}
+  </svg>`;
+
+  document.getElementById('empDetail').innerHTML = `
+    <div class="card"><div class="pad" style="display:flex;gap:20px;align-items:center;flex-wrap:wrap">
+      <svg class="ring" viewBox="0 0 100 100">
+        <circle cx="50" cy="50" r="42" fill="none" stroke="#eef1f6" stroke-width="10"/>
+        <circle cx="50" cy="50" r="42" fill="none" stroke="#4f46e5" stroke-width="10" stroke-linecap="round"
+          stroke-dasharray="${pct===null?0:(pct/100*263.9).toFixed(1)} 263.9" transform="rotate(-90 50 50)"/>
+        <text x="50" y="47" text-anchor="middle" font-size="20" font-weight="800" fill="#151b23" font-family="Outfit">${pct===null?'—':pct.toFixed(0)+'%'}</text>
+        <text x="50" y="63" text-anchor="middle" font-size="8.5" fill="#8b95a5">${t('monthScore')}</text>
+      </svg>
+      <div style="flex:1;min-width:200px">
+        <div class="empname" style="font-size:1.1rem"><span class="avatar" style="background:${EMP[empId].color};width:34px;height:34px;font-size:13px">${EMP[empId].init}</span>${EMP[empId].name[lang]} <span style="color:var(--muted);font-weight:500">· ${EMP[empId].role[lang]}</span></div>
+      </div>
+    </div></div>
+
+    <div class="card"><div class="pad">
+      <div class="sectitle">${t('breakdown')}</div>
+      <div style="margin-top:10px">${breakdownRows}</div>
+    </div></div>
+
+    <div class="card"><div class="pad">
+      <div class="sectitle">${t('trendTitle')}</div>
+      <p class="secsub">${t('trendGapNote')}</p>
+      <div class="trendwrap">${svgTrend}</div>
+      ${trend.some(p=>p.note) ? `<p class="secsub" style="margin-top:6px">💡 ${trend.find(p=>p.note).note[lang]}</p>` : ''}
+    </div></div>
+  `;
+}
+
+/* ============ toast ============ */
+function toast(msg){
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.innerHTML = `<svg class="ic" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span>${msg}</span>`;
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(()=> el.remove(), 2600);
+}
+
+/* ============ boot ============ */
+function renderAll(){ renderHR(); renderEvaluator(); renderEmployee(); }
+document.querySelectorAll('.langpill button').forEach(b=>b.classList.toggle('on', b.dataset.lang===lang));
+applyStaticI18n();
+renderAll();
+</script>
+</body>
+</html>
