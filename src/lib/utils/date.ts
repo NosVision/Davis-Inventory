@@ -112,6 +112,37 @@ export function businessDateBangkok(endHour = 6, endMinute = 0): string {
 }
 
 /**
+ * The **currently-open** business date under a morning cutoff (default 06:00),
+ * in Bangkok — for grouping attendance / shift events.
+ *
+ * Unlike {@link businessDateBangkok} (which returns the last *completed* business
+ * day, i.e. the shift that has already closed), this returns the business day
+ * *currently in progress* — the day the employee is actually working:
+ *
+ *   now hour ≥ cutoff → today       (this evening's shift, runs until tomorrow 06:00)
+ *   now hour <  cutoff → today − 1  (small hours; still the previous evening's shift)
+ *
+ * Every instant in [day D 06:00, day D+1 06:00) maps to business date D, which
+ * matches the calendar day the shift started — what HR/payroll expect.
+ *
+ * Examples (endHour=6):
+ *   2026-07-02 22:54 → 2026-07-02   (evening shift, still open)
+ *   2026-07-03 03:00 → 2026-07-02   (past midnight, same shift)
+ *   2026-07-03 07:00 → 2026-07-03   (new day, previous shift closed at 06:00)
+ */
+export function openBusinessDateBangkok(endHour = 6, endMinute = 0): string {
+  const d = nowBangkok();
+  const isBeforeCutoff =
+    d.getHours() < endHour ||
+    (d.getHours() === endHour && d.getMinutes() < endMinute);
+  if (isBeforeCutoff) d.setDate(d.getDate() - 1);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/**
  * Convert a Date to an ISO-8601 string **in the Bangkok timezone** (+07:00).
  * Useful when storing timestamps that must reflect the Bangkok wall-clock.
  */
