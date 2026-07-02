@@ -1,10 +1,10 @@
 # HR Build — State Tracker
 
 > loop อ่านไฟล์นี้ก่อนเริ่มทุกครั้ง · ติ๊ก [x] เมื่อ e2e ผ่าน + typecheck เขียว + commit local แล้วเท่านั้น
-> อัปเดตล่าสุด: 2026-07-02 (จบ Round 4 — **P1.1 UI list+form เสร็จ** e2e ผ่าน → เหลือ transfer UI + edit/doc e2e)
+> อัปเดตล่าสุด: 2026-07-02 (จบ Round 5 — **P1.1 เสร็จครบ** (transfer UI + e2e) → ถัดไป P1.2)
 
 ## สถานะรวม
-- เฟสปัจจุบัน: **P1.1 (backend + UI list/create ✅ e2e ผ่าน) → เหลือ transfer-UI + edit/doc-upload e2e → แล้ว P1.2**
+- เฟสปัจจุบัน: **P1.1 ✅ เสร็จครบ (backend + UI + transfer + review) → ถัดไป P1.2 positions/departments CRUD + audit-log page**
 - dev server: localhost:3000 (UP) · Supabase: oogyjqywuqmutkjnnsik (live)
 - **เลขไมเกรชันถัดไป = 00081** (ถึง 00080_hr_docs_bucket_hardening applied+verified)
 - test creds: `f:\tmp\hr-test-creds.json` (6 บัญชี hr-test-* + test venue store_code=HRTEST · re-seed ได้ด้วย `node scripts/seed-hr-test-users.mjs`) — ห้าม commit
@@ -18,12 +18,13 @@
 - [x] P0 gate: code-reviewer ผ่าน (0 CRITICAL) · แก้ 1 HIGH + 4 MED แล้วใน 00078 + guard: (1) canManageHr() helper + /hr server guard (กัน accountant wildcard split-brain — verify staff โดน redirect, owner/HR เข้าได้) (2) ลบ hr_audit_log INSERT policy ที่ปลอมได้ (3) hr_employees/hr_companies read = HR-only (4) profile_id FK cascade→restrict (5) seed ไม่ echo password · commits c6c6d55/5ffbda8/eddf957
 
 ## P1 — คน & นโยบาย
-- [~] P1.1 ทะเบียนพนักงาน — **backend (54e4089) + UI list/create (7ad4350) เสร็จ**
+- [x] P1.1 ทะเบียนพนักงาน — **เสร็จครบ** (backend 54e4089 + UI 7ad4350 + fixes 89fd2a3 + transfer bc0eb9c)
   - backend: private bucket + API (list/onboard/get/update/transfer) + `/api/hr/documents` + lib · adversarial 5-lens review แก้ CRIT+8HIGH+12MED+LOW · API e2e ครบ
   - UI: employees list (DataTable + search + 5 filters + rate/badges) + create/edit form modal (ทุกฟิลด์ §A/§I, part-time UX forcing + require id_card/signature, doc upload private, temp password) + dashboard tile link + i18n th/en (96/96)
   - **e2e ผ่าน 1440+390**: list render (8 คน) + server search (hooyh→2) + create full-time ผ่านฟอร์ม → temp password → list refresh ✓ · edit-mode prefill ✓ (rate 30000, company disabled, terminal→end_date fields โผล่)
   - **code-review UI แก้ครบ** (89fd2a3): stale-fetch race guard, offboarding end_date/end_reason fields, PT→FT tax/sso reset, save-during-upload guard, create-success refresh, rate>0, aria-labels
-  - **เหลือ (Round 5)**: transfer UI (modal เรียก /transfer) + e2e edit-save (PUT) + e2e doc-upload จริงผ่าน UI (upload_file) · form 871 บรรทัด (เกิน 800 เล็กน้อย — แตก sub-components ทีหลัง)
+  - **Round 5 (bc0eb9c)**: TransferModal + list row-action → POST /transfer · i18n transfer (th/en 112/112) · e2e: transfer ผ่าน UI → DB company + audit reason ✓ · doc upload→sign (download disposition) ✓ · edit-save PUT ✓
+  - หมายเหตุ tech-debt: form modal 871 บรรทัด (เกิน 800 — แตก sub-components ทีหลัง) · profile avatar_url ยังไม่รองรับใน create/edit (เลื่อน P1.5)
 - [ ] P1.2 positions/departments CRUD + หน้า audit log
 - [ ] P1.3 policies + announcements (ไม่รับทราบ→เด้งซ้ำ)
 - [ ] P1.4 assets
@@ -92,3 +93,4 @@
 - 2026-07-02 · Round 2: P0.3 app wiring (can_manage_hr + module + /hr + i18n + audit) + P0.4 seed 6 test users + e2e (owner/staff/hr-perm × 1440+390 ผ่าน) + P0 gate review + fixes (00078 RLS/FK + canManageHr guard, verify staff redirect) → **P0 ปิดครบ** · c6c6d55 / 5ffbda8 / eddf957
 - 2026-07-02 · Round 3: P1.1 **backend** — 00079 private bucket + 00080 hardening + API (employees CRUD/transfer/documents) + lib (part-time auto-profile) · Workflow adversarial review 5-lens → แก้ CRIT role-escalation + 8 HIGH + 12 MED + LOW ครบ · API e2e ผ่านทุกเคส (create/PT-forcing/probation/sensitive-reason/transfer/escalation-403/validation) · typecheck เขียว · 54e4089 · (UI + full chrome e2e → Round 4)
 - 2026-07-02 · Round 4: P1.1 **UI** — employees list (DataTable+search+filters) + create/edit form modal (part-time UX + doc upload, agent-built) + i18n th/en (100/100) + tile link · e2e 1440+390 (list 8 + search + create full-time→temp pw→refresh + edit prefill) · code-review 2HIGH+4MED+LOW แก้ครบ (stale-fetch guard, offboarding end_date, PT→FT reset) · 7ad4350 + 89fd2a3 · (transfer-UI + edit-save/doc e2e → Round 5)
+- 2026-07-02 · Round 5: P1.1 **transfer UI** (TransferModal + list row-action → /transfer) + i18n (112/112) · e2e ผ่าน UI: transfer→DB company+audit reason ✓, doc upload→sign (download disposition) ✓, edit-save PUT ✓ · typecheck เขียว · **P1.1 ปิดครบ** · bc0eb9c · (→ P1.2)
