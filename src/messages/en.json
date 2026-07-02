@@ -2787,6 +2787,24 @@
         "damaged": "Damaged"
       }
     },
+    "locations": {
+      "title": "Attendance Locations",
+      "subtitle": "Set the check-in geofence per branch",
+      "store": "Branch",
+      "lat": "Latitude",
+      "lng": "Longitude",
+      "radius": "Radius (m)",
+      "notSet": "Not set",
+      "set": "Set",
+      "save": "Save",
+      "saving": "Saving...",
+      "saved": "Saved",
+      "saveFailed": "Save failed",
+      "useMyLocation": "Use my location",
+      "gettingLocation": "Getting location...",
+      "geoFailed": "Could not get location",
+      "empty": "No branches"
+    },
     "employees": {
       "title": "Employees",
       "subtitle": "Employee registry",
