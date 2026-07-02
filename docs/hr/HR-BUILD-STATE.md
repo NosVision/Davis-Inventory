@@ -1,12 +1,12 @@
 # HR Build — State Tracker
 
 > loop อ่านไฟล์นี้ก่อนเริ่มทุกครั้ง · ติ๊ก [x] เมื่อ e2e ผ่าน + typecheck เขียว + commit local แล้วเท่านั้น
-> อัปเดตล่าสุด: 2026-07-02 (จบ Round 2 — **P0 ครบ ปิด gate แล้ว** → เริ่ม P1)
+> อัปเดตล่าสุด: 2026-07-02 (จบ Round 3 — **P1.1 backend เสร็จ** (API+bucket+lib) ผ่าน adversarial review + API e2e → ถัดไป P1.1 UI)
 
 ## สถานะรวม
-- เฟสปัจจุบัน: **P0 ✅ เสร็จครบ (ปิด gate + review fixes) → ถัดไป P1.1**
+- เฟสปัจจุบัน: **P1.1 (backend ✅ done+verified) → ถัดไป P1.1 UI (list/form) + full chrome e2e**
 - dev server: localhost:3000 (UP) · Supabase: oogyjqywuqmutkjnnsik (live)
-- **เลขไมเกรชันถัดไป = 00079** (00077_hr_core + 00078_hr_p0_review_fixes applied+verified)
+- **เลขไมเกรชันถัดไป = 00081** (ถึง 00080_hr_docs_bucket_hardening applied+verified)
 - test creds: `f:\tmp\hr-test-creds.json` (6 บัญชี hr-test-* + test venue store_code=HRTEST · re-seed ได้ด้วย `node scripts/seed-hr-test-users.mjs`) — ห้าม commit
 - handoff ล่าสุด: `f:\tmp\hr-handoff-latest.md`
 
@@ -18,7 +18,7 @@
 - [x] P0 gate: code-reviewer ผ่าน (0 CRITICAL) · แก้ 1 HIGH + 4 MED แล้วใน 00078 + guard: (1) canManageHr() helper + /hr server guard (กัน accountant wildcard split-brain — verify staff โดน redirect, owner/HR เข้าได้) (2) ลบ hr_audit_log INSERT policy ที่ปลอมได้ (3) hr_employees/hr_companies read = HR-only (4) profile_id FK cascade→restrict (5) seed ไม่ echo password · commits c6c6d55/5ffbda8/eddf957
 
 ## P1 — คน & นโยบาย
-- [ ] P1.1 ทะเบียนพนักงาน (list/create/edit + part-time auto-profile + ย้ายบริษัท)
+- [~] P1.1 ทะเบียนพนักงาน — **backend เสร็จ** (54e4089): private bucket hr-documents + API `/api/hr/employees` (list/onboard/get/update/transfer) + `/api/hr/documents` (upload/sign) + lib (part-time auto-profile §A, validation) · adversarial review 5-lens (1 CRIT+8 HIGH+12 MED+4 LOW) แก้ครบ · API e2e ผ่าน (escalation 403, PT forcing, sensitive-reason, transfer, probation recompute, date/terminal validation) · **เหลือ UI (list+form+filters+doc/photo upload+transfer button) + full chrome e2e → Round 4**
 - [ ] P1.2 positions/departments CRUD + หน้า audit log
 - [ ] P1.3 policies + announcements (ไม่รับทราบ→เด้งซ้ำ)
 - [ ] P1.4 assets
@@ -65,7 +65,11 @@
 - (P0.2) `hr_employees.rate_satang` ความหมายขึ้นกับ pay_type (full_monthly/pt_monthly=ราย ​เดือน, pt_daily=รายวัน, pt_hourly=รายชม.)
 - (P0.2) SSO ceiling เก็บเป็น satang (1,750,000 = 17,500 บาท → SSO สูงสุด 875) · ot_multipliers jsonb {ot1:1.5,ot2:2,ot3:3}
 - (P0 gate) hr_employees ตอนนี้ HR-only read (ถอด self-view ออก) — **ESS "โปรไฟล์ฉัน" ต้องอ่านผ่าน view/API จำกัดคอลัมน์** (ไม่ให้เห็น notes/bank/tax/end_reason) เมื่อ build ESS (P2/P3)
-- (✅ เคาะแล้ว โดย Addendum A P1.5) เอกสารส่วนตัว (สำเนาบัตร/สัญญา) = **private bucket (PDPA)** ต้องสร้าง bucket ใหม่ + signed URLs ตอน P1.1 · รูปโปรไฟล์ทั่วไปยังใช้ public `deposit-photos` folder 'employees' ได้
+- (✅ ทำแล้ว P1.1) เอกสารส่วนตัว = **private bucket `hr-documents`** (public=false, size 10MB, mime allow-list) + signed URL (download disposition) ผ่าน `/api/hr/documents` · รูปโปรไฟล์ทั่วไปยังใช้ public `deposit-photos` folder 'employees' ได้
+- (P1.1) **onboarding role gate**: elevated roles (accountant/manager/hq) สร้างได้เฉพาะ caller ที่เป็น owner · non-owner HR สร้างได้แค่ staff/bar/technician · ห้าม owner/customer — กัน privilege escalation
+- (P1.1) เปลี่ยนบริษัท = **ต้องผ่าน `/api/hr/employees/[id]/transfer`** เท่านั้น (reason บังคับ) — PUT ปกติ reject company_id · transfer เป็น immediate, effective_date เก็บใน audit (ประวัติจริงเป็น table แยกใน P1.5)
+- (P1.1) PUT `documents` = **full-array replace** (UI ต้องส่ง array เต็มทุกครั้ง กันลบเอกสารโดยไม่ตั้งใจ) · part-time ที่ลบ id_card/signature จะโดน 400
+- (P1.1) แก้ค่าอ่อนไหว (rate/bank/sso_no/tax_id) ต้องมี `reason` (§B) · terminal status (resigned/terminated) ต้องมี end_date
 
 ## Post-loop backlog (งานเก็บหลัง loop จบ — ไม่อยู่ในขอบเขต loop)
 - [ ] รอบ feedback UI จากลูกค้า/ทีมจริง ทุกโมดูล (เหมือนรอบเทส eval mockup)
@@ -81,3 +85,4 @@
 ## Log ต่อรอบ (รอบละบรรทัด: วันที่ · ทำอะไร · commit hash)
 - 2026-07-02 · Round 1: P0.1 reconcile (next=00078) + P0.2 core schema 6 ตาราง+RLS+seed16, verify SQL ผ่าน, typecheck baseline เขียว · 2b455b2
 - 2026-07-02 · Round 2: P0.3 app wiring (can_manage_hr + module + /hr + i18n + audit) + P0.4 seed 6 test users + e2e (owner/staff/hr-perm × 1440+390 ผ่าน) + P0 gate review + fixes (00078 RLS/FK + canManageHr guard, verify staff redirect) → **P0 ปิดครบ** · c6c6d55 / 5ffbda8 / eddf957
+- 2026-07-02 · Round 3: P1.1 **backend** — 00079 private bucket + 00080 hardening + API (employees CRUD/transfer/documents) + lib (part-time auto-profile) · Workflow adversarial review 5-lens → แก้ CRIT role-escalation + 8 HIGH + 12 MED + LOW ครบ · API e2e ผ่านทุกเคส (create/PT-forcing/probation/sensitive-reason/transfer/escalation-403/validation) · typecheck เขียว · 54e4089 · (UI + full chrome e2e → Round 4)
