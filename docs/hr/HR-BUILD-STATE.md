@@ -1,10 +1,10 @@
 # HR Build — State Tracker
 
 > loop อ่านไฟล์นี้ก่อนเริ่มทุกครั้ง · ติ๊ก [x] เมื่อ e2e ผ่าน + typecheck เขียว + commit local แล้วเท่านั้น
-> อัปเดตล่าสุด: 2026-07-02 (จบ Round 3 — **P1.1 backend เสร็จ** (API+bucket+lib) ผ่าน adversarial review + API e2e → ถัดไป P1.1 UI)
+> อัปเดตล่าสุด: 2026-07-02 (จบ Round 4 — **P1.1 UI list+form เสร็จ** e2e ผ่าน → เหลือ transfer UI + edit/doc e2e)
 
 ## สถานะรวม
-- เฟสปัจจุบัน: **P1.1 (backend ✅ done+verified) → ถัดไป P1.1 UI (list/form) + full chrome e2e**
+- เฟสปัจจุบัน: **P1.1 (backend + UI list/create ✅ e2e ผ่าน) → เหลือ transfer-UI + edit/doc-upload e2e → แล้ว P1.2**
 - dev server: localhost:3000 (UP) · Supabase: oogyjqywuqmutkjnnsik (live)
 - **เลขไมเกรชันถัดไป = 00081** (ถึง 00080_hr_docs_bucket_hardening applied+verified)
 - test creds: `f:\tmp\hr-test-creds.json` (6 บัญชี hr-test-* + test venue store_code=HRTEST · re-seed ได้ด้วย `node scripts/seed-hr-test-users.mjs`) — ห้าม commit
@@ -18,7 +18,11 @@
 - [x] P0 gate: code-reviewer ผ่าน (0 CRITICAL) · แก้ 1 HIGH + 4 MED แล้วใน 00078 + guard: (1) canManageHr() helper + /hr server guard (กัน accountant wildcard split-brain — verify staff โดน redirect, owner/HR เข้าได้) (2) ลบ hr_audit_log INSERT policy ที่ปลอมได้ (3) hr_employees/hr_companies read = HR-only (4) profile_id FK cascade→restrict (5) seed ไม่ echo password · commits c6c6d55/5ffbda8/eddf957
 
 ## P1 — คน & นโยบาย
-- [~] P1.1 ทะเบียนพนักงาน — **backend เสร็จ** (54e4089): private bucket hr-documents + API `/api/hr/employees` (list/onboard/get/update/transfer) + `/api/hr/documents` (upload/sign) + lib (part-time auto-profile §A, validation) · adversarial review 5-lens (1 CRIT+8 HIGH+12 MED+4 LOW) แก้ครบ · API e2e ผ่าน (escalation 403, PT forcing, sensitive-reason, transfer, probation recompute, date/terminal validation) · **เหลือ UI (list+form+filters+doc/photo upload+transfer button) + full chrome e2e → Round 4**
+- [~] P1.1 ทะเบียนพนักงาน — **backend (54e4089) + UI list/create (7ad4350) เสร็จ**
+  - backend: private bucket + API (list/onboard/get/update/transfer) + `/api/hr/documents` + lib · adversarial 5-lens review แก้ CRIT+8HIGH+12MED+LOW · API e2e ครบ
+  - UI: employees list (DataTable + search + 5 filters + rate/badges) + create/edit form modal (ทุกฟิลด์ §A/§I, part-time UX forcing + require id_card/signature, doc upload private, temp password) + dashboard tile link + i18n th/en (96/96)
+  - **e2e ผ่าน 1440+390**: list render (8 คน) + server search (hooyh→2) + create full-time ผ่านฟอร์ม → temp password → list refresh ✓
+  - **เหลือ (Round 5)**: transfer UI (modal เรียก /transfer) + e2e edit-mode (prefill+PUT) + e2e doc-upload จริงผ่าน UI + part-time forcing UI verify (ตอนนี้ verify ที่ API แล้ว, server บังคับอยู่)
 - [ ] P1.2 positions/departments CRUD + หน้า audit log
 - [ ] P1.3 policies + announcements (ไม่รับทราบ→เด้งซ้ำ)
 - [ ] P1.4 assets
@@ -86,3 +90,4 @@
 - 2026-07-02 · Round 1: P0.1 reconcile (next=00078) + P0.2 core schema 6 ตาราง+RLS+seed16, verify SQL ผ่าน, typecheck baseline เขียว · 2b455b2
 - 2026-07-02 · Round 2: P0.3 app wiring (can_manage_hr + module + /hr + i18n + audit) + P0.4 seed 6 test users + e2e (owner/staff/hr-perm × 1440+390 ผ่าน) + P0 gate review + fixes (00078 RLS/FK + canManageHr guard, verify staff redirect) → **P0 ปิดครบ** · c6c6d55 / 5ffbda8 / eddf957
 - 2026-07-02 · Round 3: P1.1 **backend** — 00079 private bucket + 00080 hardening + API (employees CRUD/transfer/documents) + lib (part-time auto-profile) · Workflow adversarial review 5-lens → แก้ CRIT role-escalation + 8 HIGH + 12 MED + LOW ครบ · API e2e ผ่านทุกเคส (create/PT-forcing/probation/sensitive-reason/transfer/escalation-403/validation) · typecheck เขียว · 54e4089 · (UI + full chrome e2e → Round 4)
+- 2026-07-02 · Round 4: P1.1 **UI** — employees list (DataTable+search+filters) + create/edit form modal (part-time UX + doc upload, agent-built) + i18n th/en (96/96) + tile link · typecheck เขียว · e2e 1440+390 ผ่าน (list 8 คน + search + create full-time ผ่านฟอร์ม→temp pw→refresh) · 7ad4350 · (code-review UI + transfer-UI/edit-e2e → Round 5)
