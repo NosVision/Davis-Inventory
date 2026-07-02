@@ -2625,7 +2625,9 @@
       "assets": "Assets",
       "policies": "Policies",
       "announcements": "Announcements",
-      "reports": "Reports"
+      "reports": "Reports",
+      "org": "Positions & Departments",
+      "audit": "Audit log"
     },
     "org": {
       "title": "Positions & Departments",

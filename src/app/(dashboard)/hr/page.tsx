@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import {
   Users,
+  Briefcase,
   Clock,
   CalendarDays,
   CalendarX,
@@ -14,6 +15,7 @@ import {
   Package,
   BookOpen,
   Megaphone,
+  ShieldCheck,
   BarChart3,
   type LucideIcon,
 } from 'lucide-react';
@@ -24,6 +26,7 @@ import {
  */
 const NAV_TILES: { key: string; icon: LucideIcon; href?: string }[] = [
   { key: 'employees', icon: Users, href: '/hr/employees' },
+  { key: 'org', icon: Briefcase, href: '/hr/org' },
   { key: 'attendance', icon: Clock },
   { key: 'schedule', icon: CalendarDays },
   { key: 'leave', icon: CalendarX },
@@ -31,9 +34,10 @@ const NAV_TILES: { key: string; icon: LucideIcon; href?: string }[] = [
   { key: 'payroll', icon: Wallet },
   { key: 'serviceCharge', icon: Coins },
   { key: 'evaluation', icon: Star },
-  { key: 'assets', icon: Package },
-  { key: 'policies', icon: BookOpen },
-  { key: 'announcements', icon: Megaphone },
+  { key: 'assets', icon: Package, href: '/hr/assets' },
+  { key: 'policies', icon: BookOpen, href: '/hr/policies' },
+  { key: 'announcements', icon: Megaphone, href: '/hr/announcements' },
+  { key: 'audit', icon: ShieldCheck, href: '/hr/audit' },
   { key: 'reports', icon: BarChart3 },
 ];
 
