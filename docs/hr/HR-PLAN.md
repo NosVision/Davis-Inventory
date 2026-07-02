@@ -19,7 +19,7 @@
 | 7 | **ออกใบเตือน** + พนักงาน **เซ็นรับทราบด้วยลายเซ็น** | สร้างใบเตือน (ระดับ/เหตุ) → ส่งถึงพนักงาน → **เซ็น (signature pad)** บันทึกวันเวลา | audit log |
 | 8 | **สลิปเงินเดือน** | สลิปละเอียด: ฐาน+OT+เบี้ย+**เซอร์วิสชาร์จ**+ค่าคอม − (ปกส.+ภาษี+หัก) = สุทธิ | commission_entries |
 | 9 | **Service charge** | รวมเซอร์วิสชาร์จ (จากยอด POS) → แบ่งพนักงานตามแต้ม/ชั่วโมง → เข้าสลิป | POS `pos_payments` |
-| 10 | **ประเมินพนักงาน / Performance review** | รอบประเมิน + แบบฟอร์มให้คะแนน (KPI/ค่านิยม) + ความเห็น + สรุปเกรด | `profiles` |
+| 10 | **ประเมินพนักงาน / Performance review** | **เอนจินประเมินรายเดือน (ดู §G)** — งวด+เกณฑ์อิสระ, มอบหมายผู้ประเมิน (หลายคน→เฉลี่ย), ให้คะแนนทีละคน, กติกาจ่ายเงินอิสระ, เทรนด์ | `profiles`, `stores` (แบ่งร้าน) |
 | 11 | **ทรัพย์สินบริษัทต่อพนักงาน + ราคา** | ทะเบียนทรัพย์สิน (ยูนิฟอร์ม/วิทยุ/กุญแจ/อุปกรณ์) ผูกผู้ถือครอง + มูลค่า/ราคา + สถานะคืน | `hr_employees` |
 | 12 | **ทุกอย่างปริ้นได้** | ปุ่มพิมพ์ทุกเอกสาร (สลิป/ใบเตือน/ผลประเมิน/ทะเบียนทรัพย์สิน/โปรไฟล์) + print CSS | print pattern เดิม |
 | + | งานหลัก | เช็คอิน · ตารางกะ · บันทึกเวลา · แดชบอร์ด (ใครเข้างาน, %ต้นทุนแรงงาน vs ยอดขาย) · เงินเดือนอัตโนมัติ | POS, realtime |
@@ -31,7 +31,7 @@
 - `hr_policies` (นโยบาย/คู่มือ, scope: ทั้งบริษัท/สาขา) · `hr_announcements` (ประกาศ, scope สาขา, read receipts)
 - `hr_shifts` / `hr_schedule` (เทมเพลตกะ + ตารางกะ) · `hr_locations` (พิกัด+รัศมี geofence ต่อสาขา — หรือฝังใน stores)
 - `hr_attendance` (event เข้า/ออก + gps + photo_url + late/ot/absent) · `hr_leave_types` / `hr_leaves` (+attachment ใบรับรอง, approver)
-- `hr_warnings` (ใบเตือน + signature_url + acknowledged_at) · `hr_evaluations` (รอบ+คะแนน+ความเห็น)
+- `hr_warnings` (ใบเตือน + signature_url + acknowledged_at) · **เอนจินประเมิน (ดู §G):** `hr_eval_periods` / `hr_eval_period_stores` / `hr_eval_criteria` / `hr_eval_assignments` / `hr_eval_scores` / `hr_eval_results` / `hr_eval_payout_rules` / `hr_eval_payout_tiers` / `hr_eval_payouts` (แทน `hr_evaluations` เดิม)
 - `hr_assets` (ทรัพย์สิน + value_satang + holder employee + status) 
 - `hr_payruns` / `hr_payslips` (base, ot, allowances[], service_charge_satang, commission_satang, sso_satang, tax_satang, deductions[], gross, net)
 - `hr_service_charge_pools` (period, total_satang จาก POS, วิธีแบ่ง, allocation ต่อคน)
@@ -120,10 +120,37 @@ Net        = Total − Total Deduction
 - **บันทึกลง DB** `hr_attendance`: `user_id, store_id, type(in|out), ts, gps_lat, gps_lng, distance_m, in_geofence(bool), photo_url (รูปที่ฝังลายน้ำแล้ว), device, created_at`
 - **กันโกง:** นอกรัศมี → เตือน/บล็อก หรือ flag ให้หัวหน้าอนุมัติ · ลายน้ำในรูป = หลักฐานเวลา+ตำแหน่งจริง ผูกกับกะ (สาย/ขาด/OT ตัดรอบตี 6)
 
+## G. เอนจินประเมินผลรายเดือน + เงินเพิ่มจากคะแนน (Monthly Evaluation) — แทนที่ฟีเจอร์ #10 เดิม
+> ออกแบบละเอียดจาก workflow (สังเคราะห์ 3 มุมมอง) + ปรับตาม feedback ลูกค้าหลังเทส mockup · **mockup กดได้จริง: `public/hr-eval-mockup.html`** (localStorage v2, ไม่แตะ DB จริง) · แนวคิด "HR ตั้ง policy เป็นข้อมูล ระบบประมวลผลตาม" แบบเดียวกับ `hr_leave_types`
+
+**แนวคิดหลัก:** สายข้อมูล **งวด → เกณฑ์ → มอบหมาย → คะแนนดิบ → ผลเฉลี่ย → กติกาจ่ายเงิน → เงินที่จ่ายจริง** ทุกอย่างตั้งใหม่อิสระได้ทุกเดือนโดยไม่ต้องแก้โค้ด · normalize เป็น **% (score_pct)** ตั้งแต่ตอนคำนวณ เพื่อเทียบข้ามเดือนที่คะแนนเต็มไม่เท่ากันได้ (เต็ม 50 กับเต็ม 100 = พล็อตกราฟเดียวกัน)
+
+**Data model (ยืน `hr_*` + เขียน `hr_audit_log` ทุกการแก้):**
+- `hr_eval_periods` — 1 งวด/เดือน: `period_month, title, scope_type(company|stores), max_score (=SUM criteria, cache), status(draft|open|closed|void), scoring_opens/closes_at, reopened_count, reopen_reason` · **แบ่งร้านได้:** `scope_type='stores'` + `hr_eval_period_stores(period_id, store_id)` → HR-A ตั้งงวด/เกณฑ์ต่างจาก HR-B ได้ในเดือนเดียวกัน (ผูก scope `can_manage_hr`)
+- `hr_eval_criteria` — หัวข้อ+คะแนนเต็มอิสระ: `period_id, sort_order, name, max_points>0, description` · แก้/ลบได้เฉพาะ `status='draft'` (ล็อกเมื่อเปิดให้คะแนน) · **default = 15 หัวข้อจากคู่มือ (§E)** เป็นแม่แบบเดือนแรก
+- `hr_eval_assignments` — ใครประเมินใคร: `period_id, evaluator_id, employee_id, store_id(snapshot), status(assigned|submitted|withdrawn), UNIQUE(period,evaluator,employee), CHECK(evaluator≠employee)` · **multi-evaluator = หลายแถว employee เดียว evaluator ต่างกัน** (กลไกเดียว ไม่ต้องตารางพิเศษ)
+- `hr_eval_scores` — คะแนนดิบต่อหัวข้อต่อคู่: `assignment_id, criterion_id, points (0..criterion.max, บังคับด้วย trigger), comment, UNIQUE(assignment,criterion)` · แก้ได้ก่อน submit, หลัง submit ต้อง HR reopen (+เหตุผล, audit)
+- `hr_eval_results` — ผลเฉลี่ย normalize แล้ว (1 แถว/คน/งวด): `evaluator_count, raw_score_avg, max_score(snapshot), score_pct = raw_score_avg/max_score×100, status(pending|computed|stale|locked)` · **stale** = คะแนนต้นทางถูกแก้หลังคำนวณ → บล็อกคำนวณเงินจนกว่าจะคำนวณผลใหม่
+- `hr_eval_payout_rules` + `hr_eval_payout_tiers` — กติกาแปลงคะแนน→เงิน อิสระต่องวด: `formula_type(tiered|linear)`; linear = `flat_satang + satang_per_pct×score_pct`; tiered = แถว `min_pct, max_pct, amount_satang, label` · **input เป็น score_pct (0-100) เสมอ** ไม่ใช่คะแนนดิบ
+- `hr_eval_payouts` — เงินจริงต่อคน/งวด: `result_id, rule_id, tier_matched_id, input_pct_score(snapshot), formula_snapshot jsonb(แช่แข็งกติกา), amount_satang, calculation_note, status(draft|approved|applied_to_payslip|superseded|void), corrected_from_id` · เข้าสลิปผ่าน `hr_payslip_earnings` (type='eval_bonus' หรือ 'service_charge' — ดูจุดเชื่อมด้านล่าง)
+
+**ลอจิกการเฉลี่ย:** ผลรวมของผู้ประเมิน 1 คน = `SUM(points)` ทุกหัวข้อ · คะแนนสุดท้าย = **ค่าเฉลี่ยเลขคณิต** ของผู้ประเมินที่ **submit แล้วเท่านั้น** (คนยังไม่ส่ง = ตัดออกจากตัวหาร ไม่นับเป็น 0) · เฉลี่ย**ครั้งเดียว**ตอนปิดงวด (ไม่ใช่ live) → เก็บ `hr_eval_results` · v1 เฉลี่ยเท่ากันทุกผู้ประเมิน (weighted = เพิ่มคอลัมน์ `weight` ทีหลัง)
+
+**Visibility (RLS + app-layer 2 ชั้น):** ผู้ประเมินเห็นเฉพาะ `hr_eval_assignments WHERE evaluator_id=ตัวเอง` — ไม่มี endpoint รายชื่อรวมให้ role ทั่วไป · พนักงานเห็น `hr_eval_results` เฉพาะแถวตัวเอง · HR/owner เห็นทั้งหมดใน scope สาขาที่ดูแล
+
+**UX ผู้ประเมิน (ปรับตาม feedback — 1 คนอาจประเมินถึง 50 คน):** การ์ดสรุป (ทั้งหมด/ประเมินแล้ว/ยังไม่ประเมิน) + ค้นหาชื่อ + กรองตามตำแหน่ง + **รายการแบบคิว** (คนค้างขึ้นบน) → กดเข้าประเมิน**ทีละคน** → กด "ส่งคะแนน" → **เด้งไปคนถัดไปที่ค้างอัตโนมัติ** (ไม่ต้องเลื่อนผ่านทุกคน) · **ช่องกรอกคะแนน clamp ≤ คะแนนเต็มทันที** (กันเคส 9.0/1) · breakdown/% cap ที่ 100
+
+**พนักงานเห็น:** วงแหวน % เดือนนี้ + breakdown 15 หัวข้อ (เฉลี่ยจากผู้ประเมินทุกคน) + กราฟเทรนด์ย้อนหลัง (ใช้ score_pct เทียบข้ามเดือนได้ · เดือนไม่มีผู้ประเมิน = ช่องว่าง ไม่ใช่ 0%)
+
+**เคสขอบ:** ปิดงวดทั้งที่ยังส่งไม่ครบ → เฉลี่ยจากที่ส่งแล้ว · แก้เกณฑ์หลังเปิด/แก้คะแนนหลัง submit → ต้อง reopen (เหตุผล+audit) · เงินที่ `applied_to_payslip` แล้วห้ามแก้ตรง ๆ → supersede+สร้างแถวใหม่ ผลต่างไปงวดถัดไป
+
+**⚠️ จุดเชื่อม Service Charge (ต้องยืนยันลูกค้า):** `hr_eval_results.score_pct` คือ "แต้มประเมิน" ที่สูตร SC ใหม่ (ชั่วโมง+แต้ม — ดู Integration line) ต้องการพอดี → แนะนำ**รวมเอนจินเดียว** ขยาย payout rule ให้รับ `hours_worked` ด้วย แล้วให้ HR เลือกผลลัพธ์ = แทนที่ SC เดิม (`type='service_charge'`) หรือเงินเพิ่มแยก (`type='eval_bonus'`) · **ยังไม่ตัดสินใจใน schema** — เป็น product decision
+
 ---
 
 ## เดโม่
-- `hr-demo.html` — เดโม่ละเอียดตัวเดียว (สไตล์ Byte HR) ครบ 12 ฟีเจอร์ + งานหลัก · กดได้จริง · รองรับ EN/TH · พิมพ์ได้
+- `public/hr-demo.html` — เดโม่ละเอียดตัวเดียว (สไตล์ Byte HR) ครบ 12 ฟีเจอร์ + งานหลัก · กดได้จริง · รองรับ EN/TH · พิมพ์ได้
   (แทนที่เดโม่ Lite/Full เดิม)
+- `public/hr-eval-mockup.html` — mockup **เอนจินประเมินผลรายเดือน (§G)** 3 มุมมอง (เจ้าของ/HR · ผู้ประเมิน · พนักงาน) · แบ่งร้าน · เกณฑ์ CRUD · ประเมินทีละคน+auto-advance · กติกาจ่ายเงิน · เทรนด์ · ผ่านการเทสจริงกับลูกค้าแล้ว (localStorage v2)
 - **ต้องอัปเดตให้ตรงไฟล์จริง:** ปกส. **875** (ไม่ใช่ 750), เงินเดือน **÷30**, ภาษี 2 โหมด, ช่องได้/หักครบ, ใบเตือน→other_deduction, header หลายบริษัท
 - **ต้องเพิ่มในเดโม่:** หน้า HR ตั้งเงื่อนไขการลา (D), หน้า "ตารางงานของฉัน" (C), มุมมอง audit log (B)
