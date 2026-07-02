@@ -66,8 +66,10 @@ export function TabTasks({ roomId, currentUserId, refreshKey = 0, onTasksChanged
       if (q && !`${t.ticket_no} ${t.title} ${t.detail ?? ''}`.toLowerCase().includes(q)) return false;
       return true;
     });
-    // งานปักหมุดขึ้นก่อน
-    return list.sort((a, b) => Number(b.is_pinned) - Number(a.is_pinned));
+    // งานปักหมุดขึ้นก่อน แล้วตามด้วยงานที่รอผู้ใช้คนนี้รับ (claim)
+    return list.sort(
+      (a, b) => Number(b.is_pinned) - Number(a.is_pinned) || Number(b.can_claim) - Number(a.can_claim),
+    );
   }, [tasks, filter, search, mineOnly]);
 
   const handleChanged = () => {
@@ -123,6 +125,11 @@ export function TabTasks({ roomId, currentUserId, refreshKey = 0, onTasksChanged
                     {t.is_mine && (
                       <span className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300">
                         {tt('taskList.mine')}
+                      </span>
+                    )}
+                    {t.can_claim && (
+                      <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                        🔔 {tt('taskList.waitingForMe')}
                       </span>
                     )}
                   </div>

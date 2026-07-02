@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { notifyTaskUsers } from '@/lib/tasks/notify';
-import { resolveTargetUserIds, userMatchesTarget } from '@/lib/tasks/resolve-target';
+import { resolveTargetUserIds, userMatchesTarget, getClaimableTaskIds } from '@/lib/tasks/resolve-target';
 import {
   OPEN_TASK_STATUSES,
   CLOSED_TASK_STATUSES,
@@ -82,12 +82,24 @@ export async function GET(request: NextRequest) {
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  let tasks = (data ?? []).map((t) => {
-    const row = t as unknown as TaskWithRelations & { store?: { store_name?: string } | null };
+  const rows = (data ?? []) as unknown as (TaskWithRelations & { store?: { store_name?: string } | null })[];
+  const claimableIds = await getClaimableTaskIds(
+    rows.map((r) => ({
+      id: r.id,
+      room_id: r.room_id,
+      status: r.status,
+      assigneeCount: (r.assignees ?? []).length,
+      openClaim: (r.meta as { open_claim?: boolean } | null)?.open_claim === true,
+    })),
+    user.id,
+  );
+
+  let tasks = rows.map((row) => {
     return {
       ...row,
       store_name: row.store?.store_name ?? null,
       is_mine: (row.assignees ?? []).some((a) => a.user_id === user.id),
+      can_claim: claimableIds.has(row.id),
     } as TaskWithRelations;
   });
 

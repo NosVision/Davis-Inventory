@@ -141,8 +141,7 @@
     "transfer": "โอน",
     "approve": "อนุมัติ",
     "selectStore": "เลือกสาขา",
-    "repairs": "แจ้งซ่อม",
-    "maintenance": "งานประจำ"
+    "tasks": "ห้องงาน"
   },
   "modules": {
     "overview": {
@@ -3638,6 +3637,7 @@
       "filterClosed": "เสร็จ/ปิด",
       "filterAll": "ทั้งหมด",
       "mine": "ของฉัน",
+      "waitingForMe": "รอคุณรับ",
       "searchPlaceholder": "ค้นหา เลข ticket / หัวข้อ / รายละเอียด",
       "emptyView": "ไม่มีงานในมุมมองนี้",
       "submitted": "ส่งแล้ว",

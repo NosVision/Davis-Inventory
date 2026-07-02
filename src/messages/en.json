@@ -141,8 +141,7 @@
     "transfer": "Transfer",
     "approve": "Approve",
     "selectStore": "Select branch",
-    "repairs": "Repairs",
-    "maintenance": "Maintenance"
+    "tasks": "Tasks"
   },
   "modules": {
     "overview": {
@@ -3637,6 +3636,7 @@
       "filterClosed": "Done/Closed",
       "filterAll": "All",
       "mine": "Mine",
+      "waitingForMe": "Waiting for you",
       "searchPlaceholder": "Search ticket no. / title / detail",
       "emptyView": "No tasks in this view",
       "submitted": "submitted",

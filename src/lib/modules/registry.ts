@@ -10,7 +10,7 @@ export interface ModuleConfig {
   href: string;
   roles: UserRole[];
   permission?: Permission;
-  badge?: 'pending_count';
+  badge?: 'pending_count' | 'my_tasks_count';
   groupKey: string;
 }
 
@@ -57,6 +57,7 @@ export const modules: ModuleConfig[] = [
     color: 'indigo',
     href: '/tasks',
     roles: ['owner', 'accountant', 'manager', 'bar', 'technician', 'staff', 'hq'],
+    badge: 'my_tasks_count',
     groupKey: 'moduleGroups.main',
   },
 

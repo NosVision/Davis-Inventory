@@ -114,6 +114,23 @@ export async function PATCH(
     return NextResponse.json({ error: 'ไม่มีข้อมูลที่จะแก้ไข' }, { status: 400 });
   }
 
+  // กันไม่ให้ responsible_target ค้างเป็น 'manual' ตอน assign_mode (ค่าใหม่หรือค่าเดิม) เป็น claim/all
+  // (ไม่งั้น resolveTargetUserIds คืน 0 คนแบบเงียบ ๆ — งานเปิดมาไม่มีใครรับ/เห็นได้เลย)
+  if ('assign_mode' in update || 'responsible_target' in update) {
+    const { data: current } = await supabase
+      .from('task_rooms')
+      .select('assign_mode, responsible_target')
+      .eq('id', roomId)
+      .maybeSingle();
+    const effAssignMode = (update.assign_mode as TaskAssignMode | undefined) ?? current?.assign_mode ?? 'manual';
+    const effRespTarget =
+      (update.responsible_target as TaskTarget | undefined) ??
+      (current?.responsible_target as TaskTarget | undefined);
+    if (effAssignMode !== 'manual' && (!effRespTarget || effRespTarget.mode === 'manual')) {
+      update.responsible_target = { mode: 'everyone' } as TaskTarget;
+    }
+  }
+
   const { data: room, error } = await supabase
     .from('task_rooms')
     .update(update)

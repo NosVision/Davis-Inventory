@@ -6,13 +6,12 @@ import Link from 'next/link';
 import {
   Wine,
   ClipboardCheck,
+  ClipboardList,
   Repeat,
   LayoutDashboard,
   MessageSquare,
   BookOpen,
   ArrowLeftRight,
-  Wrench,
-  CalendarDays,
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { useAuthStore } from '@/stores/auth-store';
@@ -44,10 +43,9 @@ const staffNavItems: NavItem[] = [
   { labelKey: 'nav.guide', href: '/guide', icon: BookOpen, color: 'sky' },
 ];
 
-// เมนูสำหรับ technician (ช่าง) — รายการแจ้งซ่อม ตารางงานประจำ แชท คู่มือ
+// เมนูสำหรับ technician (ช่าง) — ห้องงาน (รวมแจ้งซ่อม+งานประจำแล้ว) แชท คู่มือ
 const technicianNavItems: NavItem[] = [
-  { labelKey: 'nav.repairs', href: '/repairs', icon: Wrench, color: 'rose' },
-  { labelKey: 'nav.maintenance', href: '/maintenance', icon: CalendarDays, color: 'cyan' },
+  { labelKey: 'nav.tasks', href: '/tasks', icon: ClipboardList, color: 'indigo' },
   { labelKey: 'nav.chat', href: '/chat', icon: MessageSquare, color: 'blue' },
   { labelKey: 'nav.guide', href: '/guide', icon: BookOpen, color: 'sky' },
 ];

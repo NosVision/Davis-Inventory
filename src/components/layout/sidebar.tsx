@@ -41,6 +41,7 @@ import { useAppStore } from '@/stores/app-store';
 import { useAuthStore } from '@/stores/auth-store';
 import { getAccessibleModules } from '@/lib/modules/registry';
 import { useInboxCount } from '@/hooks/use-inbox-count';
+import { useMyTasksCount } from '@/hooks/use-my-tasks-count';
 import { StoreSwitcher } from './store-switcher';
 import { LanguageSwitcher } from './language-switcher';
 import type { Store } from '@/types/database';
@@ -86,6 +87,9 @@ export function Sidebar({ stores }: SidebarProps) {
   // Live count of items pending owner approval — drives the red badge
   // on the "กล่องอนุมัติ" menu entry. Returns 0 for non-privileged users.
   const inboxCount = useInboxCount();
+  // Live count of tasks assigned to me (pending response) + open-claim tasks
+  // matching my role — drives the red badge on the "ห้องงาน" menu entry.
+  const myTasksCount = useMyTasksCount();
 
   // เห็นโมดูลตาม role + permission ส่วนตัวที่ได้รับเพิ่ม
   const modules = useMemo(
@@ -175,10 +179,15 @@ export function Sidebar({ stores }: SidebarProps) {
                 const isActive = mod.href === activeHref;
                 const colors = getModuleColors(mod.color);
                 const modName = t(mod.nameKey);
-                // Inbox count drives the red badge — shown both expanded
+                // Inbox/tasks counts drive the red badge — shown both expanded
                 // (full pill next to label) and collapsed (small dot at
                 // the icon's top-right corner).
-                const badgeCount = mod.badge === 'pending_count' && mod.id === 'inbox' ? inboxCount : 0;
+                const badgeCount =
+                  mod.badge === 'pending_count' && mod.id === 'inbox'
+                    ? inboxCount
+                    : mod.badge === 'my_tasks_count' && mod.id === 'tasks'
+                      ? myTasksCount
+                      : 0;
                 const showBadge = badgeCount > 0;
 
                 return (

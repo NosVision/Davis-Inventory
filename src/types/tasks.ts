@@ -163,6 +163,8 @@ export interface TaskWithRelations extends Task {
   store_name?: string | null;
   /** true ถ้าผู้ใช้ปัจจุบันเป็นผู้รับผิดชอบงานนี้ ("ของฉัน") */
   is_mine?: boolean;
+  /** true ถ้างานนี้เปิดให้รับ (claim) และผู้ใช้ปัจจุบันตรงกับกลุ่มเป้าหมายของห้อง — ยังไม่มีใครรับ รอผู้ใช้คนนี้กด "รับงาน" */
+  can_claim?: boolean;
 }
 
 /** Input สำหรับสร้าง/แก้ไขไฟล์แนบ (ส่งจากฟอร์ม) */

@@ -116,7 +116,15 @@ export function RoomFormModal({ onClose, onCreated }: { onClose: () => void; onC
           <Select
             label={t('form.assignModeLabel')}
             value={assignMode}
-            onChange={(e) => setAssignMode(e.target.value as TaskAssignMode)}
+            onChange={(e) => {
+              const next = e.target.value as TaskAssignMode;
+              setAssignMode(next);
+              // ป้องกันค่า responsibleTarget ค้างเป็น 'manual' ตอนเปลี่ยนมาเป็น claim/all
+              // (TargetPicker ของผู้รับผิดชอบไม่มีตัวเลือก 'manual' ให้กด จะไม่มีปุ่มไหน active เลย)
+              if (next !== 'manual' && responsibleTarget.mode === 'manual') {
+                setResponsibleTarget({ mode: 'everyone' });
+              }
+            }}
             options={ASSIGN_MODE_VALUES.map((v) => ({ value: v, label: t(`assignModeOption.${v}`) }))}
           />
 

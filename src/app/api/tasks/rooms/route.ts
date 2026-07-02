@@ -152,6 +152,14 @@ export async function POST(request: NextRequest) {
   if (typeof body.requireAttachmentDefault === 'boolean')
     insert.require_attachment_default = body.requireAttachmentDefault;
 
+  // กันไม่ให้ responsible_target ค้างเป็น 'manual' ตอน assign_mode เป็น claim/all
+  // (ไม่งั้น resolveTargetUserIds คืน 0 คนแบบเงียบ ๆ — งานเปิดมาไม่มีใครรับ/เห็นได้เลย)
+  const effAssignMode = (insert.assign_mode as TaskAssignMode | undefined) ?? 'manual';
+  const effRespTarget = insert.responsible_target as TaskTarget | undefined;
+  if (effAssignMode !== 'manual' && (!effRespTarget || effRespTarget.mode === 'manual')) {
+    insert.responsible_target = { mode: 'everyone' } as TaskTarget;
+  }
+
   const { data: room, error } = await supabase
     .from('task_rooms')
     .insert(insert)
