@@ -2733,6 +2733,10 @@
         "requiredUsername": "Username is required",
         "requiredDocs": "Part-time requires ID card copy and signature",
         "requiredReason": "Reason is required for rate/bank changes",
+        "requiredRate": "Enter a valid pay rate greater than zero",
+        "requiredEndDate": "End date is required when status is resigned or terminated",
+        "endDate": "End date",
+        "endReason": "End reason",
         "loadFailed": "Failed to load",
         "saveFailed": "Save failed"
       }

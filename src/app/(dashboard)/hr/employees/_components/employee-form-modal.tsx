@@ -42,6 +42,8 @@ interface FormState {
   employee_code: string;
   start_date: string;
   status: string;
+  end_date: string;
+  end_reason: string;
   // pay & hours
   pay_type: string;
   rate_baht: string;
@@ -80,6 +82,11 @@ interface SensitiveSnapshot {
 
 const ROLE_OPTIONS = ['staff', 'bar', 'manager', 'technician', 'hq', 'accountant'] as const;
 const DOC_SLOTS: DocumentType[] = ['id_card', 'signature', 'contract'];
+const TERMINAL_STATUSES = ['resigned', 'terminated'];
+
+function isTerminalStatus(status: string): boolean {
+  return TERMINAL_STATUSES.includes(status);
+}
 
 function defaultForm(): FormState {
   return {
@@ -93,6 +100,8 @@ function defaultForm(): FormState {
     employee_code: '',
     start_date: '',
     status: 'active',
+    end_date: '',
+    end_reason: '',
     pay_type: 'full_monthly',
     rate_baht: '',
     work_hours_per_day: '8',
@@ -135,6 +144,9 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
   const [form, setForm] = useState<FormState>(defaultForm);
   const [documents, setDocuments] = useState<EmployeeDocument[]>([]);
   const [originalSensitive, setOriginalSensitive] = useState<SensitiveSnapshot | null>(null);
+
+  // Guards against a stale prefill fetch resolving after the target employee changed.
+  const employeeIdRef = useRef(employeeId);
 
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -179,6 +191,7 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
   // Reset / prefill whenever the modal opens or the target employee changes.
   useEffect(() => {
     if (!isOpen) return;
+    employeeIdRef.current = employeeId;
     setCreatedPassword(null);
     setCreatedWarnings([]);
     setSubmitting(false);
@@ -199,6 +212,8 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
     try {
       const res = await fetch(`/api/hr/employees/${id}`);
       const json = await res.json().catch(() => ({}));
+      // Ignore a stale response if the user switched employees while this was in flight.
+      if (id !== employeeIdRef.current) return;
       if (!res.ok || !json.data) {
         toast({ type: 'error', title: t('loadFailed'), message: typeof json.error === 'string' ? json.error : undefined });
         onClose();
@@ -221,6 +236,8 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
         employee_code: (d.employee_code as string) ?? '',
         start_date: (d.start_date as string) ?? '',
         status: (d.status as string) ?? 'active',
+        end_date: (d.end_date as string) ?? '',
+        end_reason: (d.end_reason as string) ?? '',
         pay_type: (d.pay_type as string) ?? 'full_monthly',
         rate_baht: d.rate_satang != null ? String((d.rate_satang as number) / 100) : '',
         work_hours_per_day: String((d.work_hours_per_day as number) ?? 8),
@@ -335,6 +352,14 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
       toast({ type: 'error', title: t('requiredDocs') });
       return;
     }
+    if (!(Number(form.rate_baht) > 0)) {
+      toast({ type: 'error', title: t('requiredRate') });
+      return;
+    }
+    if (isTerminalStatus(form.status) && !form.end_date) {
+      toast({ type: 'error', title: t('requiredEndDate') });
+      return;
+    }
 
     const common = {
       display_name: form.display_name.trim() || null,
@@ -382,6 +407,10 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
       url = `/api/hr/employees/${employeeId}`;
       method = 'PUT';
       body = { ...common };
+      if (isTerminalStatus(form.status)) {
+        body.end_date = form.end_date || null;
+        body.end_reason = form.end_reason.trim() || null;
+      }
       const snap = originalSensitive;
       if (!snap || rateSatang !== snap.rate_satang) body.rate_satang = rateSatang;
       const bankName = form.bank_name.trim() || null;
@@ -443,7 +472,11 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
   return (
     <Modal
       isOpen={isOpen}
-      onClose={onClose}
+      onClose={() => {
+        // On the create-success screen, dismissing via X/backdrop/Escape must still refresh the list.
+        if (createdPassword !== null) onSaved();
+        else onClose();
+      }}
       title={isCreate ? t('createTitle') : t('editTitle')}
       size="full"
     >
@@ -545,13 +578,35 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
             onChange={(e) => update('status', e.target.value)}
             options={EMPLOYEE_STATUSES.map((s) => ({ value: s, label: tp(`status.${s}`) }))}
           />
+          {isTerminalStatus(form.status) && (
+            <>
+              <Input
+                type="date"
+                label={t('endDate')}
+                value={form.end_date}
+                onChange={(e) => update('end_date', e.target.value)}
+              />
+              <Input
+                label={t('endReason')}
+                value={form.end_reason}
+                onChange={(e) => update('end_reason', e.target.value)}
+              />
+            </>
+          )}
 
           {/* Pay & hours */}
           <SectionHeader>{t('secPay')}</SectionHeader>
           <Select
             label={tp('col.payType')}
             value={form.pay_type}
-            onChange={(e) => update('pay_type', e.target.value)}
+            onChange={(e) => {
+              const nextPayType = e.target.value;
+              setForm((f) =>
+                isPartTime(f.pay_type) && !isPartTime(nextPayType)
+                  ? { ...f, pay_type: nextPayType, tax_mode: 'progressive', sso_enrolled: true }
+                  : { ...f, pay_type: nextPayType }
+              );
+            }}
             options={PAY_TYPES.map((p) => ({ value: p, label: tp(`payType.${p}`) }))}
           />
           <Input
@@ -715,7 +770,12 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
             <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
               {t('cancel')}
             </Button>
-            <Button type="button" onClick={handleSubmit} isLoading={submitting}>
+            <Button
+              type="button"
+              onClick={handleSubmit}
+              isLoading={submitting}
+              disabled={submitting || uploading !== null}
+            >
               {submitting ? (isCreate ? t('creating') : t('saving')) : t('save')}
             </Button>
           </div>
@@ -760,10 +820,22 @@ function DocSlot({ label, type, required, doc, uploading, onUpload, onView, onRe
             {doc.name || doc.path.split('/').pop()}
           </div>
           <div className="flex gap-2">
-            <Button type="button" size="sm" variant="outline" onClick={() => onView(doc.path)}>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              aria-label={`${labels.view} — ${label}`}
+              onClick={() => onView(doc.path)}
+            >
               {labels.view}
             </Button>
-            <Button type="button" size="sm" variant="ghost" onClick={() => onRemove(type)}>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              aria-label={`${labels.remove} — ${label}`}
+              onClick={() => onRemove(type)}
+            >
               {labels.remove}
             </Button>
           </div>
@@ -786,6 +858,7 @@ function DocSlot({ label, type, required, doc, uploading, onUpload, onView, onRe
             size="sm"
             variant="outline"
             isLoading={uploading}
+            aria-label={`${labels.upload} — ${label}`}
             onClick={() => inputRef.current?.click()}
           >
             {uploading ? labels.uploading : labels.upload}
