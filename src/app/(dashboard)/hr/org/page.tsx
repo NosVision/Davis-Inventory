@@ -51,6 +51,12 @@ function OrgList({ endpoint, withSort, addLabel }: OrgListProps) {
         const json = await res.json().catch(() => ({}));
         toast({ type: 'error', title: t('saveFailed'), message: json.error });
       }
+    } catch (err) {
+      toast({
+        type: 'error',
+        title: t('saveFailed'),
+        message: err instanceof Error ? err.message : undefined,
+      });
     } finally {
       setLoading(false);
     }
@@ -86,6 +92,8 @@ function OrgList({ endpoint, withSort, addLabel }: OrgListProps) {
       setNewName('');
       setNewSort('');
       await fetchRows();
+    } catch (err) {
+      failToast(err instanceof Error ? err.message : undefined);
     } finally {
       setSaving(false);
     }
@@ -126,6 +134,8 @@ function OrgList({ endpoint, withSort, addLabel }: OrgListProps) {
       toast({ type: 'success', title: t('savedOk') });
       cancelEdit();
       await fetchRows();
+    } catch (err) {
+      failToast(err instanceof Error ? err.message : undefined);
     } finally {
       setSaving(false);
     }
@@ -146,6 +156,8 @@ function OrgList({ endpoint, withSort, addLabel }: OrgListProps) {
       }
       toast({ type: 'success', title: t('savedOk') });
       await fetchRows();
+    } catch (err) {
+      failToast(err instanceof Error ? err.message : undefined);
     } finally {
       setSaving(false);
     }
@@ -247,6 +259,7 @@ function OrgList({ endpoint, withSort, addLabel }: OrgListProps) {
                   <button
                     type="button"
                     onClick={() => startEdit(row)}
+                    disabled={saving}
                     title={t('edit')}
                     aria-label={t('edit')}
                     className="shrink-0 rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-400"

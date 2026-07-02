@@ -2,16 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
+import { isUniqueViolation, isForeignKeyViolation } from '@/lib/hr/db-errors';
 
 const TABLE = 'hr_positions';
-
-function isUniqueViolation(error: { code?: string; message?: string }): boolean {
-  return error.code === '23505' || (error.message ?? '').toLowerCase().includes('duplicate');
-}
-
-function isForeignKeyViolation(error: { code?: string; message?: string }): boolean {
-  return error.code === '23503' || (error.message ?? '').toLowerCase().includes('foreign key');
-}
 
 // PUT /api/hr/positions/[id] — partial update { name?, sort_order?, active? }.
 export async function PUT(
@@ -39,7 +32,10 @@ export async function PUT(
     update.name = name;
   }
   if ('sort_order' in body) update.sort_order = Number(body.sort_order) || 0;
-  if ('active' in body) update.active = Boolean(body.active);
+  if ('active' in body) {
+    if (typeof body.active !== 'boolean') return NextResponse.json({ error: 'active must be boolean' }, { status: 400 });
+    update.active = body.active;
+  }
 
   if (Object.keys(update).length === 0) {
     return NextResponse.json({ error: 'No updatable fields provided' }, { status: 400 });
@@ -80,7 +76,8 @@ export async function DELETE(
 
   const { id } = await params;
   const service = createServiceClient();
-  const { data: current } = await service.from(TABLE).select('*').eq('id', id).single();
+  const { data: current, error: fetchErr } = await service.from(TABLE).select('*').eq('id', id).single();
+  if (fetchErr || !current) return NextResponse.json({ error: 'Position not found' }, { status: 404 });
 
   const { error } = await service.from(TABLE).delete().eq('id', id);
   if (error) {

@@ -2,12 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
+import { isUniqueViolation } from '@/lib/hr/db-errors';
 
 const TABLE = 'hr_positions';
-
-function isUniqueViolation(error: { code?: string; message?: string }): boolean {
-  return error.code === '23505' || (error.message ?? '').toLowerCase().includes('duplicate');
-}
 
 // GET /api/hr/positions — all positions (active + inactive) for management.
 export async function GET() {
