@@ -2,11 +2,13 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { notifyTaskUsers, getRoomMemberIds } from '@/lib/tasks/notify';
+import { userMatchesTarget } from '@/lib/tasks/resolve-target';
 import type {
   Task,
   TaskWithRelations,
   TaskAssignee,
   TaskAttachmentInput,
+  TaskTarget,
 } from '@/types/tasks';
 
 const TASK_SELECT = `
@@ -73,7 +75,24 @@ export async function GET(
     is_mine: (row.assignees ?? []).some((a) => a.user_id === user.id),
   };
 
-  return NextResponse.json({ task, canApprove: isOwner || isApprover, isOwner });
+  // งานแบบเปิดให้รับ (claim) — ต้องเช็คว่าผู้ใช้ตรงกับ "ผู้รับผิดชอบ" ที่ห้องตั้งไว้จริงไหม
+  // ไม่งั้นทุกคน (รวมถึงคนแจ้งเรื่อง/เจ้าของร้าน) จะเห็นปุ่ม "รับงาน" ได้แม้ตั้งเฉพาะตำแหน่งไว้
+  const isOpenClaim =
+    row.status === 'in_progress' &&
+    (row.assignees ?? []).length === 0 &&
+    (row.meta as { open_claim?: boolean } | null | undefined)?.open_claim === true;
+  let canClaim = false;
+  if (isOpenClaim) {
+    const { data: roomCfg } = await supabase
+      .from('task_rooms')
+      .select('responsible_target')
+      .eq('id', row.room_id)
+      .maybeSingle();
+    const responsibleTarget = (roomCfg?.responsible_target as TaskTarget | null) ?? null;
+    canClaim = await userMatchesTarget(user.id, responsibleTarget);
+  }
+
+  return NextResponse.json({ task, canApprove: isOwner || isApprover, isOwner, canClaim });
 }
 
 // PATCH /api/tasks/[id] — workflow actions
@@ -414,14 +433,20 @@ export async function PATCH(
       if (task.status !== 'in_progress') {
         return NextResponse.json({ error: 'สถานะปัจจุบันรับงานไม่ได้' }, { status: 400 });
       }
-      const { data: mem } = await supabase
-        .from('task_room_members')
-        .select('user_id')
-        .eq('room_id', task.room_id)
-        .eq('user_id', actorId)
+      // ต้องตรงกับ "ผู้รับผิดชอบ" ที่ห้องตั้งไว้ (เช่น เฉพาะตำแหน่งช่าง) — ไม่ใช่แค่เป็นสมาชิกห้อง
+      // (สมาชิกห้องอาจรวมทุกคนที่แจ้งเรื่องได้ ไม่ได้แปลว่ารับงานได้) และเจ้าของร้านก็ไม่ยกเว้น
+      // เพื่อกันเคสคนแจ้งเรื่อง/เจ้าของร้านกดรับงานที่ตั้งไว้ให้ตำแหน่งอื่นโดยไม่ตั้งใจ
+      const { data: roomCfg } = await supabase
+        .from('task_rooms')
+        .select('responsible_target')
+        .eq('id', task.room_id)
         .maybeSingle();
-      if (!mem && !isOwner) {
-        return NextResponse.json({ error: 'ต้องเป็นสมาชิกห้องนี้ถึงจะรับงานได้' }, { status: 403 });
+      const responsibleTarget = (roomCfg?.responsible_target as TaskTarget | null) ?? null;
+      if (!(await userMatchesTarget(actorId, responsibleTarget))) {
+        return NextResponse.json(
+          { error: 'คุณไม่ได้อยู่ในกลุ่มผู้รับผิดชอบของงานนี้' },
+          { status: 403 },
+        );
       }
       const svc = createServiceClient();
       await svc.from('task_assignees').insert({ task_id: id, user_id: actorId });

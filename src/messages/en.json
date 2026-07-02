@@ -3752,6 +3752,7 @@
       "acknowledge": "Acknowledge",
       "acknowledgeRead": "Mark as read",
       "claim": "Claim task",
+      "claimWaiting": "🔔 Waiting for the responsible group (set for this room) to claim it",
       "reject": "Reject",
       "approve": "Approve",
       "startNow": "Start now",

@@ -34,6 +34,7 @@ export function TaskDetailModal({ taskId, currentUserId, onClose, onChanged }: T
   const [task, setTask] = useState<TaskWithRelations | null>(null);
   const [canApprove, setCanApprove] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
+  const [canClaim, setCanClaim] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [submitMode, setSubmitMode] = useState(false);
@@ -51,6 +52,7 @@ export function TaskDetailModal({ taskId, currentUserId, onClose, onChanged }: T
       setTask(data.task);
       setCanApprove(!!data.canApprove);
       setIsOwner(!!data.isOwner);
+      setCanClaim(!!data.canClaim);
     } else {
       toast({ type: 'error', title: t('detail.loadFailed'), message: data.error });
     }
@@ -280,9 +282,12 @@ export function TaskDetailModal({ taskId, currentUserId, onClose, onChanged }: T
             )
           )}
 
-          {/* open-claim: รับงาน (ยังไม่มีผู้รับผิดชอบ) */}
-          {isOpenClaim && (
+          {/* open-claim: รับงาน (ยังไม่มีผู้รับผิดชอบ) — เฉพาะคนที่ตรงกลุ่มเป้าหมายที่ห้องตั้งไว้ */}
+          {isOpenClaim && canClaim && (
             <Button onClick={() => act('claim')} isLoading={busy}>{t('detail.claim')}</Button>
+          )}
+          {isOpenClaim && !canClaim && (
+            <p className="w-full text-xs text-gray-400">{t('detail.claimWaiting')}</p>
           )}
 
           {/* pending_approval: อนุมัติ/ไม่อนุมัติ */}
