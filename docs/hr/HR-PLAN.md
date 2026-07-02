@@ -35,6 +35,7 @@
 - `hr_assets` (ทรัพย์สิน + value_satang + holder employee + status) 
 - `hr_payruns` / `hr_payslips` (base, ot, allowances[], service_charge_satang, commission_satang, sso_satang, tax_satang, deductions[], gross, net)
 - `hr_service_charge_pools` (period, **total_satang กรอกมือ**, allocation ต่อคน **กรอก/แก้ได้** + deduction จาก SC — ดู §H)
+- **จาก ByteHR gap (§J):** `hr_vacancies` / `hr_candidates` (สรรหา) · `hr_claims` (เบิกค่าใช้จ่าย+บิล) · `hr_certificates` (หนังสือรับรอง/50ทวิ) · `hr_ot_requests` · `hr_attendance_requests` (ขอแก้เวลา) · `hr_profile_change_requests` (ESS แก้ข้อมูล→อนุมัติ) · `hr_departments`
 
 ---
 
@@ -165,6 +166,23 @@ Net        = Total − Total Deduction
 - **สิทธิ์ OT ต่อคน:** บางคนได้ OT บางคนไม่ได้ → `hr_employees.ot_eligible (bool)` ตั้งตอนเพิ่มพนักงาน — เอนจิน OT (§A) คิดให้เฉพาะคนที่เปิดสิทธิ์
 - **ตำแหน่งงาน ≠ role ระบบ:** ตำแหน่งในลิสต์ HR (กัปตัน/บาร์เทนเดอร์/เชฟ/…) **ไม่ใช่ role RBAC** (owner/manager/bar/…) → ตาราง **`hr_positions` CRUD ได้โดย HR** · `hr_employees.position_id` FK · ใช้ต่อกับ: ตัวกรองตำแหน่งหน้าประเมิน (§G), ตั้งผู้ประเมินต่อแผนก, รายงาน
 - **เวลาพักต้องกดในระบบ:** พนักงานกด **เริ่มพัก / เลิกพัก** โดยเช็ค **GPS geofence เหมือนเช็คอิน/เอาต์ (§F)** → `hr_attendance.type` ขยายเป็น `in | out | break_start | break_end` (+ gps, distance_m, in_geofence) · ชั่วโมงพักจริงเทียบ `break_hours` ของโปรไฟล์ (เกิน/ขาด → ขึ้นรายงาน) · *(สมมติฐาน: พักใช้ GPS อย่างเดียว ไม่ต้อง selfie — ลูกค้าไม่ได้ระบุ ถ้าต้องการค่อยเปิด)*
+
+## J. โมดูลเพิ่มจาก ByteHR Program Interface (ลูกค้าส่งสไลด์ 2026-07-02 — "เอาทุกฟีเจอร์")
+> เทียบหน้าจอ ByteHR ทั้ง 28 หน้า (Admin + Mobile) กับแผนนี้ — ที่มีอยู่แล้ว: companies/branches/employees/leave/schedule/timesheet(§B)/payroll/payslip/reports/reviews(§G)/dashboard/eCalendar/ePayslip · **ที่ขาดและเพิ่มเข้าขอบเขตแล้ว:**
+
+| โมดูล | สถานะเดิม | สเปกย่อ |
+|---|---|---|
+| **J1. Recruitment (สรรหา)** | อยู่ใน checklist แต่ไม่มีในแผน build | `hr_vacancies` (ตำแหน่งว่างต่อ venue/position) + **ลิงก์รับสมัครสาธารณะ** (แชร์ได้ ไม่ต้อง login — แพทเทิร์นเดียวกับ LIFF/public page เดิม) → `hr_candidates` (ข้อมูล+เรซูเม่+สถานะ: ใหม่→นัดสัมภาษณ์→ผ่าน/ไม่ผ่าน→จ้าง) · จ้างแล้ว **แปลงเป็นพนักงาน** (สร้าง profiles+hr_employees ต่อได้เลย = onboarding) |
+| **J2. เบิกค่าใช้จ่าย (eClaims/Reimbursement)** | อยู่ใน checklist แต่ไม่มีในแผน build | `hr_claims`: พนักงานยื่น (ประเภท/ยอด/**แนบรูปบิล**) → อนุมัติ (manager→HR ตามสาย) → จ่าย: เข้าสลิปเป็น earning line (`hr_payslip_earnings` type='reimbursement') หรือจ่ายแยก · ต่างจาก "เบิกล่วงหน้า (advance)" ที่เป็น deduction เดิม |
+| **J3. หนังสือรับรอง + 50 ทวิ** | อยู่ใน checklist แต่ไม่มีในแผน build | พนักงานกดขอ → HR ออก **PDF: หนังสือรับรองการทำงาน / รับรองเงินเดือน / หนังสือรับรองหัก ณ ที่จ่าย (50 ทวิ)** จากข้อมูลจริงในระบบ + เลขที่เอกสาร + ลายเซ็นผู้มีอำนาจ (print pattern เดิม) |
+| **J4. ขอ OT (OT Requests)** | ❌ ไม่มีทั้งใน checklist และแผน | พนักงาน/หัวหน้ายื่นขอ OT ล่วงหน้า (วัน+ช่วงเวลา+เหตุผล) → อนุมัติ → **ชั่วโมง OT ที่จ่ายต้องมาจากคำขอที่อนุมัติ ∩ เวลาทำงานจริง** (กันทำเกินเองแล้วเรียกเก็บ) · เฉพาะคน `ot_eligible` (§I) |
+| **J5. ขอแก้เวลาเข้า-ออก (Attendance Requests)** | ❌ ไม่มี | ลืมกดเข้า/ออก/พัก หรือ GPS พลาด → พนักงานยื่นขอแก้ (วัน เวลาที่ถูก เหตุผล+หลักฐาน) → หัวหน้า/HR อนุมัติ → แก้ `hr_attendance` พร้อม **flag ว่าเป็นรายการแก้มือ + audit (§B)** — จำเป็นมากเมื่อบังคับกดผ่าน GPS |
+| **J6. ESS แก้ข้อมูลส่วนตัว** | ❌ ไม่มี (มีแค่รูป profile) | พนักงานแก้ ที่อยู่/เบอร์/ผู้ติดต่อฉุกเฉิน/บัญชีธนาคาร เองจากมือถือ → **เข้าคิวให้ HR อนุมัติก่อนมีผล** (ฟิลด์อ่อนไหวเช่นบัญชีธนาคารบังคับอนุมัติ+audit เสมอ) |
+| J7. แผนก (Departments) | มีแค่ field | ยกเป็นตาราง `hr_departments` CRUD ได้ (คู่กับ `hr_positions` §I) — ใช้กับ ตั้งผู้ประเมินต่อแผนก (§G) + รายงาน |
+| J8. หน้า Timesheet ต่อคน/งวด | implied ใน §B | ระบุเป็นหน้าจอชัดเจน: ตารางเวลาทำงานรายคนรายงวด (เข้า/ออก/พัก/สาย/OT) + **HR แก้ได้จากหน้านี้** (ลง audit + เหตุผล ตาม §B) |
+| J9. รายงานราชการครบชุด | มีบางส่วน (P5) | เพิ่มให้ครบ: **ภ.ง.ด.1 / ภ.ง.ด.1ก / 50 ทวิ / สปส.1-10 + ไฟล์ e-filing** (format ยื่นออนไลน์ของสรรพากร/ประกันสังคม) |
+
+- อัปเดตแผน phased: J2, J4, J5 → เข้า **P3 (คำขอ)** · J3, J9 → **P4 (เงิน/เอกสาร)** · J6, J7, J8 → **P1–P2** · J1 (Recruitment) → **P6 ใหม่ (หลังระบบหลักเสถียร)** เว้นลูกค้าเร่ง
 
 ---
 
