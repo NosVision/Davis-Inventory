@@ -28,7 +28,7 @@ const NAV_TILES: { key: string; icon: LucideIcon; href?: string }[] = [
   { key: 'employees', icon: Users, href: '/hr/employees' },
   { key: 'org', icon: Briefcase, href: '/hr/org' },
   { key: 'attendance', icon: Clock, href: '/hr/attendance' },
-  { key: 'schedule', icon: CalendarDays },
+  { key: 'schedule', icon: CalendarDays, href: '/hr/schedule' },
   { key: 'leave', icon: CalendarX },
   { key: 'warnings', icon: AlertTriangle },
   { key: 'payroll', icon: Wallet },
