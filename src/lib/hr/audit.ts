@@ -45,7 +45,14 @@ export async function logHrAudit(
       after: params.after ?? null,
       reason: params.reason ?? null,
     });
-  } catch {
-    // never block a mutation on audit failure
+  } catch (err) {
+    // Never block a mutation on audit failure — but log it so gaps in the §B audit
+    // trail are visible in server logs/monitoring rather than silently swallowed.
+    console.error('logHrAudit: hr_audit_log insert failed', {
+      table: params.table,
+      action: params.action,
+      recordId: params.recordId,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }
