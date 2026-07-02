@@ -1,17 +1,18 @@
 # HR Build — State Tracker
 
 > loop อ่านไฟล์นี้ก่อนเริ่มทุกครั้ง · ติ๊ก [x] เมื่อ e2e ผ่าน + typecheck เขียว + commit local แล้วเท่านั้น
-> อัปเดตล่าสุด: 2026-07-02 (ยังไม่เริ่ม — สร้างไฟล์)
+> อัปเดตล่าสุด: 2026-07-02 (จบ Round 1 — P0.1 + P0.2 เสร็จ)
 
 ## สถานะรวม
-- เฟสปัจจุบัน: **P0 (ยังไม่เริ่ม)**
-- dev server: localhost:3000 · Supabase: oogyjqywuqmutkjnnsik (live)
+- เฟสปัจจุบัน: **P0 (กำลังทำ — เหลือ P0.3, P0.4, gate)**
+- dev server: localhost:3000 (UP) · Supabase: oogyjqywuqmutkjnnsik (live)
+- **เลขไมเกรชันถัดไป = 00078** (00077_hr_core applied+verified)
 - test creds: (จะอยู่ที่ scratchpad `hr-test-creds.json` หลัง P0.4 — ห้าม commit)
-- handoff ล่าสุด: (path จะถูกจดที่นี่ทุกจบรอบ)
+- handoff ล่าสุด: `f:\tmp\hr-handoff-latest.md` (มี codebase map ครบ + แผน P0.3/P0.4)
 
 ## P0 — ฐานราก
-- [ ] P0.1 reconcile migrations (backfill 00075/00076 + lock เลขถัดไป)
-- [ ] P0.2 core tables: hr_companies / hr_positions(seed16) / hr_departments / hr_employees / hr_audit_log / hr_manager_scopes (+RLS ครบ, verify SQL)
+- [x] P0.1 reconcile migrations — next=00078, ไม่มี hr_* system tables เดิม, drift เก่าไม่บล็อก (2b455b2)
+- [x] P0.2 core tables: hr_companies / hr_positions(seed16 ✓) / hr_departments / hr_employees / hr_audit_log / hr_manager_scopes — RLS 12 policies, verify SQL ✓, advisor clean สำหรับ hr_* (2b455b2)
 - [ ] P0.3 permission can_manage_hr + โมดูล hr ใน registry + โครง /hr + i18n hr + lib/hr/audit.ts
 - [ ] P0.4 test users 6 บัญชี + e2e login/เมนู + commit
 - [ ] P0 gate: review-agent ผ่าน
@@ -54,6 +55,10 @@
 ## Open questions / assumptions ระหว่างทาง
 - (ตั้งต้น) ยอดหัก SC ต่อวันลา = สัดส่วน ÷30 ของ SC เดือนนั้น — configurable
 - (ตั้งต้น) part-time รายเดือน = ไม่มีใบเตือนเหมือน part-time อื่น
+- (P0.2) HR gate เป็น **global** ผ่าน `can_manage_hr()` — per-store scoping ผ่าน `hr_manager_scopes` เลื่อนไปเฟสหลัง (ตารางสร้างไว้แล้ว)
+- (P0.2) `hr_employees.rate_satang` ความหมายขึ้นกับ pay_type (full_monthly/pt_monthly=ราย ​เดือน, pt_daily=รายวัน, pt_hourly=รายชม.)
+- (P0.2) SSO ceiling เก็บเป็น satang (1,750,000 = 17,500 บาท → SSO สูงสุด 875) · ot_multipliers jsonb {ot1:1.5,ot2:2,ot3:3}
+- (รอเคาะ P1.1) รูปพนักงาน→ bucket public `deposit-photos` folder 'employees' ได้เลย · แต่ **เอกสารส่วนตัว (สำเนาบัตร/สัญญา) ยังไม่มี pattern private bucket ในโปรเจกต์** — ต้องตัดสินใจก่อน build part-time (บังคับแนบสำเนาบัตร)
 
 ## Post-loop backlog (งานเก็บหลัง loop จบ — ไม่อยู่ในขอบเขต loop)
 - [ ] รอบ feedback UI จากลูกค้า/ทีมจริง ทุกโมดูล (เหมือนรอบเทส eval mockup)
@@ -66,4 +71,4 @@
 - [ ] push ขึ้น repo + deploy (รอเจ้าของสั่งเท่านั้น)
 
 ## Log ต่อรอบ (รอบละบรรทัด: วันที่ · ทำอะไร · commit hash)
-- (ยังไม่เริ่ม)
+- 2026-07-02 · Round 1: P0.1 reconcile (next=00078) + P0.2 core schema 6 ตาราง+RLS+seed16, verify SQL ผ่าน, typecheck baseline เขียว · 2b455b2
