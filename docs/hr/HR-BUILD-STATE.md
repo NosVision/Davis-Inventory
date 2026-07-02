@@ -1,10 +1,12 @@
 # HR Build — State Tracker
 
 > loop อ่านไฟล์นี้ก่อนเริ่มทุกครั้ง · ติ๊ก [x] เมื่อ e2e ผ่าน + typecheck เขียว + commit local แล้วเท่านั้น
-> อัปเดตล่าสุด: 2026-07-02 (จบ Round 6 — **P1.2 เสร็จ** (positions/departments CRUD + audit-log page) → ถัดไป P1.3)
+> อัปเดตล่าสุด: 2026-07-02 (จบ Round 7 — **P1.3 policies เสร็จ** (HR editor + ESS sign) → ถัดไป P1.3 announcements)
 
 ## สถานะรวม
-- เฟสปัจจุบัน: **P1.1 + P1.2 ✅ เสร็จ → ถัดไป P1.3 policies + announcements (ไม่รับทราบ→เด้งซ้ำ)**
+- เฟสปัจจุบัน: **P1.1 + P1.2 + P1.3-policies ✅ → ถัดไป P1.3-announcements (ไม่รับทราบ→เด้งซ้ำวันถัดไป)**
+- **เลขไมเกรชันถัดไป = 00082** (ถึง 00081_hr_policies applied)
+- **ESS pattern**: ESS pages อยู่ใต้ `/me/*` (ไม่ใช่ `/hr/*` เพราะ /hr guard กันพนักงาน) · ESS API `/api/hr/ess/*` = auth-any (createClient+getUser, ไม่ใช่ requireHrManager) · signature/private upload ทำ server-side (พนักงานไม่มีสิทธิ์ bucket ตรง) · reusable `@/components/ui/signature-pad` (ref API: toDataURL/clear/isEmpty)
 - dev server: localhost:3000 (UP) · Supabase: oogyjqywuqmutkjnnsik (live)
 - **เลขไมเกรชันถัดไป = 00081** (ถึง 00080_hr_docs_bucket_hardening applied+verified)
 - test creds: `f:\tmp\hr-test-creds.json` (6 บัญชี hr-test-* + test venue store_code=HRTEST · re-seed ได้ด้วย `node scripts/seed-hr-test-users.mjs`) — ห้าม commit
@@ -26,7 +28,7 @@
   - **Round 5 (bc0eb9c)**: TransferModal + list row-action → POST /transfer · i18n transfer (th/en 112/112) · e2e: transfer ผ่าน UI → DB company + audit reason ✓ · doc upload→sign (download disposition) ✓ · edit-save PUT ✓
   - หมายเหตุ tech-debt: form modal 871 บรรทัด (เกิน 800 — แตก sub-components ทีหลัง) · profile avatar_url ยังไม่รองรับใน create/edit (เลื่อน P1.5)
 - [x] P1.2 positions/departments CRUD + audit-log page (435cb92) — API (list/create/update/delete, 409 dup + 409 FK-in-use, logHrAudit ทุก mutation) + `/hr/org` (tabs + add/rename/reorder/toggle active) + audit API (filter table/action/record_id, paginated) + `/hr/audit` page · i18n th/en (org 21/21, audit 17/17) · e2e ผ่าน API+UI (create/dup-409/rename/toggle + org+audit render สะท้อนข้อมูลจริง incl transfer reasons) · **review ผ่าน 0 CRIT/HIGH** แก้ 2 MED (DELETE 404 กัน phantom audit, active ต้อง boolean) + LOW (DRY db-errors, org fetch catch) verify แล้ว (c0b8076)
-- [ ] P1.3 policies + announcements (ไม่รับทราบ→เด้งซ้ำ)
+- [~] P1.3 policies + announcements — **policies เสร็จ** (f2ad1d2): 00081 migration + SignaturePad + HR /hr/policies (CRUD, version-bump→re-ack, acks view) + ESS /me/policies (read+sign) · e2e: HR create → staff(non-HR) read /me/policies + sign → ack+signature ลง DB (verify แล้ว) · review agent กำลังรัน · **เหลือ announcements (scope สาขา + รับทราบ + ไม่รับทราบ→เด้งซ้ำวันถัดไป) → Round 8**
 - [ ] P1.4 assets
 - [ ] P1.5 (Addendum A) org chart + view ประวัติปรับเงินเดือน/ตำแหน่ง + แจ้งเตือนครบทดลองงาน 119 วัน + วันเกิด/ครบรอบงาน + ปุ่มพิมพ์โปรไฟล์/ทะเบียนทรัพย์สิน + เอกสารส่วนตัว = private bucket (PDPA)
 - [ ] P1 e2e ครบ + gate review
@@ -95,3 +97,4 @@
 - 2026-07-02 · Round 4: P1.1 **UI** — employees list (DataTable+search+filters) + create/edit form modal (part-time UX + doc upload, agent-built) + i18n th/en (100/100) + tile link · e2e 1440+390 (list 8 + search + create full-time→temp pw→refresh + edit prefill) · code-review 2HIGH+4MED+LOW แก้ครบ (stale-fetch guard, offboarding end_date, PT→FT reset) · 7ad4350 + 89fd2a3 · (transfer-UI + edit-save/doc e2e → Round 5)
 - 2026-07-02 · Round 5: P1.1 **transfer UI** (TransferModal + list row-action → /transfer) + i18n (112/112) · e2e ผ่าน UI: transfer→DB company+audit reason ✓, doc upload→sign (download disposition) ✓, edit-save PUT ✓ · typecheck เขียว · **P1.1 ปิดครบ** · bc0eb9c · (→ P1.2)
 - 2026-07-02 · Round 6: P1.2 **positions/departments CRUD + audit-log** (2 parallel agents) — 5 API routes + org page + audit page + i18n · e2e: pos create/dup-409/rename/toggle + dept create + org/audit render สะท้อนข้อมูลจริง · typecheck เขียว · 435cb92 + review fixes c0b8076 · **P1.2 ปิดครบ** · (→ P1.3)
+- 2026-07-02 · Round 7: P1.3 **policies** (2 parallel agents) — 00081 migration + reusable SignaturePad + HR editor + ESS /me/policies sign-to-ack · e2e: non-HR staff อ่าน+เซ็น→ack+signature ลง private bucket (DB verify), bad-sig 400, re-ack idempotent · typecheck เขียว · f2ad1d2 · (review + announcements → Round 8)
