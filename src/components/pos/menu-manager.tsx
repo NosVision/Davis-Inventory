@@ -1,8 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Plus, Loader2, Pencil, ChefHat, Wine } from 'lucide-react';
-import { Button, Input, Select, Modal, ModalFooter, toast } from '@/components/ui';
+import { Plus, Loader2, Pencil, ChefHat, Wine, ImageIcon } from 'lucide-react';
+import { Button, Input, Select, Modal, ModalFooter, PhotoUpload, toast } from '@/components/ui';
 import { InvItemPicker, type ItemLine } from '@/components/inventory/inv-item-picker';
 import { formatBaht, bahtToSatang } from '@/lib/pos/money';
 import type { MenuCategory, MenuItem } from '@/types/pos';
@@ -80,6 +80,11 @@ export function MenuManager({ storeId, isManager }: { storeId: string; isManager
               <ul className="divide-y divide-gray-50 dark:divide-gray-700/50">
                 {list.map((m) => (
                   <li key={m.id} className="flex items-center gap-3 px-4 py-2">
+                    {m.image_url ? (
+                      <img src={m.image_url} alt={m.name} className="h-9 w-9 shrink-0 rounded-lg object-cover" />
+                    ) : (
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-300 dark:bg-gray-700"><ImageIcon className="h-4 w-4" /></span>
+                    )}
                     <div className="min-w-0 flex-1">
                       <span className="text-sm text-gray-900 dark:text-white">{m.name}</span>
                       {!m.active && <span className="ml-2 rounded bg-gray-100 px-1.5 text-[10px] text-gray-500 dark:bg-gray-700">ปิดขาย</span>}
@@ -167,6 +172,7 @@ function ItemModal({ storeId, item, categories, onClose, onSaved }: { storeId: s
   const [name, setName] = useState(mi?.name ?? '');
   const [price, setPrice] = useState(mi ? String(mi.price_satang / 100) : '');
   const [categoryId, setCategoryId] = useState(mi?.category_id ?? '');
+  const [imageUrl, setImageUrl] = useState<string | null>(mi?.image_url ?? null);
   const [active, setActive] = useState(mi?.active ?? true);
   const [lines, setLines] = useState<ItemLine[]>([]);
   const [recipeLoaded, setRecipeLoaded] = useState(!isEdit);
@@ -217,14 +223,14 @@ function ItemModal({ storeId, item, categories, onClose, onSaved }: { storeId: s
         const res = await fetch(`/api/pos/menu-items/${mi.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: name.trim(), priceSatang, categoryId: categoryId || null, active }),
+          body: JSON.stringify({ name: name.trim(), priceSatang, categoryId: categoryId || null, active, imageUrl }),
         });
         if (!res.ok) throw new Error((await res.json()).error || 'บันทึกไม่สำเร็จ');
       } else {
         const res = await fetch('/api/pos/menu-items', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ storeId, name: name.trim(), priceSatang, categoryId: categoryId || null }),
+          body: JSON.stringify({ storeId, name: name.trim(), priceSatang, categoryId: categoryId || null, imageUrl }),
         });
         const d = await res.json();
         if (!res.ok) throw new Error(d.error || 'สร้างไม่สำเร็จ');
@@ -271,6 +277,7 @@ function ItemModal({ storeId, item, categories, onClose, onSaved }: { storeId: s
             options={categories.map((c) => ({ value: c.id, label: c.name }))}
           />
         </div>
+        <PhotoUpload label="รูปเมนู (แสดงบนจอขาย)" value={imageUrl} onChange={setImageUrl} folder="pos-menu" compact maxDimension={800} placeholder="แตะเพื่อถ่าย/เลือกรูปเมนู" />
         {isEdit && (
           <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
             <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} className="h-4 w-4 rounded" /> เปิดขาย

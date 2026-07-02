@@ -30,6 +30,8 @@ interface PhotoUploadProps {
   placeholder?: string;
   /** Max file size in MB */
   maxSizeMB?: number;
+  /** Longest-edge px for client-side downscale before upload (default: compressImage's 1920). Use a smaller value for thumbnails (e.g. product photos). */
+  maxDimension?: number;
   /** Compact mode for smaller spaces */
   compact?: boolean;
 }
@@ -44,6 +46,7 @@ export function PhotoUpload({
   className,
   placeholder = 'แตะเพื่อถ่ายรูปหรือเลือกรูป',
   maxSizeMB = 10,
+  maxDimension,
   compact = false,
 }: PhotoUploadProps) {
   const [isUploading, setIsUploading] = useState(false);
@@ -78,7 +81,7 @@ export function PhotoUpload({
       // back to the original when re-encoding wouldn't shrink it.
       let uploadFile = file;
       try {
-        uploadFile = await compressImage(file);
+        uploadFile = await compressImage(file, maxDimension ? { maxDimension } : undefined);
       } catch {
         // If compression throws unexpectedly, use original
       }
@@ -112,7 +115,7 @@ export function PhotoUpload({
         setIsUploading(false);
       }
     },
-    [folder, maxSizeMB, onChange]
+    [folder, maxSizeMB, maxDimension, onChange]
   );
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {

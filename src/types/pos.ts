@@ -71,6 +71,7 @@ export interface MenuItem {
   name: string;
   sku: string | null;
   price_satang: number;
+  image_url: string | null;
   sort: number;
   active: boolean;
   available: boolean;

@@ -18,6 +18,7 @@ interface CreateBody {
   categoryId?: string | null;
   name?: string;
   priceSatang?: number;
+  imageUrl?: string | null;
 }
 
 // POST /api/pos/menu-items — เพิ่มเมนู
@@ -41,6 +42,7 @@ export async function POST(request: NextRequest) {
       category_id: body.categoryId ?? null,
       name: body.name.trim(),
       price_satang: typeof body.priceSatang === 'number' ? Math.max(0, Math.round(body.priceSatang)) : 0,
+      image_url: body.imageUrl?.trim() || null,
     })
     .select('*')
     .single();

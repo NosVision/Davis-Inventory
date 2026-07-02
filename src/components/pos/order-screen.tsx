@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Loader2, Search, Plus, Minus, Trash2, Move, Percent, Wallet, Ticket, ChefHat } from 'lucide-react';
+import { ArrowLeft, Loader2, Search, Plus, Minus, Trash2, Move, Percent, Wallet, Ticket, ChefHat, ImageIcon } from 'lucide-react';
 import { Button, Input, Select, Modal, ModalFooter, toast } from '@/components/ui';
 import { formatBaht, bahtToSatang } from '@/lib/pos/money';
 import { CheckoutModal } from './checkout-modal';
@@ -203,16 +203,25 @@ export function OrderScreen({ orderId, storeId, categories, items, modifierMenuI
                   key={m.id}
                   disabled={busy || !sellable}
                   onClick={() => tapMenu(m)}
-                  className={`flex flex-col items-start justify-between rounded-xl border bg-white p-3 text-left transition disabled:cursor-not-allowed dark:bg-gray-800 ${sellable ? 'border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/40 dark:border-gray-700' : 'border-gray-200 opacity-50 dark:border-gray-700'}`}
+                  className={`flex flex-col overflow-hidden rounded-xl border bg-white text-left transition disabled:cursor-not-allowed dark:bg-gray-800 ${sellable ? 'border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/40 dark:border-gray-700' : 'border-gray-200 opacity-50 dark:border-gray-700'}`}
                 >
-                  <span className="line-clamp-2 text-sm font-medium text-gray-900 dark:text-white">{m.name}</span>
-                  <div className="mt-1 flex w-full items-center justify-between">
-                    <span className="font-mono text-xs text-indigo-600 dark:text-indigo-400">฿{formatBaht(m.price_satang)}</span>
-                    {!sellable ? (
-                      <span className="rounded bg-rose-100 px-1.5 text-[10px] font-semibold text-rose-600 dark:bg-rose-900/40 dark:text-rose-300">หมด</span>
-                    ) : av?.remaining != null ? (
-                      <span className="rounded bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">เหลือ {av.remaining}</span>
-                    ) : null}
+                  {m.image_url ? (
+                    <img src={m.image_url} alt={m.name} className="h-20 w-full object-cover" />
+                  ) : (
+                    <span className="flex h-20 w-full items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 text-gray-300 dark:from-gray-800 dark:to-gray-700">
+                      <ImageIcon className="h-6 w-6" />
+                    </span>
+                  )}
+                  <div className="flex w-full flex-1 flex-col items-start justify-between p-2.5">
+                    <span className="line-clamp-2 text-sm font-medium text-gray-900 dark:text-white">{m.name}</span>
+                    <div className="mt-1 flex w-full items-center justify-between">
+                      <span className="font-mono text-xs text-indigo-600 dark:text-indigo-400">฿{formatBaht(m.price_satang)}</span>
+                      {!sellable ? (
+                        <span className="rounded bg-rose-100 px-1.5 text-[10px] font-semibold text-rose-600 dark:bg-rose-900/40 dark:text-rose-300">หมด</span>
+                      ) : av?.remaining != null ? (
+                        <span className="rounded bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">เหลือ {av.remaining}</span>
+                      ) : null}
+                    </div>
                   </div>
                 </button>
               );
