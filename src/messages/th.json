@@ -184,6 +184,10 @@
       "name": "คอมมิชชั่น",
       "description": "AE Commission & Bottle Commission"
     },
+    "hr": {
+      "name": "บุคคล (HR)",
+      "description": "ข้อมูลพนักงาน เวลา เงินเดือน และประเมินผล"
+    },
     "repairNew": {
       "name": "แจ้งซ่อม",
       "description": "แจ้งอุปกรณ์ที่เสียในสาขา"
@@ -245,6 +249,7 @@
     "main": "หลัก",
     "warehouse": "คลังสินค้า",
     "commission": "คอมมิชชั่น",
+    "hr": "บุคคล (HR)",
     "maintenance": "งานซ่อมบำรุง",
     "reports": "รายงาน",
     "analytics": "วิเคราะห์",
@@ -2597,7 +2602,31 @@
       "can_manage_commission": {
         "label": "จัดการคอมมิชชั่น",
         "description": "บันทึกและจ่ายค่าคอมมิชชั่น AE"
+      },
+      "can_manage_hr": {
+        "label": "จัดการงานบุคคล (HR)",
+        "description": "เข้าถึงข้อมูลพนักงาน เวลา เงินเดือน และประเมินผล"
       }
+    }
+  },
+  "hr": {
+    "title": "บุคคล (HR)",
+    "subtitle": "ข้อมูลพนักงาน เวลา เงินเดือน และประเมินผล",
+    "dashboard": "แดชบอร์ด HR",
+    "comingSoon": "ส่วนนี้กำลังพัฒนา",
+    "nav": {
+      "employees": "พนักงาน",
+      "attendance": "ลงเวลา",
+      "schedule": "ตารางงาน",
+      "leave": "การลา",
+      "warnings": "ใบเตือน",
+      "payroll": "เงินเดือน",
+      "serviceCharge": "เซอร์วิสชาร์จ",
+      "evaluation": "ประเมินผล",
+      "assets": "ทรัพย์สิน",
+      "policies": "นโยบาย",
+      "announcements": "ประกาศ",
+      "reports": "รายงาน"
     }
   },
   "reports": {

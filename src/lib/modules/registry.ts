@@ -177,6 +177,19 @@ export const modules: ModuleConfig[] = [
   },
   */
 
+  // ─── HR (บุคคล) — เห็นเฉพาะ owner + ผู้มีสิทธิ์ can_manage_hr ───
+  {
+    id: 'hr',
+    nameKey: 'modules.hr.name',
+    descriptionKey: 'modules.hr.description',
+    icon: 'user-cog',
+    color: 'teal',
+    href: '/hr',
+    roles: ['owner'],
+    permission: 'can_manage_hr',
+    groupKey: 'moduleGroups.hr',
+  },
+
   // ─── รายงาน ───
   {
     id: 'reports',

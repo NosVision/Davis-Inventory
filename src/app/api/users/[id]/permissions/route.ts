@@ -17,6 +17,9 @@ const ALL_PERMISSIONS: Permission[] = [
   'can_request_withdrawal',
   'can_borrow',
   'can_manage_commission',
+  'can_request_repair',
+  'can_manage_repair',
+  'can_manage_hr',
 ];
 
 async function assertOwner() {

@@ -184,6 +184,10 @@
       "name": "Commission",
       "description": "AE Commission & Bottle Commission"
     },
+    "hr": {
+      "name": "HR",
+      "description": "Employee records, attendance, payroll & evaluation"
+    },
     "repairNew": {
       "name": "Report Repair",
       "description": "Report broken equipment at your branch"
@@ -245,6 +249,7 @@
     "main": "Main",
     "warehouse": "Warehouse",
     "commission": "Commission",
+    "hr": "HR",
     "maintenance": "Maintenance",
     "reports": "Reports",
     "analytics": "Analytics",
@@ -2596,7 +2601,31 @@
       "can_manage_commission": {
         "label": "Manage commission",
         "description": "Record and pay AE commissions"
+      },
+      "can_manage_hr": {
+        "label": "Manage HR",
+        "description": "Access employee records, attendance, payroll and evaluation"
       }
+    }
+  },
+  "hr": {
+    "title": "HR",
+    "subtitle": "Employee records, attendance, payroll & evaluation",
+    "dashboard": "HR Dashboard",
+    "comingSoon": "This section is under construction",
+    "nav": {
+      "employees": "Employees",
+      "attendance": "Attendance",
+      "schedule": "Schedule",
+      "leave": "Leave",
+      "warnings": "Warnings",
+      "payroll": "Payroll",
+      "serviceCharge": "Service Charge",
+      "evaluation": "Evaluation",
+      "assets": "Assets",
+      "policies": "Policies",
+      "announcements": "Announcements",
+      "reports": "Reports"
     }
   },
   "reports": {

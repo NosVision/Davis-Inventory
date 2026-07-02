@@ -14,7 +14,8 @@ export type Permission =
   | 'can_borrow'
   | 'can_manage_commission'
   | 'can_request_repair'
-  | 'can_manage_repair';
+  | 'can_manage_repair'
+  | 'can_manage_hr';
 
 export const ROLE_PERMISSIONS: Record<UserRole, Permission[] | ['*']> = {
   owner: ['*'],
