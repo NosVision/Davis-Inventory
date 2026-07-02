@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
+import { bahtToSatang } from '@/lib/pos/money';
+import { isForeignKeyViolation, isUniqueViolation } from '@/lib/hr/db-errors';
 
 const TABLE = 'hr_assets';
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';
@@ -61,9 +63,31 @@ export async function POST(request: NextRequest) {
   const name = typeof body.name === 'string' ? body.name.trim() : '';
   if (!name) return NextResponse.json({ error: 'Name is required' }, { status: 400 });
 
-  const valueSatang = Math.round((Number(body.value_baht) || 0) * 100);
-  const status =
-    typeof body.status === 'string' && ALLOWED_STATUSES.includes(body.status) ? body.status : 'in_stock';
+  let valueSatang = 0;
+  if ('value_baht' in body) {
+    const raw = Number(body.value_baht);
+    if (!Number.isFinite(raw) || raw < 0) {
+      return NextResponse.json({ error: 'Value must be a non-negative number' }, { status: 400 });
+    }
+    valueSatang = bahtToSatang(raw);
+  }
+
+  let status = 'in_stock';
+  if ('status' in body) {
+    if (typeof body.status !== 'string' || !ALLOWED_STATUSES.includes(body.status)) {
+      return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
+    }
+    status = body.status;
+  }
+
+  // Effective holder must be consistent with effective status.
+  let holderId = typeof body.holder_id === 'string' && body.holder_id ? body.holder_id : null;
+  if (status === 'issued' && !holderId) {
+    return NextResponse.json({ error: 'An issued asset requires a holder' }, { status: 400 });
+  }
+  if (status === 'returned' || status === 'in_stock') {
+    holderId = null;
+  }
 
   const service = createServiceClient();
   const { data, error } = await service
@@ -72,7 +96,7 @@ export async function POST(request: NextRequest) {
       name,
       category: typeof body.category === 'string' && body.category.trim() ? body.category.trim() : null,
       asset_code: typeof body.asset_code === 'string' && body.asset_code.trim() ? body.asset_code.trim() : null,
-      holder_id: typeof body.holder_id === 'string' && body.holder_id ? body.holder_id : null,
+      holder_id: holderId,
       value_satang: valueSatang,
       status,
       issued_date: typeof body.issued_date === 'string' && body.issued_date ? body.issued_date : null,
@@ -83,7 +107,11 @@ export async function POST(request: NextRequest) {
     .select('*')
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    if (isUniqueViolation(error)) return NextResponse.json({ error: 'Asset code already exists' }, { status: 409 });
+    if (isForeignKeyViolation(error)) return NextResponse.json({ error: 'Holder not found' }, { status: 400 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 
   await logHrAudit(service, {
     actorId: auth.userId,

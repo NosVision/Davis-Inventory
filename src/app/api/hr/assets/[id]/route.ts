@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
+import { bahtToSatang } from '@/lib/pos/money';
+import { isForeignKeyViolation, isUniqueViolation } from '@/lib/hr/db-errors';
 
 const TABLE = 'hr_assets';
 const ALLOWED_STATUSES = ['in_stock', 'issued', 'returned', 'lost', 'damaged'];
@@ -41,7 +43,11 @@ export async function PUT(
     update.holder_id = typeof body.holder_id === 'string' && body.holder_id ? body.holder_id : null;
   }
   if ('value_baht' in body) {
-    update.value_satang = Math.round((Number(body.value_baht) || 0) * 100);
+    const raw = Number(body.value_baht);
+    if (!Number.isFinite(raw) || raw < 0) {
+      return NextResponse.json({ error: 'Value must be a non-negative number' }, { status: 400 });
+    }
+    update.value_satang = bahtToSatang(raw);
   }
   if ('status' in body) {
     const status = body.status;
@@ -60,13 +66,27 @@ export async function PUT(
     update.notes = typeof body.notes === 'string' && body.notes.trim() ? body.notes.trim() : null;
   }
 
+  // Effective holder must be consistent with effective status.
+  const effectiveStatus = ('status' in update ? update.status : current.status) as string;
+  const effectiveHolderId = ('holder_id' in update ? update.holder_id : current.holder_id) as string | null;
+  if (effectiveStatus === 'issued' && !effectiveHolderId) {
+    return NextResponse.json({ error: 'An issued asset requires a holder' }, { status: 400 });
+  }
+  if (effectiveStatus === 'returned' || effectiveStatus === 'in_stock') {
+    update.holder_id = null;
+  }
+
   const { data, error } = await service
     .from(TABLE)
     .update(update)
     .eq('id', id)
     .select('*')
     .single();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    if (isUniqueViolation(error)) return NextResponse.json({ error: 'Asset code already exists' }, { status: 409 });
+    if (isForeignKeyViolation(error)) return NextResponse.json({ error: 'Holder not found' }, { status: 400 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 
   await logHrAudit(service, {
     actorId: auth.userId,
