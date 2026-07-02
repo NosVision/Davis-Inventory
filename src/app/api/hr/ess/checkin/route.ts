@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { haversineMeters, isValidLat, isValidLng } from '@/lib/hr/geo';
+import { assessIp } from '@/lib/hr/ip-geo';
+import { getClientIp } from '@/lib/hr/request-ip';
 import { openBusinessDateBangkok } from '@/lib/utils/date';
 
 const BUCKET = 'hr-documents';
@@ -151,20 +153,39 @@ export async function POST(request: NextRequest) {
     // else: multiple stores, none with a geofence → store_id stays null (ambiguous).
   }
 
-  // --- Server-side IP capture (ip_country / is_vpn_suspect deferred to P2.1c) ---
-  const ip =
-    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-    request.headers.get('x-real-ip');
+  // --- Server-side IP capture; ip_country / is_vpn_suspect are assessed below (§F, P2.1c).
+  // getClientIp prefers the platform-set x-real-ip over the client-prependable leftmost
+  // x-forwarded-for hop, so a staffer can't spoof a clean IP to dodge the anti-VPN check. ---
+  const ip = getClientIp(request.headers);
 
-  // --- Upload selfie to the private bucket; persist only the path ---
+  // --- Upload selfie to the private bucket; persist only the path.
+  // Run the IP assessment CONCURRENTLY with the upload — they're independent, so we
+  // don't add serial latency. The IP assessment never throws (best-effort). ---
   const rand = Math.random().toString(36).slice(2, 10);
   const path = `attendance/${user.id}/${Date.now()}-${rand}.jpg`;
-  const { error: uploadErr } = await service.storage.from(BUCKET).upload(path, buffer, {
-    contentType,
-    cacheControl: '3600',
-    upsert: false,
-  });
-  if (uploadErr) return NextResponse.json({ error: uploadErr.message }, { status: 500 });
+  const [uploadResult, ipAssessment] = await Promise.all([
+    service.storage.from(BUCKET).upload(path, buffer, {
+      contentType,
+      cacheControl: '3600',
+      upsert: false,
+    }),
+    assessIp(ip),
+  ]);
+  if (uploadResult.error)
+    return NextResponse.json({ error: uploadResult.error.message }, { status: 500 });
+
+  // --- Final anti-VPN / GPS-spoof flag: datacenter/proxy IP OR a gross IP-vs-GPS geo
+  // mismatch. IP geolocation is coarse, so use a LARGE threshold to avoid false positives,
+  // and SKIP the geo signal for mobile connections — mobile carriers (CGNAT) geolocate
+  // their egress far from the subscriber, which would false-flag honest up-country staff. ---
+  const IP_GPS_MISMATCH_M = 500_000; // 500 km — coarse IP geo; only flag gross mismatches
+  const geoMismatch =
+    !ipAssessment.isMobile &&
+    ipAssessment.lat !== null &&
+    ipAssessment.lng !== null &&
+    haversineMeters(gpsLat, gpsLng, ipAssessment.lat, ipAssessment.lng) > IP_GPS_MISMATCH_M;
+  const isVpnSuspect = ipAssessment.is_vpn_suspect || geoMismatch;
+  const ipCountry = ipAssessment.country;
 
   const ts = new Date().toISOString();
   const device = (typeof body.device === 'string' ? body.device : '').slice(0, 300);
@@ -181,6 +202,8 @@ export async function POST(request: NextRequest) {
     in_geofence: inGeofence,
     photo_url: path,
     ip,
+    ip_country: ipCountry,
+    is_vpn_suspect: isVpnSuspect,
     device,
   });
   if (insertErr) {
