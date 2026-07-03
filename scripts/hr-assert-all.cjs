@@ -12,6 +12,7 @@ const SUITES = [
   'hr-eval-assert.cjs',      // P5.1 evaluation compute + payout + aggregation
   'hr-tax-reports-assert.cjs', // P5.2 ภงด.1/สปส/50ทวิ + P5.4 register/labor-cost
   'hr-sc-assert.cjs',        // P4.1 §H SC deductions + §G↔§H eval bridge
+  'hr-misc-assert.cjs',      // bank-transfer (BBL) + eval-config (15-criteria template)
 ];
 
 let failed = 0;
