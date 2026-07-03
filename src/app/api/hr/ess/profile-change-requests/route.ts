@@ -16,6 +16,16 @@ function nonEmptyString(v: unknown): v is string {
   return typeof v === 'string' && v.trim() !== '';
 }
 
+// Mask a bank account number to its last 4 digits (mirrors /api/hr/ess/profile). The
+// snapshotted current_value is returned to the employee (POST 201 + own GET), so storing the
+// full number there would defeat the P0 masking gate — mask it before it is ever persisted.
+function maskAccountNo(no: string | null | undefined): string | null {
+  if (!no) return null;
+  const digits = no.replace(/\D/g, '');
+  if (digits.length <= 4) return '••••';
+  return `••••${digits.slice(-4)}`;
+}
+
 // Validate the requested new_value against the field's shape. Returns a normalized
 // object on success, or an error message string.
 function validateNewValue(
@@ -62,7 +72,7 @@ export async function POST(request: NextRequest) {
 
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const fieldKey = typeof body.field_key === 'string' ? body.field_key : '';
-  const reason = typeof body.reason === 'string' ? body.reason.trim() : null;
+  const reason = typeof body.reason === 'string' ? body.reason.trim().slice(0, 500) : null;
 
   if (!FIELD_KEYS.includes(fieldKey)) {
     return NextResponse.json({ error: 'field_key must be bank_account or emergency_contact' }, { status: 400 });
@@ -86,7 +96,8 @@ export async function POST(request: NextRequest) {
     fieldKey === 'bank_account'
       ? {
           bank_name: (emp.bank_name as string | null) ?? null,
-          bank_account_no: (emp.bank_account_no as string | null) ?? null,
+          // masked — the snapshot is echoed back to the employee, so never store the full no.
+          bank_account_no: maskAccountNo(emp.bank_account_no as string | null),
           bank_account_name: (emp.bank_account_name as string | null) ?? null,
         }
       : (emp.emergency_contact ?? null);
