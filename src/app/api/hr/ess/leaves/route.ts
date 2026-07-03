@@ -204,12 +204,17 @@ export async function POST(request: NextRequest) {
   }
 
   // Abuse guard: cap open (pending) requests. The partial-unique index is the
-  // race-proof backstop for exact-range duplicates.
-  const { data: pendings } = await service
+  // race-proof backstop for exact-range duplicates. Fail CLOSED on a query error —
+  // never let a transient DB blip silently bypass the cap.
+  const { data: pendings, error: pendingsErr } = await service
     .from(TABLE)
     .select('id')
     .eq('user_id', user.id)
     .eq('status', 'pending');
+  if (pendingsErr) {
+    await removeCert();
+    return NextResponse.json({ error: 'Failed to check open leave requests' }, { status: 500 });
+  }
   if ((pendings ?? []).length >= MAX_OPEN_LEAVES) {
     await removeCert();
     return NextResponse.json({ error: 'Too many open leave requests' }, { status: 429 });

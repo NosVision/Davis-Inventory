@@ -125,10 +125,12 @@ export default function HrLeavesPage() {
   );
 
   const viewCert = useCallback(
-    async (id: string, path: string) => {
+    async (id: string) => {
       setCertLoadingId(id);
       try {
-        const res = await fetch(`/api/hr/documents?path=${encodeURIComponent(path)}`);
+        // Store-scoped cert viewer: authorized to whoever may decide this leave
+        // (store manager or HR), unlike the HR-only /api/hr/documents endpoint.
+        const res = await fetch(`/api/hr/leaves/${id}/cert`);
         const json = await res.json().catch(() => ({}));
         if (!res.ok || !json?.url) throw new Error();
         window.open(json.url as string, '_blank', 'noopener,noreferrer');
@@ -249,7 +251,7 @@ export default function HrLeavesPage() {
                   {r.cert_path && (
                     <button
                       type="button"
-                      onClick={() => viewCert(r.id, r.cert_path as string)}
+                      onClick={() => viewCert(r.id)}
                       disabled={certLoadingId === r.id}
                       className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline disabled:opacity-60 dark:text-indigo-400"
                     >
