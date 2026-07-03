@@ -19,6 +19,7 @@ import {
   Megaphone,
   ShieldCheck,
   BarChart3,
+  ClipboardList,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -33,6 +34,7 @@ const NAV_TILES: { key: string; icon: LucideIcon; href?: string }[] = [
   { key: 'schedule', icon: CalendarDays, href: '/hr/schedule' },
   { key: 'timesheet', icon: CalendarClock, href: '/hr/timesheet' },
   { key: 'swaps', icon: Repeat, href: '/hr/swaps' },
+  { key: 'requests', icon: ClipboardList, href: '/hr/requests' },
   { key: 'leave', icon: CalendarX },
   { key: 'warnings', icon: AlertTriangle },
   { key: 'payroll', icon: Wallet },
