@@ -1,0 +1,68 @@
+// HR Service Charge deduction math (P4.1, §H) — PURE, satang-exact.
+// A person's SC allocation is entered manually; these helpers compute how much is
+// deducted from it. Money is always integer satang. Deductions can exceed a single
+// period's allocation (notably a 200% warning = 2 months of SC), in which case the
+// overflow is CARRIED to the next period rather than lost or going negative.
+
+export const SC_DAY_DIVISOR = 30; // §A/§H: a leave day docks 1/30 of the month's SC.
+
+export interface ScDeductionResult {
+  /** deducted from THIS period's allocation (never exceeds `allocated`) */
+  amount_satang: number;
+  /** overflow to carry to the next period (e.g. the 2nd month of a 200% warning) */
+  carry_satang: number;
+}
+
+/** Clamp a raw deduction to the allocation, carrying any overflow. */
+function splitWithCarry(rawDeduct: number, allocated: number): ScDeductionResult {
+  const raw = Math.max(0, Math.round(rawDeduct));
+  const amount = Math.min(raw, Math.max(0, allocated));
+  return { amount_satang: amount, carry_satang: raw - amount };
+}
+
+export interface WarningScInput {
+  /** verbal | deduct_25 | deduct_50 | deduct_100 | deduct_200 | amount_baht */
+  level: string;
+  /** 25 | 50 | 100 | 200 for the percent levels, else null */
+  sc_deduct_percent: number | null;
+  /** set only for level='amount_baht' */
+  amount_satang: number | null;
+}
+
+/**
+ * §H warning → SC deduction. Percent levels deduct that % of the person's SC for the
+ * month ("% ของยอด SC ที่คนนั้นได้เดือนนั้น"); 200% therefore takes the full month plus a
+ * full-month carry (SC 2 เดือน). A free-form baht warning deducts the fixed amount, carrying
+ * any part that exceeds this month's allocation. A verbal warning deducts nothing.
+ */
+export function computeWarningScDeduction(
+  allocated: number,
+  w: WarningScInput,
+): ScDeductionResult {
+  if (w.level === 'amount_baht') {
+    return splitWithCarry(w.amount_satang ?? 0, allocated);
+  }
+  if (typeof w.sc_deduct_percent === 'number' && w.sc_deduct_percent > 0) {
+    return splitWithCarry((allocated * w.sc_deduct_percent) / 100, allocated);
+  }
+  // verbal / no SC effect
+  return { amount_satang: 0, carry_satang: 0 };
+}
+
+/**
+ * §H leave → SC deduction. Each SC-deducting leave day docks 1/30 of the month's SC
+ * (personal leave and sick-without-cert deduct SC; sick-with-cert also deducts SC but keeps
+ * salary — the caller decides `scLeaveDays` via classifyLeaveEffect). No carry.
+ */
+export function computeLeaveScDeduction(allocated: number, scLeaveDays: number): ScDeductionResult {
+  if (scLeaveDays <= 0 || allocated <= 0) return { amount_satang: 0, carry_satang: 0 };
+  const raw = Math.round((allocated * scLeaveDays) / SC_DAY_DIVISOR);
+  const amount = Math.min(raw, allocated);
+  return { amount_satang: amount, carry_satang: 0 };
+}
+
+/** Net SC = allocation − total deducted this period, floored at 0. */
+export function computeNetSc(allocated: number, deductions: { amount_satang: number }[]): number {
+  const total = deductions.reduce((s, d) => s + Math.max(0, d.amount_satang), 0);
+  return Math.max(0, allocated - total);
+}
