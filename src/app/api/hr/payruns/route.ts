@@ -1,0 +1,456 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { createServiceClient } from '@/lib/supabase/server';
+import { requireHrManager } from '@/lib/hr/route-auth';
+import { logHrAudit } from '@/lib/hr/audit';
+import {
+  computeDaySummary,
+  applyOverride,
+  type Punch,
+  type DaySummary,
+  type TimesheetOverride,
+} from '@/lib/hr/time-engine';
+import { classifyLeaveEffect, countLeaveDays, enumerateDates } from '@/lib/hr/leaves';
+import { computePayslip, type PayrollInput, type PayslipLine, type PayType, type TaxMode } from '@/lib/hr/payroll';
+
+const DEFAULT_WORK_HOURS = 9;
+
+// ── cycle date math: pay period is the 26th of the prev month → 25th of the period month;
+// pay date is the last day of the period month (§E). All UTC-date arithmetic (dates only).
+function pad(n: number): string {
+  return String(n).padStart(2, '0');
+}
+function cycleDates(year: number, month: number): { start: string; end: string; payDate: string } {
+  // month is 1..12; cycle_start = (month-1)/26, cycle_end = month/25.
+  const startMonth = month === 1 ? 12 : month - 1;
+  const startYear = month === 1 ? year - 1 : year;
+  const start = `${startYear}-${pad(startMonth)}-26`;
+  const end = `${year}-${pad(month)}-25`;
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate(); // day 0 of next month
+  const payDate = `${year}-${pad(month)}-${pad(lastDay)}`;
+  return { start, end, payDate };
+}
+function dateRange(from: string, to: string): string[] {
+  const out: string[] = [];
+  let cur = new Date(`${from}T00:00:00Z`).getTime();
+  const end = new Date(`${to}T00:00:00Z`).getTime();
+  let guard = 0;
+  while (cur <= end && guard < 400) {
+    out.push(new Date(cur).toISOString().slice(0, 10));
+    cur += 86_400_000;
+    guard++;
+  }
+  return out;
+}
+
+interface EmployeeFull {
+  id: string;
+  profile_id: string;
+  rate_satang: number;
+  pay_type: string;
+  work_hours_per_day: number | null;
+  ot_eligible: boolean | null;
+  ot_hour_divisor: number | null;
+  tax_mode: string;
+  sso_enrolled: boolean;
+  status: string | null;
+}
+interface ScheduleCell {
+  user_id: string;
+  work_date: string;
+  is_day_off: boolean;
+  shift: { start_time: string; end_time: string } | null;
+}
+interface LeaveRow {
+  id: string;
+  user_id: string;
+  leave_type_id: string;
+  from_date: string;
+  to_date: string;
+  cert_path: string | null;
+}
+
+interface AssembledLine {
+  earnings: PayslipLine[];
+  deductions: PayslipLine[];
+  gross: number;
+  sso: number;
+  tax: number;
+  totalDed: number;
+  net: number;
+  workedDays: number;
+}
+
+// POST /api/hr/payruns — generate a payrun for a company (optionally one store) over a pay
+// cycle (§A). HR only. For each active employee we assemble the timesheet aggregate, the
+// classified approved leaves, recurring items, approved claims, and net Service Charge, then
+// run the PURE payroll engine and persist the itemized result. Idempotent per cycle via the
+// unique index; re-generating a DRAFT payrun rebuilds its payslips (finalized → 409).
+export async function POST(request: NextRequest) {
+  const auth = await requireHrManager();
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
+  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  const companyId = typeof body.company_id === 'string' ? body.company_id : '';
+  const storeId = typeof body.store_id === 'string' && body.store_id ? body.store_id : null;
+  const year = Number(body.period_year);
+  const month = Number(body.period_month);
+  if (!companyId) return NextResponse.json({ error: 'company_id is required' }, { status: 400 });
+  if (!Number.isInteger(year) || year < 2000 || year > 2100)
+    return NextResponse.json({ error: 'invalid period_year' }, { status: 400 });
+  if (!Number.isInteger(month) || month < 1 || month > 12)
+    return NextResponse.json({ error: 'invalid period_month' }, { status: 400 });
+
+  const { start, end, payDate } = cycleDates(year, month);
+  const service = createServiceClient();
+
+  // Company config for the engine.
+  const { data: company, error: companyErr } = await service
+    .from('hr_companies')
+    .select('id, sso_rate, sso_wage_ceiling_satang, day_divisor, ot_multipliers')
+    .eq('id', companyId)
+    .maybeSingle();
+  if (companyErr) return NextResponse.json({ error: 'Failed to load company' }, { status: 500 });
+  if (!company) return NextResponse.json({ error: 'Company not found' }, { status: 404 });
+  const engineCompany = {
+    sso_rate: Number(company.sso_rate) || 0.05,
+    sso_wage_ceiling_satang: Number(company.sso_wage_ceiling_satang) || 1_750_000,
+    day_divisor: Number(company.day_divisor) || 30,
+    ot1_multiplier: Number((company.ot_multipliers as { ot1?: number } | null)?.ot1) || 1.5,
+  };
+
+  // Active employees of the company (optionally one store).
+  const { data: empRows, error: empErr } = await service
+    .from('hr_employees')
+    .select(
+      'id, profile_id, rate_satang, pay_type, work_hours_per_day, ot_eligible, ot_hour_divisor, tax_mode, sso_enrolled, status'
+    )
+    .eq('company_id', companyId)
+    .not('status', 'in', '(resigned,terminated)');
+  if (empErr) return NextResponse.json({ error: 'Failed to load employees' }, { status: 500 });
+  let employees = (empRows ?? []) as EmployeeFull[];
+
+  if (storeId) {
+    const { data: members, error: memErr } = await service
+      .from('user_stores')
+      .select('user_id')
+      .eq('store_id', storeId);
+    if (memErr) return NextResponse.json({ error: 'Failed to load store staff' }, { status: 500 });
+    const memberSet = new Set((members ?? []).map((m: { user_id: string }) => m.user_id));
+    employees = employees.filter((e) => memberSet.has(e.profile_id));
+  }
+  const userIds = employees.map((e) => e.profile_id);
+
+  // Upsert the payrun (draft). A finalized payrun must not be regenerated. The
+  // company-wide bucket is the store_id IS NULL row; a store-scoped run matches store_id.
+  let existingQuery = service
+    .from('hr_payruns')
+    .select('id, status')
+    .eq('company_id', companyId)
+    .eq('period_year', year)
+    .eq('period_month', month);
+  existingQuery = storeId ? existingQuery.eq('store_id', storeId) : existingQuery.is('store_id', null);
+  const { data: existing } = await existingQuery.maybeSingle();
+  let payrun = existing;
+  if (payrun && payrun.status === 'finalized') {
+    return NextResponse.json({ error: 'Payrun is finalized; reopen before regenerating' }, { status: 409 });
+  }
+  if (!payrun) {
+    const { data: created, error: createErr } = await service
+      .from('hr_payruns')
+      .insert({
+        company_id: companyId,
+        store_id: storeId,
+        period_year: year,
+        period_month: month,
+        cycle_start: start,
+        cycle_end: end,
+        pay_date: payDate,
+        status: 'draft',
+        created_by: auth.userId,
+      })
+      .select('id, status')
+      .single();
+    if (createErr) return NextResponse.json({ error: 'Failed to create payrun' }, { status: 500 });
+    payrun = created;
+  } else {
+    // Rebuild: drop prior payslips (cascade clears their lines).
+    await service.from('hr_payslips').delete().eq('payrun_id', payrun.id);
+  }
+  const payrunId = payrun.id;
+
+  if (userIds.length === 0) {
+    await logHrAudit(service, {
+      actorId: auth.userId, action: 'create', table: 'hr_payruns', recordId: payrunId,
+      before: null, after: { period: `${year}-${month}`, employees: 0 }, reason: 'payrun generated (no employees)',
+    });
+    return NextResponse.json({ data: { id: payrunId, cycle_start: start, cycle_end: end, pay_date: payDate, payslips: 0 } });
+  }
+
+  // Bulk-load everything for the cycle in parallel.
+  const dates = dateRange(start, end);
+  const [scheduleRes, attendanceRes, overridesRes, leavesRes, leaveTypesRes, holidaysRes, recurringRes, scRes, claimsRes] =
+    await Promise.all([
+      service
+        .from('hr_schedule')
+        .select('user_id, work_date, is_day_off, shift:hr_shift_templates(start_time, end_time)')
+        .in('user_id', userIds)
+        .gte('work_date', start)
+        .lte('work_date', end),
+      service
+        .from('hr_attendance')
+        .select('user_id, type, ts, business_date')
+        .in('user_id', userIds)
+        .gte('business_date', start)
+        .lte('business_date', end),
+      service
+        .from('hr_timesheet_overrides')
+        .select('user_id, business_date, worked_min, late_min, ot_min, absent, reason')
+        .in('user_id', userIds)
+        .gte('business_date', start)
+        .lte('business_date', end),
+      service
+        .from('hr_leaves')
+        .select('id, user_id, leave_type_id, from_date, to_date, cert_path')
+        .in('user_id', userIds)
+        .eq('status', 'approved')
+        .lte('from_date', end)
+        .gte('to_date', start),
+      service.from('hr_leave_types').select('id, code, paid'),
+      service.from('hr_holidays').select('holiday_date').eq('company_id', companyId).eq('active', true),
+      service.from('hr_employee_recurring').select('employee_id, kind, code, label, amount_satang').eq('active', true),
+      // Net SC for THIS work month only (pool.period_month = first-of-month of the period).
+      service
+        .from('hr_sc_allocations')
+        .select('user_id, allocated_satang, pool:hr_sc_pools!inner(period_month), hr_sc_deductions(amount_satang)')
+        .eq('pool.period_month', `${year}-${pad(month)}-01`),
+      service
+        .from('hr_claims')
+        .select('id, user_id, amount_satang, description')
+        .in('user_id', userIds)
+        .eq('status', 'approved')
+        .is('payslip_earning_id', null),
+    ]);
+  const anyErr =
+    scheduleRes.error || attendanceRes.error || overridesRes.error || leavesRes.error ||
+    leaveTypesRes.error || holidaysRes.error || recurringRes.error || scRes.error || claimsRes.error;
+  if (anyErr) return NextResponse.json({ error: 'Failed to load payroll inputs' }, { status: 500 });
+
+  // Index the bulk data.
+  const schedByCell = new Map<string, ScheduleCell>(
+    ((scheduleRes.data ?? []) as unknown as ScheduleCell[]).map((s) => [`${s.user_id}|${s.work_date}`, s])
+  );
+  const punchesByCell = new Map<string, Punch[]>();
+  for (const a of (attendanceRes.data ?? []) as { user_id: string; type: Punch['type']; ts: string; business_date: string }[]) {
+    const key = `${a.user_id}|${a.business_date}`;
+    const list = punchesByCell.get(key) ?? [];
+    list.push({ type: a.type, ts: a.ts });
+    punchesByCell.set(key, list);
+  }
+  const overrideByCell = new Map<string, TimesheetOverride>(
+    ((overridesRes.data ?? []) as { user_id: string; business_date: string; worked_min: number | null; late_min: number | null; ot_min: number | null; absent: boolean | null; reason: string | null }[]).map((o) => [
+      `${o.user_id}|${o.business_date}`,
+      { worked_min: o.worked_min, late_min: o.late_min, ot_min: o.ot_min, absent: o.absent, reason: o.reason },
+    ])
+  );
+  const leaveTypeById = new Map(
+    ((leaveTypesRes.data ?? []) as { id: string; code: string; paid: boolean }[]).map((t) => [t.id, t])
+  );
+  const holidaySet = new Set(((holidaysRes.data ?? []) as { holiday_date: string }[]).map((h) => h.holiday_date));
+  const leavesByUser = new Map<string, LeaveRow[]>();
+  for (const lv of (leavesRes.data ?? []) as LeaveRow[]) {
+    const list = leavesByUser.get(lv.user_id) ?? [];
+    list.push(lv);
+    leavesByUser.set(lv.user_id, list);
+  }
+  const recurringByEmp = new Map<string, { kind: string; code: string; label: string; amount_satang: number }[]>();
+  for (const r of (recurringRes.data ?? []) as { employee_id: string; kind: string; code: string; label: string; amount_satang: number }[]) {
+    const list = recurringByEmp.get(r.employee_id) ?? [];
+    list.push(r);
+    recurringByEmp.set(r.employee_id, list);
+  }
+  // net SC per user = allocated − Σ deductions, floored at 0 (P4.1).
+  const scNetByUser = new Map<string, number>();
+  for (const a of (scRes.data ?? []) as { user_id: string; allocated_satang: number; hr_sc_deductions: { amount_satang: number }[] }[]) {
+    const ded = (a.hr_sc_deductions ?? []).reduce((s, d) => s + Math.max(0, d.amount_satang), 0);
+    const net = Math.max(0, a.allocated_satang - ded);
+    scNetByUser.set(a.user_id, (scNetByUser.get(a.user_id) ?? 0) + net);
+  }
+  const claimsByUser = new Map<string, { id: string; amount_satang: number; description: string }[]>();
+  for (const c of (claimsRes.data ?? []) as { id: string; user_id: string; amount_satang: number; description: string }[]) {
+    const list = claimsByUser.get(c.user_id) ?? [];
+    list.push(c);
+    claimsByUser.set(c.user_id, list);
+  }
+
+  // Per-employee: assemble → compute → collect for insert.
+  const assembled: { emp: EmployeeFull; slip: AssembledLine; claimIds: string[] }[] = [];
+  for (const emp of employees) {
+    const uid = emp.profile_id;
+    const workHours = emp.work_hours_per_day ?? DEFAULT_WORK_HOURS;
+    const otEligible = emp.ot_eligible ?? false;
+
+    // Timesheet days over the cycle.
+    const days: DaySummary[] = dates.map((date) => {
+      const cell = schedByCell.get(`${uid}|${date}`);
+      const derived = computeDaySummary({
+        businessDate: date,
+        shift: cell?.shift ?? null,
+        isDayOff: cell?.is_day_off ?? false,
+        hasSchedule: !!cell,
+        punches: punchesByCell.get(`${uid}|${date}`) ?? [],
+        workHoursPerDay: workHours,
+        otEligible,
+      });
+      return applyOverride(derived, overrideByCell.get(`${uid}|${date}`));
+    });
+
+    const workedDays = days.filter((d) => d.first_in).length;
+    const ptHours = days.reduce((s, d) => s + (d.worked_min ?? 0), 0) / 60;
+    const otMinutes = days.reduce((s, d) => s + d.ot_min, 0);
+    const lateOccurrences = days.map((d) => d.late_min ?? 0).filter((m) => m > 0);
+
+    // Classified leaves overlapping the cycle → salary/travel day counts + covered dates.
+    const leaveCovered = new Set<string>();
+    const engineLeaves = (leavesByUser.get(uid) ?? []).map((lv) => {
+      const t = leaveTypeById.get(lv.leave_type_id);
+      const effect = classifyLeaveEffect({ code: t?.code ?? 'other', paid: t?.paid ?? false }, !!lv.cert_path);
+      const from = lv.from_date < start ? start : lv.from_date;
+      const to = lv.to_date > end ? end : lv.to_date;
+      for (const d of enumerateDates(from, to)) if (!holidaySet.has(d)) leaveCovered.add(d);
+      const daysInCycle = countLeaveDays(from, to, holidaySet);
+      return {
+        leave_id: lv.id,
+        label: t?.code ?? 'leave',
+        salary_days: effect.deductSalary ? daysInCycle : 0,
+        travel_days: effect.deductTravel ? daysInCycle : 0,
+      };
+    });
+
+    // Unauthorized absence = absent timesheet days NOT covered by an approved leave.
+    const unauthorizedAbsentDays = days.filter((d) => d.absent && !leaveCovered.has(d.business_date)).length;
+
+    const recurring = recurringByEmp.get(emp.id) ?? [];
+    const allowances = recurring
+      .filter((r) => r.kind === 'earning')
+      .map((r) => ({ code: r.code, label: r.label, amount_satang: r.amount_satang }));
+    const recurringDeductions = recurring
+      .filter((r) => r.kind === 'deduction')
+      .map((r) => ({ type: mapDeductionType(r.code), label: r.label, amount_satang: r.amount_satang }));
+
+    const claimList = claimsByUser.get(uid) ?? [];
+    const extraEarnings = claimList.map((c) => ({
+      type: 'claim' as const, label: c.description || 'claim', amount_satang: c.amount_satang, ref: c.id,
+    }));
+
+    const input: PayrollInput = {
+      employee: {
+        rate_satang: emp.rate_satang,
+        pay_type: (emp.pay_type as PayType) || 'full_monthly',
+        ot_eligible: otEligible,
+        ot_hour_divisor: emp.ot_hour_divisor ?? workHours,
+        tax_mode: (emp.tax_mode as TaxMode) || 'progressive',
+        sso_enrolled: emp.sso_enrolled,
+      },
+      company: engineCompany,
+      timesheet: {
+        worked_days: workedDays,
+        pt_hours: ptHours,
+        ot_minutes_eligible: otMinutes,
+        late_minutes_per_occurrence: lateOccurrences,
+        unauthorized_absent_days: unauthorizedAbsentDays,
+      },
+      leaves: engineLeaves,
+      allowances,
+      recurringDeductions,
+      extraEarnings,
+      scNetSatang: scNetByUser.get(uid) ?? 0,
+    };
+    const slip = computePayslip(input);
+    assembled.push({
+      emp,
+      slip: {
+        earnings: slip.earnings, deductions: slip.deductions, gross: slip.gross_satang, sso: slip.sso_satang,
+        tax: slip.tax_satang, totalDed: slip.total_deduction_satang, net: slip.net_satang, workedDays,
+      },
+      claimIds: claimList.map((c) => c.id),
+    });
+  }
+
+  // Persist per employee: payslip + earning/deduction lines; link approved claims.
+  let created = 0;
+  for (const { emp, slip, claimIds } of assembled) {
+    const { data: ps, error: psErr } = await service
+      .from('hr_payslips')
+      .insert({
+        payrun_id: payrunId,
+        user_id: emp.profile_id,
+        employee_id: emp.id,
+        rate_satang: emp.rate_satang,
+        pay_type: emp.pay_type,
+        tax_mode: emp.tax_mode,
+        worked_days: slip.workedDays,
+        gross_satang: slip.gross,
+        sso_satang: slip.sso,
+        tax_satang: slip.tax,
+        total_deduction_satang: slip.totalDed,
+        net_satang: slip.net,
+      })
+      .select('id')
+      .single();
+    if (psErr || !ps) continue;
+
+    if (slip.earnings.length) {
+      await service.from('hr_payslip_earnings').insert(
+        slip.earnings.map((l, i) => ({ payslip_id: ps.id, type: l.type, label: l.label, amount_satang: l.amount_satang, ref: l.ref ?? null, sort: i }))
+      );
+    }
+    if (slip.deductions.length) {
+      await service.from('hr_payslip_deductions').insert(
+        slip.deductions.map((l, i) => ({ payslip_id: ps.id, type: l.type, label: l.label, amount_satang: l.amount_satang, ref: l.ref ?? null, created_by: auth.userId, sort: i }))
+      );
+    }
+    // Mark approved claims paid via this payslip (link the claim earning).
+    if (claimIds.length) {
+      const claimEarn = slip.earnings.find((l) => l.type === 'claim');
+      await service
+        .from('hr_claims')
+        .update({ status: 'paid', paid_at: new Date().toISOString(), payslip_earning_id: claimEarn ? ps.id : null })
+        .in('id', claimIds)
+        .eq('status', 'approved');
+    }
+    created++;
+  }
+
+  await logHrAudit(service, {
+    actorId: auth.userId, action: 'create', table: 'hr_payruns', recordId: payrunId,
+    before: null, after: { period: `${year}-${pad(month)}`, cycle: `${start}..${end}`, employees: created },
+    reason: 'payrun generated',
+  });
+
+  return NextResponse.json({
+    data: { id: payrunId, cycle_start: start, cycle_end: end, pay_date: payDate, payslips: created },
+  });
+}
+
+function mapDeductionType(code: string): 'student_loan' | 'advance' | 'guarantee' | 'loan' | 'other' {
+  if (code === 'student_loan' || code === 'advance' || code === 'guarantee' || code === 'loan') return code;
+  return 'other';
+}
+
+// GET /api/hr/payruns?company_id? — list payruns (HR only), newest first.
+export async function GET(request: NextRequest) {
+  const auth = await requireHrManager();
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
+  const companyId = request.nextUrl.searchParams.get('company_id');
+  const service = createServiceClient();
+  let q = service
+    .from('hr_payruns')
+    .select('id, company_id, store_id, period_year, period_month, cycle_start, cycle_end, pay_date, status, finalized_at, created_at')
+    .order('period_year', { ascending: false })
+    .order('period_month', { ascending: false });
+  if (companyId) q = q.eq('company_id', companyId);
+  const { data, error } = await q;
+  if (error) return NextResponse.json({ error: 'Failed to load payruns' }, { status: 500 });
+  return NextResponse.json({ data: data ?? [] });
+}
