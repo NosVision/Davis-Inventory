@@ -85,8 +85,14 @@ export interface PayrollEmployee {
   tax_mode: TaxMode;
   sso_enrolled: boolean;
   /** Annual ล.ย.01 tax allowances beyond the standard ฿60k personal one (spouse/child/
-   *  insurance/PVD/…), in BAHT. Optional — defaults to 0 (withholds as if none filed). */
+   *  insurance/…), in BAHT. Optional — defaults to 0 (withholds as if none filed). NOTE: the
+   *  employee's own PVD contribution is added automatically below and must NOT be double-counted
+   *  here. */
   tax_allowances_baht?: number;
+  /** Provident-fund enrolment + the employee's own contribution rate (fraction, e.g. 0.03).
+   *  Deducted from net and (annualized) added to the tax-allowance base. Full-time only. */
+  pvd_enrolled?: boolean;
+  pvd_employee_rate?: number;
 }
 
 export interface PayrollCompany {
@@ -132,6 +138,7 @@ export type DeductionType =
   | 'advance'
   | 'guarantee'
   | 'loan'
+  | 'provident_fund'
   | 'other';
 
 export interface PayslipLine {
@@ -273,12 +280,21 @@ export function computePayslip(input: PayrollInput): Payslip {
     sso = Math.min(raw, cap);
   }
 
+  // Provident fund (PVD): employee's own monthly contribution = base × rate (full-time enrolled
+  // only). It reduces net pay AND is tax-deductible — its annualized amount is added to the
+  // ล.ย.01 allowance base before computing withholding.
+  let pvd = 0;
+  if (emp.pvd_enrolled && !partTime && (emp.pvd_employee_rate ?? 0) > 0) {
+    pvd = Math.round(baseSalary * (emp.pvd_employee_rate as number));
+  }
+  const pvdAnnualBaht = (pvd / 100) * 12;
+
   // Tax: progressive PND1 | flat 3% withholding (on the labour base) | none.
   let tax = 0;
   if (emp.tax_mode === 'withholding_3pct') {
     tax = Math.round(baseSalary * 0.03);
   } else if (emp.tax_mode === 'progressive') {
-    tax = progressiveMonthlyTaxSatang(baseSalary, sso, emp.tax_allowances_baht ?? 0);
+    tax = progressiveMonthlyTaxSatang(baseSalary, sso, (emp.tax_allowances_baht ?? 0) + pvdAnnualBaht);
   }
 
   // ── Variable deductions (salary side only: leave / absent / late) ─────────
@@ -337,6 +353,16 @@ export function computePayslip(input: PayrollInput): Payslip {
     if (d.amount_satang > 0) {
       deductions.push({ type: d.type, label: d.label, amount_satang: d.amount_satang });
     }
+  }
+
+  // Provident fund contribution (employee side), before the statutory lines.
+  if (pvd > 0) {
+    deductions.push({
+      type: 'provident_fund',
+      label: 'provident_fund',
+      amount_satang: pvd,
+      ref: `${((emp.pvd_employee_rate as number) * 100).toFixed(2)}%`,
+    });
   }
 
   // Statutory lines go last in the itemized list (they always render as their own rows).

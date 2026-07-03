@@ -2831,6 +2831,7 @@
         "advance": "เบิกล่วงหน้า",
         "guarantee": "เงินประกัน",
         "loan": "ผ่อนกู้",
+        "provident_fund": "กองทุนสำรองเลี้ยงชีพ",
         "other": "อื่นๆ"
       },
       "payTypeVal": {

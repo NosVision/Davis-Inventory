@@ -2830,6 +2830,7 @@
         "advance": "Advance",
         "guarantee": "Guarantee deposit",
         "loan": "Loan",
+        "provident_fund": "Provident fund",
         "other": "Other"
       },
       "payTypeVal": {

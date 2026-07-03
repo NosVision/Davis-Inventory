@@ -52,6 +52,8 @@ interface EmployeeFull {
   ot_hour_divisor: number | null;
   tax_mode: string;
   sso_enrolled: boolean;
+  pvd_enrolled: boolean | null;
+  pvd_employee_rate: number | null;
   status: string | null;
 }
 interface TaxAllowanceRow {
@@ -126,7 +128,7 @@ export async function POST(request: NextRequest) {
   const { data: empRows, error: empErr } = await service
     .from('hr_employees')
     .select(
-      'id, profile_id, rate_satang, pay_type, work_hours_per_day, ot_eligible, ot_hour_divisor, tax_mode, sso_enrolled, status'
+      'id, profile_id, rate_satang, pay_type, work_hours_per_day, ot_eligible, ot_hour_divisor, tax_mode, sso_enrolled, pvd_enrolled, pvd_employee_rate, status'
     )
     .eq('company_id', companyId)
     .not('status', 'in', '(resigned,terminated)');
@@ -366,6 +368,8 @@ export async function POST(request: NextRequest) {
         tax_mode: (emp.tax_mode as TaxMode) || 'progressive',
         sso_enrolled: emp.sso_enrolled,
         tax_allowances_baht: (taxAllowBahtByEmp.get(emp.id) ?? 0) / 100,
+        pvd_enrolled: emp.pvd_enrolled ?? false,
+        pvd_employee_rate: emp.pvd_employee_rate ?? 0,
       },
       company: engineCompany,
       timesheet: {
