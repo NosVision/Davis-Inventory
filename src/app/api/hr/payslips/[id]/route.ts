@@ -36,16 +36,23 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const [earnRes, dedRes, payrunRes] = await Promise.all([
+  const [earnRes, dedRes, payrunRes, profRes] = await Promise.all([
     service.from('hr_payslip_earnings').select('type, label, amount_satang, ref, sort').eq('payslip_id', id).order('sort'),
     service.from('hr_payslip_deductions').select('type, label, amount_satang, reason, ref, sort').eq('payslip_id', id).order('sort'),
-    service.from('hr_payruns').select('id, company_id, period_year, period_month, cycle_start, cycle_end, pay_date, status').eq('id', slip.payrun_id).maybeSingle(),
+    service.from('hr_payruns').select('id, company_id, period_year, period_month, cycle_start, cycle_end, pay_date, status, company:hr_companies(name, address)').eq('id', slip.payrun_id).maybeSingle(),
+    service.from('profiles').select('username, display_name').eq('id', slip.user_id).maybeSingle(),
   ]);
   if (earnRes.error || dedRes.error) {
     return NextResponse.json({ error: 'Failed to load payslip lines' }, { status: 500 });
   }
 
+  const employeeName = profRes.data?.display_name || profRes.data?.username || '—';
   return NextResponse.json({
-    data: { payslip: slip, payrun: payrunRes.data ?? null, earnings: earnRes.data ?? [], deductions: dedRes.data ?? [] },
+    data: {
+      payslip: { ...slip, employee_name: employeeName },
+      payrun: payrunRes.data ?? null,
+      earnings: earnRes.data ?? [],
+      deductions: dedRes.data ?? [],
+    },
   });
 }
