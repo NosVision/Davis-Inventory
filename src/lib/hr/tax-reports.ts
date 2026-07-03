@@ -196,3 +196,94 @@ export function laborCostPct(totalLaborCostSatang: number, salesSatang: number):
   if (salesSatang <= 0) return null;
   return (totalLaborCostSatang / salesSatang) * 100;
 }
+
+// ── ภ.ง.ด.1ก (annual withholding summary, §J9) ────────────────────────────────
+// The year-end aggregate: per employee, sum ALL of the year's monthly slips into one line
+// (total income + total tax withheld); the summary totals feed the annual RD filing.
+export interface Pnd1kInput {
+  employee_id: string;
+  employee_name: string;
+  tax_id: string | null;
+  gross_satang: number;
+  tax_satang: number;
+}
+export interface Pnd1kLine {
+  employee_id: string;
+  employee_name: string;
+  tax_id: string | null;
+  months_count: number;
+  income_satang: number;
+  tax_satang: number;
+}
+export interface Pnd1kReport {
+  lines: Pnd1kLine[];
+  employee_count: number;
+  total_income_satang: number;
+  total_tax_satang: number;
+}
+
+/**
+ * Build ภ.ง.ด.1ก from a whole year's monthly slip rows (any month, any employee). Groups by
+ * employee, sums income + tax, and includes EVERY employee who had income during the year (even
+ * if their tax withheld was 0 — 1ก reports all employees, unlike the monthly 1 which lists only
+ * those with withholding). Lines sorted by name for a stable filing.
+ */
+export function buildPnd1k(rows: Pnd1kInput[]): Pnd1kReport {
+  const byEmployee = new Map<string, Pnd1kLine>();
+  for (const r of rows) {
+    const line = byEmployee.get(r.employee_id) ?? {
+      employee_id: r.employee_id, employee_name: r.employee_name, tax_id: r.tax_id,
+      months_count: 0, income_satang: 0, tax_satang: 0,
+    };
+    line.months_count += 1;
+    line.income_satang += r.gross_satang;
+    line.tax_satang += r.tax_satang;
+    byEmployee.set(r.employee_id, line);
+  }
+  const lines = [...byEmployee.values()].sort((a, b) => a.employee_name.localeCompare(b.employee_name));
+  return {
+    lines,
+    employee_count: lines.length,
+    total_income_satang: lines.reduce((s, l) => s + l.income_satang, 0),
+    total_tax_satang: lines.reduce((s, l) => s + l.tax_satang, 0),
+  };
+}
+
+// ── e-filing export (RD online upload) ────────────────────────────────────────
+// The Revenue Department's bulk-upload text is a delimited file: one line per employee with the
+// 13-digit tax id, name, income and tax in BAHT with 2 decimals (a dot, no thousands sep). The
+// exact column set differs by RD form/version, so this is a pragmatic CSV an accountant maps to
+// the RD template — the amount/id encoding (the error-prone part) is what's pinned here.
+
+/** satang integer → "N.NN" baht (final display string; no re-rounding). */
+function satangToBahtField(satang: number): string {
+  const sign = satang < 0 ? '-' : '';
+  const abs = Math.abs(Math.trunc(satang));
+  return `${sign}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, '0')}`;
+}
+
+function csvCell(v: string): string {
+  return /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+}
+
+const PND1_EFILING_HEADER = ['tax_id', 'employee_name', 'income_baht', 'tax_baht'] as const;
+
+/** Build the ภ.ง.ด.1 / 1ก e-filing CSV from PND1-style lines (income+tax already in satang). */
+export function buildPnd1EfilingCsv(
+  lines: { tax_id: string | null; employee_name: string; income_satang: number; tax_satang: number }[],
+): string {
+  const out = [PND1_EFILING_HEADER.join(',')];
+  for (const l of lines) {
+    out.push(
+      [
+        (l.tax_id ?? '').replace(/\D/g, ''), // digits only
+        l.employee_name ?? '',
+        satangToBahtField(l.income_satang),
+        satangToBahtField(l.tax_satang),
+      ]
+        .map((c) => csvCell(String(c)))
+        .join(','),
+    );
+  }
+  return out.join('\r\n') + '\r\n';
+}

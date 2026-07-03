@@ -12,7 +12,7 @@ const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'hr', 'tax-
 const js = ts.transpileModule(src, { compilerOptions: { module: 'commonjs', target: 'es2020' } }).outputText;
 const mod = { exports: {} };
 new Function('module', 'exports', 'require', js)(mod, mod.exports, require);
-const { buildPnd1, buildSso, buildCert50Twi, buildPayrollRegister, laborCostPct } = mod.exports;
+const { buildPnd1, buildSso, buildCert50Twi, buildPayrollRegister, laborCostPct, buildPnd1k, buildPnd1EfilingCsv } = mod.exports;
 
 const R = [];
 const eq = (name, got, want) => R.push({ name, pass: JSON.stringify(got) === JSON.stringify(want), got, want });
@@ -76,10 +76,35 @@ eq('labor pct 25% (1M cost / 4M sales)', laborCostPct(1_000_000, 4_000_000), 25)
 eq('labor pct null on zero sales', laborCostPct(1_000_000, 0), null);
 eq('labor pct can exceed 100', laborCostPct(5_000_000, 4_000_000), 125);
 
+// ── ภ.ง.ด.1ก annual (group 12 months per employee; include zero-tax employees) ──
+const yearRows = [
+  { employee_id: 'e1', employee_name: 'สมชาย', tax_id: '1101700200111', gross_satang: 2_000_000, tax_satang: 100_000 },
+  { employee_id: 'e1', employee_name: 'สมชาย', tax_id: '1101700200111', gross_satang: 2_000_000, tax_satang: 100_000 },
+  { employee_id: 'e2', employee_name: 'มานะ', tax_id: '1101700200222', gross_satang: 1_500_000, tax_satang: 0 }, // zero-tax still on 1ก
+];
+const pnd1k = buildPnd1k(yearRows);
+eq('1ก groups per employee (2)', pnd1k.employee_count, 2);
+eq('1ก e1 months=2', pnd1k.lines.find((l) => l.employee_id === 'e1').months_count, 2);
+eq('1ก e1 income summed', pnd1k.lines.find((l) => l.employee_id === 'e1').income_satang, 4_000_000);
+eq('1ก includes zero-tax e2', pnd1k.lines.some((l) => l.employee_id === 'e2'), true);
+eq('1ก total tax', pnd1k.total_tax_satang, 200_000);
+eq('1ก sorted by name (มานะ before สมชาย)', pnd1k.lines[0].employee_name, 'มานะ');
+
+// ── e-filing CSV (baht 2dp, digits-only tax id) ───────────────────────────────
+const csv = buildPnd1EfilingCsv([
+  { tax_id: '1-1017-00200-11-1', employee_name: 'สมชาย', income_satang: 2_472_500, tax_satang: 171_667 },
+]);
+const csvLines = csv.split('\r\n');
+eq('efiling header', csvLines[0], 'tax_id,employee_name,income_baht,tax_baht');
+eq('efiling row (id digits-only, baht 2dp)', csvLines[1], '1101700200111,สมชาย,24725.00,1716.67');
+eq('efiling trailing CRLF', csv.endsWith('\r\n'), true);
+
 // ── edge: empty input ─────────────────────────────────────────────────────────
 eq('pnd1 empty', buildPnd1([]).employee_count, 0);
 eq('sso empty remit', buildSso([]).total_remit_satang, 0);
 eq('register empty labor cost', buildPayrollRegister([]).total_labor_cost_satang, 0);
+eq('1ก empty', buildPnd1k([]).employee_count, 0);
+eq('efiling empty → header only', buildPnd1EfilingCsv([]), 'tax_id,employee_name,income_baht,tax_baht\r\n');
 
 const fail = R.filter((r) => !r.pass);
 for (const r of R) if (!r.pass) console.log(`FAIL ${r.name}: got=${JSON.stringify(r.got)} want=${JSON.stringify(r.want)}`);
