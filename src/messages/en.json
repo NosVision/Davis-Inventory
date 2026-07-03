@@ -2817,6 +2817,7 @@
         "salary": "Salary",
         "ot": "Overtime",
         "service_charge": "Service charge",
+        "tip": "Tips",
         "commission": "Commission",
         "eval_bonus": "Evaluation bonus",
         "claim": "Claim",

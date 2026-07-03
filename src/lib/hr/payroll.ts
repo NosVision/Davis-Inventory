@@ -124,6 +124,7 @@ export type EarningType =
   | 'ot'
   | 'allowance'
   | 'service_charge'
+  | 'tip'
   | 'commission'
   | 'eval_bonus'
   | 'claim';
@@ -177,6 +178,7 @@ export interface PayrollInput {
   recurringDeductions: RecurringDeduction[];
   extraEarnings: ExtraEarning[];
   scNetSatang: number; // net Service Charge for the period (P4.1); 0 for part-time
+  tipNetSatang?: number; // net Tip pool for the period (P4.4, same mechanism as SC); 0/undefined = none
 }
 
 export interface Payslip {
@@ -260,6 +262,12 @@ export function computePayslip(input: PayrollInput): Payslip {
   // Service Charge (never for part-time).
   if (!partTime && input.scNetSatang > 0) {
     earnings.push({ type: 'service_charge', label: 'service_charge', amount_satang: input.scNetSatang });
+  }
+
+  // Tip pool (same manual pool/allocation mechanism as SC; net for the period). Part-time may
+  // share tips, so — unlike SC — it is NOT gated on pay type.
+  if ((input.tipNetSatang ?? 0) > 0) {
+    earnings.push({ type: 'tip', label: 'tip', amount_satang: input.tipNetSatang as number });
   }
 
   // Ad-hoc earnings (approved claims, commission, eval bonus).

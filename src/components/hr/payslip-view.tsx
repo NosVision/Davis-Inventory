@@ -36,9 +36,9 @@ export interface PayslipDetailData {
 // Localized line-type labels; a standard type (salary/ot/sso/tax/…) is translated, while a
 // free-form label (an allowance name, a leave code) falls through to the stored text.
 const KNOWN_TYPES = new Set([
-  'salary', 'ot', 'service_charge', 'commission', 'eval_bonus', 'claim',
+  'salary', 'ot', 'service_charge', 'tip', 'commission', 'eval_bonus', 'claim',
   'sso', 'tax', 'late', 'absent', 'leave_unpaid', 'travel_leave',
-  'student_loan', 'advance', 'guarantee', 'loan', 'other', 'allowance',
+  'student_loan', 'advance', 'guarantee', 'loan', 'provident_fund', 'other', 'allowance',
 ]);
 
 interface PayslipViewProps {

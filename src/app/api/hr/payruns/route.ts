@@ -194,7 +194,7 @@ export async function POST(request: NextRequest) {
 
   // Bulk-load everything for the cycle in parallel.
   const dates = dateRange(start, end);
-  const [scheduleRes, attendanceRes, overridesRes, leavesRes, leaveTypesRes, holidaysRes, recurringRes, scRes, claimsRes, taxAllowRes] =
+  const [scheduleRes, attendanceRes, overridesRes, leavesRes, leaveTypesRes, holidaysRes, recurringRes, scRes, claimsRes, taxAllowRes, tipRes] =
     await Promise.all([
       service
         .from('hr_schedule')
@@ -241,10 +241,15 @@ export async function POST(request: NextRequest) {
         .select('employee_id, amount_satang')
         .eq('tax_year', year)
         .eq('active', true),
+      // Net Tip pool for THIS work month (same mechanism as SC).
+      service
+        .from('hr_tip_allocations')
+        .select('user_id, allocated_satang, pool:hr_tip_pools!inner(period_month), hr_tip_deductions(amount_satang)')
+        .eq('pool.period_month', `${year}-${pad(month)}-01`),
     ]);
   const anyErr =
     scheduleRes.error || attendanceRes.error || overridesRes.error || leavesRes.error ||
-    leaveTypesRes.error || holidaysRes.error || recurringRes.error || scRes.error || claimsRes.error || taxAllowRes.error;
+    leaveTypesRes.error || holidaysRes.error || recurringRes.error || scRes.error || claimsRes.error || taxAllowRes.error || tipRes.error;
   if (anyErr) return NextResponse.json({ error: 'Failed to load payroll inputs' }, { status: 500 });
 
   // Index the bulk data.
@@ -291,6 +296,12 @@ export async function POST(request: NextRequest) {
     const ded = (a.hr_sc_deductions ?? []).reduce((s, d) => s + Math.max(0, d.amount_satang), 0);
     const net = Math.max(0, a.allocated_satang - ded);
     scNetByUser.set(a.user_id, (scNetByUser.get(a.user_id) ?? 0) + net);
+  }
+  const tipNetByUser = new Map<string, number>();
+  for (const a of (tipRes.data ?? []) as { user_id: string; allocated_satang: number; hr_tip_deductions: { amount_satang: number }[] }[]) {
+    const ded = (a.hr_tip_deductions ?? []).reduce((s, d) => s + Math.max(0, d.amount_satang), 0);
+    const net = Math.max(0, a.allocated_satang - ded);
+    tipNetByUser.set(a.user_id, (tipNetByUser.get(a.user_id) ?? 0) + net);
   }
   const claimsByUser = new Map<string, { id: string; amount_satang: number; description: string }[]>();
   for (const c of (claimsRes.data ?? []) as { id: string; user_id: string; amount_satang: number; description: string }[]) {
@@ -384,6 +395,7 @@ export async function POST(request: NextRequest) {
       recurringDeductions,
       extraEarnings,
       scNetSatang: scNetByUser.get(uid) ?? 0,
+      tipNetSatang: tipNetByUser.get(uid) ?? 0,
     };
     const slip = computePayslip(input);
     assembled.push({
