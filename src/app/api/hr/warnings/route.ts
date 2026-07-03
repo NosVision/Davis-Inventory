@@ -100,6 +100,28 @@ export async function POST(request: NextRequest) {
     .maybeSingle();
   const companyId = (emp?.company_id as string | undefined) ?? null;
 
+  // Scope guard: a store manager passes requireStoreManager for THEIR store, but that
+  // alone doesn't authorize warning an employee of a DIFFERENT store. When a store is
+  // given, the target employee must actually be assigned to it (mirrors the schedule
+  // route's user_stores check). HR issuing a store-less/company-wide warning skips this.
+  if (storeId) {
+    const { data: membership, error: memErr } = await service
+      .from('user_stores')
+      .select('store_id')
+      .eq('user_id', userId)
+      .eq('store_id', storeId)
+      .maybeSingle();
+    if (memErr) {
+      return NextResponse.json({ error: 'Failed to verify store membership' }, { status: 500 });
+    }
+    if (!membership) {
+      return NextResponse.json(
+        { error: 'Employee is not assigned to this store' },
+        { status: 403 }
+      );
+    }
+  }
+
   // Optional evidence: validate size + magic bytes, upload to the private bucket. The
   // upload happens BEFORE the insert, so any later failure must remove the object
   // (best-effort) to avoid orphans — tracked via `evidencePath`.

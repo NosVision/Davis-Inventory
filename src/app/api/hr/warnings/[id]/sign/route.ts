@@ -39,11 +39,15 @@ export async function POST(
     );
   }
 
-  // Authorize by the requested role: manager → scoped to this warning's store, hr →
-  // company-wide HR.
+  // Authorize by the requested role: manager → scoped to this warning's store; hr →
+  // company-wide HR. A store-less (company-wide) warning has no store to scope the
+  // manager role to, so HR may sign the manager slot there — a DISTINCT HR/owner, since
+  // the one-signature-per-signer index forbids the same person filling two roles.
   const auth =
     role === 'manager'
-      ? await requireStoreManager(warning.store_id as string)
+      ? warning.store_id
+        ? await requireStoreManager(warning.store_id as string)
+        : await requireHrManager()
       : await requireHrManager();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
@@ -65,13 +69,33 @@ export async function POST(
     return NextResponse.json({ error: 'already signed for this role' }, { status: 409 });
   }
 
+  // The three signatures must come from three DISTINCT people — reject a caller who has
+  // already signed this warning in any role (backed by the one-per-signer unique index).
+  const { data: signerSig } = await service
+    .from(SIG_TABLE)
+    .select('id')
+    .eq('warning_id', id)
+    .eq('signed_by', auth.userId)
+    .maybeSingle();
+  if (signerSig) {
+    return NextResponse.json({ error: 'you have already signed this warning' }, { status: 409 });
+  }
+
   const path = `warnings/signatures/${id}/${role}-${auth.userId}.png`;
   const { error: uploadErr } = await service.storage.from(BUCKET).upload(path, decoded.buffer, {
     contentType: 'image/png',
     cacheControl: '3600',
     upsert: false,
   });
-  if (uploadErr) return NextResponse.json({ error: uploadErr.message }, { status: 500 });
+  if (uploadErr) {
+    // A racing same-role sign to this deterministic path conflicts at storage — surface
+    // the clean 409 rather than a raw storage 500.
+    const conflict = /exist|conflict|duplicate/i.test(uploadErr.message || '');
+    return NextResponse.json(
+      { error: conflict ? 'already signed for this role' : uploadErr.message },
+      { status: conflict ? 409 : 500 }
+    );
+  }
 
   const { error: insertErr } = await service.from(SIG_TABLE).insert({
     warning_id: id,
@@ -86,6 +110,21 @@ export async function POST(
       return NextResponse.json({ error: 'already signed for this role' }, { status: 409 });
     }
     return NextResponse.json({ error: insertErr.message }, { status: 500 });
+  }
+
+  // TOCTOU guard: a void() may have committed between the up-front status read and this
+  // insert. If the warning is now void, roll our signature back — a voided (legally
+  // closed) record must not accrue new signatures.
+  const { data: fresh } = await service.from(TABLE).select('status').eq('id', id).maybeSingle();
+  if (fresh && (fresh.status as string) === 'void') {
+    await service
+      .from(SIG_TABLE)
+      .delete()
+      .eq('warning_id', id)
+      .eq('role', role)
+      .eq('signed_by', auth.userId);
+    await service.storage.from(BUCKET).remove([path]).catch(() => {});
+    return NextResponse.json({ error: 'Warning has been voided' }, { status: 409 });
   }
 
   await logHrAudit(service, {

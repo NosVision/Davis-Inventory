@@ -61,7 +61,13 @@ export async function POST(
     cacheControl: '3600',
     upsert: false,
   });
-  if (uploadErr) return NextResponse.json({ error: uploadErr.message }, { status: 500 });
+  if (uploadErr) {
+    const conflict = /exist|conflict|duplicate/i.test(uploadErr.message || '');
+    return NextResponse.json(
+      { error: conflict ? 'already acknowledged' : uploadErr.message },
+      { status: conflict ? 409 : 500 }
+    );
+  }
 
   const { error: insertErr } = await service.from(SIG_TABLE).insert({
     warning_id: id,
@@ -76,6 +82,20 @@ export async function POST(
       return NextResponse.json({ error: 'already acknowledged' }, { status: 409 });
     }
     return NextResponse.json({ error: insertErr.message }, { status: 500 });
+  }
+
+  // TOCTOU guard: if the warning was voided between the up-front read and this insert,
+  // roll the acknowledgement back — a voided record must not accrue new signatures.
+  const { data: fresh } = await service.from(TABLE).select('status').eq('id', id).maybeSingle();
+  if (fresh && (fresh.status as string) === 'void') {
+    await service
+      .from(SIG_TABLE)
+      .delete()
+      .eq('warning_id', id)
+      .eq('role', 'employee')
+      .eq('signed_by', user.id);
+    await service.storage.from(BUCKET).remove([path]).catch(() => {});
+    return NextResponse.json({ error: 'Warning has been voided' }, { status: 409 });
   }
 
   await logHrAudit(service, {

@@ -8,6 +8,8 @@ const PNG_PREFIX = 'data:image/png;base64,';
 // ~3MB of base64 (≈ ~2.25MB of PNG) is ample for a hand-drawn signature; cap the
 // encoded payload BEFORE decoding so a hostile client can't force a huge decode.
 const MAX_SIG_B64 = 3 * 1024 * 1024;
+// Sanity ceiling for a free-form 'amount_baht' warning: ฿1,000,000 = 100,000,000 satang.
+const MAX_AMOUNT_SATANG = 100_000_000;
 
 // The six disciplinary levels (§E ladder). Order = severity.
 export const LEVELS = [
@@ -61,6 +63,11 @@ export function deriveScEffect(level: WarningLevel, amountSatang: unknown): Deri
         amountSatang <= 0
       ) {
         return { ok: false, error: 'amount_satang must be a positive integer for level=amount_baht' };
+      }
+      // Sanity ceiling (฿1,000,000): the amount is consumed verbatim by payroll (P4)
+      // with no second gate, so cap a typo/abuse before it becomes an SC deduction.
+      if (amountSatang > MAX_AMOUNT_SATANG) {
+        return { ok: false, error: 'amount exceeds the maximum of ฿1,000,000' };
       }
       return { ok: true, sc_deduct_percent: null, amount_satang: amountSatang, sc_deduct_cycles: 1 };
     }
