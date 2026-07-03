@@ -20,6 +20,7 @@ import {
   ShieldCheck,
   BarChart3,
   ClipboardList,
+  Settings,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -35,7 +36,8 @@ const NAV_TILES: { key: string; icon: LucideIcon; href?: string }[] = [
   { key: 'timesheet', icon: CalendarClock, href: '/hr/timesheet' },
   { key: 'swaps', icon: Repeat, href: '/hr/swaps' },
   { key: 'requests', icon: ClipboardList, href: '/hr/requests' },
-  { key: 'leave', icon: CalendarX },
+  { key: 'leave', icon: CalendarX, href: '/hr/leaves' },
+  { key: 'leaveTypes', icon: Settings, href: '/hr/leave-types' },
   { key: 'warnings', icon: AlertTriangle },
   { key: 'payroll', icon: Wallet },
   { key: 'serviceCharge', icon: Coins },
