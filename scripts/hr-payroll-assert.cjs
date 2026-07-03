@@ -6,8 +6,10 @@
  *
  *   node scripts/hr-payroll-assert.cjs
  *
- * Exit 0 = all pass. This is the offline gate for P4 (S1-S7); run it after any change to
- * src/lib/hr/payroll.ts. Company config = HR Test Co (see the doc header).
+ * Exit 0 = all pass. This is the offline gate for P4: S1-S4 (core — OT div-8/9, SSO cap,
+ * leave salary+travel, late tiers, absent, part-time, progressive/3%/none tax) + S5-S7 (P4.4 —
+ * ล.ย.01 allowance, PVD, Tip). Run after any change to src/lib/hr/payroll.ts. Company config =
+ * HR Test Co (see the doc header).
  */
 const fs = require('fs');
 const path = require('path');
@@ -41,6 +43,58 @@ function slip(emp, over) {
 }
 const ded = (s, t) => (s.deductions.find((d) => d.type === t) || {}).amount_satang ?? 0;
 const earn = (s, t) => (s.earnings.find((e) => e.type === t) || {}).amount_satang ?? 0;
+
+// ── S1: full-time OT + travel allowance + SC + leave (salary+travel) + late ───
+const s1 = slip(
+  { rate_satang: 1_800_000, pay_type: 'full_monthly', ot_eligible: true, ot_hour_divisor: 8, tax_mode: 'progressive', sso_enrolled: true },
+  {
+    ts: { ot_minutes_eligible: 120, late_minutes_per_occurrence: [20] },
+    allowances: [{ code: 'travel', label: 'travel', amount_satang: 150_000 }],
+    leaves: [{ leave_id: 'L1', label: 'ลากิจ', salary_days: 2, travel_days: 2 }],
+    scNetSatang: 500_000,
+  },
+);
+eq('S1 salary', earn(s1, 'salary'), 1_800_000);
+eq('S1 ot', earn(s1, 'ot'), 22_500);
+eq('S1 allowance travel', earn(s1, 'allowance'), 150_000);
+eq('S1 service_charge', earn(s1, 'service_charge'), 500_000);
+eq('S1 gross', s1.gross_satang, 2_472_500);
+eq('S1 leave_unpaid', ded(s1, 'leave_unpaid'), 120_000);
+eq('S1 travel_leave', ded(s1, 'travel_leave'), 10_000);
+eq('S1 late', ded(s1, 'late'), 5_000);
+eq('S1 sso (capped)', ded(s1, 'sso'), 87_500);
+eq('S1 tax (below bracket)', ded(s1, 'tax'), 0);
+eq('S1 net', s1.net_satang, 2_250_000);
+
+// ── S2: div-9 OT, warning wiped SC (SC=0), no salary impact from warning ───────
+const s2 = slip(
+  { rate_satang: 2_100_000, pay_type: 'full_monthly', ot_eligible: true, ot_hour_divisor: 9, tax_mode: 'progressive', sso_enrolled: true },
+  { ts: { ot_minutes_eligible: 180 }, scNetSatang: 0 },
+);
+eq('S2 ot (div 9)', earn(s2, 'ot'), 35_000);
+eq('S2 gross', s2.gross_satang, 2_135_000);
+eq('S2 sso (capped)', ded(s2, 'sso'), 87_500);
+eq('S2 net', s2.net_satang, 2_047_500);
+
+// ── S3: part-time hourly, 3% withholding, no SSO/OT/SC ─────────────────────────
+const s3 = slip(
+  { rate_satang: 6_000, pay_type: 'pt_hourly', ot_eligible: false, ot_hour_divisor: 8, tax_mode: 'withholding_3pct', sso_enrolled: false },
+  { ts: { worked_days: 0, pt_hours: 80 } },
+);
+eq('S3 salary (hourly)', earn(s3, 'salary'), 480_000);
+eq('S3 sso (none)', ded(s3, 'sso'), 0);
+eq('S3 tax 3pct', ded(s3, 'tax'), 14_400);
+eq('S3 net', s3.net_satang, 465_600);
+
+// ── S4: unauthorized absent + late tiers + uncapped SSO, tax none ──────────────
+const s4 = slip(
+  { rate_satang: 900_000, pay_type: 'full_monthly', ot_eligible: false, ot_hour_divisor: 8, tax_mode: 'none', sso_enrolled: true },
+  { ts: { unauthorized_absent_days: 1, late_minutes_per_occurrence: [16, 31, 61] } },
+);
+eq('S4 absent', ded(s4, 'absent'), 30_000);
+eq('S4 late (3 tiers)', ded(s4, 'late'), 40_000);
+eq('S4 sso (uncapped)', ded(s4, 'sso'), 45_000);
+eq('S4 net', s4.net_satang, 785_000);
 
 // ── S5: ล.ย.01 progressive tax allowance ──────────────────────────────────────
 eq('S5 no-allowance tax', progressiveMonthlyTaxSatang(5_000_000, 87_500, 0), 171_667);
