@@ -12,6 +12,18 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
   const { id } = await params;
   const service = createServiceClient();
 
+  // Defense-in-depth: never finalize an empty payrun. The UI disables the button when there
+  // are no payslips, but a direct/replayed POST must be rejected server-side too (finalizing
+  // zero slips would lock a meaningless payrun and mark employees "paid" with no slip).
+  const { count, error: countErr } = await service
+    .from('hr_payslips')
+    .select('id', { count: 'exact', head: true })
+    .eq('payrun_id', id);
+  if (countErr) return NextResponse.json({ error: 'Failed to finalize payrun' }, { status: 500 });
+  if (!count) {
+    return NextResponse.json({ error: 'Cannot finalize a payrun with no payslips' }, { status: 409 });
+  }
+
   const { data: updated, error } = await service
     .from('hr_payruns')
     .update({ status: 'finalized', finalized_by: auth.userId, finalized_at: new Date().toISOString() })
