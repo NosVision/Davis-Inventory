@@ -19,7 +19,7 @@ export async function POST(
 
   const { data: row, error: loadErr } = await service
     .from(TABLE)
-    .select('id, store_id, status, user_id, claim_type, amount_satang')
+    .select('id, store_id, status, user_id')
     .eq('id', id)
     .maybeSingle();
   if (loadErr) return NextResponse.json({ error: 'Failed to load claim' }, { status: 500 });

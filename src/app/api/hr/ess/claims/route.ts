@@ -87,10 +87,12 @@ export async function POST(request: NextRequest) {
     .eq('profile_id', user.id)
     .maybeSingle();
   if (empErr) return NextResponse.json({ error: 'Failed to load employee' }, { status: 500 });
-  if (!emp) {
+  // Require a company (mirrors leaves): an approved claim becomes a payslip earning in P4,
+  // and payroll runs per-company — a NULL company_id would silently orphan the money.
+  if (!emp || !emp.company_id) {
     return NextResponse.json({ error: 'You are not registered as an employee' }, { status: 400 });
   }
-  const companyId = (emp.company_id as string | null) ?? null;
+  const companyId = emp.company_id as string;
 
   // Upload the receipt: validate size + magic bytes, then upload to the private
   // bucket. We persist only the storage path. The upload happens BEFORE the insert,
