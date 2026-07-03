@@ -61,6 +61,18 @@ export function computeLeaveScDeduction(allocated: number, scLeaveDays: number):
   return { amount_satang: amount, carry_satang: 0 };
 }
 
+/**
+ * §G↔§H eval → SC deduction. A monthly evaluation payout in "deduction mode" is a NEGATIVE
+ * amount (e.g. avg 50% → −200 บาท). Its magnitude is docked from the person's SC for the month,
+ * carrying any overflow past this month's allocation (same clamp-with-carry as a warning). A
+ * zero or POSITIVE payout deducts nothing from SC — a positive eval payout is a bonus paid via
+ * the payslip (type='eval_bonus'), not an SC line, so it must not reduce SC here.
+ */
+export function computeEvalScDeduction(allocated: number, evalPayoutSatang: number): ScDeductionResult {
+  if (evalPayoutSatang >= 0) return { amount_satang: 0, carry_satang: 0 };
+  return splitWithCarry(-evalPayoutSatang, allocated);
+}
+
 /** Net SC = allocation − total deducted this period, floored at 0. */
 export function computeNetSc(allocated: number, deductions: { amount_satang: number }[]): number {
   const total = deductions.reduce((s, d) => s + Math.max(0, d.amount_satang), 0);
