@@ -105,22 +105,44 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: 'pool is finalized' }, { status: 409 });
   }
 
-  const row = {
-    store_id: storeId,
-    period_month: periodMonth,
-    total_satang: totalSatang,
-    pay_date: payDate,
-    notes,
-    updated_by: auth.userId,
-    created_by: existing ? (existing.created_by as string) ?? auth.userId : auth.userId,
-  };
-
-  const { data, error } = await service
-    .from(POOLS)
-    .upsert(row, { onConflict: 'store_id,period_month' })
-    .select('*')
-    .single();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  let data;
+  if (existing) {
+    // Edit the existing draft as an atomic compare-and-set on status='draft' — if a
+    // concurrent finalize committed in the meantime, this matches 0 rows and 409s rather
+    // than silently overwriting a locked pool's total.
+    const { data: updated, error } = await service
+      .from(POOLS)
+      .update({ total_satang: totalSatang, pay_date: payDate, notes, updated_by: auth.userId })
+      .eq('id', existing.id)
+      .eq('status', 'draft')
+      .select('*')
+      .maybeSingle();
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!updated) return NextResponse.json({ error: 'pool is finalized' }, { status: 409 });
+    data = updated;
+  } else {
+    const { data: inserted, error } = await service
+      .from(POOLS)
+      .insert({
+        store_id: storeId,
+        period_month: periodMonth,
+        total_satang: totalSatang,
+        pay_date: payDate,
+        notes,
+        created_by: auth.userId,
+        updated_by: auth.userId,
+      })
+      .select('*')
+      .single();
+    if (error) {
+      // 23505 = a concurrent insert already created the pool for this store/month.
+      if ((error as { code?: string }).code === '23505') {
+        return NextResponse.json({ error: 'pool already exists for this period' }, { status: 409 });
+      }
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    data = inserted;
+  }
 
   await logHrAudit(service, {
     actorId: auth.userId,

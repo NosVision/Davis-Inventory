@@ -73,6 +73,11 @@ export async function POST(_request: Request, { params }: { params: Promise<{ po
   const periodStart = pool.period_month as string; // 'YYYY-MM-01'
   const nextStart = nextMonthFirst(periodStart);
   const periodEnd = prevDay(nextStart); // inclusive last day of the month
+  // hr_warnings.issued_at is TIMESTAMPTZ — compare against Bangkok-local month boundaries
+  // (matching time-engine's +07:00 convention) so a warning issued in the small hours of
+  // the 1st isn't mis-attributed to the previous month in UTC.
+  const periodStartTs = `${periodStart}T00:00:00+07:00`;
+  const nextStartTs = `${nextStart}T00:00:00+07:00`;
 
   const { data: allocs, error: allocErr } = await service
     .from(ALLOC)
@@ -85,19 +90,22 @@ export async function POST(_request: Request, { params }: { params: Promise<{ po
     const userId = alloc.user_id as string;
     const allocated = Number(alloc.allocated_satang) || 0;
 
-    // Clear only the auto-computed lines; manual lines stay.
-    await service.from(DED).delete().eq('allocation_id', allocId).eq('auto', true);
-
     const lines: Record<string, unknown>[] = [];
 
+    // Fetch the source rows FIRST (and check errors) so a failed query can NEVER lead to
+    // deleting the existing auto lines without re-inserting — that would silently understate
+    // the deduction and overstate net SC on the payslip.
     // --- Warnings issued within this period (active/acknowledged, not void). ---
-    const { data: warnings } = await service
+    const { data: warnings, error: warnErr } = await service
       .from('hr_warnings')
       .select('id, level, sc_deduct_percent, amount_satang')
       .eq('user_id', userId)
       .in('status', ['active', 'acknowledged'])
-      .gte('issued_at', periodStart)
-      .lt('issued_at', nextStart);
+      .gte('issued_at', periodStartTs)
+      .lt('issued_at', nextStartTs);
+    if (warnErr) {
+      return NextResponse.json({ error: 'Failed to load warnings for recompute' }, { status: 500 });
+    }
     for (const w of (warnings ?? []) as unknown as WarningRow[]) {
       const { amount_satang, carry_satang } = computeWarningScDeduction(allocated, {
         level: w.level,
@@ -119,13 +127,16 @@ export async function POST(_request: Request, { params }: { params: Promise<{ po
     }
 
     // --- Approved leaves overlapping this period that dock SC. ---
-    const { data: leaves } = await service
+    const { data: leaves, error: leaveErr } = await service
       .from('hr_leaves')
       .select('id, from_date, to_date, cert_path, leave_type:hr_leave_types(code, paid)')
       .eq('user_id', userId)
       .eq('status', 'approved')
       .lte('from_date', periodEnd)
       .gte('to_date', periodStart);
+    if (leaveErr) {
+      return NextResponse.json({ error: 'Failed to load leaves for recompute' }, { status: 500 });
+    }
     for (const lv of (leaves ?? []) as unknown as LeaveRow[]) {
       const lt = Array.isArray(lv.leave_type) ? lv.leave_type[0] : lv.leave_type;
       if (!lt) continue;
@@ -149,6 +160,9 @@ export async function POST(_request: Request, { params }: { params: Promise<{ po
       }
     }
 
+    // Only now (after both source queries succeeded) swap the auto lines: clear the old
+    // auto-computed lines (manual lines stay) and insert the freshly computed set.
+    await service.from(DED).delete().eq('allocation_id', allocId).eq('auto', true);
     if (lines.length > 0) {
       await service.from(DED).insert(lines);
     }
