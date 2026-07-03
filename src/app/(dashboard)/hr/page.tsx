@@ -21,6 +21,7 @@ import {
   BarChart3,
   ClipboardList,
   Settings,
+  Receipt,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -39,6 +40,7 @@ const NAV_TILES: { key: string; icon: LucideIcon; href?: string }[] = [
   { key: 'leave', icon: CalendarX, href: '/hr/leaves' },
   { key: 'leaveTypes', icon: Settings, href: '/hr/leave-types' },
   { key: 'warnings', icon: AlertTriangle, href: '/hr/warnings' },
+  { key: 'claims', icon: Receipt, href: '/hr/claims' },
   { key: 'payroll', icon: Wallet },
   { key: 'serviceCharge', icon: Coins },
   { key: 'evaluation', icon: Star },
