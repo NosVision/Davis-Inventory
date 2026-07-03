@@ -12,7 +12,7 @@ const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'hr', 'eval
 const js = ts.transpileModule(src, { compilerOptions: { module: 'commonjs', target: 'es2020' } }).outputText;
 const mod = { exports: {} };
 new Function('module', 'exports', 'require', js)(mod, mod.exports, require);
-const { computeEvalResult, resolveEvalPayout } = mod.exports;
+const { computeEvalResult, resolveEvalPayout, aggregateEvalScores } = mod.exports;
 
 const R = [];
 const eq = (name, got, want) => R.push({ name, pass: JSON.stringify(got) === JSON.stringify(want), got, want });
@@ -78,6 +78,38 @@ eq('tiered null score → 0', resolveEvalPayout(tiered, null).amount_satang, 0);
 const sparse = { formula_type: 'tiered', tiers: [{ id: 'x', min_pct: 90, max_pct: 100, amount_satang: 100_000 }] };
 eq('no tier matched → 0', resolveEvalPayout(sparse, 50).amount_satang, 0);
 eq('no tier matched → null id', resolveEvalPayout(sparse, 50).tier_matched_id, null);
+
+// ── aggregateEvalScores: DB rows → per-employee result + anonymized breakdown ──
+// employee E1: evaluator U1 (submitted) scored 20+23=43, U2 (submitted) 19+20=39, of max 50.
+// employee E2: only U1 assigned but NOT submitted → null result, empty breakdown.
+const assignments = [
+  { assignment_id: 'a1', evaluator_id: 'u1', employee_id: 'e1', submitted: true },
+  { assignment_id: 'a2', evaluator_id: 'u2', employee_id: 'e1', submitted: true },
+  { assignment_id: 'a3', evaluator_id: 'u3', employee_id: 'e1', submitted: false }, // excluded
+  { assignment_id: 'a4', evaluator_id: 'u1', employee_id: 'e2', submitted: false }, // e2 no data
+];
+const scores = [
+  { assignment_id: 'a1', points: 20 }, { assignment_id: 'a1', points: 23 }, // 43
+  { assignment_id: 'a2', points: 19 }, { assignment_id: 'a2', points: 20 }, // 39
+  { assignment_id: 'a3', points: 50 }, // present but unsubmitted → must not count
+  { assignment_id: 'a4', points: 10 },
+];
+const agg = aggregateEvalScores(assignments, scores, 50);
+const e1 = agg.find((a) => a.employee_id === 'e1');
+const e2 = agg.find((a) => a.employee_id === 'e2');
+eq('agg e1 count 2 (unsubmitted excluded)', e1.result.evaluator_count, 2);
+close('agg e1 avg 41', e1.result.raw_score_avg, 41);
+close('agg e1 pct 82', e1.result.score_pct, 82);
+eq('agg e1 breakdown len 2', e1.breakdown.length, 2);
+eq('agg e1 anon labels A,B', e1.breakdown.map((b) => b.label).join(','), 'A,B');
+eq('agg e1 breakdown A raw 43 (u1 sorts first)', e1.breakdown[0].raw_total, 43);
+eq('agg e1 breakdown B raw 39', e1.breakdown[1].raw_total, 39);
+eq('agg e1 breakdown no evaluator_id leaked', 'evaluator_id' in e1.breakdown[0], false);
+eq('agg e2 null result (no submissions)', e2.result.score_pct, null);
+eq('agg e2 empty breakdown', e2.breakdown.length, 0);
+// stable labels: re-run with input order shuffled → same A=u1(43), B=u2(39)
+const shuffled = aggregateEvalScores([assignments[1], assignments[0], assignments[2]], scores, 50).find((a) => a.employee_id === 'e1');
+eq('agg stable labels under shuffle', shuffled.breakdown[0].raw_total, 43);
 
 const fail = R.filter((r) => !r.pass);
 for (const r of R) if (!r.pass) console.log(`FAIL ${r.name}: got=${JSON.stringify(r.got)} want=${JSON.stringify(r.want)}`);

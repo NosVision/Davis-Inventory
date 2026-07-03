@@ -40,6 +40,91 @@ export function computeEvalResult(submissions: EvaluatorSubmission[], maxScore: 
   return { evaluator_count: count, raw_score_avg: rawAvg, max_score: maxScore, score_pct: pct };
 }
 
+// ── compute-on-close aggregation (DB rows → per-employee result) ────────────────
+// The route loads flat rows at period close and calls this; the math stays here so it is
+// unit-testable without a DB. §G: average once at close (not live).
+
+/** One assignment row (evaluator↔employee) with its submit status. */
+export interface AssignmentRow {
+  assignment_id: string;
+  evaluator_id: string;
+  employee_id: string;
+  submitted: boolean;
+}
+/** One raw score cell: points a given assignment gave on a given criterion. */
+export interface ScoreRow {
+  assignment_id: string;
+  points: number;
+}
+
+/** Anonymized per-evaluator total for an employee (§G: "ผู้ประเมิน A: 43 · B: 39" ไม่เปิดชื่อ). */
+export interface EvaluatorBreakdown {
+  label: string; // "A", "B", … — assigned by submit order, never the real name
+  raw_total: number;
+  score_pct: number | null;
+}
+
+export interface EmployeeEvalAggregate {
+  employee_id: string;
+  result: EvalResult;
+  /** Per-evaluator totals (submitted only), anonymized — for the employee-facing breakdown. */
+  breakdown: EvaluatorBreakdown[];
+}
+
+const ANON_LABELS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+/**
+ * Aggregate raw score rows into one result per employee for a period. Sums each assignment's
+ * points across criteria, keeps SUBMITTED assignments only, averages+normalizes via
+ * computeEvalResult, and produces an anonymized per-evaluator breakdown labeled A/B/C… in a
+ * STABLE order (by evaluator_id) so labels don't leak identity and don't reshuffle between
+ * reads. maxScore = Σ criteria.max_points snapshot for the period.
+ */
+export function aggregateEvalScores(
+  assignments: AssignmentRow[],
+  scores: ScoreRow[],
+  maxScore: number,
+): EmployeeEvalAggregate[] {
+  const totalByAssignment = new Map<string, number>();
+  for (const s of scores) {
+    totalByAssignment.set(s.assignment_id, (totalByAssignment.get(s.assignment_id) ?? 0) + s.points);
+  }
+
+  const byEmployee = new Map<string, AssignmentRow[]>();
+  for (const a of assignments) {
+    const list = byEmployee.get(a.employee_id) ?? [];
+    list.push(a);
+    byEmployee.set(a.employee_id, list);
+  }
+
+  const out: EmployeeEvalAggregate[] = [];
+  for (const [employeeId, rows] of byEmployee) {
+    // stable order → stable anonymous labels
+    const submitted = rows
+      .filter((r) => r.submitted)
+      .sort((x, y) => (x.evaluator_id < y.evaluator_id ? -1 : x.evaluator_id > y.evaluator_id ? 1 : 0));
+
+    const submissions: EvaluatorSubmission[] = submitted.map((r) => ({
+      evaluator_id: r.evaluator_id,
+      submitted: true,
+      raw_total: totalByAssignment.get(r.assignment_id) ?? 0,
+    }));
+    const result = computeEvalResult(submissions, maxScore);
+
+    const breakdown: EvaluatorBreakdown[] = submitted.map((r, i) => {
+      const raw = totalByAssignment.get(r.assignment_id) ?? 0;
+      return {
+        label: ANON_LABELS[i] ?? `#${i + 1}`,
+        raw_total: raw,
+        score_pct: maxScore > 0 ? Math.min(100, (raw / maxScore) * 100) : null,
+      };
+    });
+
+    out.push({ employee_id: employeeId, result, breakdown });
+  }
+  return out;
+}
+
 export type EvalFormulaType = 'linear' | 'tiered';
 
 /** linear: amount = flat_satang + round(satang_per_pct × score_pct). */
