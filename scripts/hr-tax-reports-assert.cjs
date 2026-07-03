@@ -12,7 +12,7 @@ const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'hr', 'tax-
 const js = ts.transpileModule(src, { compilerOptions: { module: 'commonjs', target: 'es2020' } }).outputText;
 const mod = { exports: {} };
 new Function('module', 'exports', 'require', js)(mod, mod.exports, require);
-const { buildPnd1, buildSso, buildCert50Twi } = mod.exports;
+const { buildPnd1, buildSso, buildCert50Twi, buildPayrollRegister, laborCostPct } = mod.exports;
 
 const R = [];
 const eq = (name, got, want) => R.push({ name, pass: JSON.stringify(got) === JSON.stringify(want), got, want });
@@ -57,9 +57,29 @@ eq('cert total tax', cert.total_tax_satang, 171_667 * 2);
 eq('cert total sso', cert.total_sso_satang, 87_500 * 3);
 eq('cert empty → zeros', buildCert50Twi('x', []).total_income_satang, 0);
 
+// ── ทะเบียนเงินเดือน / ต้นทุนแรงงาน ───────────────────────────────────────────
+const reg = buildPayrollRegister([
+  { employee_id: 'e1', employee_name: 'A', gross_satang: 2_472_500, sso_satang: 87_500, tax_satang: 171_667, total_deduction_satang: 222_500, net_satang: 2_250_000 },
+  { employee_id: 'e2', employee_name: 'B', gross_satang: 2_135_000, sso_satang: 87_500, tax_satang: 0, total_deduction_satang: 87_500, net_satang: 2_047_500 },
+]);
+eq('register count', reg.employee_count, 2);
+eq('register total gross', reg.total_gross_satang, 2_472_500 + 2_135_000);
+eq('register total net', reg.total_net_satang, 2_250_000 + 2_047_500);
+eq('register total sso (employee)', reg.total_sso_satang, 175_000);
+eq('register employer sso matches', reg.employer_sso_satang, 175_000);
+eq('register labor cost = gross + employer sso', reg.total_labor_cost_satang, (2_472_500 + 2_135_000) + 175_000);
+// net + deductions must tie to gross per the slips
+eq('register ties: net+ded = gross', reg.total_net_satang + reg.total_deduction_satang, reg.total_gross_satang);
+
+// ── %แรงงาน vs ยอดขาย ────────────────────────────────────────────────────────
+eq('labor pct 25% (1M cost / 4M sales)', laborCostPct(1_000_000, 4_000_000), 25);
+eq('labor pct null on zero sales', laborCostPct(1_000_000, 0), null);
+eq('labor pct can exceed 100', laborCostPct(5_000_000, 4_000_000), 125);
+
 // ── edge: empty input ─────────────────────────────────────────────────────────
 eq('pnd1 empty', buildPnd1([]).employee_count, 0);
 eq('sso empty remit', buildSso([]).total_remit_satang, 0);
+eq('register empty labor cost', buildPayrollRegister([]).total_labor_cost_satang, 0);
 
 const fail = R.filter((r) => !r.pass);
 for (const r of R) if (!r.pass) console.log(`FAIL ${r.name}: got=${JSON.stringify(r.got)} want=${JSON.stringify(r.want)}`);

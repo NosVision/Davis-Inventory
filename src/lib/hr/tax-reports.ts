@@ -143,3 +143,56 @@ export function buildCert50Twi(employeeId: string, slips: Cert50TwiInput[]): Cer
     total_sso_satang: slips.reduce((sum, s) => sum + s.sso_satang, 0),
   };
 }
+
+// ── ทะเบียนเงินเดือน / ต้นทุนแรงงาน (payroll register + labor cost, P5/P5.4) ──────
+export interface RegisterLineInput {
+  employee_id: string;
+  employee_name: string;
+  gross_satang: number; // total earnings (company labor cost, employee side)
+  sso_satang: number; // employee SSO withheld
+  tax_satang: number; // tax withheld
+  total_deduction_satang: number; // all deductions on the slip
+  net_satang: number; // take-home
+}
+export interface PayrollRegister {
+  lines: RegisterLineInput[];
+  employee_count: number;
+  total_gross_satang: number;
+  total_sso_satang: number; // employee side
+  total_tax_satang: number;
+  total_deduction_satang: number;
+  total_net_satang: number;
+  /** Employer's total labor cost = gross + employer SSO match (Thai SSO symmetric). */
+  employer_sso_satang: number;
+  total_labor_cost_satang: number;
+}
+
+/**
+ * Payroll register for a payrun: per-employee gross/sso/tax/net + column totals, plus the true
+ * employer labor cost (gross + the matching employer SSO). The register's totals must tie out to
+ * the sum of the individual payslips (audit/accounting reconciliation).
+ */
+export function buildPayrollRegister(slips: RegisterLineInput[]): PayrollRegister {
+  const totalSso = slips.reduce((s, l) => s + l.sso_satang, 0);
+  const totalGross = slips.reduce((s, l) => s + l.gross_satang, 0);
+  return {
+    lines: slips,
+    employee_count: slips.length,
+    total_gross_satang: totalGross,
+    total_sso_satang: totalSso,
+    total_tax_satang: slips.reduce((s, l) => s + l.tax_satang, 0),
+    total_deduction_satang: slips.reduce((s, l) => s + l.total_deduction_satang, 0),
+    total_net_satang: slips.reduce((s, l) => s + l.net_satang, 0),
+    employer_sso_satang: totalSso, // employer matches the employee SSO
+    total_labor_cost_satang: totalGross + totalSso,
+  };
+}
+
+/**
+ * Labor-cost-to-sales ratio (§P5.4) — a REPORT metric, not a homepage KPI. Returns null when
+ * sales is 0/negative (undefined ratio, not 0%). Percentage 0..∞ (a store can exceed 100%).
+ */
+export function laborCostPct(totalLaborCostSatang: number, salesSatang: number): number | null {
+  if (salesSatang <= 0) return null;
+  return (totalLaborCostSatang / salesSatang) * 100;
+}
