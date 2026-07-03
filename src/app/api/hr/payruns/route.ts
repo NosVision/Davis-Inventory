@@ -54,6 +54,10 @@ interface EmployeeFull {
   sso_enrolled: boolean;
   status: string | null;
 }
+interface TaxAllowanceRow {
+  employee_id: string;
+  amount_satang: number;
+}
 interface ScheduleCell {
   user_id: string;
   work_date: string;
@@ -188,7 +192,7 @@ export async function POST(request: NextRequest) {
 
   // Bulk-load everything for the cycle in parallel.
   const dates = dateRange(start, end);
-  const [scheduleRes, attendanceRes, overridesRes, leavesRes, leaveTypesRes, holidaysRes, recurringRes, scRes, claimsRes] =
+  const [scheduleRes, attendanceRes, overridesRes, leavesRes, leaveTypesRes, holidaysRes, recurringRes, scRes, claimsRes, taxAllowRes] =
     await Promise.all([
       service
         .from('hr_schedule')
@@ -229,10 +233,16 @@ export async function POST(request: NextRequest) {
         .in('user_id', userIds)
         .eq('status', 'approved')
         .is('payslip_earning_id', null),
+      // ล.ย.01 tax allowances active for THIS tax year (Gregorian year of the cycle end).
+      service
+        .from('hr_tax_allowances')
+        .select('employee_id, amount_satang')
+        .eq('tax_year', year)
+        .eq('active', true),
     ]);
   const anyErr =
     scheduleRes.error || attendanceRes.error || overridesRes.error || leavesRes.error ||
-    leaveTypesRes.error || holidaysRes.error || recurringRes.error || scRes.error || claimsRes.error;
+    leaveTypesRes.error || holidaysRes.error || recurringRes.error || scRes.error || claimsRes.error || taxAllowRes.error;
   if (anyErr) return NextResponse.json({ error: 'Failed to load payroll inputs' }, { status: 500 });
 
   // Index the bulk data.
@@ -261,6 +271,11 @@ export async function POST(request: NextRequest) {
     const list = leavesByUser.get(lv.user_id) ?? [];
     list.push(lv);
     leavesByUser.set(lv.user_id, list);
+  }
+  // ล.ย.01 tax allowances: sum active annual amounts per employee (satang → baht for the engine).
+  const taxAllowBahtByEmp = new Map<string, number>();
+  for (const a of (taxAllowRes.data ?? []) as TaxAllowanceRow[]) {
+    taxAllowBahtByEmp.set(a.employee_id, (taxAllowBahtByEmp.get(a.employee_id) ?? 0) + a.amount_satang);
   }
   const recurringByEmp = new Map<string, { kind: string; code: string; label: string; amount_satang: number }[]>();
   for (const r of (recurringRes.data ?? []) as { employee_id: string; kind: string; code: string; label: string; amount_satang: number }[]) {
@@ -350,6 +365,7 @@ export async function POST(request: NextRequest) {
         ot_hour_divisor: emp.ot_hour_divisor ?? workHours,
         tax_mode: (emp.tax_mode as TaxMode) || 'progressive',
         sso_enrolled: emp.sso_enrolled,
+        tax_allowances_baht: (taxAllowBahtByEmp.get(emp.id) ?? 0) / 100,
       },
       company: engineCompany,
       timesheet: {

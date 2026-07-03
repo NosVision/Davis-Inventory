@@ -41,17 +41,23 @@ const TAX_BRACKETS: { upTo: number; rate: number }[] = [
 
 /**
  * Monthly PND1 withholding (satang) from a monthly labour base (satang), by the standard
- * annualize → deduct expense+personal+SSO → bracket → ÷12 method. `ssoMonthlySatang` is the
- * employee's own monthly SSO contribution (its annual sum, capped at ฿9,000, is deductible).
+ * annualize → deduct expense+personal+SSO+allowances → bracket → ÷12 method. `ssoMonthlySatang`
+ * is the employee's own monthly SSO contribution (its annual sum, capped at ฿9,000, is
+ * deductible). `extraAllowancesBaht` is the ANNUAL sum of the employee's ล.ย.01 tax allowances
+ * beyond the standard ฿60k personal one (spouse ฿60k, child ฿30k, parent, life/health
+ * insurance, provident fund, home-loan interest, donations, …) — 0 when none are on file, so
+ * an employee with no ล.ย.01 filed withholds exactly as before.
  */
 export function progressiveMonthlyTaxSatang(
   monthlyBaseSatang: number,
   ssoMonthlySatang: number,
+  extraAllowancesBaht = 0,
 ): number {
   const annualBaht = (monthlyBaseSatang / 100) * 12;
   const expense = Math.min(annualBaht * EXPENSE_RATE, EXPENSE_CAP_BAHT);
   const ssoAnnual = Math.min((ssoMonthlySatang / 100) * 12, SSO_ANNUAL_CAP_BAHT);
-  const taxable = Math.max(0, annualBaht - expense - PERSONAL_ALLOWANCE_BAHT - ssoAnnual);
+  const allowances = Math.max(0, extraAllowancesBaht);
+  const taxable = Math.max(0, annualBaht - expense - PERSONAL_ALLOWANCE_BAHT - ssoAnnual - allowances);
 
   let tax = 0;
   let lower = 0;
@@ -78,6 +84,9 @@ export interface PayrollEmployee {
   ot_hour_divisor: number; // 8 | 9 (per person)
   tax_mode: TaxMode;
   sso_enrolled: boolean;
+  /** Annual ล.ย.01 tax allowances beyond the standard ฿60k personal one (spouse/child/
+   *  insurance/PVD/…), in BAHT. Optional — defaults to 0 (withholds as if none filed). */
+  tax_allowances_baht?: number;
 }
 
 export interface PayrollCompany {
@@ -269,7 +278,7 @@ export function computePayslip(input: PayrollInput): Payslip {
   if (emp.tax_mode === 'withholding_3pct') {
     tax = Math.round(baseSalary * 0.03);
   } else if (emp.tax_mode === 'progressive') {
-    tax = progressiveMonthlyTaxSatang(baseSalary, sso);
+    tax = progressiveMonthlyTaxSatang(baseSalary, sso, emp.tax_allowances_baht ?? 0);
   }
 
   // ── Variable deductions (salary side only: leave / absent / late) ─────────
