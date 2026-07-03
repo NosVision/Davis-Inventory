@@ -43,6 +43,9 @@ export interface EmployeeWritable {
   standard_days_off: number;
   tax_mode: TaxMode;
   sso_enrolled: boolean;
+  pvd_enrolled: boolean;
+  pvd_employee_rate: number;
+  pvd_employer_rate: number;
   bank_name: string | null;
   bank_account_no: string | null;
   bank_account_name: string | null;
@@ -183,6 +186,15 @@ export function pickEmployeeFields(
     if (!has(key)) return;
     out[key] = Boolean(body[key]);
   };
+  const setRange = (key: string, min: number, max: number) => {
+    if (!has(key)) return;
+    const n = Number(body[key]);
+    if (!Number.isFinite(n) || n < min || n > max) {
+      errors.push({ field: key, message: `must be a number between ${min} and ${max}` });
+      return;
+    }
+    out[key] = n;
+  };
   const setStrOrNull = (key: string) => {
     if (!has(key)) return;
     const v = body[key];
@@ -200,6 +212,9 @@ export function pickEmployeeFields(
   setNum('break_hours', 0);
   setBool('ot_eligible');
   setBool('sso_enrolled');
+  setBool('pvd_enrolled');
+  setRange('pvd_employee_rate', 0, 0.15); // Thai PVD 2–15% (fraction); DB CHECK also enforces
+  setRange('pvd_employer_rate', 0, 0.15);
   ['company_id', 'position_id', 'department_id', 'supervisor_id'].forEach(setStrOrNull);
   ['start_date', 'probation_end', 'end_date'].forEach(setDate);
   ['employee_code', 'bank_name', 'bank_account_no', 'bank_account_name', 'sso_no', 'tax_id',
