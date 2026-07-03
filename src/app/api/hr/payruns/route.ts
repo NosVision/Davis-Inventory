@@ -194,7 +194,7 @@ export async function POST(request: NextRequest) {
 
   // Bulk-load everything for the cycle in parallel.
   const dates = dateRange(start, end);
-  const [scheduleRes, attendanceRes, overridesRes, leavesRes, leaveTypesRes, holidaysRes, recurringRes, scRes, claimsRes, taxAllowRes, tipRes] =
+  const [scheduleRes, attendanceRes, overridesRes, leavesRes, leaveTypesRes, holidaysRes, recurringRes, scRes, claimsRes, taxAllowRes, tipRes, evalBonusRes] =
     await Promise.all([
       service
         .from('hr_schedule')
@@ -246,10 +246,18 @@ export async function POST(request: NextRequest) {
         .from('hr_tip_allocations')
         .select('user_id, allocated_satang, pool:hr_tip_pools!inner(period_month), hr_tip_deductions(amount_satang)')
         .eq('pool.period_month', `${year}-${pad(month)}-01`),
+      // POSITIVE eval payouts (bonuses) approved for THIS month → payslip earning. Negative
+      // eval payouts are handled as SC deductions (apply-sc), not here.
+      service
+        .from('hr_eval_payouts')
+        .select('id, amount_satang, result:hr_eval_results!inner(employee_id, period:hr_eval_periods!inner(period_month))')
+        .eq('status', 'approved')
+        .gt('amount_satang', 0)
+        .eq('result.period.period_month', `${year}-${pad(month)}-01`),
     ]);
   const anyErr =
     scheduleRes.error || attendanceRes.error || overridesRes.error || leavesRes.error ||
-    leaveTypesRes.error || holidaysRes.error || recurringRes.error || scRes.error || claimsRes.error || taxAllowRes.error || tipRes.error;
+    leaveTypesRes.error || holidaysRes.error || recurringRes.error || scRes.error || claimsRes.error || taxAllowRes.error || tipRes.error || evalBonusRes.error;
   if (anyErr) return NextResponse.json({ error: 'Failed to load payroll inputs' }, { status: 500 });
 
   // Index the bulk data.
@@ -309,6 +317,15 @@ export async function POST(request: NextRequest) {
     list.push(c);
     claimsByUser.set(c.user_id, list);
   }
+  // Positive eval payouts → eval_bonus earning, keyed by the result's employee (a profile id).
+  const evalBonusByUser = new Map<string, { id: string; amount_satang: number }[]>();
+  for (const p of (evalBonusRes.data ?? []) as unknown as { id: string; amount_satang: number; result: { employee_id: string } | null }[]) {
+    const uid = p.result?.employee_id;
+    if (!uid) continue;
+    const list = evalBonusByUser.get(uid) ?? [];
+    list.push({ id: p.id, amount_satang: p.amount_satang });
+    evalBonusByUser.set(uid, list);
+  }
 
   // Per-employee: assemble → compute → collect for insert.
   const assembled: { emp: EmployeeFull; slip: AssembledLine; claimIds: string[] }[] = [];
@@ -366,9 +383,15 @@ export async function POST(request: NextRequest) {
       .map((r) => ({ type: mapDeductionType(r.code), label: r.label, amount_satang: r.amount_satang }));
 
     const claimList = claimsByUser.get(uid) ?? [];
-    const extraEarnings = claimList.map((c) => ({
-      type: 'claim' as const, label: c.description || 'claim', amount_satang: c.amount_satang, ref: c.id,
-    }));
+    const evalBonusList = evalBonusByUser.get(uid) ?? [];
+    const extraEarnings = [
+      ...claimList.map((c) => ({
+        type: 'claim' as const, label: c.description || 'claim', amount_satang: c.amount_satang, ref: c.id,
+      })),
+      ...evalBonusList.map((b) => ({
+        type: 'eval_bonus' as const, label: 'eval_bonus', amount_satang: b.amount_satang, ref: b.id,
+      })),
+    ];
 
     const input: PayrollInput = {
       employee: {
