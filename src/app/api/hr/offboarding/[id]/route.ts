@@ -114,8 +114,21 @@ export async function PUT(
     update.last_working_date = d;
   }
 
-  const { error: updErr } = await service.from(TABLE).update(update).eq('id', id).eq('status', 'draft');
+  const { data: parentUpd, error: updErr } = await service
+    .from(TABLE)
+    .update(update)
+    .eq('id', id)
+    .eq('status', 'draft')
+    .select('id');
   if (updErr) return NextResponse.json({ error: 'Failed to update offboarding' }, { status: 500 });
+  // If the compare-and-set matched 0 rows the offboarding was completed/cancelled between
+  // our read and this write — stop before rewriting the checklist against a closed record.
+  if (!parentUpd || parentUpd.length === 0) {
+    return NextResponse.json(
+      { error: 'This offboarding is no longer editable (not in draft)' },
+      { status: 409 }
+    );
+  }
 
   // Asset resolutions: update each provided item by (offboarding_id, asset_id).
   if (Array.isArray(body.assets)) {

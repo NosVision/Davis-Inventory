@@ -117,7 +117,11 @@ export async function POST(
     }
   }
 
-  // hr_assets: apply each checklist resolution.
+  // hr_assets: apply each checklist resolution. The checklist is a point-in-time snapshot
+  // from initiate time, so re-scope every update to `holder_id = userId` — the asset may
+  // have been reassigned to a DIFFERENT employee since, and an unscoped update would clobber
+  // that live issuance. A 0-row match means the asset is no longer held by this employee →
+  // warn (do not silently succeed). Every applied change is audited.
   for (const item of items) {
     const assetId = item.asset_id as string;
     const resolution = item.resolution as string;
@@ -130,13 +134,55 @@ export async function POST(
             ? { status: 'damaged' }
             : null;
     if (!patch) continue;
-    const { error: assetUpdErr } = await service.from('hr_assets').update(patch).eq('id', assetId);
-    if (assetUpdErr) warnings.push(`Failed to update asset ${assetId}.`);
+
+    const { data: assetBefore } = await service
+      .from('hr_assets')
+      .select('id, status, holder_id, returned_date')
+      .eq('id', assetId)
+      .maybeSingle();
+
+    const { data: assetAfter, error: assetUpdErr } = await service
+      .from('hr_assets')
+      .update(patch)
+      .eq('id', assetId)
+      .eq('holder_id', userId)
+      .select('id, status, holder_id, returned_date');
+    if (assetUpdErr) {
+      warnings.push(`Failed to update asset ${item.asset_id}.`);
+      continue;
+    }
+    if (!assetAfter || assetAfter.length === 0) {
+      warnings.push(
+        `Asset ${item.asset_id} was not updated — it is no longer held by this employee (possibly reassigned).`
+      );
+      continue;
+    }
+    await logHrAudit(service, {
+      actorId: auth.userId,
+      action: 'update',
+      table: 'hr_assets',
+      recordId: assetId,
+      before: assetBefore ?? null,
+      after: assetAfter[0],
+      reason: `Offboarding asset ${resolution}: ${kind}`,
+    });
   }
 
   // Deactivate the account.
   const { error: profErr } = await service.from('profiles').update({ active: false }).eq('id', userId);
-  if (profErr) warnings.push('Failed to deactivate the employee account.');
+  if (profErr) {
+    warnings.push('Failed to deactivate the employee account.');
+  } else {
+    await logHrAudit(service, {
+      actorId: auth.userId,
+      action: 'update',
+      table: 'profiles',
+      recordId: userId,
+      before: { active: true },
+      after: { active: false },
+      reason: `Offboarding completed: account deactivated (${kind})`,
+    });
+  }
 
   return NextResponse.json({
     data: { id, status: 'completed' },
