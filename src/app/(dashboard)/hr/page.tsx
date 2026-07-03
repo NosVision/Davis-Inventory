@@ -38,7 +38,7 @@ const NAV_TILES: { key: string; icon: LucideIcon; href?: string }[] = [
   { key: 'requests', icon: ClipboardList, href: '/hr/requests' },
   { key: 'leave', icon: CalendarX, href: '/hr/leaves' },
   { key: 'leaveTypes', icon: Settings, href: '/hr/leave-types' },
-  { key: 'warnings', icon: AlertTriangle },
+  { key: 'warnings', icon: AlertTriangle, href: '/hr/warnings' },
   { key: 'payroll', icon: Wallet },
   { key: 'serviceCharge', icon: Coins },
   { key: 'evaluation', icon: Star },
