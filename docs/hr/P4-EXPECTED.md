@@ -73,3 +73,32 @@ Deductions:
 - **total_deduction = 115,000**
 
 **net = 900,000 − 115,000 = 785,000** (฿7,850.00)
+
+---
+
+# P4.4 additions (ล.ย.01 allowance · PVD · Tip) — hand-computed, satang-exact
+
+> These extend the engine (same `computePayslip`). All use a ฿50,000/mo (5,000,000 satang)
+> full_monthly employee, 30 worked days, SSO ฿875, no OT/leave/late for isolation.
+> PND1 ladder: 0–150k @0, 150k–300k @5%, 300k–500k @10%, … Standard deductions: expense
+> 50% cap ฿100k, personal ฿60k, SSO annual cap ฿9k.
+
+## S5 — ล.ย.01 tax allowance (progressive) — matches `progressiveMonthlyTaxSatang` assert 5/5
+Base ฿50,000/mo → annual ฿600,000. expense=100k, personal=60k, sso=9k.
+- **No allowance:** taxable = 600k−100k−60k−9k = **431,000** → tax/yr = 7,500 + (131k@10%=13,100) = **20,600** → /12 → **171,667 satang/mo** (฿1,716.67)
+- **+฿120,000 allowance** (spouse 60k + child 30k + insurance 30k): taxable = 431k−120k = **311,000** → tax/yr = 7,500 + (11k@10%=1,100) = **8,600** → /12 → **71,667 satang/mo** (฿716.67)
+- **+฿281,000 allowance** (taxable → 150,000, bottom of ladder): tax/yr = **0** → **0/mo**
+
+## S6 — PVD (กองทุนสำรองเลี้ยงชีพ) — matches PVD assert 10/10
+Base ฿50,000/mo, **3% employee PVD**, progressive tax, SSO ฿875.
+- PVD deduction = round(5,000,000 × 0.03) = **150,000 satang** (฿1,500), line `provident_fund` ref `3.00%`
+- PVD annual = 1,500 × 12 = ฿18,000 → added to tax-allowance base
+- taxable = 431,000 − 18,000 = **413,000** → tax/yr = 7,500 + (113k@10%=11,300) = **18,800** → /12 → **156,667 satang/mo** (฿1,566.67)
+- tax saving vs no-PVD = 171,667 − 156,667 = **15,000**; net drop vs no-PVD = pvd − saving = 150,000 − 15,000 = **135,000**
+- Part-time / zero-rate / not-enrolled → **no PVD line** (gated)
+
+## S7 — Tip pool — matches Tip assert 9/9
+Tip net (allocated − deductions) fed as a `tip` earning.
+- Alloc ฿30,000 (3,000,000) − manual deduction ฿5,000 (500,000) = **net 2,500,000** → earning line `tip` = 2,500,000, added to gross AND net
+- **Unlike SC, tips are NOT gated on pay type** — a pt_daily employee still gets the tip line (but no service_charge line)
+- undefined / 0 tip → no line
