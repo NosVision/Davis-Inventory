@@ -19,6 +19,8 @@ function load(rel) {
 
 const bt = load('bank-transfer.ts');
 const ec = load('eval-config.ts');
+const lv = load('leaves.ts');
+const wn = load('warnings.ts');
 
 const R = [];
 const eq = (name, got, want) => R.push({ name, pass: JSON.stringify(got) === JSON.stringify(want), got, want });
@@ -60,6 +62,32 @@ eq('ec period bad month → false', ec.parseEvalPeriod({ period_month: '2026-07-
 eq('ec period no title → false', ec.parseEvalPeriod({ period_month: '2026-07-01', title: '' }).ok, false);
 eq('ec scope defaults company', ec.parseEvalPeriod({ period_month: '2026-07-01', title: 'x' }).fields.scope_type, 'company');
 eq('ec scope stores honored', ec.parseEvalPeriod({ period_month: '2026-07-01', title: 'x', scope_type: 'stores' }).fields.scope_type, 'stores');
+
+// ── leaves.ts: §H classifyLeaveEffect (the 3-column pay-effect) + countLeaveDays + cert ──
+const cle = (code, paid, hasCert) => lv.classifyLeaveEffect({ code, paid }, hasCert);
+eq('leave personal → หักหมด', cle('personal', false, false), { paid: false, deductSalary: true, deductSc: true, deductTravel: true });
+eq('leave sick no-cert → หักหมด', cle('sick', false, false), { paid: false, deductSalary: true, deductSc: true, deductTravel: true });
+eq('leave sick +cert → salary ไม่หัก, SC+travel หัก', cle('sick', false, true), { paid: true, deductSalary: false, deductSc: true, deductTravel: true });
+eq('leave vacation → ไม่หักเลย', cle('vacation', true, false), { paid: true, deductSalary: false, deductSc: false, deductTravel: false });
+eq('leave other-paid → ไม่หัก', cle('other', true, false), { paid: true, deductSalary: false, deductSc: false, deductTravel: false });
+eq('leave other-unpaid → หักหมด', cle('other', false, false), { paid: false, deductSalary: true, deductSc: true, deductTravel: true });
+// countLeaveDays excludes holidays
+eq('countLeaveDays 5 days no holiday', lv.countLeaveDays('2026-07-01', '2026-07-05', []), 5);
+eq('countLeaveDays minus 1 holiday', lv.countLeaveDays('2026-07-01', '2026-07-05', ['2026-07-03']), 4);
+// cert required: sick > 3 days only; others when requires_cert
+eq('cert sick 3 days → not required', lv.isCertRequired({ code: 'sick', requires_cert: true }, 3), false);
+eq('cert sick 4 days → required', lv.isCertRequired({ code: 'sick', requires_cert: true }, 4), true);
+eq('cert non-sick requires_cert → always', lv.isCertRequired({ code: 'personal', requires_cert: true }, 1), true);
+eq('cert requires_cert=false → never', lv.isCertRequired({ code: 'sick', requires_cert: false }, 10), false);
+
+// ── warnings.ts: deriveScEffect (server-side SC intent) ──
+eq('warn verbal → no SC', wn.deriveScEffect('verbal', null), { ok: true, sc_deduct_percent: null, amount_satang: null, sc_deduct_cycles: 0 });
+eq('warn deduct_50 → 50% 1 cycle', wn.deriveScEffect('deduct_50', null), { ok: true, sc_deduct_percent: 50, amount_satang: null, sc_deduct_cycles: 1 });
+eq('warn deduct_200 → 200% 2 cycles (carry)', wn.deriveScEffect('deduct_200', null), { ok: true, sc_deduct_percent: 200, amount_satang: null, sc_deduct_cycles: 2 });
+eq('warn amount_baht valid', wn.deriveScEffect('amount_baht', 30000), { ok: true, sc_deduct_percent: null, amount_satang: 30000, sc_deduct_cycles: 1 });
+eq('warn amount_baht rejects 0', wn.deriveScEffect('amount_baht', 0).ok, false);
+eq('warn amount_baht rejects over ฿1M', wn.deriveScEffect('amount_baht', 100_000_001).ok, false);
+eq('warn percent-level forces amount null', wn.deriveScEffect('deduct_25', 99999).amount_satang, null);
 
 const fail = R.filter((r) => !r.pass);
 for (const r of R) if (!r.pass) console.log(`FAIL ${r.name}: got=${JSON.stringify(r.got)} want=${JSON.stringify(r.want)}`);
