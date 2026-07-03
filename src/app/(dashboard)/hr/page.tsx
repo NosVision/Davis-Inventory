@@ -23,6 +23,7 @@ import {
   Settings,
   Receipt,
   UserCog,
+  UserMinus,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -43,6 +44,7 @@ const NAV_TILES: { key: string; icon: LucideIcon; href?: string }[] = [
   { key: 'warnings', icon: AlertTriangle, href: '/hr/warnings' },
   { key: 'claims', icon: Receipt, href: '/hr/claims' },
   { key: 'profileRequests', icon: UserCog, href: '/hr/profile-requests' },
+  { key: 'offboarding', icon: UserMinus, href: '/hr/offboarding' },
   { key: 'payroll', icon: Wallet },
   { key: 'serviceCharge', icon: Coins },
   { key: 'evaluation', icon: Star },
