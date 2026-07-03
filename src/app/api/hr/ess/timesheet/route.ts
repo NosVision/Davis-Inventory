@@ -3,10 +3,21 @@ import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { openBusinessDateBangkok } from '@/lib/utils/date';
 import {
   computeDaySummary,
+  applyOverride,
   sumDays,
   type Punch,
   type DaySummary,
+  type TimesheetOverride,
 } from '@/lib/hr/time-engine';
+
+interface OverrideRow {
+  business_date: string;
+  worked_min: number | null;
+  late_min: number | null;
+  ot_min: number | null;
+  absent: boolean | null;
+  reason: string | null;
+}
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_RANGE_DAYS = 62;
@@ -65,7 +76,7 @@ export async function GET(request: NextRequest) {
   }
 
   const service = createServiceClient();
-  const [empRes, scheduleRes, attendanceRes] = await Promise.all([
+  const [empRes, scheduleRes, attendanceRes, overridesRes] = await Promise.all([
     service
       .from('hr_employees')
       .select('work_hours_per_day, ot_eligible')
@@ -83,11 +94,17 @@ export async function GET(request: NextRequest) {
       .eq('user_id', user.id)
       .gte('business_date', from)
       .lte('business_date', to),
+    service
+      .from('hr_timesheet_overrides')
+      .select('business_date, worked_min, late_min, ot_min, absent, reason')
+      .eq('user_id', user.id)
+      .gte('business_date', from)
+      .lte('business_date', to),
   ]);
   // Include empRes.error: a genuine query failure must 500, not silently fall back to the
   // default hours/eligibility (which would mis-compute OT). A legitimately MISSING row
   // (data null, error null) still uses the conservative defaults below.
-  if (empRes.error || scheduleRes.error || attendanceRes.error) {
+  if (empRes.error || scheduleRes.error || attendanceRes.error || overridesRes.error) {
     return NextResponse.json({ error: 'Failed to load timesheet' }, { status: 500 });
   }
 
@@ -97,6 +114,13 @@ export async function GET(request: NextRequest) {
 
   const schedule = (scheduleRes.data ?? []) as unknown as ScheduleCell[];
   const attendance = (attendanceRes.data ?? []) as AttendanceRow[];
+  const overrides = (overridesRes.data ?? []) as OverrideRow[];
+  const overrideByDate = new Map<string, TimesheetOverride>(
+    overrides.map((o) => [
+      o.business_date,
+      { worked_min: o.worked_min, late_min: o.late_min, ot_min: o.ot_min, absent: o.absent, reason: o.reason },
+    ])
+  );
   const schedByDate = new Map(schedule.map((s) => [s.work_date, s]));
   const punchesByDate = new Map<string, Punch[]>();
   for (const a of attendance) {
@@ -107,7 +131,7 @@ export async function GET(request: NextRequest) {
 
   const days: DaySummary[] = dates.map((date) => {
     const cell = schedByDate.get(date);
-    return computeDaySummary({
+    const derived = computeDaySummary({
       businessDate: date,
       shift: cell?.shift ?? null,
       isDayOff: cell?.is_day_off ?? false,
@@ -116,6 +140,7 @@ export async function GET(request: NextRequest) {
       workHoursPerDay: workHours,
       otEligible,
     });
+    return applyOverride(derived, overrideByDate.get(date));
   });
 
   return NextResponse.json({ from, to, work_hours_per_day: workHours, ot_eligible: otEligible, days, totals: sumDays(days) });

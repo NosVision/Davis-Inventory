@@ -4,10 +4,22 @@ import { requireStoreManager } from '@/lib/hr/route-auth';
 import { openBusinessDateBangkok } from '@/lib/utils/date';
 import {
   computeDaySummary,
+  applyOverride,
   sumDays,
   type Punch,
   type DaySummary,
+  type TimesheetOverride,
 } from '@/lib/hr/time-engine';
+
+interface OverrideRow {
+  user_id: string;
+  business_date: string;
+  worked_min: number | null;
+  late_min: number | null;
+  ot_min: number | null;
+  absent: boolean | null;
+  reason: string | null;
+}
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_RANGE_DAYS = 62;
@@ -94,7 +106,7 @@ export async function GET(request: NextRequest) {
   }
   if (userIds.length === 0) return NextResponse.json({ employees: [], from, to });
 
-  const [profilesRes, employeesRes, scheduleRes, attendanceRes] = await Promise.all([
+  const [profilesRes, employeesRes, scheduleRes, attendanceRes, overridesRes] = await Promise.all([
     service.from('profiles').select('id, username, display_name').in('id', userIds),
     service
       .from('hr_employees')
@@ -113,8 +125,20 @@ export async function GET(request: NextRequest) {
       .in('user_id', userIds) //  elsewhere must not leak into / inflate this timesheet
       .gte('business_date', from)
       .lte('business_date', to),
+    service
+      .from('hr_timesheet_overrides')
+      .select('user_id, business_date, worked_min, late_min, ot_min, absent, reason')
+      .in('user_id', userIds)
+      .gte('business_date', from)
+      .lte('business_date', to),
   ]);
-  if (profilesRes.error || employeesRes.error || scheduleRes.error || attendanceRes.error) {
+  if (
+    profilesRes.error ||
+    employeesRes.error ||
+    scheduleRes.error ||
+    attendanceRes.error ||
+    overridesRes.error
+  ) {
     return NextResponse.json({ error: 'Failed to load timesheet data' }, { status: 500 });
   }
 
@@ -122,6 +146,13 @@ export async function GET(request: NextRequest) {
   const employees = (employeesRes.data ?? []) as EmployeeRow[];
   const schedule = (scheduleRes.data ?? []) as unknown as ScheduleCell[];
   const attendance = (attendanceRes.data ?? []) as AttendanceRow[];
+  const overrides = (overridesRes.data ?? []) as OverrideRow[];
+  const overrideByCell = new Map<string, TimesheetOverride>(
+    overrides.map((o) => [
+      `${o.user_id}|${o.business_date}`,
+      { worked_min: o.worked_min, late_min: o.late_min, ot_min: o.ot_min, absent: o.absent, reason: o.reason },
+    ])
+  );
 
   const profById = new Map(profiles.map((p) => [p.id, p]));
   const empById = new Map(employees.map((e) => [e.profile_id, e]));
@@ -147,7 +178,7 @@ export async function GET(request: NextRequest) {
       const otEligible = e?.ot_eligible ?? false;
       const days: DaySummary[] = dates.map((date) => {
         const cell = schedByCell.get(`${uid}|${date}`);
-        return computeDaySummary({
+        const derived = computeDaySummary({
           businessDate: date,
           shift: cell?.shift ?? null,
           isDayOff: cell?.is_day_off ?? false,
@@ -156,6 +187,7 @@ export async function GET(request: NextRequest) {
           workHoursPerDay: workHours,
           otEligible,
         });
+        return applyOverride(derived, overrideByCell.get(`${uid}|${date}`));
       });
       return {
         user_id: uid,

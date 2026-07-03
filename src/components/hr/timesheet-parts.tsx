@@ -8,6 +8,7 @@
  */
 
 import { useTranslations } from 'next-intl';
+import { Pencil } from 'lucide-react';
 import { Badge } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { formatTimeBangkok } from '@/lib/utils/date';
@@ -25,6 +26,8 @@ export interface DaySummary {
   absent: boolean;
   incomplete: boolean;
   worked_on_day_off: boolean;
+  overridden: boolean; // an HR override is layered over the derived metrics (§J8)
+  override_reason: string | null; // the reason HR gave for the override
 }
 
 export interface TimesheetTotals {
@@ -130,6 +133,15 @@ function StatusCell({ d }: { d: DaySummary }) {
       </Badge>
     );
   }
+  if (d.overridden) {
+    badges.push(
+      <span key="ovr" title={d.override_reason ?? undefined} className="inline-flex">
+        <Badge variant="info" size="sm">
+          {t('overridden')}
+        </Badge>
+      </span>
+    );
+  }
 
   if (badges.length === 0) {
     return d.scheduled ? (
@@ -143,7 +155,14 @@ function StatusCell({ d }: { d: DaySummary }) {
   return <div className="flex flex-wrap gap-1">{badges}</div>;
 }
 
-export function DayTable({ days }: { days: DaySummary[] }) {
+export function DayTable({
+  days,
+  onEditDay,
+}: {
+  days: DaySummary[];
+  /** When provided (HR/manager view), each day row gets a pencil edit affordance. */
+  onEditDay?: (day: DaySummary) => void;
+}) {
   const t = useTranslations('hr.timesheet');
   return (
     <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
@@ -158,6 +177,11 @@ export function DayTable({ days }: { days: DaySummary[] }) {
             <th className="px-3 py-2 text-right font-medium">{t('colLate')}</th>
             <th className="px-3 py-2 text-right font-medium">{t('colOt')}</th>
             <th className="px-3 py-2 text-right font-medium">{t('colBreak')}</th>
+            {onEditDay && (
+              <th className="px-3 py-2 text-right font-medium">
+                <span className="sr-only">{t('edit')}</span>
+              </th>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -206,6 +230,21 @@ export function DayTable({ days }: { days: DaySummary[] }) {
                 <td className="px-3 py-2 text-right tabular-nums text-gray-500 dark:text-gray-400">
                   {d.break_min > 0 ? d.break_min : '—'}
                 </td>
+                {onEditDay && (
+                  <td className="px-3 py-2 text-right">
+                    {!empty && (
+                      <button
+                        type="button"
+                        onClick={() => onEditDay(d)}
+                        title={t('edit')}
+                        aria-label={t('edit')}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-700 dark:hover:text-indigo-400"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </td>
+                )}
               </tr>
             );
           })}

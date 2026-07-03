@@ -13,6 +13,7 @@ import {
   type DaySummary,
   type TimesheetTotals,
 } from '@/components/hr/timesheet-parts';
+import { TimesheetEditModal, type EditTarget } from './_components/timesheet-edit-modal';
 
 interface StoreOpt {
   id: string;
@@ -48,6 +49,7 @@ export default function HrTimesheetPage() {
   const [from, setFrom] = useState<string>(() => addDaysStr(openBusinessDateBangkok(), -6));
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
 
   // manageable stores → default to first
   useEffect(() => {
@@ -155,7 +157,12 @@ export default function HrTimesheetPage() {
                 <h2 className="text-base font-semibold text-gray-900 dark:text-white">{emp.name}</h2>
                 <SummaryChips totals={emp.totals} />
                 {hasData ? (
-                  <DayTable days={emp.days} />
+                  <DayTable
+                    days={emp.days}
+                    onEditDay={(day) =>
+                      setEditTarget({ userId: emp.user_id, name: emp.name, day })
+                    }
+                  />
                 ) : (
                   <p className="rounded-xl border border-dashed border-gray-200 px-4 py-6 text-center text-sm text-gray-400 dark:border-gray-700">
                     {t('noData')}
@@ -166,6 +173,17 @@ export default function HrTimesheetPage() {
           })}
         </div>
       )}
+
+      <TimesheetEditModal
+        isOpen={!!editTarget}
+        target={editTarget}
+        storeId={storeId}
+        onClose={() => setEditTarget(null)}
+        onSaved={() => {
+          setEditTarget(null);
+          load();
+        }}
+      />
     </div>
   );
 }

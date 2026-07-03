@@ -51,6 +51,38 @@ export interface DaySummary {
   absent: boolean; // scheduled work day with no in-punch
   incomplete: boolean; // has an in-punch but no out-punch (worked can't be finalized)
   worked_on_day_off: boolean; // punched in on a scheduled day off
+  overridden: boolean; // an HR override was applied over the derived values
+  override_reason: string | null; // the reason HR gave for the override
+}
+
+/** An HR-entered override; null fields fall through to the derived value (§J8/§B). */
+export interface TimesheetOverride {
+  worked_min: number | null;
+  late_min: number | null;
+  ot_min: number | null;
+  absent: boolean | null;
+  reason: string | null;
+}
+
+/**
+ * Layer an HR override's non-null fields over a derived day (immutable). The punches
+ * are never touched — this only affects the reported metrics. Always flags `overridden`
+ * when a row exists so the UI can show it, even if the row only carries a reason/note.
+ */
+export function applyOverride(
+  day: DaySummary,
+  override: TimesheetOverride | undefined
+): DaySummary {
+  if (!override) return day;
+  return {
+    ...day,
+    worked_min: override.worked_min !== null ? override.worked_min : day.worked_min,
+    late_min: override.late_min !== null ? override.late_min : day.late_min,
+    ot_min: override.ot_min !== null ? override.ot_min : day.ot_min,
+    absent: override.absent !== null ? override.absent : day.absent,
+    overridden: true,
+    override_reason: override.reason ?? null,
+  };
 }
 
 interface Interval {
@@ -192,6 +224,8 @@ export function computeDaySummary(input: DaySummaryInput): DaySummary {
     absent,
     incomplete,
     worked_on_day_off: input.isDayOff && !!firstIn,
+    overridden: false,
+    override_reason: null,
   };
 }
 
