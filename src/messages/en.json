@@ -2640,7 +2640,8 @@
       "leaveTypes": "Leave Types",
       "claims": "Expense Claims",
       "profileRequests": "Profile Changes",
-      "offboarding": "Offboarding"
+      "offboarding": "Offboarding",
+      "today": "Today"
     },
     "leaves": {
       "title": "Leave",

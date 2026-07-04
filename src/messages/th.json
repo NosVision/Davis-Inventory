@@ -2641,7 +2641,8 @@
       "leaveTypes": "ประเภทการลา/วันหยุด",
       "claims": "เบิกค่าใช้จ่าย",
       "profileRequests": "คำขอแก้ไขข้อมูล",
-      "offboarding": "การพ้นสภาพ"
+      "offboarding": "การพ้นสภาพ",
+      "today": "แดชบอร์ดวันนี้"
     },
     "leaves": {
       "title": "ลางาน",

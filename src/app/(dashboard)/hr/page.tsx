@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import {
+  LayoutDashboard,
   Users,
   Briefcase,
   Clock,
@@ -32,6 +33,7 @@ import {
  * (P1–P5); tiles without an `href` are placeholders.
  */
 const NAV_TILES: { key: string; icon: LucideIcon; href?: string }[] = [
+  { key: 'today', icon: LayoutDashboard, href: '/hr/dashboard' },
   { key: 'employees', icon: Users, href: '/hr/employees' },
   { key: 'org', icon: Briefcase, href: '/hr/org' },
   { key: 'attendance', icon: Clock, href: '/hr/attendance' },
