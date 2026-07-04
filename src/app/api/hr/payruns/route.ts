@@ -454,15 +454,20 @@ export async function POST(request: NextRequest) {
       .single();
     if (psErr || !ps) continue;
 
+    // Persist itemized lines. A failing line insert must NOT be swallowed: a CHECK/enum gap would
+    // otherwise drop the whole line set and leave a payslip whose cached totals disagree with its
+    // (empty) itemization — an invisible payroll-correctness defect. Fail loudly instead.
     if (slip.earnings.length) {
-      await service.from('hr_payslip_earnings').insert(
+      const { error: earnErr } = await service.from('hr_payslip_earnings').insert(
         slip.earnings.map((l, i) => ({ payslip_id: ps.id, type: l.type, label: l.label, amount_satang: l.amount_satang, ref: l.ref ?? null, sort: i }))
       );
+      if (earnErr) return NextResponse.json({ error: 'Failed to persist payslip earning lines' }, { status: 500 });
     }
     if (slip.deductions.length) {
-      await service.from('hr_payslip_deductions').insert(
+      const { error: dedErr } = await service.from('hr_payslip_deductions').insert(
         slip.deductions.map((l, i) => ({ payslip_id: ps.id, type: l.type, label: l.label, amount_satang: l.amount_satang, ref: l.ref ?? null, created_by: auth.userId, sort: i }))
       );
+      if (dedErr) return NextResponse.json({ error: 'Failed to persist payslip deduction lines' }, { status: 500 });
     }
     // Mark approved claims paid via this payslip (link the claim earning).
     if (claimIds.length) {
