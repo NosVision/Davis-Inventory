@@ -42,6 +42,26 @@ const P = (id, s) => `/api/hr/eval/periods/${id}${s}`;
     const open = await req(hr, 'PATCH', '/api/hr/eval/periods', { id: periodId, status: 'open' });
     check('open period 200', open.status === 200, `status=${open.status} ${(open.text || '').slice(0, 140)}`);
 
+    // ESS evaluator surfaces (self-service /me/evaluations data): my-periods picker, my-queue
+    // criteria payload, and score GET-prefill roundtrip.
+    const myP = await req(eval1, 'GET', '/api/hr/ess/eval/my-periods');
+    const mineP = (myP.json?.data || []).find((p) => p.id === periodId);
+    check('my-periods lists my open period (pending=1)', !!mineP && mineP.total === 1 && mineP.done === 0 && mineP.pending === 1, myP.json?.data);
+    const otherP = await req(emp, 'GET', '/api/hr/ess/eval/my-periods');
+    check('non-evaluator my-periods excludes period', !(otherP.json?.data || []).some((p) => p.id === periodId), otherP.json?.data);
+
+    const q0 = await req(eval1, 'GET', `/api/hr/ess/eval/my-queue?period_id=${periodId}`);
+    check('my-queue returns 15 criteria for scoring form', (q0.json?.data?.criteria || []).length === 15, (q0.json?.data?.criteria || []).length);
+
+    // draft-save a partial score, then GET it back to confirm prefill works
+    const draft = await req(eval1, 'POST', '/api/hr/ess/eval/score', { assignment_id: aId1, scores: [{ criterion_id: criteria[0].id, points: 7, comment: 'e2e-draft' }], submit: false });
+    check('draft save 200 (no submit)', draft.status === 200 && draft.json?.data?.submitted === false, draft.json?.data || draft.status);
+    const pre = await req(eval1, 'GET', `/api/hr/ess/eval/score?assignment_id=${aId1}`);
+    const preRow = (pre.json?.data?.scores || []).find((s) => s.criterion_id === criteria[0].id);
+    check('score GET prefill returns draft (7, comment)', preRow?.points === 7 && preRow?.comment === 'e2e-draft', pre.json?.data);
+    const preForbidden = await req(eval2, 'GET', `/api/hr/ess/eval/score?assignment_id=${aId1}`);
+    check('score GET cross-evaluator FORBIDDEN 403', preForbidden.status === 403, preForbidden.status);
+
     const scoresA = criteria.map((c) => ({ criterion_id: c.id, points: c.max_points })); // all max → 100%
     const subA = await req(eval1, 'POST', '/api/hr/ess/eval/score', { assignment_id: aId1, scores: scoresA, submit: true });
     check('evaluator A submit 200 (saved 15)', subA.status === 200 && subA.json?.data?.saved === 15 && subA.json?.data?.submitted === true, subA.json?.data || subA.status);

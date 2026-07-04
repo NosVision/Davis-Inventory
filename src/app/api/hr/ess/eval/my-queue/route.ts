@@ -16,9 +16,15 @@ export async function GET(request: NextRequest) {
 
   const service = createServiceClient();
 
-  // Only the period's criteria count tells us when a person is fully scored.
-  const { data: crit } = await service.from('hr_eval_criteria').select('id').eq('period_id', periodId);
-  const criteriaCount = (crit ?? []).length;
+  // The period's criteria (id/name/max_points) — both the "fully scored" count AND the scoring
+  // form's field list, so the evaluator UI needs no extra HR-only criteria call.
+  const { data: crit } = await service
+    .from('hr_eval_criteria')
+    .select('id, name, max_points, sort_order')
+    .eq('period_id', periodId)
+    .order('sort_order');
+  const criteria = (crit ?? []) as { id: string; name: string; max_points: number; sort_order: number }[];
+  const criteriaCount = criteria.length;
 
   const { data: aRows, error } = await service
     .from('hr_eval_assignments')
@@ -28,7 +34,7 @@ export async function GET(request: NextRequest) {
   if (error) return NextResponse.json({ error: 'Failed to load queue' }, { status: 500 });
 
   const assignments = (aRows ?? []) as { id: string; employee_id: string; status: string }[];
-  if (assignments.length === 0) return NextResponse.json({ data: { total: 0, done: 0, pending: 0, items: [] } });
+  if (assignments.length === 0) return NextResponse.json({ data: { total: 0, done: 0, pending: 0, criteria, items: [] } });
 
   const employeeIds = [...new Set(assignments.map((a) => a.employee_id))];
   const assignmentIds = assignments.map((a) => a.id);
@@ -60,5 +66,5 @@ export async function GET(request: NextRequest) {
   items.sort((x, y) => (x.complete === y.complete ? x.employee_name.localeCompare(y.employee_name) : x.complete ? 1 : -1));
 
   const done = items.filter((i) => i.complete).length;
-  return NextResponse.json({ data: { total: items.length, done, pending: items.length - done, items } });
+  return NextResponse.json({ data: { total: items.length, done, pending: items.length - done, criteria, items } });
 }

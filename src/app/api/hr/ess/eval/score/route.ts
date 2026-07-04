@@ -10,6 +10,34 @@ const SCORES = 'hr_eval_scores';
 // Points are clamped to the criterion's max_points server-side (UI clamps too, but never trust
 // the client). Editable before submit; after submit an HR reopen is required (not handled here).
 
+// GET /api/hr/ess/eval/score?assignment_id= — the caller's already-saved scores for ONE of their
+// own assignments, so the scoring form prefills draft values on re-open. Self-scoped.
+export async function GET(request: NextRequest) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const assignmentId = request.nextUrl.searchParams.get('assignment_id');
+  if (!assignmentId) return NextResponse.json({ error: 'assignment_id is required' }, { status: 400 });
+
+  const service = createServiceClient();
+  const { data: assignment } = await service
+    .from(ASSIGNMENTS)
+    .select('id, evaluator_id, status')
+    .eq('id', assignmentId)
+    .maybeSingle();
+  if (!assignment) return NextResponse.json({ error: 'Assignment not found' }, { status: 404 });
+  if (assignment.evaluator_id !== user.id) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+
+  const { data: scoreRows, error } = await service
+    .from(SCORES)
+    .select('criterion_id, points, comment')
+    .eq('assignment_id', assignmentId);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  return NextResponse.json({ data: { status: assignment.status, scores: scoreRows ?? [] } });
+}
+
 // POST /api/hr/ess/eval/score — body { assignment_id, scores:[{criterion_id,points,comment}], submit? }
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
