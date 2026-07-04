@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireHrManager } from '@/lib/hr/route-auth';
+import { requireHrManagerForEmployeeId } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 
 const KINDS = ['earning', 'deduction'];
@@ -12,9 +12,9 @@ const COLS = 'id, employee_id, kind, code, label, amount_satang, active, note';
 
 // GET /api/hr/employees/[id]/recurring — list the employee's recurring items.
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireHrManager();
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const { id } = await params;
+  const auth = await requireHrManagerForEmployeeId(id);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const service = createServiceClient();
   const { data, error } = await service.from(TABLE).select(COLS).eq('employee_id', id).order('kind').order('code');
   if (error) return NextResponse.json({ error: 'Failed to load recurring items' }, { status: 500 });
@@ -23,9 +23,9 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
 // POST /api/hr/employees/[id]/recurring — add a recurring item. Audited.
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireHrManager();
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const { id } = await params;
+  const auth = await requireHrManagerForEmployeeId(id);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const kind = typeof body.kind === 'string' ? body.kind : '';
@@ -60,9 +60,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
 // DELETE /api/hr/employees/[id]/recurring?item_id= — remove a recurring item. Audited.
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireHrManager();
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const { id } = await params;
+  const auth = await requireHrManagerForEmployeeId(id);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const itemId = request.nextUrl.searchParams.get('item_id') ?? '';
   if (!itemId) return NextResponse.json({ error: 'item_id is required' }, { status: 400 });
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireHrManager } from '@/lib/hr/route-auth';
+import { requireHrManagerForEmployeeId } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import {
   pickEmployeeFields,
@@ -25,10 +25,10 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireHrManager();
+  const { id } = await params;
+  const auth = await requireHrManagerForEmployeeId(id);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-  const { id } = await params;
   const service = createServiceClient();
   const { data, error } = await service
     .from('hr_employees')
@@ -45,10 +45,10 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireHrManager();
+  const { id } = await params;
+  const auth = await requireHrManagerForEmployeeId(id);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-  const { id } = await params;
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
 
   const service = createServiceClient();

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireHrManager } from '@/lib/hr/route-auth';
+import { requireHrManagerForEmployeeId } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 
 const TABLE = 'hr_tax_allowances';
@@ -24,9 +24,9 @@ function currentTaxYear(): number {
 
 // GET /api/hr/employees/[id]/tax-allowances?tax_year= — list (defaults to current year).
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireHrManager();
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const { id } = await params;
+  const auth = await requireHrManagerForEmployeeId(id);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const yearParam = request.nextUrl.searchParams.get('tax_year');
   const service = createServiceClient();
 
@@ -43,9 +43,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
 // POST /api/hr/employees/[id]/tax-allowances — add an allowance line. Audited.
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireHrManager();
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const { id } = await params;
+  const auth = await requireHrManagerForEmployeeId(id);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const kind = typeof body.kind === 'string' ? body.kind : '';
@@ -83,9 +83,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
 // PATCH /api/hr/employees/[id]/tax-allowances — toggle active or edit amount. Audited.
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireHrManager();
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const { id } = await params;
+  const auth = await requireHrManagerForEmployeeId(id);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const itemId = typeof body.item_id === 'string' ? body.item_id : '';
@@ -126,9 +126,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
 // DELETE /api/hr/employees/[id]/tax-allowances?item_id= — remove a line. Audited.
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireHrManager();
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const { id } = await params;
+  const auth = await requireHrManagerForEmployeeId(id);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const itemId = request.nextUrl.searchParams.get('item_id') ?? '';
   if (!itemId) return NextResponse.json({ error: 'item_id is required' }, { status: 400 });
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomBytes } from 'node:crypto';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireHrManager } from '@/lib/hr/route-auth';
+import { requireHrManager, resolveHrScope } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import {
   pickEmployeeFields,
@@ -28,8 +28,10 @@ const LIST_SELECT =
 
 // GET /api/hr/employees — list with filters: q, store_id, position_id, department_id, company_id, pay_type, status, limit, offset
 export async function GET(request: NextRequest) {
-  const auth = await requireHrManager();
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  // §P5.5: company-wide HR sees all employees; a store-scoped manager sees only employees whose
+  // user_stores intersect their scope.
+  const scope = await resolveHrScope();
+  if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status });
 
   const sp = request.nextUrl.searchParams;
   const q = (sp.get('q') ?? '').trim();
@@ -65,12 +67,23 @@ export async function GET(request: NextRequest) {
     if (usErr) return NextResponse.json({ error: 'Store filter failed' }, { status: 500 });
     idSets.push((us ?? []).map((r) => r.user_id as string));
   }
-  let profileIdFilter: string[] | null = null;
-  if (idSets.length === 1) profileIdFilter = idSets[0];
-  else if (idSets.length > 1) {
-    const bset = new Set(idSets[1]);
-    profileIdFilter = idSets[0].filter((x) => bset.has(x));
+  // §P5.5: constrain a scoped manager to employees in their stores (company-wide HR → storeIds null).
+  if (scope.storeIds) {
+    const { data: us, error: usErr } = await service
+      .from('user_stores')
+      .select('user_id')
+      .in('store_id', scope.storeIds);
+    if (usErr) return NextResponse.json({ error: 'Scope filter failed' }, { status: 500 });
+    idSets.push((us ?? []).map((r) => r.user_id as string));
   }
+  // Intersect every id set (search ∩ store filter ∩ scope) into the final profile_id filter.
+  const profileIdFilter: string[] | null = idSets.length
+    ? idSets.reduce<string[] | null>((acc, s) => {
+        if (acc === null) return [...s];
+        const set = new Set(s);
+        return acc.filter((x) => set.has(x));
+      }, null)
+    : null;
 
   let query = service.from('hr_employees').select(LIST_SELECT, { count: 'exact' });
   for (const key of ['position_id', 'department_id', 'company_id', 'pay_type', 'status'] as const) {
