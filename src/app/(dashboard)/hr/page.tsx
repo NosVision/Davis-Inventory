@@ -48,7 +48,7 @@ const NAV_TILES: { key: string; icon: LucideIcon; href?: string }[] = [
   { key: 'payroll', icon: Wallet, href: '/hr/payroll' },
   { key: 'serviceCharge', icon: Coins, href: '/hr/service-charge' },
   { key: 'tipPool', icon: Coins, href: '/hr/tip-pool' },
-  { key: 'evaluation', icon: Star },
+  { key: 'evaluation', icon: Star, href: '/hr/evaluation' },
   { key: 'assets', icon: Package, href: '/hr/assets' },
   { key: 'policies', icon: BookOpen, href: '/hr/policies' },
   { key: 'announcements', icon: Megaphone, href: '/hr/announcements' },
