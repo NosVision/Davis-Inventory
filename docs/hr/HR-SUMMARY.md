@@ -12,7 +12,7 @@ A full multi-tenant HR + payroll module on the existing Next.js + Supabase stack
 | **P1** | Employees (§A/§I fields, part-time UX, private docs), org, positions, assets, policies, announcements, audit | ✅ |
 | **P2** | Attendance (§F geofenced check-in), schedule, timesheet, overrides, warnings | ✅ |
 | **P3** | Leave engine (§E: policy/quota/§H interaction), requests, swaps, claims, offboarding, profile-change | ✅ |
-| **P4.1–4.4** | Payroll engine (÷30, SSO cap 875, dual tax), Service Charge, payruns + printable slips, commission/bank-file/ล.ย.01/PVD/tip pool, **payslip-compare** | ✅ (commission→slip pending owner) |
+| **P4.1–4.4** | Payroll engine (÷30, SSO cap 875, dual tax), Service Charge, payruns + printable slips, bank-file/ล.ย.01/PVD/tip pool, **payslip-compare** | ✅ (commission: owner decided 2026-07-05 — stays in the separate `/commission` channel) |
 | **P5.1** | §G monthly evaluation — periods→criteria→assignments→scoring→results→payout (linear/tiered), **negative payout → SC deduction**, anonymized per-evaluator breakdown | ✅ end-to-end (HR + evaluator + employee UIs) |
 | **P5.2** | Statutory reports (ภ.ง.ด.1/1ก, สปส.1-10, register), e-filing CSV, **50-ทวิ PDF**, **work/salary certificate PDF** | ✅ |
 | **P5.3** | Dashboards — Staff ESS home `/me`, manager/HR daily "who's in today" + copy-to-LINE | ✅ |
@@ -28,7 +28,7 @@ A full multi-tenant HR + payroll module on the existing Next.js + Supabase stack
 
 ## Blocked / needs owner or authenticated access
 
-1. **commission → payslip** — the engine already accepts `commission` earnings, but a separate `commission_payment` channel already pays AEs. Wiring commissions into the payslip risks **double payment**. Needs an owner decision (exclude-already-paid vs close the old channel) before it's turned on.
+1. ~~**commission → payslip**~~ — **✅ RESOLVED by owner (2026-07-05)**: commissions stay in the existing separate `/commission` channel ("different logic for now; revisit in the future"). Live data supports this: 99.6% of entries belong to external AEs (`ae_profiles` — never on a payslip anyway); staff entries = 2 ever, both cancelled → zero double-pay exposure today. No code change; the engine keeps accepting a manual `commission` line via recurring if ever needed. A ready-to-build spec for the future (pull staff entries `payment_id IS NULL`, stamp on finalize) is recorded in HR-BUILD-STATE §P4.4.
 2. ~~**Security advisor sweep**~~ — **✅ DONE 2026-07-05 (Round 104)**: fresh `get_advisors('security')` run against the live project (oogyjqywuqmutkjnnsik, target verified) = **0 ERROR / 69 WARN / 2 INFO**. No ERROR-level lint on any `hr_*` object; all WARNs are pre-existing codebase-wide patterns (function search_path, security-definer RPC exposure, POS-side `ae_profiles` policies, auth leaked-password setting). The one hardening candidate it surfaced is **now done** (migration `00112`, 2026-07-05): anon EXECUTE revoked on `hr_payrun_is_finalized` (verified: anon RPC → 401 permission denied; authenticated kept — required by the `hr_payslips_select` RLS policy; payslip e2e 19/19 green).
 3. **Push** — all work is committed locally only. Awaiting owner go-ahead to push.
 
