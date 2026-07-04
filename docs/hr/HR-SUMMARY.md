@@ -1,6 +1,6 @@
 # HR / Payroll Module — Delivery Summary (for the owner)
 
-> Davis-Inventory HR build. Status as of 2026-07-04 (Round 96). **All commits are local — nothing has been pushed.**
+> Davis-Inventory HR build. Status as of 2026-07-05 (Round 104 — full gate re-verified: code + live DB). **All commits are local — nothing has been pushed.**
 
 ## What was delivered
 
@@ -21,14 +21,15 @@ A full multi-tenant HR + payroll module on the existing Next.js + Supabase stack
 ## Verification evidence (ground truth)
 
 - **Offline engine regression** — `node scripts/hr-assert-all.cjs` = **5 suites / 206 checks** (payroll 36 · eval 34 · tax-reports 41 · SC 14 · misc 81 covering all 10 pure libs). Satang-exact vs hand-computed expectations.
-- **Live-auth e2e** — `node scripts/hr-e2e/run-all.cjs` = **17 suites / 285 checks**, all through real Supabase auth + 2-layer RLS (payroll lifecycle, tax-allowance, bank-file, PVD, tip, evaluation + money bridges, statutory reports, per-store scope T1–T4, daily dashboard).
-- **Production build** — `next build` **GREEN** (✓ compiled 20.6s, 237/237 static pages).
+- **Live-auth e2e** — `node scripts/hr-e2e/run-all.cjs` = **19 suites / 308 checks** (re-run 2026-07-05), all through real Supabase auth + 2-layer RLS (payroll lifecycle, tax-allowance, bank-file, PVD, tip, evaluation + money bridges, statutory reports, per-store scope T1–T4, daily dashboard, employee history, dashboard alerts).
+- **Production build** — `next build` **GREEN** (✓ compiled 30.2s, 238/238 static pages, exit 0; re-run 2026-07-05).
+- **Live DB confirm (2026-07-05)** — RLS enabled on all 52 `hr_*` tables with policies; payslip line-type CHECK constraints match migration 00111 (`provident_fund`/`tip` present); security advisors = **0 ERROR / 69 WARN / 2 INFO** (no ERROR on any `hr_*` object).
 - **UI** — key surfaces chrome-verified against the live app (payroll, evaluation all 3 roles, ESS home, daily dashboard, payslip-compare, certificate + 50-ทวิ PDF).
 
 ## Blocked / needs owner or authenticated access
 
 1. **commission → payslip** — the engine already accepts `commission` earnings, but a separate `commission_payment` channel already pays AEs. Wiring commissions into the payslip risks **double payment**. Needs an owner decision (exclude-already-paid vs close the old channel) before it's turned on.
-2. **Security advisor sweep** — `get_advisors` on the live Supabase project (DAVIS) requires interactive MCP auth, which isn't available in this headless session. Last run (Round 46) was **0 ERROR** on all `hr_*` tables/functions; a fresh run should be done from an authenticated session before production.
+2. ~~**Security advisor sweep**~~ — **✅ DONE 2026-07-05 (Round 104)**: fresh `get_advisors('security')` run against the live project (oogyjqywuqmutkjnnsik, target verified) = **0 ERROR / 69 WARN / 2 INFO**. No ERROR-level lint on any `hr_*` object; all WARNs are pre-existing codebase-wide patterns (function search_path, security-definer RPC exposure, POS-side `ae_profiles` policies, auth leaked-password setting). Non-blocking hardening candidate: revoke anon/authenticated EXECUTE on `hr_payrun_is_finalized` (same pattern as 00089).
 3. **Push** — all work is committed locally only. Awaiting owner go-ahead to push.
 
 ## Known follow-ups (P1.5 / P5.4 backlog, non-blocking)
@@ -37,4 +38,4 @@ Org chart view, salary/position-history view (data already in `hr_audit_log`), p
 
 ## Migrations
 
-Schema is file-tracked through `00111`. Migration `00111` (line-type CHECK reconcile for `provident_fund`/`tip`) is authored and matches the live DB (verified by constraint probe); apply via an authenticated MCP/CLI session when convenient — it is a history reconcile, not an active bug.
+Schema is file-tracked through `00111`. **Confirmed 2026-07-05:** the live migration history already contains the `00111` content (applied 2026-07-04 as `hr_payslip_deduction_provident_fund` + `hr_payslip_earnings_tip_type`), and a fresh constraint probe matches the file exactly — files and live DB converge; nothing left to apply. `00048_fix_security_definer_view.sql` (already applied live — `v_monthly_violation_count` is `security_invoker=true` and its advisor lint is gone) is now committed for history convergence.
