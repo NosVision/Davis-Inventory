@@ -3339,6 +3339,16 @@
         "returned": "Returned",
         "lost": "Lost",
         "damaged": "Damaged"
+      },
+      "register": {
+        "action": "Print register",
+        "title": "Asset register",
+        "no": "No.",
+        "count": "Items",
+        "total": "Total value",
+        "page": "Page",
+        "done": "PDF created",
+        "fail": "PDF failed"
       }
     },
     "locations": {

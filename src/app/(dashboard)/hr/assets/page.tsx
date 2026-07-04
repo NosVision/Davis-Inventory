@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Plus } from 'lucide-react';
+import { Plus, Printer } from 'lucide-react';
 import { Button, Select, Badge, Modal, Input, Textarea, toast } from '@/components/ui';
 import { DataTable, type Column } from '@/components/data/data-table';
 import { createClient } from '@/lib/supabase/client';
@@ -248,6 +248,42 @@ export default function AssetsPage() {
   const holderOptions = holders.map((h) => ({ value: h.id, label: h.name }));
   const statusOptions = STATUSES.map((s) => ({ value: s, label: t(`statusOpt.${s}`) }));
 
+  const [printing, setPrinting] = useState(false);
+  const printRegister = async () => {
+    if (rows.length === 0) return;
+    setPrinting(true);
+    try {
+      const { buildAssetRegisterPdf, downloadBlob } = await import('./_components/asset-register-pdf');
+      const now = new Date();
+      const generated = new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Bangkok' }).format(now);
+      const totalSatang = rows.reduce((sum, a) => sum + (a.value_satang ?? 0), 0);
+      const blob = await buildAssetRegisterPdf({
+        generated_label: generated,
+        count: rows.length,
+        total_value: formatBaht(totalSatang),
+        rows: rows.map((a) => ({
+          code: a.asset_code || '',
+          name: a.name,
+          category: a.category || '—',
+          holder: a.holder?.display_name || a.holder?.username || t('unassigned'),
+          value: formatBaht(a.value_satang ?? 0),
+          status: t(`statusOpt.${a.status}`),
+        })),
+        labels: {
+          title: t('register.title'), no: t('register.no'), code: t('code'), name: t('name'),
+          category: t('category'), holder: t('holder'), value: t('value'), status: t('status'),
+          count: t('register.count'), total: t('register.total'), page: t('register.page'),
+        },
+      });
+      downloadBlob(blob, `asset-register-${now.toISOString().slice(0, 10)}.pdf`);
+      toast({ type: 'success', title: t('register.done') });
+    } catch {
+      toast({ type: 'error', title: t('register.fail') });
+    } finally {
+      setPrinting(false);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-4">
       <div className="flex items-start justify-between gap-3">
@@ -255,10 +291,16 @@ export default function AssetsPage() {
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('title')}</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">{t('subtitle')}</p>
         </div>
-        <Button onClick={openCreate} className="shrink-0">
-          <Plus className="h-4 w-4" />
-          {t('add')}
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button variant="outline" type="button" onClick={printRegister} isLoading={printing} disabled={rows.length === 0 || printing}>
+            <Printer className="h-4 w-4" />
+            {t('register.action')}
+          </Button>
+          <Button onClick={openCreate}>
+            <Plus className="h-4 w-4" />
+            {t('add')}
+          </Button>
+        </div>
       </div>
 
       {/* filters */}
