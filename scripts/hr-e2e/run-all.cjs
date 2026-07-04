@@ -20,6 +20,7 @@ const SUITES = [
   'scope-sc.cjs',      // §P5.5 T1: per-store scope on Service Charge family (pool store_id → requireStoreManager)
   'scope-tip.cjs',     // §P5.5 T1: per-store scope on Tip pool family (mirrors SC)
   'scope-employees.cjs', // §P5.5 T2: per-store scope on employee family (user_stores intersection)
+  'scope-offboarding.cjs', // §P5.5 T2: per-store scope on offboarding family + documents (row store_id)
 ];
 
 let failed = 0;

@@ -105,12 +105,40 @@ export async function requireHrManagerForStore(storeId: string | null): Promise<
 }
 
 /**
+ * Gate a route on the `store_id` of a specific row (§P5.5), for tables that carry a nullable
+ * `store_id` (offboarding, timesheet overrides, dayoff swaps, warnings…). Loads the row's store,
+ * 404s if the row is missing, then defers to {@link requireHrManagerForStore} (NULL store =
+ * company-wide → full HR; a store → that store's manager or company-wide HR).
+ */
+export async function requireHrManagerForRowStore(table: string, id: string): Promise<HrAuthResult> {
+  const service = createServiceClient();
+  const { data, error } = await service.from(table).select('store_id').eq('id', id).maybeSingle();
+  if (error) return { ok: false, error: 'authorization check failed', status: 503 };
+  if (!data) return { ok: false, error: 'Not found', status: 404 };
+  return requireHrManagerForStore((data.store_id as string | null) ?? null);
+}
+
+/**
  * Per-employee gate for routes keyed by an `hr_employees.id` (§P5.5). Company-wide HR passes for
  * anyone; a store-scoped manager passes only when the employee's `user_stores` intersect the
  * manager's `hr_manager_scopes`. A scoped manager probing an employee outside their stores (or a
  * non-existent id) gets 403 — never a leak of who exists elsewhere.
  */
 export async function requireHrManagerForEmployeeId(employeeId: string): Promise<HrAuthResult> {
+  return requireHrManagerForEmployee({ employeeId });
+}
+
+/**
+ * Same gate as {@link requireHrManagerForEmployeeId} but keyed by the employee's `profile_id`
+ * directly (for routes that carry the profile/user id rather than the hr_employees.id).
+ */
+export async function requireHrManagerForEmployeeProfile(profileId: string): Promise<HrAuthResult> {
+  return requireHrManagerForEmployee({ profileId });
+}
+
+async function requireHrManagerForEmployee(
+  key: { employeeId: string } | { profileId: string },
+): Promise<HrAuthResult> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -122,7 +150,7 @@ export async function requireHrManagerForEmployeeId(employeeId: string): Promise
     supabase.from('user_permissions').select('permission').eq('user_id', user.id),
   ]);
   if (profileRes.error || permsRes.error) {
-    console.error('requireHrManagerForEmployeeId: auth lookup failed', {
+    console.error('requireHrManagerForEmployee: auth lookup failed', {
       profileErr: profileRes.error?.message,
       permsErr: permsRes.error?.message,
     });
@@ -133,15 +161,21 @@ export async function requireHrManagerForEmployeeId(employeeId: string): Promise
   if (canManageHr({ role, permissions })) return { ok: true, userId: user.id, role };
 
   const service = createServiceClient();
-  const { data: emp } = await service.from('hr_employees').select('profile_id').eq('id', employeeId).maybeSingle();
-  if (!emp) return { ok: false, error: 'Forbidden — employee not in your stores', status: 403 };
+  let employeeProfileId: string | null;
+  if ('profileId' in key) {
+    employeeProfileId = key.profileId;
+  } else {
+    const { data: emp } = await service.from('hr_employees').select('profile_id').eq('id', key.employeeId).maybeSingle();
+    employeeProfileId = (emp?.profile_id as string | undefined) ?? null;
+  }
+  if (!employeeProfileId) return { ok: false, error: 'Forbidden — employee not in your stores', status: 403 };
 
   const [empStoresRes, scopesRes] = await Promise.all([
-    service.from('user_stores').select('store_id').eq('user_id', emp.profile_id as string),
+    service.from('user_stores').select('store_id').eq('user_id', employeeProfileId),
     service.from('hr_manager_scopes').select('store_id').eq('user_id', user.id),
   ]);
   if (empStoresRes.error || scopesRes.error) {
-    console.error('requireHrManagerForEmployeeId: scope lookup failed', {
+    console.error('requireHrManagerForEmployee: scope lookup failed', {
       empErr: empStoresRes.error?.message,
       scopeErr: scopesRes.error?.message,
     });

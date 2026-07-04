@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireHrManager } from '@/lib/hr/route-auth';
+import { requireHrManagerForEmployeeProfile, resolveHrScope } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import { isUniqueViolation } from '@/lib/hr/db-errors';
 import { isCalendarDate } from '@/lib/hr/leaves';
@@ -27,9 +27,6 @@ const KINDS = ['resignation', 'termination'] as const;
 // asset-return checklist. The one-open partial unique index (23505) → 409 so an
 // employee can never have two offboardings in progress at once.
 export async function POST(request: NextRequest) {
-  const auth = await requireHrManager();
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const userId = typeof body.user_id === 'string' ? body.user_id.trim() : '';
   const kind = typeof body.kind === 'string' ? body.kind : '';
@@ -50,6 +47,10 @@ export async function POST(request: NextRequest) {
   if (lastWorkingDate !== null && !isCalendarDate(lastWorkingDate)) {
     return NextResponse.json({ error: 'last_working_date is not a valid date' }, { status: 400 });
   }
+
+  // §P5.5: only company-wide HR or a manager whose stores include this employee may offboard them.
+  const auth = await requireHrManagerForEmployeeProfile(userId);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const service = createServiceClient();
 
@@ -154,14 +155,16 @@ export async function POST(request: NextRequest) {
 
 // GET /api/hr/offboarding — HR queue / history. Query: status? (default all). Newest first.
 export async function GET(request: NextRequest) {
-  const auth = await requireHrManager();
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  // §P5.5: company-wide HR sees the whole queue; a scoped manager sees only their stores' cases.
+  const scope = await resolveHrScope();
+  if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status });
 
   const status = request.nextUrl.searchParams.get('status');
 
   const service = createServiceClient();
   let query = service.from(TABLE).select(`${COLS}, ${EMPLOYEE_EMBED}`);
   if (status) query = query.eq('status', status);
+  if (scope.storeIds) query = query.in('store_id', scope.storeIds); // scoped manager: their stores' rows only
   query = query.order('created_at', { ascending: false });
 
   const { data, error } = await query;

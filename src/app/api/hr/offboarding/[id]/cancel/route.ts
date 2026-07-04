@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireHrManager } from '@/lib/hr/route-auth';
+import { requireHrManagerForRowStore } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 
 const TABLE = 'hr_offboarding';
@@ -12,10 +12,10 @@ export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireHrManager();
+  const { id } = await params;
+  const auth = await requireHrManagerForRowStore('hr_offboarding', id);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-  const { id } = await params;
   const service = createServiceClient();
 
   const { data: updated, error } = await service
