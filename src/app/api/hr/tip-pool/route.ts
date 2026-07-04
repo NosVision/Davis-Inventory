@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireHrManager } from '@/lib/hr/route-auth';
+import { requireStoreManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 
 // Tip pool = same manual pool/allocation/deduction mechanism as Service Charge (00109 mirrors
@@ -25,9 +25,6 @@ function netTip(allocatedSatang: number, deductions: { amount_satang: number }[]
 // GET /api/hr/tip-pool?store_id&period_month=YYYY-MM-01 — the tip pool for a store/month plus
 // its per-person allocations, each with deduction lines and computed net tip.
 export async function GET(request: NextRequest) {
-  const auth = await requireHrManager();
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-
   const sp = request.nextUrl.searchParams;
   const storeId = sp.get('store_id') ?? '';
   const periodMonth = sp.get('period_month') ?? '';
@@ -37,6 +34,10 @@ export async function GET(request: NextRequest) {
       { status: 400 },
     );
   }
+
+  // §P5.5: tip pool is per-store — only a manager of this store (or company-wide HR) may read it.
+  const auth = await requireStoreManager(storeId);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const service = createServiceClient();
 
@@ -75,9 +76,6 @@ export async function GET(request: NextRequest) {
 // PUT /api/hr/tip-pool — create or update the monthly tip pool for a store. Total is entered
 // manually; a finalized pool is locked (compare-and-set on status='draft').
 export async function PUT(request: NextRequest) {
-  const auth = await requireHrManager();
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const storeId = typeof body.store_id === 'string' ? body.store_id : '';
   const periodMonth = typeof body.period_month === 'string' ? body.period_month : '';
@@ -94,6 +92,10 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: 'total_satang must be a non-negative integer' }, { status: 400 });
   }
   const totalSatang = body.total_satang;
+
+  // §P5.5: tip pool is per-store — gate the write on this store.
+  const auth = await requireStoreManager(storeId);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const service = createServiceClient();
 

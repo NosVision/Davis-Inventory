@@ -18,6 +18,7 @@ const SUITES = [
   'reports.cjs',       // §J9 statutory reports: ภงด.1/1ก/สปส/50ทวิ/register reconcile + e-filing CSV + HR-only guard
   'scope-payruns.cjs', // §P5.5 T1: per-store scope on payruns family (scoped mgr vs company-wide/cross-store)
   'scope-sc.cjs',      // §P5.5 T1: per-store scope on Service Charge family (pool store_id → requireStoreManager)
+  'scope-tip.cjs',     // §P5.5 T1: per-store scope on Tip pool family (mirrors SC)
 ];
 
 let failed = 0;

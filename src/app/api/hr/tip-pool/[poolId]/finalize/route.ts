@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireHrManager } from '@/lib/hr/route-auth';
+import { requireStoreManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 
 const POOLS = 'hr_tip_pools';
@@ -15,14 +15,15 @@ function payDateFor(periodMonth: string): string {
 
 // POST /api/hr/tip-pool/[poolId]/finalize — lock a draft pool (compare-and-set on status).
 export async function POST(_request: NextRequest, { params }: { params: Promise<{ poolId: string }> }) {
-  const auth = await requireHrManager();
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-
   const { poolId } = await params;
   const service = createServiceClient();
 
   const { data: before } = await service.from(POOLS).select('*').eq('id', poolId).maybeSingle();
   if (!before) return NextResponse.json({ error: 'Pool not found' }, { status: 404 });
+
+  // §P5.5: gate on the pool's store.
+  const auth = await requireStoreManager(before.store_id as string);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const payDate = payDateFor(before.period_month as string);
 
