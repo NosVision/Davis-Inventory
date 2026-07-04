@@ -8,6 +8,47 @@
   --font-playpen: var(--font-playpen-thai), var(--font-noto-sans-thai), system-ui, sans-serif;
 }
 
+/* ==========================================
+   Design-system tokens (Tier 0) — role-based colors + a shared form-control style so
+   pages stop hardcoding gray-x/indigo-x + dark: variants and copy-pasting `inputCls`.
+   ========================================== */
+:root {
+  --ds-surface: #ffffff;
+  --ds-surface-2: #f9fafb;
+  --ds-ink: #111827;
+  --ds-ink-muted: #6b7280;
+  --ds-border: #e5e7eb;
+  --ds-accent: #4f46e5; /* indigo-600 */
+  --ds-good: #0ca30c;
+  --ds-warn: #d97706;
+  --ds-serious: #ea580c;
+  --ds-critical: #dc2626;
+}
+.dark {
+  --ds-surface: #1f2937;
+  --ds-surface-2: #111827;
+  --ds-ink: #f9fafb;
+  --ds-ink-muted: #9ca3af;
+  --ds-border: #374151;
+  --ds-accent: #818cf8; /* indigo-400 */
+}
+
+/* Shared form-control style — replaces the copy-pasted `inputCls` string on every page. */
+.control {
+  border-radius: 0.5rem;
+  border: 1px solid var(--ds-border);
+  background: var(--ds-surface);
+  color: var(--ds-ink);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  outline: none;
+}
+.control:focus {
+  border-color: var(--ds-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ds-accent) 25%, transparent);
+}
+
 /* Safe area insets for PWA */
 .safe-area-inset-bottom {
   padding-bottom: env(safe-area-inset-bottom, 0px);

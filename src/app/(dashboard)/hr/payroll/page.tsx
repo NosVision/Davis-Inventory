@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { Loader2, Wallet, Play, Lock, LockOpen, Printer, X, FileText, Settings2, Percent, GitCompareArrows } from 'lucide-react';
-import { Button, Badge, EmptyState, Modal, ModalFooter, toast } from '@/components/ui';
+import { Loader2, Wallet, Play, Lock, LockOpen, Printer, X, FileText, Settings2, Percent, GitCompareArrows, Users, Coins } from 'lucide-react';
+import { Button, EmptyState, Modal, ModalFooter, PageHeader, KpiRow, StatTile, MoneyValue, StatusBadge, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { formatBaht } from '@/lib/pos/money';
 import { PayslipView, type PayslipDetailData } from '@/components/hr/payslip-view';
@@ -41,8 +41,6 @@ interface PayrunDetail {
   totals: { gross: number; net: number; sso: number; tax: number };
 }
 
-const inputCls =
-  'rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white';
 const PRINT_CSS = `@media print { @page { size: 9in 5.5in; margin: 0.5in; } }`;
 
 function currentMonth(): string {
@@ -208,37 +206,38 @@ export default function HrPayrollPage() {
   const isFinalized = detail?.payrun.status === 'finalized';
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 p-4">
+    <div className="mx-auto max-w-6xl space-y-4 p-4">
       <style>{PRINT_CSS}</style>
 
       <div className="space-y-4 print:hidden">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('title')}</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">{t('subtitle')}</p>
-            <Link href="/hr/payroll/compare" className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">
-              <GitCompareArrows className="h-3.5 w-3.5" /> {t('compareLink')}
-            </Link>
-          </div>
-          <div className="flex flex-wrap items-end gap-2">
-            <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
-              {t('company')}
-              <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} className={cn('mt-1', inputCls)}>
-                {companies.length === 0 && <option value="">{t('noCompanies')}</option>}
-                {companies.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
-              {t('period')}
-              <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className={cn('mt-1', inputCls)} />
-            </label>
-            <Button onClick={generate} isLoading={generating} disabled={!companyId || generating} icon={<Play className="h-4 w-4" />}>
-              {t('generate')}
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          title={t('title')}
+          subtitle={t('subtitle')}
+          actions={
+            <>
+              <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
+                {t('company')}
+                <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} className="control mt-1">
+                  {companies.length === 0 && <option value="">{t('noCompanies')}</option>}
+                  {companies.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
+                {t('period')}
+                <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="control mt-1" />
+              </label>
+              <Button onClick={generate} isLoading={generating} disabled={!companyId || generating} icon={<Play className="h-4 w-4" />}>
+                {t('generate')}
+              </Button>
+            </>
+          }
+        >
+          <Link href="/hr/payroll/compare" className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">
+            <GitCompareArrows className="h-3.5 w-3.5" /> {t('compareLink')}
+          </Link>
+        </PageHeader>
 
         {/* payrun history + detail */}
         <div className="grid gap-4 md:grid-cols-[16rem_1fr]">
@@ -265,9 +264,11 @@ export default function HrPayrollPage() {
                       <span className="font-medium text-gray-900 dark:text-white">
                         {String(p.period_month).padStart(2, '0')}/{p.period_year}
                       </span>
-                      <Badge variant={p.status === 'finalized' ? 'success' : 'warning'} size="sm">
-                        {p.status === 'finalized' ? t('statusFinalized') : t('statusDraft')}
-                      </Badge>
+                      <StatusBadge
+                        tone={p.status === 'finalized' ? 'good' : 'warn'}
+                        label={p.status === 'finalized' ? t('statusFinalized') : t('statusDraft')}
+                        icon={p.status === 'finalized' ? Lock : undefined}
+                      />
                     </button>
                   </li>
                 ))}
@@ -302,6 +303,20 @@ export default function HrPayrollPage() {
                 {detail.payslips.length === 0 ? (
                   <EmptyState icon={Wallet} title={t('noPayslips')} />
                 ) : (
+                  <div className="space-y-3">
+                  {/* Key figures — lead with NET as the hero; gross/deductions are secondary */}
+                  <KpiRow cols={4}>
+                    <StatTile label={t('colEmployee')} value={detail.payslips.length} icon={Users} />
+                    <StatTile label={t('colGross')} value={<MoneyValue satang={detail.totals.gross} emphasis="kpi" />} icon={Wallet} tone="accent" />
+                    <StatTile
+                      label={`${t('colSso')} + ${t('colTax')}`}
+                      value={<MoneyValue satang={detail.totals.sso + detail.totals.tax} emphasis="kpi" tone="muted" />}
+                      icon={Percent}
+                      tone="warn"
+                    />
+                    <StatTile label={t('colNet')} value={<MoneyValue satang={detail.totals.net} emphasis="hero" tone="good" />} icon={Coins} tone="good" />
+                  </KpiRow>
+
                   <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
                     <table className="w-full min-w-[36rem] text-sm">
                       <thead className="bg-gray-50 text-left text-xs font-medium text-gray-500 dark:bg-gray-800/50 dark:text-gray-400">
@@ -353,6 +368,7 @@ export default function HrPayrollPage() {
                         </tr>
                       </tfoot>
                     </table>
+                  </div>
                   </div>
                 )}
               </div>
