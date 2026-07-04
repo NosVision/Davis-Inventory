@@ -17,6 +17,7 @@ const SUITES = [
   'eval-money.cjs',    // §G↔payslip: approve route (draft→approved) → positive payout flows to slip eval_bonus
   'reports.cjs',       // §J9 statutory reports: ภงด.1/1ก/สปส/50ทวิ/register reconcile + e-filing CSV + HR-only guard
   'scope-payruns.cjs', // §P5.5 T1: per-store scope on payruns family (scoped mgr vs company-wide/cross-store)
+  'scope-sc.cjs',      // §P5.5 T1: per-store scope on Service Charge family (pool store_id → requireStoreManager)
 ];
 
 let failed = 0;

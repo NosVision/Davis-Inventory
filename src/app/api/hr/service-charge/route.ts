@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireHrManager } from '@/lib/hr/route-auth';
+import { requireStoreManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import { computeNetSc } from '@/lib/hr/service-charge';
 
@@ -18,9 +18,6 @@ function isNonNegInt(v: unknown): v is number {
 // GET /api/hr/service-charge?store_id&period_month=YYYY-MM-01 — the pool for a store/month
 // plus its per-person allocations, each with its deduction lines and computed net SC (§H).
 export async function GET(request: NextRequest) {
-  const auth = await requireHrManager();
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-
   const sp = request.nextUrl.searchParams;
   const storeId = sp.get('store_id') ?? '';
   const periodMonth = sp.get('period_month') ?? '';
@@ -30,6 +27,10 @@ export async function GET(request: NextRequest) {
       { status: 400 },
     );
   }
+
+  // §P5.5: SC is per-store — only a manager of this store (or company-wide HR) may read it.
+  const auth = await requireStoreManager(storeId);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const service = createServiceClient();
 
@@ -72,9 +73,6 @@ export async function GET(request: NextRequest) {
 // PUT /api/hr/service-charge — create or update the monthly SC pool for a store (§H).
 // The total pool is entered manually per store/month. A finalized pool is locked.
 export async function PUT(request: NextRequest) {
-  const auth = await requireHrManager();
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const storeId = typeof body.store_id === 'string' ? body.store_id : '';
   const periodMonth = typeof body.period_month === 'string' ? body.period_month : '';
@@ -91,6 +89,10 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: 'total_satang must be a non-negative integer' }, { status: 400 });
   }
   const totalSatang = body.total_satang;
+
+  // §P5.5: SC is per-store — gate the write on this store.
+  const auth = await requireStoreManager(storeId);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const service = createServiceClient();
 

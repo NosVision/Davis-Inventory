@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireHrManager } from '@/lib/hr/route-auth';
+import { requireStoreManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import { classifyLeaveEffect, enumerateDates } from '@/lib/hr/leaves';
 import {
@@ -53,9 +53,6 @@ interface LeaveRow {
 // satang-exact and testable. A 200% warning deducts this month's SC in full and carries the
 // second month (carry_satang) for visibility (auto cross-period application is a later step).
 export async function POST(_request: Request, { params }: { params: Promise<{ poolId: string }> }) {
-  const auth = await requireHrManager();
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-
   const { poolId } = await params;
   const service = createServiceClient();
 
@@ -66,6 +63,11 @@ export async function POST(_request: Request, { params }: { params: Promise<{ po
     .maybeSingle();
   if (poolErr) return NextResponse.json({ error: 'Failed to load pool' }, { status: 500 });
   if (!pool) return NextResponse.json({ error: 'Pool not found' }, { status: 404 });
+
+  // §P5.5: gate on the pool's store.
+  const auth = await requireStoreManager(pool.store_id as string);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
   if ((pool.status as string) === 'finalized') {
     return NextResponse.json({ error: 'Pool is finalized' }, { status: 409 });
   }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireHrManager } from '@/lib/hr/route-auth';
+import { requireStoreManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 
 const POOLS = 'hr_sc_pools';
@@ -18,10 +18,20 @@ function isNonNegInt(v: unknown): v is number {
 // PUT /api/hr/service-charge/[poolId]/allocations — set per-person SC allocations for a pool
 // (§H). Bulk upsert on (pool_id, user_id). A finalized pool is locked.
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ poolId: string }> }) {
-  const auth = await requireHrManager();
+  const { poolId } = await params;
+  const service = createServiceClient();
+
+  // §P5.5: gate on the pool's store before anything else.
+  const { data: pool, error: poolErr } = await service
+    .from(POOLS)
+    .select('id, status, store_id')
+    .eq('id', poolId)
+    .maybeSingle();
+  if (poolErr) return NextResponse.json({ error: poolErr.message }, { status: 500 });
+  if (!pool) return NextResponse.json({ error: 'Pool not found' }, { status: 404 });
+  const auth = await requireStoreManager(pool.store_id as string);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-  const { poolId } = await params;
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const rawAllocations = Array.isArray(body.allocations) ? body.allocations : null;
   if (!rawAllocations) {
@@ -41,15 +51,6 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     allocations.push({ user_id: userId, allocated_satang: a.allocated_satang });
   }
 
-  const service = createServiceClient();
-
-  const { data: pool, error: poolErr } = await service
-    .from(POOLS)
-    .select('id, status')
-    .eq('id', poolId)
-    .maybeSingle();
-  if (poolErr) return NextResponse.json({ error: poolErr.message }, { status: 500 });
-  if (!pool) return NextResponse.json({ error: 'Pool not found' }, { status: 404 });
   if (pool.status === 'finalized') {
     return NextResponse.json({ error: 'pool is finalized' }, { status: 409 });
   }
