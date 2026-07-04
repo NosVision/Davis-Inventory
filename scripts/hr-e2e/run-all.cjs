@@ -15,6 +15,7 @@ const SUITES = [
   'tip-pool.cjs',      // tip pool → alloc → deduction (net) → 'tip' earning line on slip → finalize 409 → staff 403
   'eval.cjs',          // §G evaluation: seed → 2 evaluators → 2-layer RLS → compute → payout → closed anonymized results
   'eval-money.cjs',    // §G↔payslip: approve route (draft→approved) → positive payout flows to slip eval_bonus
+  'eval-apply-sc.cjs', // §G↔§H: negative eval payout → apply-sc → auto SC deduction (idempotent)
   'reports.cjs',       // §J9 statutory reports: ภงด.1/1ก/สปส/50ทวิ/register reconcile + e-filing CSV + HR-only guard
   'scope-payruns.cjs', // §P5.5 T1: per-store scope on payruns family (scoped mgr vs company-wide/cross-store)
   'scope-sc.cjs',      // §P5.5 T1: per-store scope on Service Charge family (pool store_id → requireStoreManager)
