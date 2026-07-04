@@ -22,6 +22,7 @@ const SUITES = [
   'scope-employees.cjs', // §P5.5 T2: per-store scope on employee family (user_stores intersection)
   'scope-offboarding.cjs', // §P5.5 T2: per-store scope on offboarding family + documents (row store_id)
   'scope-time.cjs',    // §P5.5 T3: attendance/override/schedule-ack/warnings-void/dayoff-ack per-store scope
+  'scope-assets.cjs',  // §P5.5 T4: locations (per-store geofence) + assets (holder's stores) per-store scope
 ];
 
 let failed = 0;

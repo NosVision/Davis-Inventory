@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireHrManager } from '@/lib/hr/route-auth';
+import { resolveHrScope, requireStoreManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 
 const TABLE = 'hr_locations';
@@ -20,17 +20,20 @@ interface LocationRow {
 
 // GET /api/hr/locations — one row per active branch, stitched with its geofence (if set).
 export async function GET() {
-  const auth = await requireHrManager();
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  // §P5.5: company-wide HR sees every branch geofence; a scoped manager only their stores'.
+  const scope = await resolveHrScope();
+  if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status });
 
   const service = createServiceClient();
 
+  let storesQuery = service
+    .from('stores')
+    .select('id, store_name, store_code')
+    .eq('active', true)
+    .order('store_name');
+  if (scope.storeIds) storesQuery = storesQuery.in('id', scope.storeIds);
   const [storesRes, locationsRes] = await Promise.all([
-    service
-      .from('stores')
-      .select('id, store_name, store_code')
-      .eq('active', true)
-      .order('store_name'),
+    storesQuery,
     service.from(TABLE).select('store_id, lat, lng, radius_m'),
   ]);
 
@@ -57,13 +60,14 @@ export async function GET() {
 
 // PUT /api/hr/locations — upsert one branch geofence { store_id, lat, lng, radius_m }.
 export async function PUT(request: NextRequest) {
-  const auth = await requireHrManager();
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
 
   const storeId = typeof body.store_id === 'string' ? body.store_id : '';
   if (!storeId) return NextResponse.json({ error: 'store_id is required' }, { status: 400 });
+
+  // §P5.5: geofence config is per store — only a manager of this store (or company HR).
+  const auth = await requireStoreManager(storeId);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const lat = body.lat;
   const lng = body.lng;

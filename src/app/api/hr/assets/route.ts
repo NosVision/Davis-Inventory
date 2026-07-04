@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireHrManager } from '@/lib/hr/route-auth';
+import { requireHrManager, resolveHrScope } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import { bahtToSatang } from '@/lib/pos/money';
 import { isForeignKeyViolation, isUniqueViolation } from '@/lib/hr/db-errors';
@@ -16,8 +16,10 @@ const LIST_SELECT =
 
 // GET /api/hr/assets — list with filters: q (name or asset_code), status, holder_id.
 export async function GET(request: NextRequest) {
-  const auth = await requireHrManager();
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  // §P5.5: company-wide HR sees every asset; a scoped manager sees only assets held by employees
+  // in their stores (the company/unassigned pool stays company-HR-only).
+  const scope = await resolveHrScope();
+  if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status });
 
   const sp = request.nextUrl.searchParams;
   const q = (sp.get('q') ?? '').trim();
@@ -47,6 +49,12 @@ export async function GET(request: NextRequest) {
   if (status) query = query.eq('status', status);
   if (holderId) query = query.eq('holder_id', holderId);
   if (idFilter) query = query.in('id', idFilter.length ? idFilter : [NIL_UUID]);
+  // §P5.5: a scoped manager only sees assets whose holder is an employee in their stores.
+  if (scope.storeIds) {
+    const { data: us } = await service.from('user_stores').select('user_id').in('store_id', scope.storeIds);
+    const holderIds = [...new Set((us ?? []).map((r) => r.user_id as string))];
+    query = query.in('holder_id', holderIds.length ? holderIds : [NIL_UUID]);
+  }
   query = query.order('created_at', { ascending: false });
 
   const { data, error } = await query;

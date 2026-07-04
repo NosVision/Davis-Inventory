@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireHrManager } from '@/lib/hr/route-auth';
+import { requireHrManager, requireHrManagerForEmployeeProfile } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import { bahtToSatang } from '@/lib/pos/money';
 import { isForeignKeyViolation, isUniqueViolation } from '@/lib/hr/db-errors';
@@ -13,12 +13,7 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireHrManager();
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-
   const { id } = await params;
-  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-
   const service = createServiceClient();
   const { data: current, error: fetchErr } = await service
     .from(TABLE)
@@ -26,6 +21,14 @@ export async function PUT(
     .eq('id', id)
     .single();
   if (fetchErr || !current) return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
+
+  // §P5.5: an asset held by an employee is gated on that employee's stores; an unassigned asset
+  // (company pool) is company-wide HR only.
+  const holderId = current.holder_id as string | null;
+  const auth = holderId ? await requireHrManagerForEmployeeProfile(holderId) : await requireHrManager();
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
+  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
 
   const update: Record<string, unknown> = { updated_by: auth.userId };
   if ('name' in body) {
