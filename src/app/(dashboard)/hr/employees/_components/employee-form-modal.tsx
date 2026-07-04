@@ -57,6 +57,9 @@ interface FormState {
   sso_enrolled: boolean;
   sso_no: string;
   tax_id: string;
+  // provident fund (PVD) — full-time only; rate held as a whole-number percent string (e.g. "3")
+  pvd_enrolled: boolean;
+  pvd_employee_rate: string;
   // bank
   bank_name: string;
   bank_account_no: string;
@@ -113,6 +116,8 @@ function defaultForm(): FormState {
     sso_enrolled: true,
     sso_no: '',
     tax_id: '',
+    pvd_enrolled: false,
+    pvd_employee_rate: '',
     bank_name: '',
     bank_account_no: '',
     bank_account_name: '',
@@ -249,6 +254,8 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
         sso_enrolled: Boolean(d.sso_enrolled),
         sso_no: (d.sso_no as string) ?? '',
         tax_id: (d.tax_id as string) ?? '',
+        pvd_enrolled: Boolean(d.pvd_enrolled),
+        pvd_employee_rate: d.pvd_employee_rate != null ? String(Math.round((d.pvd_employee_rate as number) * 10000) / 100) : '',
         bank_name: (d.bank_name as string) ?? '',
         bank_account_no: (d.bank_account_no as string) ?? '',
         bank_account_name: (d.bank_account_name as string) ?? '',
@@ -280,6 +287,9 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
   const effTaxMode = partTime ? 'withholding_3pct' : form.tax_mode;
   const effSso = partTime ? false : form.sso_enrolled;
   const effOt = partTime ? false : form.ot_eligible;
+  // PVD is full-time only; the rate is entered as a percent (e.g. "3") and stored as a fraction.
+  const effPvdEnrolled = partTime ? false : form.pvd_enrolled;
+  const effPvdRate = effPvdEnrolled ? (Number(form.pvd_employee_rate) || 0) / 100 : 0;
 
   const docOf = (type: DocumentType) => documents.find((d) => d.type === type);
   const removeDoc = (type: DocumentType) => setDocuments((prev) => prev.filter((d) => d.type !== type));
@@ -375,6 +385,8 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
       standard_days_off: Number(form.standard_days_off),
       tax_mode: effTaxMode,
       sso_enrolled: effSso,
+      pvd_enrolled: effPvdEnrolled,
+      pvd_employee_rate: effPvdRate,
       emergency_contact: buildEmergency(),
       documents,
       start_date: form.start_date || null,
@@ -686,6 +698,32 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
           </div>
           <Input label={t('ssoNo')} value={form.sso_no} onChange={(e) => update('sso_no', e.target.value)} />
           <Input label={t('taxId')} value={form.tax_id} onChange={(e) => update('tax_id', e.target.value)} />
+          {!partTime && (
+            <>
+              <div className="flex items-end">
+                <label className="flex items-center gap-2 pb-2.5 text-sm text-gray-700 dark:text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={form.pvd_enrolled}
+                    onChange={(e) => update('pvd_enrolled', e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-gray-600"
+                  />
+                  {t('pvdEnrolled')}
+                </label>
+              </div>
+              <Input
+                type="number"
+                min={0}
+                max={15}
+                step="0.5"
+                inputMode="decimal"
+                label={t('pvdRate')}
+                value={form.pvd_employee_rate}
+                disabled={!form.pvd_enrolled}
+                onChange={(e) => update('pvd_employee_rate', e.target.value)}
+              />
+            </>
+          )}
 
           {/* Bank */}
           <SectionHeader>{t('secBank')}</SectionHeader>

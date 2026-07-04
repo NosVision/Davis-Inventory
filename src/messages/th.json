@@ -3723,6 +3723,8 @@
         "ssoEnrolled": "เข้าประกันสังคม",
         "ssoNo": "เลขประกันสังคม",
         "taxId": "เลขผู้เสียภาษี",
+        "pvdEnrolled": "กองทุนสำรองเลี้ยงชีพ (PVD)",
+        "pvdRate": "อัตรา PVD (%)",
         "bankName": "ธนาคาร",
         "bankAccountNo": "เลขบัญชี",
         "bankAccountName": "ชื่อบัญชี",

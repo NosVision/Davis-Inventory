@@ -3722,6 +3722,8 @@
         "ssoEnrolled": "SSO enrolled",
         "ssoNo": "SSO number",
         "taxId": "Tax ID",
+        "pvdEnrolled": "Provident fund (PVD)",
+        "pvdRate": "PVD rate (%)",
         "bankName": "Bank",
         "bankAccountNo": "Account number",
         "bankAccountName": "Account name",
