@@ -22,6 +22,7 @@ const ec = load('eval-config.ts');
 const lv = load('leaves.ts');
 const wn = load('warnings.ts');
 const te = load('time-engine.ts');
+const em = load('employees.ts');
 
 const R = [];
 const eq = (name, got, want) => R.push({ name, pass: JSON.stringify(got) === JSON.stringify(want), got, want });
@@ -151,6 +152,24 @@ eq('sumDays work_days (2 with in)', totals.work_days, 2);
 eq('sumDays absent_days', totals.absent_days, 1);
 eq('sumDays worked_min 480+600', totals.worked_min, 1080);
 eq('sumDays ot_min 0+120', totals.ot_min, 120);
+
+// ── employees.ts: pickEmployeeFields (PVD range) + applyPartTimeProfile (forcing) ──
+const pk = (body, partial) => em.pickEmployeeFields(body, partial);
+eq('pick pvd valid', pk({ pvd_enrolled: true, pvd_employee_rate: 0.03, pvd_employer_rate: 0.05 }, true).ok, true);
+eq('pick pvd rate 0.2 rejected', pk({ pvd_employee_rate: 0.2 }, true).ok, false);
+eq('pick pvd negative rejected', pk({ pvd_employer_rate: -0.01 }, true).ok, false);
+eq('pick pvd 0.15 boundary ok', pk({ pvd_employee_rate: 0.15 }, true).ok, true);
+eq('pick pvd string "0.03" coerced', (() => { const r = pk({ pvd_employee_rate: '0.03' }, true); return r.ok && r.fields.pvd_employee_rate; })(), 0.03);
+eq('pick omitted pvd absent from fields', 'pvd_enrolled' in pk({ rate_satang: 5000000 }, true).fields, false);
+eq('pick bad tax_mode rejected', pk({ tax_mode: 'bogus' }, true).ok, false);
+// applyPartTimeProfile: part-time forces withholding_3pct + no SSO/OT
+const ptForced = em.applyPartTimeProfile({ pay_type: 'pt_hourly', tax_mode: 'progressive', sso_enrolled: true, ot_eligible: true });
+eq('pt forces withholding_3pct', ptForced.tax_mode, 'withholding_3pct');
+eq('pt forces sso off', ptForced.sso_enrolled, false);
+eq('pt forces ot off', ptForced.ot_eligible, false);
+const ftKept = em.applyPartTimeProfile({ pay_type: 'full_monthly', tax_mode: 'progressive', sso_enrolled: true, ot_eligible: true });
+eq('full-time keeps tax_mode', ftKept.tax_mode, 'progressive');
+eq('full-time keeps sso', ftKept.sso_enrolled, true);
 
 const fail = R.filter((r) => !r.pass);
 for (const r of R) if (!r.pass) console.log(`FAIL ${r.name}: got=${JSON.stringify(r.got)} want=${JSON.stringify(r.want)}`);
