@@ -12,7 +12,7 @@ export async function GET() {
   const service = createServiceClient();
   const { data, error } = await service
     .from(TABLE)
-    .select('id, name')
+    .select('id, name, address')
     .order('name', { ascending: true });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

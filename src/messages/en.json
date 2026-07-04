@@ -2641,7 +2641,8 @@
       "claims": "Expense Claims",
       "profileRequests": "Profile Changes",
       "offboarding": "Offboarding",
-      "today": "Today"
+      "today": "Today",
+      "certificates": "Certificates"
     },
     "leaves": {
       "title": "Leave",
