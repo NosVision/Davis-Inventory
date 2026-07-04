@@ -13,6 +13,8 @@ const SUITES = [
   'bank-file.cjs',     // BBL direct-credit CSV: draft 409 → finalized export headers/total → staff 403
   'pvd.cjs',           // provident_fund deduction line: enroll 3% → net drops by exact amount → disenroll
   'tip-pool.cjs',      // tip pool → alloc → deduction (net) → 'tip' earning line on slip → finalize 409 → staff 403
+  'eval.cjs',          // §G evaluation: seed → 2 evaluators → 2-layer RLS → compute → payout → closed anonymized results
+  'reports.cjs',       // §J9 statutory reports: ภงด.1/1ก/สปส/50ทวิ/register reconcile + e-filing CSV + HR-only guard
 ];
 
 let failed = 0;
