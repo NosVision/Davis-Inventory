@@ -2,15 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocale } from 'next-intl';
-import { Loader2, Users, CheckCircle2, Palmtree, CircleSlash, Copy, RefreshCw } from 'lucide-react';
+import { Loader2, Users, CheckCircle2, Palmtree, CircleSlash, Copy, RefreshCw, CalendarClock, PartyPopper } from 'lucide-react';
 import { Button, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 
 // §P5.3 manager/HR daily dashboard — "who's in today" for the caller's scope, with a one-tap
-// copy-to-LINE summary (the field managers live in LINE). Self-contained locale strings.
+// copy-to-LINE summary (the field managers live in LINE), plus forward-looking HR reminders
+// (probation ending / work anniversaries). Self-contained locale strings.
 interface Person { user_id: string; name: string }
 interface Daily { business_date: string; headcount: number; checked_in: Person[]; on_leave: Person[]; not_in: Person[] }
 interface StoreOpt { id: string; store_name: string | null; store_code: string | null }
+interface ProbationAlert { user_id: string; name: string; date: string; days_left: number }
+interface AnnivAlert { user_id: string; name: string; date: string; years: number; days_left: number }
+interface Alerts { window_days: number; probation_ending: ProbationAlert[]; anniversaries: AnnivAlert[] }
 
 const inputCls =
   'rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white';
@@ -23,13 +27,14 @@ function todayBangkok(): string {
 export default function HrDailyDashboardPage() {
   const isTh = useLocale() === 'th';
   const L = isTh
-    ? { title: 'แดชบอร์ดวันนี้', subtitle: 'ใครเข้างาน ใครลา ใครยังไม่มา — ในความดูแลของคุณ', date: 'วันที่', store: 'สาขา', allStores: 'ทุกสาขา', refresh: 'รีเฟรช', headcount: 'พนักงาน', checkedIn: 'เข้างานแล้ว', onLeave: 'ลา', notIn: 'ยังไม่เข้า', copyLine: 'คัดลอกสรุปไปไลน์', copied: 'คัดลอกแล้ว', copyFailed: 'คัดลอกไม่สำเร็จ', loadFailed: 'โหลดไม่สำเร็จ', none: '—', people: 'คน' }
-    : { title: "Today's dashboard", subtitle: "Who's in, on leave, or not yet in — within your scope", date: 'Date', store: 'Store', allStores: 'All stores', refresh: 'Refresh', headcount: 'Headcount', checkedIn: 'Checked in', onLeave: 'On leave', notIn: 'Not in', copyLine: 'Copy summary for LINE', copied: 'Copied', copyFailed: 'Copy failed', loadFailed: 'Load failed', none: '—', people: '' };
+    ? { title: 'แดชบอร์ดวันนี้', subtitle: 'ใครเข้างาน ใครลา ใครยังไม่มา — ในความดูแลของคุณ', date: 'วันที่', store: 'สาขา', allStores: 'ทุกสาขา', refresh: 'รีเฟรช', headcount: 'พนักงาน', checkedIn: 'เข้างานแล้ว', onLeave: 'ลา', notIn: 'ยังไม่เข้า', copyLine: 'คัดลอกสรุปไปไลน์', copied: 'คัดลอกแล้ว', copyFailed: 'คัดลอกไม่สำเร็จ', loadFailed: 'โหลดไม่สำเร็จ', none: '—', people: 'คน', alerts: 'แจ้งเตือน HR', probationEnding: 'ครบทดลองงาน', anniversary: 'ครบรอบงาน', inDays: (n: number) => (n === 0 ? 'วันนี้' : `อีก ${n} วัน`), yearsWord: (n: number) => `${n} ปี` }
+    : { title: "Today's dashboard", subtitle: "Who's in, on leave, or not yet in — within your scope", date: 'Date', store: 'Store', allStores: 'All stores', refresh: 'Refresh', headcount: 'Headcount', checkedIn: 'Checked in', onLeave: 'On leave', notIn: 'Not in', copyLine: 'Copy summary for LINE', copied: 'Copied', copyFailed: 'Copy failed', loadFailed: 'Load failed', none: '—', people: '', alerts: 'HR reminders', probationEnding: 'Probation ending', anniversary: 'Work anniversary', inDays: (n: number) => (n === 0 ? 'today' : `in ${n}d`), yearsWord: (n: number) => `${n}y` };
 
   const [date, setDate] = useState(() => todayBangkok());
   const [storeId, setStoreId] = useState('');
   const [stores, setStores] = useState<StoreOpt[]>([]);
   const [data, setData] = useState<Daily | null>(null);
+  const [alerts, setAlerts] = useState<Alerts | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -40,6 +45,17 @@ export default function HrDailyDashboardPage() {
       } catch { /* store filter is optional */ }
     })();
   }, []);
+
+  // forward-looking reminders (probation ending / anniversaries) — scope follows the store filter
+  useEffect(() => {
+    (async () => {
+      try {
+        const qs = storeId ? `?store_id=${storeId}` : '';
+        const res = await fetch(`/api/hr/dashboard/alerts${qs}`);
+        if (res.ok) setAlerts((await res.json()).data as Alerts);
+      } catch { /* alerts are best-effort */ }
+    })();
+  }, [storeId]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -151,6 +167,44 @@ export default function HrDailyDashboardPage() {
           </div>
         </>
       ) : null}
+
+      {alerts && (alerts.probation_ending.length > 0 || alerts.anniversaries.length > 0) && (
+        <div>
+          <h2 className="mb-2 text-sm font-semibold text-gray-700 dark:text-gray-200">{L.alerts}</h2>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {alerts.probation_ending.length > 0 && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4 dark:border-amber-800 dark:bg-amber-900/10">
+                <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-amber-700 dark:text-amber-400">
+                  <CalendarClock className="h-4 w-4" /> {L.probationEnding}
+                </div>
+                <ul className="space-y-1">
+                  {alerts.probation_ending.map((a) => (
+                    <li key={a.user_id} className="flex items-center justify-between gap-2 text-sm">
+                      <span className="truncate text-gray-800 dark:text-gray-100">{a.name}</span>
+                      <span className="whitespace-nowrap text-xs text-amber-600 dark:text-amber-400">{a.date} · {L.inDays(a.days_left)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {alerts.anniversaries.length > 0 && (
+              <div className="rounded-xl border border-violet-200 bg-violet-50/50 p-4 dark:border-violet-800 dark:bg-violet-900/10">
+                <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-violet-700 dark:text-violet-400">
+                  <PartyPopper className="h-4 w-4" /> {L.anniversary}
+                </div>
+                <ul className="space-y-1">
+                  {alerts.anniversaries.map((a) => (
+                    <li key={a.user_id} className="flex items-center justify-between gap-2 text-sm">
+                      <span className="truncate text-gray-800 dark:text-gray-100">{a.name}</span>
+                      <span className="whitespace-nowrap text-xs text-violet-600 dark:text-violet-400">{L.yearsWord(a.years)} · {L.inDays(a.days_left)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
