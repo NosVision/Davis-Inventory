@@ -1,0 +1,106 @@
+'use client';
+
+import { useCallback, useEffect, useState } from 'react';
+import { useLocale } from 'next-intl';
+import { Loader2, Award } from 'lucide-react';
+import { EmptyState, toast } from '@/components/ui';
+
+// §G employee self-service: my own monthly evaluation results, visible ONLY after a period closes.
+// The per-evaluator breakdown is anonymized (A/B/C…) server-side — this page never receives names.
+interface Breakdown { label: string; raw_total: number; score_pct: number | null }
+interface MyResult {
+  period_month: string | null;
+  title: string;
+  score_pct: number | null;
+  evaluator_count: number;
+  breakdown: Breakdown[];
+}
+
+function ScoreRing({ pct }: { pct: number | null }) {
+  const v = pct == null ? 0 : Math.max(0, Math.min(100, pct));
+  const r = 26;
+  const c = 2 * Math.PI * r;
+  const off = c * (1 - v / 100);
+  const hue = v >= 80 ? 'text-emerald-500' : v >= 60 ? 'text-indigo-500' : v >= 40 ? 'text-amber-500' : 'text-red-500';
+  return (
+    <div className="relative h-16 w-16 shrink-0">
+      <svg viewBox="0 0 64 64" className="h-16 w-16 -rotate-90">
+        <circle cx="32" cy="32" r={r} className="fill-none stroke-gray-100 dark:stroke-gray-700" strokeWidth="6" />
+        <circle cx="32" cy="32" r={r} className={`fill-none ${hue} transition-all`} strokeWidth="6" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={off} />
+      </svg>
+      <span className="absolute inset-0 flex items-center justify-center text-sm font-bold tabular-nums text-gray-900 dark:text-white">
+        {pct == null ? '—' : Math.round(v)}
+      </span>
+    </div>
+  );
+}
+
+export default function MyEvaluationResultsPage() {
+  const isTh = useLocale() === 'th';
+  const L = isTh
+    ? { title: 'ผลประเมินของฉัน', subtitle: 'คะแนนประเมินรายเดือน (เห็นได้หลังปิดงวด) · ผู้ประเมินไม่ระบุชื่อ', empty: 'ยังไม่มีผลประเมินที่ปิดงวดแล้ว', evaluators: 'ผู้ประเมิน', reviewer: 'ผู้ประเมิน', score: 'คะแนน', loadFailed: 'โหลดไม่สำเร็จ', people: 'คน' }
+    : { title: 'My evaluation results', subtitle: 'Monthly review scores (visible after a period closes) · evaluators are anonymous', empty: 'No closed evaluation results yet', evaluators: 'Evaluators', reviewer: 'Reviewer', score: 'Score', loadFailed: 'Load failed', people: '' };
+
+  const [results, setResults] = useState<MyResult[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/hr/ess/eval/my-results');
+      const json = await res.json();
+      setResults((json.data ?? []) as MyResult[]);
+    } catch {
+      toast({ type: 'error', title: L.loadFailed });
+    } finally {
+      setLoading(false);
+    }
+  }, [L.loadFailed]);
+
+  useEffect(() => { load(); }, [load]);
+
+  return (
+    <div className="mx-auto max-w-2xl space-y-4 p-4">
+      <div>
+        <h1 className="text-xl font-bold text-gray-900 dark:text-white">{L.title}</h1>
+        <p className="text-sm text-gray-500 dark:text-gray-400">{L.subtitle}</p>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-16 text-gray-400"><Loader2 className="h-6 w-6 animate-spin" /></div>
+      ) : results.length === 0 ? (
+        <EmptyState icon={Award} title={L.empty} />
+      ) : (
+        <div className="space-y-3">
+          {results.map((r, i) => (
+            <div key={`${r.period_month}-${i}`} className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+              <div className="flex items-center gap-4">
+                <ScoreRing pct={r.score_pct} />
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-gray-900 dark:text-white">{r.title || r.period_month?.slice(0, 7)}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {r.period_month?.slice(0, 7)} · {L.evaluators}: {r.evaluator_count}{isTh ? ` ${L.people}` : ''}
+                  </p>
+                  <p className="mt-1 text-lg font-bold tabular-nums text-gray-900 dark:text-white">
+                    {r.score_pct == null ? '—' : `${Number(r.score_pct).toFixed(1)}%`}
+                  </p>
+                </div>
+              </div>
+
+              {r.breakdown.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2 border-t border-gray-100 pt-3 dark:border-gray-700">
+                  {r.breakdown.map((b) => (
+                    <div key={b.label} className="flex items-center gap-1.5 rounded-lg bg-gray-50 px-2.5 py-1 text-xs dark:bg-gray-700/50">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-100 font-semibold text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">{b.label}</span>
+                      <span className="tabular-nums text-gray-700 dark:text-gray-200">{b.score_pct == null ? '—' : `${Number(b.score_pct).toFixed(0)}%`}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

@@ -14,6 +14,7 @@ interface Profile { id: string; display_name: string | null; username: string | 
 interface Assignment { id: string; evaluator_id: string; employee_id: string; status: string; evaluator: Profile | null; employee: Profile | null }
 interface Period { id: string; title: string; period_month: string; status: string; max_score: number }
 interface Result { id: string; employee_id: string; evaluator_count: number; score_pct: number | null; name?: string }
+interface Payout { id: string; amount_satang: number; status: string; input_pct_score: number | null; result: { employee_id: string; score_pct: number | null } | null }
 interface EmployeeOpt { id: string; name: string }
 
 const inputCls =
@@ -25,8 +26,8 @@ export default function EvalPeriodDetailPage() {
   const id = String(params.id);
   const isTh = useLocale() === 'th';
   const L = isTh
-    ? { back: 'กลับ', assignments: 'มอบหมายผู้ประเมิน', evaluator: 'ผู้ประเมิน', employee: 'ผู้ถูกประเมิน', add: 'เพิ่ม', noAssignments: 'ยังไม่มีการมอบหมาย', remove: 'ลบ', compute: 'คำนวณผล', results: 'ผลประเมิน', noResults: 'ยังไม่มีผล (คำนวณหลังปิดงวด)', colEmployee: 'พนักงาน', colEvaluators: 'จำนวนผู้ประเมิน', colScore: 'คะแนน (%)', submitted: 'ส่งแล้ว', assigned: 'รอประเมิน', loadFailed: 'โหลดไม่สำเร็จ', saveFailed: 'บันทึกไม่สำเร็จ', added: 'เพิ่มแล้ว', removed: 'ลบแล้ว', computed: 'คำนวณผลแล้ว', pickBoth: 'เลือกผู้ประเมินและผู้ถูกประเมิน', notFound: 'ไม่พบงวด', payoutRule: 'สูตรจ่ายโบนัส (เชิงเส้น)', flat: 'ฐาน (บาท)', perPct: 'ต่อ 1% (บาท)', saveRule: 'บันทึกสูตร', computePayouts: 'คำนวณเงิน', ruleSaved: 'บันทึกสูตรแล้ว', payoutsComputed: 'คำนวณเงินแล้ว', payoutHint: 'จ่าย = ฐาน + (ต่อ 1% × คะแนน%) · ติดลบ = หักจาก SC' }
-    : { back: 'Back', assignments: 'Evaluator assignments', evaluator: 'Evaluator', employee: 'Employee', add: 'Add', noAssignments: 'No assignments yet', remove: 'Remove', compute: 'Compute results', results: 'Results', noResults: 'No results yet (compute after closing)', colEmployee: 'Employee', colEvaluators: 'Evaluators', colScore: 'Score (%)', submitted: 'Submitted', assigned: 'Pending', loadFailed: 'Load failed', saveFailed: 'Save failed', added: 'Added', removed: 'Removed', computed: 'Results computed', pickBoth: 'Pick an evaluator and an employee', notFound: 'Period not found', payoutRule: 'Payout formula (linear)', flat: 'Flat (THB)', perPct: 'Per 1% (THB)', saveRule: 'Save formula', computePayouts: 'Compute payouts', ruleSaved: 'Formula saved', payoutsComputed: 'Payouts computed', payoutHint: 'Payout = flat + (per-1% × score%) · negative = SC deduction' };
+    ? { back: 'กลับ', assignments: 'มอบหมายผู้ประเมิน', evaluator: 'ผู้ประเมิน', employee: 'ผู้ถูกประเมิน', add: 'เพิ่ม', noAssignments: 'ยังไม่มีการมอบหมาย', remove: 'ลบ', compute: 'คำนวณผล', results: 'ผลประเมิน', noResults: 'ยังไม่มีผล (คำนวณหลังปิดงวด)', colEmployee: 'พนักงาน', colEvaluators: 'จำนวนผู้ประเมิน', colScore: 'คะแนน (%)', submitted: 'ส่งแล้ว', assigned: 'รอประเมิน', loadFailed: 'โหลดไม่สำเร็จ', saveFailed: 'บันทึกไม่สำเร็จ', added: 'เพิ่มแล้ว', removed: 'ลบแล้ว', computed: 'คำนวณผลแล้ว', pickBoth: 'เลือกผู้ประเมินและผู้ถูกประเมิน', notFound: 'ไม่พบงวด', payoutRule: 'สูตรจ่ายโบนัส (เชิงเส้น)', flat: 'ฐาน (บาท)', perPct: 'ต่อ 1% (บาท)', saveRule: 'บันทึกสูตร', computePayouts: 'คำนวณเงิน', ruleSaved: 'บันทึกสูตรแล้ว', payoutsComputed: 'คำนวณเงินแล้ว', payoutHint: 'จ่าย = ฐาน + (ต่อ 1% × คะแนน%) · ติดลบ = หักจาก SC', payouts: 'รายการจ่าย/หัก', noPayouts: 'ยังไม่มีรายการ (กดคำนวณเงิน)', colAmount: 'จำนวน (บาท)', colStatus: 'สถานะ', approve: 'อนุมัติ', reject: 'ปฏิเสธ', approveAll: 'อนุมัติทั้งหมด', applySc: 'ลงหัก SC', poDraft: 'ร่าง', poApproved: 'อนุมัติแล้ว', poVoid: 'ยกเลิก', poApplied: 'ลงบัญชีแล้ว', poSuperseded: 'ถูกแทนที่', bonus: 'โบนัส', deduction: 'หัก', approved: 'อนุมัติแล้ว', rejected: 'ปฏิเสธแล้ว', applied: 'ลงหัก SC แล้ว', applyResult: 'ลงหัก' }
+    : { back: 'Back', assignments: 'Evaluator assignments', evaluator: 'Evaluator', employee: 'Employee', add: 'Add', noAssignments: 'No assignments yet', remove: 'Remove', compute: 'Compute results', results: 'Results', noResults: 'No results yet (compute after closing)', colEmployee: 'Employee', colEvaluators: 'Evaluators', colScore: 'Score (%)', submitted: 'Submitted', assigned: 'Pending', loadFailed: 'Load failed', saveFailed: 'Save failed', added: 'Added', removed: 'Removed', computed: 'Results computed', pickBoth: 'Pick an evaluator and an employee', notFound: 'Period not found', payoutRule: 'Payout formula (linear)', flat: 'Flat (THB)', perPct: 'Per 1% (THB)', saveRule: 'Save formula', computePayouts: 'Compute payouts', ruleSaved: 'Formula saved', payoutsComputed: 'Payouts computed', payoutHint: 'Payout = flat + (per-1% × score%) · negative = SC deduction', payouts: 'Payouts / deductions', noPayouts: 'No payouts yet (press Compute payouts)', colAmount: 'Amount (THB)', colStatus: 'Status', approve: 'Approve', reject: 'Reject', approveAll: 'Approve all', applySc: 'Apply to SC', poDraft: 'Draft', poApproved: 'Approved', poVoid: 'Void', poApplied: 'Applied', poSuperseded: 'Superseded', bonus: 'Bonus', deduction: 'Deduct', approved: 'Approved', rejected: 'Rejected', applied: 'Applied to SC', applyResult: 'Applied' };
 
   const [period, setPeriod] = useState<Period | null>(null);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -41,16 +42,19 @@ export default function EvalPeriodDetailPage() {
   const [perPctBaht, setPerPctBaht] = useState('');
   const [savingRule, setSavingRule] = useState(false);
   const [computingPayouts, setComputingPayouts] = useState(false);
+  const [payouts, setPayouts] = useState<Payout[]>([]);
+  const [payoutBusy, setPayoutBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [pRes, aRes, rRes, eRes, ruleRes] = await Promise.all([
+      const [pRes, aRes, rRes, eRes, ruleRes, poRes] = await Promise.all([
         fetch('/api/hr/eval/periods'),
         fetch(`/api/hr/eval/periods/${id}/assignments`),
         fetch(`/api/hr/eval/periods/${id}/results`),
         fetch('/api/hr/employees'),
         fetch(`/api/hr/eval/periods/${id}/payout-rule`),
+        fetch(`/api/hr/eval/periods/${id}/payouts`),
       ]);
       const pJson = await pRes.json();
       setPeriod(((pJson.data ?? []) as Period[]).find((p) => p.id === id) ?? null);
@@ -61,6 +65,7 @@ export default function EvalPeriodDetailPage() {
       const rule = ((await ruleRes.json()).data as { rule?: { flat_satang: number; satang_per_pct: number } } | null)?.rule;
       setFlatBaht(rule ? String(rule.flat_satang / 100) : '');
       setPerPctBaht(rule ? String(rule.satang_per_pct / 100) : '');
+      setPayouts(((await poRes.json()).data ?? []) as Payout[]);
     } catch {
       toast({ type: 'error', title: L.loadFailed });
     } finally {
@@ -124,10 +129,39 @@ export default function EvalPeriodDetailPage() {
       const json = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) { toast({ type: 'error', title: L.saveFailed, message: json?.error }); return; }
       toast({ type: 'success', title: L.payoutsComputed });
+      await load();
     } finally { setComputingPayouts(false); }
   };
 
+  const patchPayout = async (payload: Record<string, unknown>, busyKey: string, okTitle: string) => {
+    setPayoutBusy(busyKey);
+    try {
+      const res = await fetch(`/api/hr/eval/periods/${id}/payouts`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) { toast({ type: 'error', title: L.saveFailed, message: json?.error }); return; }
+      toast({ type: 'success', title: okTitle });
+      await load();
+    } finally { setPayoutBusy(null); }
+  };
+
+  const applySc = async () => {
+    setPayoutBusy('apply-sc');
+    try {
+      const res = await fetch(`/api/hr/eval/periods/${id}/apply-sc`, { method: 'POST' });
+      const json = (await res.json().catch(() => ({}))) as { error?: string; data?: { applied?: number } };
+      if (!res.ok) { toast({ type: 'error', title: L.saveFailed, message: json?.error }); return; }
+      toast({ type: 'success', title: L.applied, message: `${L.applyResult}: ${json.data?.applied ?? 0}` });
+      await load();
+    } finally { setPayoutBusy(null); }
+  };
+
   const nameById = (pid: string) => employees.find((e) => e.id === pid)?.name || pid.slice(0, 8);
+  const hasDraft = payouts.some((p) => p.status === 'draft');
+  const hasNegative = payouts.some((p) => p.amount_satang < 0 && (p.status === 'draft' || p.status === 'approved'));
 
   return (
     <div className="mx-auto max-w-4xl space-y-4 p-4">
@@ -234,6 +268,70 @@ export default function EvalPeriodDetailPage() {
               <Button size="sm" type="button" onClick={saveRule} isLoading={savingRule}>{L.saveRule}</Button>
               <Button size="sm" variant="outline" type="button" onClick={computePayouts} isLoading={computingPayouts}>{L.computePayouts}</Button>
             </div>
+          </section>
+
+          {/* payouts drill-down: HR sign-off (approve/void) + apply negatives to SC */}
+          <section className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-base font-semibold text-gray-900 dark:text-white">{L.payouts}</h2>
+              <div className="flex gap-2">
+                {hasDraft && (
+                  <Button size="sm" variant="outline" type="button" isLoading={payoutBusy === 'approve-all'} onClick={() => patchPayout({ approve_all: true }, 'approve-all', L.approved)}>{L.approveAll}</Button>
+                )}
+                {hasNegative && (
+                  <Button size="sm" variant="outline" type="button" isLoading={payoutBusy === 'apply-sc'} onClick={applySc}>{L.applySc}</Button>
+                )}
+              </div>
+            </div>
+            {payouts.length === 0 ? (
+              <p className="text-sm text-gray-400">{L.noPayouts}</p>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
+                <table className="w-full min-w-[34rem] text-sm">
+                  <thead className="bg-gray-50 text-left text-xs font-medium text-gray-500 dark:bg-gray-800/50 dark:text-gray-400">
+                    <tr>
+                      <th className="px-3 py-2">{L.colEmployee}</th>
+                      <th className="px-3 py-2 text-right">{L.colScore}</th>
+                      <th className="px-3 py-2 text-right">{L.colAmount}</th>
+                      <th className="px-3 py-2 text-center">{L.colStatus}</th>
+                      <th className="px-3 py-2 text-right"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                    {payouts.map((p) => {
+                      const baht = p.amount_satang / 100;
+                      const neg = p.amount_satang < 0;
+                      const statusMap: Record<string, { v: 'warning' | 'success' | 'default' | 'info'; l: string }> = {
+                        draft: { v: 'warning', l: L.poDraft }, approved: { v: 'info', l: L.poApproved }, void: { v: 'default', l: L.poVoid }, applied_to_payslip: { v: 'success', l: L.poApplied }, superseded: { v: 'default', l: L.poSuperseded },
+                      };
+                      const sb = statusMap[p.status] ?? { v: 'default' as const, l: p.status };
+                      const editable = p.status === 'draft' || p.status === 'approved';
+                      return (
+                        <tr key={p.id} className="bg-white dark:bg-gray-800">
+                          <td className="px-3 py-2 font-medium text-gray-900 dark:text-white">{nameById(p.result?.employee_id ?? '')}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-gray-600 dark:text-gray-300">{p.result?.score_pct == null ? '—' : `${Number(p.result.score_pct).toFixed(1)}%`}</td>
+                          <td className={cn('px-3 py-2 text-right font-semibold tabular-nums', neg ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400')}>
+                            {neg ? '' : '+'}{baht.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            <span className="ml-1 text-[10px] font-normal text-gray-400">{neg ? L.deduction : L.bonus}</span>
+                          </td>
+                          <td className="px-3 py-2 text-center"><Badge variant={sb.v} size="sm">{sb.l}</Badge></td>
+                          <td className="px-3 py-2">
+                            <div className="flex justify-end gap-1">
+                              {p.status === 'draft' && (
+                                <Button size="sm" variant="ghost" type="button" isLoading={payoutBusy === p.id} onClick={() => patchPayout({ payout_id: p.id, status: 'approved' }, p.id, L.approved)}>{L.approve}</Button>
+                              )}
+                              {editable && (
+                                <Button size="sm" variant="ghost" type="button" isLoading={payoutBusy === p.id} onClick={() => patchPayout({ payout_id: p.id, status: 'void' }, p.id, L.rejected)}>{L.reject}</Button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </section>
         </>
       )}
