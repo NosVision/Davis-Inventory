@@ -48,6 +48,17 @@ export const modules: ModuleConfig[] = [
     groupKey: 'moduleGroups.main',
   },
   {
+    // งานบุคคลของฉัน (ESS home) — เข้าถึงได้ทุก role: เช็คอิน/ตาราง/ลา/สลิป/ประเมิน
+    id: 'me',
+    nameKey: 'modules.me.name',
+    descriptionKey: 'modules.me.description',
+    icon: 'user-circle',
+    color: 'teal',
+    href: '/me',
+    roles: ['owner', 'accountant', 'manager', 'bar', 'staff', 'hq', 'technician'],
+    groupKey: 'moduleGroups.main',
+  },
+  {
     // ห้องงาน (Task Management) — รวมงานทุกสายงาน + ยุบระบบแจ้งซ่อมเข้ามา
     // การมองเห็นจริงคุมที่ membership/RLS ในหน้า เหมือน chat
     id: 'tasks',

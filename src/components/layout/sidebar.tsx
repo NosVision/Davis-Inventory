@@ -34,6 +34,7 @@ import {
   ClipboardList,
   CalendarDays,
   Repeat,
+  UserCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { getModuleColors } from '@/lib/utils/module-colors';
@@ -72,6 +73,7 @@ const iconMap: Record<string, LucideIcon> = {
   'clipboard-list': ClipboardList,
   'calendar-days': CalendarDays,
   repeat: Repeat,
+  'user-circle': UserCircle,
 };
 
 interface SidebarProps {

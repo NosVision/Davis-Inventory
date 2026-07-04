@@ -141,7 +141,8 @@
     "transfer": "Transfer",
     "approve": "Approve",
     "selectStore": "Select branch",
-    "tasks": "Tasks"
+    "tasks": "Tasks",
+    "me": "Me"
   },
   "modules": {
     "overview": {
@@ -243,6 +244,10 @@
     "settings": {
       "name": "Settings",
       "description": "System and branch settings"
+    },
+    "me": {
+      "name": "Me",
+      "description": "Self-service — time, leave, payslips, reviews"
     }
   },
   "moduleGroups": {

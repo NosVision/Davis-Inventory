@@ -12,6 +12,7 @@ import {
   MessageSquare,
   BookOpen,
   ArrowLeftRight,
+  UserCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { useAuthStore } from '@/stores/auth-store';
@@ -36,10 +37,11 @@ const desktopRoleNavItems: NavItem[] = [
   { labelKey: 'nav.guide', href: '/guide', icon: BookOpen, color: 'sky' },
 ];
 
-// เมนูสำหรับ staff — ฝากเหล้า / เบิกเหล้า / แชท
+// เมนูสำหรับ staff — ฝากเหล้า / เบิกเหล้า / แชท / งานบุคคลของฉัน (ESS)
 const staffNavItems: NavItem[] = [
   { labelKey: 'nav.depositWithdraw', href: '/deposit', icon: Wine, color: 'emerald' },
   { labelKey: 'nav.chat', href: '/chat', icon: MessageSquare, color: 'blue' },
+  { labelKey: 'nav.me', href: '/me', icon: UserCircle, color: 'teal' },
   { labelKey: 'nav.guide', href: '/guide', icon: BookOpen, color: 'sky' },
 ];
 
@@ -47,6 +49,7 @@ const staffNavItems: NavItem[] = [
 const technicianNavItems: NavItem[] = [
   { labelKey: 'nav.tasks', href: '/tasks', icon: ClipboardList, color: 'indigo' },
   { labelKey: 'nav.chat', href: '/chat', icon: MessageSquare, color: 'blue' },
+  { labelKey: 'nav.me', href: '/me', icon: UserCircle, color: 'teal' },
   { labelKey: 'nav.guide', href: '/guide', icon: BookOpen, color: 'sky' },
 ];
 

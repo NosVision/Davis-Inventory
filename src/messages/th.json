@@ -141,7 +141,8 @@
     "transfer": "โอน",
     "approve": "อนุมัติ",
     "selectStore": "เลือกสาขา",
-    "tasks": "ห้องงาน"
+    "tasks": "ห้องงาน",
+    "me": "ของฉัน"
   },
   "modules": {
     "overview": {
@@ -243,6 +244,10 @@
     "settings": {
       "name": "ตั้งค่า",
       "description": "ตั้งค่าระบบและสาขา"
+    },
+    "me": {
+      "name": "ของฉัน",
+      "description": "งานบุคคล — เช็คอิน ลา สลิป และประเมินผล"
     }
   },
   "moduleGroups": {
