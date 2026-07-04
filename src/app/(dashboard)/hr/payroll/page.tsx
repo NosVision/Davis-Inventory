@@ -1,8 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { Loader2, Wallet, Play, Lock, LockOpen, Printer, X, FileText, Settings2, Percent } from 'lucide-react';
+import { Loader2, Wallet, Play, Lock, LockOpen, Printer, X, FileText, Settings2, Percent, GitCompareArrows } from 'lucide-react';
 import { Button, Badge, EmptyState, Modal, ModalFooter, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { formatBaht } from '@/lib/pos/money';
@@ -215,6 +216,9 @@ export default function HrPayrollPage() {
           <div className="min-w-0">
             <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('title')}</h1>
             <p className="text-sm text-gray-500 dark:text-gray-400">{t('subtitle')}</p>
+            <Link href="/hr/payroll/compare" className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">
+              <GitCompareArrows className="h-3.5 w-3.5" /> {t('compareLink')}
+            </Link>
           </div>
           <div className="flex flex-wrap items-end gap-2">
             <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">

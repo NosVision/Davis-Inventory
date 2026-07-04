@@ -2800,7 +2800,8 @@
           "loan": "Loan",
           "other": "Other"
         }
-      }
+      },
+      "compareLink": "Compare payslips across periods"
     },
     "payslip": {
       "title": "Payslip",
