@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireHrManager } from '@/lib/hr/route-auth';
+import { requireHrManagerForRowStore } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 
 const TABLE = 'hr_warnings';
@@ -12,10 +12,10 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireHrManager();
+  const { id } = await params;
+  const auth = await requireHrManagerForRowStore('hr_warnings', id);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-  const { id } = await params;
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
   if (!reason) return NextResponse.json({ error: 'A void reason is required' }, { status: 400 });

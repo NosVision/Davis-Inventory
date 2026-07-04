@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireHrManager } from '@/lib/hr/route-auth';
+import { requireStoreManager } from '@/lib/hr/route-auth';
 
 const MONTH_RE = /^\d{4}-\d{2}$/;
 
@@ -14,14 +14,15 @@ function monthRange(month: string): { first: string; last: string } {
 // roster. HR-only (requireHrManager, not the store manager): every 'submitted' row for
 // the store+month → 'acknowledged' with the acknowledging HR user + timestamp.
 export async function POST(request: NextRequest) {
-  const auth = await requireHrManager();
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const storeId = typeof body.store_id === 'string' ? body.store_id : '';
   const month = typeof body.month === 'string' ? body.month : '';
   if (!storeId) return NextResponse.json({ error: 'store_id is required' }, { status: 400 });
   if (!MONTH_RE.test(month)) return NextResponse.json({ error: 'Invalid month' }, { status: 400 });
+
+  // §P5.5: schedule ack is per store — only a manager of this store (or company HR).
+  const auth = await requireStoreManager(storeId);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const { first, last } = monthRange(month);
 
   const service = createServiceClient();

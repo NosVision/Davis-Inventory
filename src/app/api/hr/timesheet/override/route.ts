@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireHrManager } from '@/lib/hr/route-auth';
+import { requireHrManagerForEmployeeProfile } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -26,9 +26,6 @@ function optInt(v: unknown): { valid: boolean; value: number | null | undefined 
 // HR-only (requireHrManager). A reason is mandatory; every write is audited. The override
 // layers over the derived metrics — the underlying punches are never modified.
 export async function PUT(request: NextRequest) {
-  const auth = await requireHrManager();
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const userId = typeof body.user_id === 'string' ? body.user_id : '';
   const businessDate = typeof body.business_date === 'string' ? body.business_date : '';
@@ -39,6 +36,9 @@ export async function PUT(request: NextRequest) {
   if (!userId || !isCalendarDate(businessDate)) {
     return NextResponse.json({ error: 'user_id and a valid business_date are required' }, { status: 400 });
   }
+  // §P5.5: only company-wide HR or a manager whose stores include this employee may override.
+  const auth = await requireHrManagerForEmployeeProfile(userId);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   if (!reason) {
     return NextResponse.json({ error: 'A reason is required for a timesheet override' }, { status: 400 });
   }
@@ -100,15 +100,15 @@ export async function PUT(request: NextRequest) {
 // DELETE /api/hr/timesheet/override?user_id&business_date — remove an override (revert to
 // the derived values). HR-only; audited.
 export async function DELETE(request: NextRequest) {
-  const auth = await requireHrManager();
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-
   const sp = request.nextUrl.searchParams;
   const userId = sp.get('user_id') ?? '';
   const businessDate = sp.get('business_date') ?? '';
   if (!userId || !isCalendarDate(businessDate)) {
     return NextResponse.json({ error: 'user_id and a valid business_date are required' }, { status: 400 });
   }
+  // §P5.5: gate on the employee's stores.
+  const auth = await requireHrManagerForEmployeeProfile(userId);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const service = createServiceClient();
   const { data: before } = await service

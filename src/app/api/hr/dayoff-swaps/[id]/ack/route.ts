@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireHrManager } from '@/lib/hr/route-auth';
+import { requireHrManagerForRowStore } from '@/lib/hr/route-auth';
 
 // POST /api/hr/dayoff-swaps/[id]/ack — company HR acknowledges an already-approved
 // swap (§C, P2.3a). This is a payroll-side sign-off, NOT the approval, so it is
@@ -10,10 +10,10 @@ export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireHrManager();
+  const { id } = await params;
+  const auth = await requireHrManagerForRowStore('hr_dayoff_swaps', id);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-  const { id } = await params;
   const service = createServiceClient();
 
   const { data: swap, error: loadErr } = await service

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireHrManager } from '@/lib/hr/route-auth';
+import { resolveHrScope } from '@/lib/hr/route-auth';
 import { openBusinessDateBangkok } from '@/lib/utils/date';
 
 // Attendance selfies are uploaded by the ESS check-in route to the PRIVATE
@@ -40,8 +40,9 @@ interface AttendanceRow {
 //   business_date (default = current open business day), store_id, user_id,
 //   type, suspect ('true' → only VPN-suspect rows), limit, offset.
 export async function GET(request: NextRequest) {
-  const auth = await requireHrManager();
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  // §P5.5: company-wide HR sees all punches; a scoped manager sees only their stores' punches.
+  const scope = await resolveHrScope();
+  if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status });
 
   const sp = request.nextUrl.searchParams;
   const businessDateParam = sp.get('business_date');
@@ -64,6 +65,7 @@ export async function GET(request: NextRequest) {
     .select(LIST_SELECT, { count: 'exact' })
     .eq('business_date', businessDate);
   if (storeId) query = query.eq('store_id', storeId);
+  if (scope.storeIds) query = query.in('store_id', scope.storeIds); // scoped manager: their stores only
   if (userId) query = query.eq('user_id', userId);
   if (type && ATTENDANCE_TYPES.includes(type)) query = query.eq('type', type);
   if (suspectOnly) query = query.eq('is_vpn_suspect', true);

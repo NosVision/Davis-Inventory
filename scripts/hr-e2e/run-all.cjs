@@ -21,6 +21,7 @@ const SUITES = [
   'scope-tip.cjs',     // §P5.5 T1: per-store scope on Tip pool family (mirrors SC)
   'scope-employees.cjs', // §P5.5 T2: per-store scope on employee family (user_stores intersection)
   'scope-offboarding.cjs', // §P5.5 T2: per-store scope on offboarding family + documents (row store_id)
+  'scope-time.cjs',    // §P5.5 T3: attendance/override/schedule-ack/warnings-void/dayoff-ack per-store scope
 ];
 
 let failed = 0;
