@@ -93,3 +93,58 @@ export async function requireStoreManager(storeId: string): Promise<HrAuthResult
   }
   return { ok: true, userId: user.id, role };
 }
+
+/**
+ * Per-store gate for a row that carries a nullable `store_id` (§P5.5). A company-wide row
+ * (`store_id IS NULL`, e.g. a company-wide payrun) is full-HR only; a store-scoped row is
+ * reachable by company-wide HR OR a manager scoped to that store. Keeps company-HR behaviour
+ * identical to `requireHrManager()` while adding scoped-manager access only for their store.
+ */
+export async function requireHrManagerForStore(storeId: string | null): Promise<HrAuthResult> {
+  return storeId ? requireStoreManager(storeId) : requireHrManager();
+}
+
+/**
+ * Resolve the caller's HR list scope (§P5.5) for list endpoints. `storeIds === null` means the
+ * caller is company-wide HR (see everything); an array means a store-scoped manager (see only
+ * those stores' rows — company-wide/NULL rows are excluded). A caller who is neither is denied.
+ */
+export type HrScopeResult =
+  | { ok: true; userId: string; storeIds: string[] | null }
+  | { ok: false; error: string; status: number };
+
+export async function resolveHrScope(): Promise<HrScopeResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: 'Unauthorized', status: 401 };
+
+  const [profileRes, permsRes] = await Promise.all([
+    supabase.from('profiles').select('role').eq('id', user.id).single(),
+    supabase.from('user_permissions').select('permission').eq('user_id', user.id),
+  ]);
+  if (profileRes.error || permsRes.error) {
+    console.error('resolveHrScope: auth lookup failed', {
+      profileErr: profileRes.error?.message,
+      permsErr: permsRes.error?.message,
+    });
+    return { ok: false, error: 'authorization check failed', status: 503 };
+  }
+  const role = (profileRes.data?.role as string) ?? '';
+  const permissions = (permsRes.data ?? []).map((p) => p.permission as string);
+  if (canManageHr({ role, permissions })) return { ok: true, userId: user.id, storeIds: null };
+
+  const service = createServiceClient();
+  const { data: scopes, error: scopeErr } = await service
+    .from('hr_manager_scopes')
+    .select('store_id')
+    .eq('user_id', user.id);
+  if (scopeErr) {
+    console.error('resolveHrScope: scope lookup failed', scopeErr.message);
+    return { ok: false, error: 'authorization check failed', status: 503 };
+  }
+  const storeIds = (scopes ?? []).map((s) => s.store_id as string);
+  if (storeIds.length === 0) return { ok: false, error: 'Forbidden — requires can_manage_hr', status: 403 };
+  return { ok: true, userId: user.id, storeIds };
+}

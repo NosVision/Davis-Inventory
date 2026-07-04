@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireHrManager } from '@/lib/hr/route-auth';
+import { requireHrManagerForStore } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import {
   buildBankTransferCsv,
@@ -22,19 +22,20 @@ interface EmpBank {
 // HR only. Only finalized payruns can be exported (a draft is still changing; paying from it
 // would transfer wrong amounts). Returns text/csv as a download; logs the export for audit.
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireHrManager();
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-
   const { id } = await params;
   const service = createServiceClient();
 
   const { data: payrun, error: prErr } = await service
     .from('hr_payruns')
-    .select('id, company_id, period_year, period_month, pay_date, status')
+    .select('id, company_id, store_id, period_year, period_month, pay_date, status')
     .eq('id', id)
     .maybeSingle();
   if (prErr) return NextResponse.json({ error: 'Failed to load payrun' }, { status: 500 });
   if (!payrun) return NextResponse.json({ error: 'Payrun not found' }, { status: 404 });
+
+  // §P5.5: bank export of employee net pay — gate on the payrun's store.
+  const auth = await requireHrManagerForStore(payrun.store_id as string | null);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   if (payrun.status !== 'finalized') {
     return NextResponse.json({ error: 'Only a finalized payrun can be exported to a bank file' }, { status: 409 });
   }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireHrManager } from '@/lib/hr/route-auth';
+import { requireHrManagerForStore } from '@/lib/hr/route-auth';
 
 interface ProfileRow {
   id: string;
@@ -10,9 +10,6 @@ interface ProfileRow {
 
 // GET /api/hr/payruns/[id] — a payrun with its per-employee payslip summaries (HR only).
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireHrManager();
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-
   const { id } = await params;
   const service = createServiceClient();
 
@@ -23,6 +20,10 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     .maybeSingle();
   if (prErr) return NextResponse.json({ error: 'Failed to load payrun' }, { status: 500 });
   if (!payrun) return NextResponse.json({ error: 'Payrun not found' }, { status: 404 });
+
+  // §P5.5: a store-scoped payrun is reachable by a manager of that store; company-wide (NULL) is full-HR only.
+  const auth = await requireHrManagerForStore(payrun.store_id as string | null);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const { data: slips, error: slErr } = await service
     .from('hr_payslips')

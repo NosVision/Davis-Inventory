@@ -1,16 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireHrManager } from '@/lib/hr/route-auth';
+import { requireHrManagerForStore } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 
 // POST /api/hr/payruns/[id]/finalize — lock a draft payrun (§A: payrun locks after finalize;
 // editing requires reopen). HR only, atomic compare-and-set on status='draft' → 409 otherwise.
 export async function POST(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireHrManager();
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-
   const { id } = await params;
   const service = createServiceClient();
+
+  // §P5.5: gate on the payrun's store before any mutation.
+  const { data: pr, error: prErr } = await service.from('hr_payruns').select('store_id').eq('id', id).maybeSingle();
+  if (prErr) return NextResponse.json({ error: 'Failed to finalize payrun' }, { status: 500 });
+  if (!pr) return NextResponse.json({ error: 'Payrun not found' }, { status: 404 });
+  const auth = await requireHrManagerForStore(pr.store_id as string | null);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   // Defense-in-depth: never finalize an empty payrun. The UI disables the button when there
   // are no payslips, but a direct/replayed POST must be rejected server-side too (finalizing
