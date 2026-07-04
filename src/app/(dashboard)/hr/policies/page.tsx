@@ -2,8 +2,22 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Plus, Pencil, Users, Eye } from 'lucide-react';
-import { Button, Badge, Input, Textarea, Modal, ModalFooter, toast } from '@/components/ui';
+import { Plus, Pencil, Users, Eye, FileText, CheckCircle2, CircleSlash } from 'lucide-react';
+import {
+  Button,
+  Badge,
+  Input,
+  Textarea,
+  Modal,
+  ModalFooter,
+  PageHeader,
+  KpiRow,
+  StatTile,
+  StatusBadge,
+  DataCard,
+  DataList,
+  toast,
+} from '@/components/ui';
 
 interface Policy {
   id: string;
@@ -222,19 +236,30 @@ export default function PoliciesPage() {
     }
   };
 
+  const activeCount = rows.filter((r) => r.active).length;
+  const inactiveCount = rows.length - activeCount;
+
   return (
-    <div className="mx-auto max-w-3xl space-y-4 p-4">
-      {/* header */}
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('title')}</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">{t('subtitle')}</p>
-        </div>
-        <Button size="sm" onClick={openCreate} className="shrink-0">
-          <Plus className="h-4 w-4" />
-          {t('add')}
-        </Button>
-      </div>
+    <div className="mx-auto max-w-5xl space-y-4 p-4">
+      <PageHeader
+        title={t('title')}
+        subtitle={t('subtitle')}
+        actions={
+          <Button size="sm" onClick={openCreate} className="shrink-0">
+            <Plus className="h-4 w-4" />
+            {t('add')}
+          </Button>
+        }
+      />
+
+      {/* key figures — lead with the policy counts */}
+      {!loading && rows.length > 0 && (
+        <KpiRow cols={3}>
+          <StatTile label={t('title')} value={rows.length} icon={FileText} tone="accent" />
+          <StatTile label={t('active')} value={activeCount} icon={CheckCircle2} tone="good" />
+          <StatTile label={t('inactive')} value={inactiveCount} icon={CircleSlash} tone="default" />
+        </KpiRow>
+      )}
 
       {/* list */}
       {loading ? (
@@ -244,61 +269,59 @@ export default function PoliciesPage() {
           {t('empty')}
         </div>
       ) : (
-        <ul className="divide-y divide-gray-100 overflow-hidden rounded-xl border border-gray-200 dark:divide-gray-800 dark:border-gray-700">
+        <DataList>
           {rows.map((row) => (
-            <li
+            <DataCard
               key={row.id}
-              className="flex flex-wrap items-center gap-2 bg-white px-3 py-2.5 dark:bg-gray-900"
+              accent={row.active ? 'good' : 'neutral'}
+              title={<span className="truncate">{row.title}</span>}
+              status={
+                <StatusBadge
+                  tone={row.active ? 'good' : 'neutral'}
+                  label={row.active ? t('active') : t('inactive')}
+                />
+              }
+              actions={
+                <>
+                  <button
+                    type="button"
+                    onClick={() => openAcks(row)}
+                    disabled={saving}
+                    title={t('viewAcks')}
+                    aria-label={t('viewAcks')}
+                    className="shrink-0 rounded-md p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-400"
+                  >
+                    <Users className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openEdit(row)}
+                    disabled={saving}
+                    title={t('edit')}
+                    aria-label={t('edit')}
+                    className="shrink-0 rounded-md p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-400"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                  <Button
+                    size="sm"
+                    variant={row.active ? 'ghost' : 'outline'}
+                    onClick={() => toggleActive(row)}
+                    disabled={saving}
+                    className="shrink-0"
+                  >
+                    {row.active ? t('deactivate') : t('activate')}
+                  </Button>
+                </>
+              }
             >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="truncate font-medium text-gray-900 dark:text-white">
-                    {row.title}
-                  </span>
-                  <span className="shrink-0 text-xs tabular-nums text-gray-400">
-                    v{row.version}
-                  </span>
-                  <Badge variant={row.active ? 'success' : 'default'} size="sm">
-                    {row.active ? t('active') : t('inactive')}
-                  </Badge>
-                </div>
-                {row.category && (
-                  <span className="text-xs text-gray-500 dark:text-gray-400">{row.category}</span>
-                )}
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="default" size="sm">v{row.version}</Badge>
+                {row.category && <span>{row.category}</span>}
               </div>
-
-              <button
-                type="button"
-                onClick={() => openAcks(row)}
-                disabled={saving}
-                title={t('viewAcks')}
-                aria-label={t('viewAcks')}
-                className="shrink-0 rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-400"
-              >
-                <Users className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => openEdit(row)}
-                disabled={saving}
-                title={t('edit')}
-                aria-label={t('edit')}
-                className="shrink-0 rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-400"
-              >
-                <Pencil className="h-4 w-4" />
-              </button>
-              <Button
-                size="sm"
-                variant={row.active ? 'ghost' : 'outline'}
-                onClick={() => toggleActive(row)}
-                disabled={saving}
-                className="shrink-0"
-              >
-                {row.active ? t('deactivate') : t('activate')}
-              </Button>
-            </li>
+            </DataCard>
           ))}
-        </ul>
+        </DataList>
       )}
 
       {/* editor modal */}

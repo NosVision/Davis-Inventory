@@ -3,7 +3,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Megaphone, Loader2 } from 'lucide-react';
-import { Button, EmptyState, toast } from '@/components/ui';
+import {
+  Button,
+  EmptyState,
+  PageHeader,
+  DataList,
+  DataCard,
+  toast,
+} from '@/components/ui';
 
 interface Announcement {
   id: string;
@@ -62,14 +69,7 @@ export default function MyAnnouncementsPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-          {t('annTitle')}
-        </h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">
-          {t('annSubtitle')}
-        </p>
-      </div>
+      <PageHeader title={t('annTitle')} subtitle={t('annSubtitle')} />
 
       {loading ? (
         <div className="flex items-center justify-center py-16 text-gray-400">
@@ -78,47 +78,49 @@ export default function MyAnnouncementsPage() {
       ) : announcements.length === 0 ? (
         <EmptyState icon={Megaphone} title={t('annEmpty')} />
       ) : (
-        <ul className="space-y-3">
+        <DataList>
           {announcements.map((a) => {
             const busy = busyId === a.id;
             return (
-              <li
+              <DataCard
                 key={a.id}
-                className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800"
+                accent="accent"
+                title={
+                  <span className="flex items-start gap-2">
+                    <Megaphone className="mt-0.5 h-5 w-5 shrink-0 text-indigo-500 dark:text-indigo-400" />
+                    <span>{a.title}</span>
+                  </span>
+                }
+                actions={
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => respond(a.id, 'snooze')}
+                    >
+                      {t('annLater')}
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      isLoading={busy}
+                      onClick={() => respond(a.id, 'ack')}
+                    >
+                      {t('annAck')}
+                    </Button>
+                  </>
+                }
               >
-                <div className="flex items-start gap-2">
-                  <Megaphone className="mt-0.5 h-5 w-5 shrink-0 text-indigo-500 dark:text-indigo-400" />
-                  <h2 className="font-semibold text-gray-900 dark:text-white">
-                    {a.title}
-                  </h2>
-                </div>
                 {a.body ? (
                   <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700 dark:text-gray-300">
                     {a.body}
                   </p>
                 ) : null}
-                <div className="flex flex-wrap justify-end gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={busy}
-                    onClick={() => respond(a.id, 'snooze')}
-                  >
-                    {t('annLater')}
-                  </Button>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    isLoading={busy}
-                    onClick={() => respond(a.id, 'ack')}
-                  >
-                    {t('annAck')}
-                  </Button>
-                </div>
-              </li>
+              </DataCard>
             );
           })}
-        </ul>
+        </DataList>
       )}
     </div>
   );

@@ -2,8 +2,18 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { FileText, Loader2 } from 'lucide-react';
-import { Button, Badge, Modal, ModalFooter, EmptyState, toast } from '@/components/ui';
+import { FileText, Loader2, CheckCircle2, Clock } from 'lucide-react';
+import {
+  Button,
+  Modal,
+  ModalFooter,
+  EmptyState,
+  PageHeader,
+  StatusBadge,
+  DataList,
+  DataCard,
+  toast,
+} from '@/components/ui';
 import {
   SignaturePad,
   type SignaturePadHandle,
@@ -83,14 +93,7 @@ export default function MyPoliciesPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-          {t('policiesTitle')}
-        </h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">
-          {t('policiesSubtitle')}
-        </p>
-      </div>
+      <PageHeader title={t('policiesTitle')} subtitle={t('policiesSubtitle')} />
 
       {loading ? (
         <div className="flex items-center justify-center py-16 text-gray-400">
@@ -99,37 +102,34 @@ export default function MyPoliciesPage() {
       ) : policies.length === 0 ? (
         <EmptyState icon={FileText} title={t('empty')} />
       ) : (
-        <ul className="space-y-3">
+        <DataList>
           {policies.map((p) => (
-            <li
+            <DataCard
               key={p.id}
-              className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800 sm:flex-row sm:items-center sm:justify-between"
+              accent={p.acked ? 'good' : 'warn'}
+              title={p.title}
+              status={
+                <StatusBadge
+                  tone={p.acked ? 'good' : 'warn'}
+                  icon={p.acked ? CheckCircle2 : Clock}
+                  label={p.acked ? t('acknowledged') : t('pending')}
+                />
+              }
+              actions={
+                <Button
+                  variant={p.acked ? 'outline' : 'primary'}
+                  size="sm"
+                  onClick={() => setActive(p)}
+                >
+                  {p.acked ? t('read') : t('acknowledge')}
+                </Button>
+              }
             >
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="truncate font-semibold text-gray-900 dark:text-white">
-                    {p.title}
-                  </h2>
-                  <Badge variant={p.acked ? 'success' : 'warning'} size="sm">
-                    {p.acked ? t('acknowledged') : t('pending')}
-                  </Badge>
-                </div>
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  {p.category ? `${p.category} · ` : ''}
-                  {t('version')} {p.version}
-                </p>
-              </div>
-              <Button
-                variant={p.acked ? 'outline' : 'primary'}
-                size="sm"
-                className="shrink-0 self-start sm:self-auto"
-                onClick={() => setActive(p)}
-              >
-                {p.acked ? t('read') : t('acknowledge')}
-              </Button>
-            </li>
+              {p.category ? `${p.category} · ` : ''}
+              {t('version')} {p.version}
+            </DataCard>
           ))}
-        </ul>
+        </DataList>
       )}
 
       <Modal

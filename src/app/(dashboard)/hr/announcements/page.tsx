@@ -2,8 +2,21 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Plus, Pencil, Eye } from 'lucide-react';
-import { Button, Badge, Input, Textarea, Modal, ModalFooter, toast } from '@/components/ui';
+import { Plus, Pencil, Eye, Megaphone, CheckCircle2, CheckCheck } from 'lucide-react';
+import {
+  Button,
+  Input,
+  Textarea,
+  Modal,
+  ModalFooter,
+  PageHeader,
+  KpiRow,
+  StatTile,
+  StatusBadge,
+  DataCard,
+  DataList,
+  toast,
+} from '@/components/ui';
 import { createClient } from '@/lib/supabase/client';
 
 interface Announcement {
@@ -235,19 +248,30 @@ export default function AnnouncementsPage() {
     }
   };
 
+  const activeCount = rows.filter((r) => r.active).length;
+  const ackedTotal = rows.reduce((sum, r) => sum + (r.acked_count ?? 0), 0);
+
   return (
-    <div className="mx-auto max-w-3xl space-y-4 p-4">
-      {/* header */}
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('title')}</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">{t('subtitle')}</p>
-        </div>
-        <Button size="sm" onClick={openCreate} className="shrink-0">
-          <Plus className="h-4 w-4" />
-          {t('add')}
-        </Button>
-      </div>
+    <div className="mx-auto max-w-5xl space-y-4 p-4">
+      <PageHeader
+        title={t('title')}
+        subtitle={t('subtitle')}
+        actions={
+          <Button size="sm" onClick={openCreate} className="shrink-0">
+            <Plus className="h-4 w-4" />
+            {t('add')}
+          </Button>
+        }
+      />
+
+      {/* key figures — total announcements, how many are active, total acknowledgements */}
+      {!loading && rows.length > 0 && (
+        <KpiRow cols={3}>
+          <StatTile label={t('title')} value={rows.length} icon={Megaphone} tone="accent" />
+          <StatTile label={t('active')} value={activeCount} icon={CheckCircle2} tone="good" />
+          <StatTile label={t('acked')} value={ackedTotal} icon={CheckCheck} tone="default" />
+        </KpiRow>
+      )}
 
       {/* list */}
       {loading ? (
@@ -257,64 +281,64 @@ export default function AnnouncementsPage() {
           {t('empty')}
         </div>
       ) : (
-        <ul className="divide-y divide-gray-100 overflow-hidden rounded-xl border border-gray-200 dark:divide-gray-800 dark:border-gray-700">
+        <DataList>
           {rows.map((row) => (
-            <li
+            <DataCard
               key={row.id}
-              className="flex flex-wrap items-center gap-2 bg-white px-3 py-2.5 dark:bg-gray-900"
+              accent={row.active ? 'good' : 'neutral'}
+              title={<span className="truncate">{row.title}</span>}
+              status={
+                <StatusBadge
+                  tone={row.active ? 'good' : 'neutral'}
+                  label={row.active ? t('active') : t('inactive')}
+                />
+              }
+              actions={
+                <>
+                  <button
+                    type="button"
+                    onClick={() => openReceipts(row)}
+                    disabled={saving}
+                    title={t('viewReceipts')}
+                    aria-label={t('viewReceipts')}
+                    className="shrink-0 rounded-md p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-400"
+                  >
+                    <Eye className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openEdit(row)}
+                    disabled={saving}
+                    title={t('edit')}
+                    aria-label={t('edit')}
+                    className="shrink-0 rounded-md p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-400"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                  <Button
+                    size="sm"
+                    variant={row.active ? 'ghost' : 'outline'}
+                    onClick={() => toggleActive(row)}
+                    disabled={saving}
+                    className="shrink-0"
+                  >
+                    {row.active ? t('deactivate') : t('activate')}
+                  </Button>
+                </>
+              }
             >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="truncate font-medium text-gray-900 dark:text-white">
-                    {row.title}
-                  </span>
-                  <Badge variant={row.active ? 'success' : 'default'} size="sm">
-                    {row.active ? t('active') : t('inactive')}
-                  </Badge>
-                </div>
-                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-500 dark:text-gray-400">
-                  <span className="truncate">
-                    {t('scope')}: {scopeLabel(row.store_ids)}
-                  </span>
-                  <span className="text-gray-300 dark:text-gray-600">·</span>
-                  <span className="tabular-nums">
-                    {t('acked')}: {row.acked_count}
-                  </span>
-                </div>
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                <span className="truncate">
+                  {t('scope')}: {scopeLabel(row.store_ids)}
+                </span>
+                <span className="text-gray-300 dark:text-gray-600">·</span>
+                <span className="tabular-nums">
+                  {t('acked')}: {row.acked_count}
+                </span>
               </div>
-
-              <button
-                type="button"
-                onClick={() => openReceipts(row)}
-                disabled={saving}
-                title={t('viewReceipts')}
-                aria-label={t('viewReceipts')}
-                className="shrink-0 rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-400"
-              >
-                <Eye className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => openEdit(row)}
-                disabled={saving}
-                title={t('edit')}
-                aria-label={t('edit')}
-                className="shrink-0 rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-400"
-              >
-                <Pencil className="h-4 w-4" />
-              </button>
-              <Button
-                size="sm"
-                variant={row.active ? 'ghost' : 'outline'}
-                onClick={() => toggleActive(row)}
-                disabled={saving}
-                className="shrink-0"
-              >
-                {row.active ? t('deactivate') : t('activate')}
-              </Button>
-            </li>
+            </DataCard>
           ))}
-        </ul>
+        </DataList>
       )}
 
       {/* editor modal */}
@@ -418,9 +442,7 @@ export default function AnnouncementsPage() {
                       {formatDate(receipt.acknowledged_at)}
                     </div>
                   </div>
-                  <Badge variant="success" size="sm">
-                    {t('acked')}
-                  </Badge>
+                  <StatusBadge tone="good" label={t('acked')} icon={CheckCircle2} />
                 </li>
               ))}
           </ul>

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Plus, Pencil } from 'lucide-react';
-import { Button, Badge, Tabs, toast } from '@/components/ui';
+import { Button, Tabs, PageHeader, StatusBadge, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 
 interface OrgRow {
@@ -12,11 +12,6 @@ interface OrgRow {
   sort_order?: number;
   active: boolean;
 }
-
-const INPUT_CLS =
-  'rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition-colors ' +
-  'placeholder:text-gray-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 ' +
-  'dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder:text-gray-500';
 
 interface OrgListProps {
   endpoint: string;
@@ -175,7 +170,7 @@ function OrgList({ endpoint, withSort, addLabel }: OrgListProps) {
           }}
           placeholder={t('namePlaceholder')}
           aria-label={t('name')}
-          className={cn(INPUT_CLS, 'min-w-0 flex-1')}
+          className={cn('control', 'min-w-0 flex-1')}
         />
         {withSort && (
           <input
@@ -187,7 +182,7 @@ function OrgList({ endpoint, withSort, addLabel }: OrgListProps) {
             }}
             placeholder={t('sortOrder')}
             aria-label={t('sortOrder')}
-            className={cn(INPUT_CLS, 'w-20 shrink-0 tabular-nums')}
+            className={cn('control', 'w-20 shrink-0 tabular-nums')}
           />
         )}
         <Button size="sm" onClick={addItem} isLoading={saving} className="shrink-0">
@@ -220,7 +215,7 @@ function OrgList({ endpoint, withSort, addLabel }: OrgListProps) {
                       if (e.key === 'Escape') cancelEdit();
                     }}
                     aria-label={t('name')}
-                    className={cn(INPUT_CLS, 'min-w-0 flex-1')}
+                    className={cn('control', 'min-w-0 flex-1')}
                     autoFocus
                   />
                   {withSort && (
@@ -233,7 +228,7 @@ function OrgList({ endpoint, withSort, addLabel }: OrgListProps) {
                         if (e.key === 'Escape') cancelEdit();
                       }}
                       aria-label={t('sortOrder')}
-                      className={cn(INPUT_CLS, 'w-20 shrink-0 tabular-nums')}
+                      className={cn('control', 'w-20 shrink-0 tabular-nums')}
                     />
                   )}
                   <Button size="sm" onClick={() => saveEdit(row)} isLoading={saving}>
@@ -253,9 +248,10 @@ function OrgList({ endpoint, withSort, addLabel }: OrgListProps) {
                       {row.sort_order ?? 0}
                     </span>
                   )}
-                  <Badge variant={row.active ? 'success' : 'default'} size="sm">
-                    {row.active ? t('active') : t('inactive')}
-                  </Badge>
+                  <StatusBadge
+                    tone={row.active ? 'good' : 'neutral'}
+                    label={row.active ? t('active') : t('inactive')}
+                  />
                   <button
                     type="button"
                     onClick={() => startEdit(row)}
@@ -291,10 +287,7 @@ export default function OrgPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('title')}</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">{t('subtitle')}</p>
-      </div>
+      <PageHeader title={t('title')} subtitle={t('subtitle')} />
 
       <Tabs
         tabs={[

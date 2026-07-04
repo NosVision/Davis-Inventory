@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Button, Select, Badge, toast } from '@/components/ui';
+import { Button, Select, PageHeader, StatusBadge, FilterBar, type StatusTone, toast } from '@/components/ui';
 import { DataTable, type Column } from '@/components/data/data-table';
 
 interface AuditRow extends Record<string, unknown> {
@@ -21,10 +21,10 @@ const AUDITED_TABLES = ['hr_employees', 'hr_companies', 'hr_positions', 'hr_depa
 const ACTIONS = ['create', 'update', 'delete'];
 const PAGE_SIZE = 50;
 
-const ACTION_VARIANT: Record<string, 'success' | 'info' | 'danger' | 'default'> = {
-  create: 'success',
+const ACTION_TONE: Record<string, StatusTone> = {
+  create: 'good',
   update: 'info',
-  delete: 'danger',
+  delete: 'critical',
 };
 
 export default function AuditLogPage() {
@@ -93,9 +93,7 @@ export default function AuditLogPage() {
         key: 'action',
         header: t('colAction'),
         render: (r) => (
-          <Badge variant={ACTION_VARIANT[r.action] ?? 'default'} size="sm">
-            {t(`act.${r.action}`)}
-          </Badge>
+          <StatusBadge tone={ACTION_TONE[r.action] ?? 'neutral'} label={t(`act.${r.action}`)} />
         ),
       },
       { key: 'table', header: t('colTable'), render: (r) => r.table_name || '—' },
@@ -115,26 +113,27 @@ export default function AuditLogPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-4">
-      <div className="min-w-0">
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('title')}</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">{t('subtitle')}</p>
-      </div>
+      <PageHeader title={t('title')} subtitle={t('subtitle')} />
 
       {/* filters */}
-      <div className="grid grid-cols-2 gap-2 sm:max-w-md">
-        <Select
-          label={t('filterTable')}
-          value={table}
-          onChange={(e) => setTable(e.target.value)}
-          options={[{ value: '', label: t('all') }, ...AUDITED_TABLES.map((tb) => ({ value: tb, label: tb }))]}
-        />
-        <Select
-          label={t('filterAction')}
-          value={action}
-          onChange={(e) => setAction(e.target.value)}
-          options={[{ value: '', label: t('all') }, ...ACTIONS.map((a) => ({ value: a, label: t(`act.${a}`) }))]}
-        />
-      </div>
+      <FilterBar>
+        <div className="min-w-[9rem] flex-1 sm:max-w-[12rem]">
+          <Select
+            label={t('filterTable')}
+            value={table}
+            onChange={(e) => setTable(e.target.value)}
+            options={[{ value: '', label: t('all') }, ...AUDITED_TABLES.map((tb) => ({ value: tb, label: tb }))]}
+          />
+        </div>
+        <div className="min-w-[9rem] flex-1 sm:max-w-[12rem]">
+          <Select
+            label={t('filterAction')}
+            value={action}
+            onChange={(e) => setAction(e.target.value)}
+            options={[{ value: '', label: t('all') }, ...ACTIONS.map((a) => ({ value: a, label: t(`act.${a}`) }))]}
+          />
+        </div>
+      </FilterBar>
 
       <DataTable
         columns={columns}

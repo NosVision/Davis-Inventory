@@ -12,6 +12,9 @@ import {
   Badge,
   Tabs,
   EmptyState,
+  PageHeader,
+  StatusBadge,
+  useConfirm,
   toast,
 } from '@/components/ui';
 
@@ -421,9 +424,10 @@ function LeaveTypesTab({ companyId }: { companyId: string }) {
                 </div>
               </div>
 
-              <Badge variant={row.active ? 'success' : 'default'} size="sm">
-                {row.active ? t('active') : t('inactive')}
-              </Badge>
+              <StatusBadge
+                tone={row.active ? 'good' : 'neutral'}
+                label={row.active ? t('active') : t('inactive')}
+              />
               <button
                 type="button"
                 onClick={() => openEdit(row)}
@@ -605,6 +609,7 @@ function HolidayModal({ open, editing, companyId, year, onClose, onSaved }: Holi
 
 function HolidaysTab({ companyId }: { companyId: string }) {
   const t = useTranslations('hr.leaveTypes');
+  const { confirm, dialog } = useConfirm();
   const [year, setYear] = useState<number>(CURRENT_YEAR);
   const [rows, setRows] = useState<HolidayRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -650,7 +655,7 @@ function HolidaysTab({ companyId }: { companyId: string }) {
   }, [fetchRows]);
 
   const removeHoliday = async (row: HolidayRow) => {
-    if (!window.confirm(t('confirmDeleteHoliday', { name: row.name_th }))) return;
+    if (!(await confirm({ title: t('confirmDeleteHoliday', { name: row.name_th }), tone: 'danger', confirmLabel: t('delete'), cancelLabel: t('cancel') }))) return;
     setBusy(true);
     try {
       const res = await fetch(`/api/hr/holidays/${row.id}`, { method: 'DELETE' });
@@ -764,6 +769,7 @@ function HolidaysTab({ companyId }: { companyId: string }) {
         onClose={() => setModalOpen(false)}
         onSaved={fetchRows}
       />
+      {dialog}
     </div>
   );
 }
@@ -810,11 +816,8 @@ export default function LeaveTypesPage() {
   );
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 p-4">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('title')}</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">{t('subtitle')}</p>
-      </div>
+    <div className="mx-auto max-w-4xl space-y-4 p-4">
+      <PageHeader title={t('title')} subtitle={t('subtitle')} />
 
       <div className="max-w-xs">
         <Select

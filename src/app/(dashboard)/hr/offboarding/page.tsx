@@ -12,7 +12,20 @@ import {
   CheckCircle2,
   Save,
 } from 'lucide-react';
-import { Button, Badge, Select, Modal, ModalFooter, toast } from '@/components/ui';
+import {
+  Button,
+  Badge,
+  Select,
+  Modal,
+  ModalFooter,
+  PageHeader,
+  FilterBar,
+  StatusBadge,
+  DataList,
+  DataCard,
+  toast,
+  type StatusTone,
+} from '@/components/ui';
 import {
   SignaturePad,
   type SignaturePadHandle,
@@ -77,8 +90,22 @@ const RESOLUTION_BADGE: Record<Resolution, 'warning' | 'success' | 'danger'> = {
   damaged: 'danger',
 };
 
+// Domain status → shared design-system tones (StatusBadge + DataCard left rail).
+const STATUS_TONE: Record<Status, StatusTone> = {
+  draft: 'warn',
+  pending_signoff: 'info',
+  completed: 'good',
+  cancelled: 'neutral',
+};
+const STATUS_ACCENT: Record<Status, 'warn' | 'accent' | 'good' | 'neutral'> = {
+  draft: 'warn',
+  pending_signoff: 'accent',
+  completed: 'good',
+  cancelled: 'neutral',
+};
+
 const inputCls =
-  'mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white disabled:cursor-not-allowed disabled:opacity-60';
+  'control mt-1 w-full disabled:cursor-not-allowed disabled:opacity-60';
 
 const PRINT_CSS = `@media print { @page { margin: 1.6cm; } }`;
 
@@ -439,31 +466,30 @@ export default function HrOffboardingPage() {
   const canCancel = detail && detail.status !== 'completed' && detail.status !== 'cancelled';
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 p-4">
+    <div className="mx-auto max-w-6xl space-y-4 p-4">
       <style>{PRINT_CSS}</style>
 
       {/* On-screen content */}
       <div className="space-y-4 print:hidden">
-        {/* header */}
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('title')}</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">{t('subtitle')}</p>
-          </div>
-          <Button size="sm" onClick={openInitiate} className="shrink-0" icon={<Plus className="h-4 w-4" />}>
-            {t('initiate')}
-          </Button>
-        </div>
+        <PageHeader
+          title={t('title')}
+          subtitle={t('subtitle')}
+          actions={
+            <Button size="sm" onClick={openInitiate} icon={<Plus className="h-4 w-4" />}>
+              {t('initiate')}
+            </Button>
+          }
+        />
 
         {/* filter */}
-        <div className="grid grid-cols-2 gap-3">
+        <FilterBar>
           <Select
             label={t('filterStatus')}
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
             options={statusOptions}
           />
-        </div>
+        </FilterBar>
 
         {/* list */}
         {loading ? (
@@ -483,38 +509,33 @@ export default function HrOffboardingPage() {
             {t('empty')}
           </div>
         ) : (
-          <ul className="space-y-2">
+          <DataList>
             {rows.map((o) => (
-              <li
+              <DataCard
                 key={o.id}
                 onClick={() => openDetail(o.id)}
-                className="cursor-pointer rounded-xl border border-gray-200 bg-white p-3 transition-colors hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-indigo-600"
+                accent={STATUS_ACCENT[o.status]}
+                title={personName(o.employee)}
+                status={<StatusBadge tone={STATUS_TONE[o.status]} label={statusLabel(o.status)} />}
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-medium text-gray-900 dark:text-white">
-                        {personName(o.employee)}
-                      </span>
-                      <Badge variant={KIND_BADGE[o.kind]} size="sm">
-                        {kindLabel(o.kind)}
-                      </Badge>
-                    </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {t('lastWorkingDate')}: {formatDate(o.last_working_date)}
-                    </p>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <SignChip label={t('empSigned')} done={Boolean(o.employee_signed_at)} />
-                      <SignChip label={t('hrSigned')} done={Boolean(o.hr_signed_at)} />
-                    </div>
+                <div className="space-y-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <StatusBadge
+                      tone={o.kind === 'termination' ? 'critical' : 'neutral'}
+                      label={kindLabel(o.kind)}
+                    />
                   </div>
-                  <Badge variant={STATUS_BADGE[o.status]} size="sm">
-                    {statusLabel(o.status)}
-                  </Badge>
+                  <p>
+                    {t('lastWorkingDate')}: {formatDate(o.last_working_date)}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <SignChip label={t('empSigned')} done={Boolean(o.employee_signed_at)} />
+                    <SignChip label={t('hrSigned')} done={Boolean(o.hr_signed_at)} />
+                  </div>
                 </div>
-              </li>
+              </DataCard>
             ))}
-          </ul>
+          </DataList>
         )}
       </div>
 
