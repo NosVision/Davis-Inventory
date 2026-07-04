@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Loader2, Inbox } from 'lucide-react';
-import { Button, Badge, Select, Tabs, toast } from '@/components/ui';
+import { Inbox } from 'lucide-react';
+import { Button, Select, Tabs, PageHeader, DataList, DataCard, StatusBadge, SkeletonList, toast } from '@/components/ui';
 
 interface StoreOpt {
   id: string;
@@ -34,16 +34,13 @@ interface AttRow {
   applied: boolean;
 }
 
-const STATUS_VARIANT: Record<Status, 'warning' | 'success' | 'danger' | 'default'> = {
-  pending: 'warning',
-  approved: 'success',
-  rejected: 'danger',
-  cancelled: 'default',
+const STATUS_TONE: Record<Status, 'warn' | 'good' | 'critical' | 'neutral'> = {
+  pending: 'warn',
+  approved: 'good',
+  rejected: 'critical',
+  cancelled: 'neutral',
 };
 const STATUS_FILTERS = ['all', 'pending', 'approved', 'rejected', 'cancelled'] as const;
-
-const inputCls =
-  'rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white';
 
 export default function HrRequestsPage() {
   const t = useTranslations('hr');
@@ -165,13 +162,13 @@ export default function HrRequestsPage() {
   const renderDecideBar = (id: string, s: Status) =>
     s === 'pending' &&
     (rejectId === id ? (
-      <div className="mt-2 flex flex-wrap items-center gap-2">
+      <div className="flex w-full flex-wrap items-center gap-2">
         <input
           type="text"
           value={rejectNote}
           onChange={(e) => setRejectNote(e.target.value)}
           placeholder={tOt('decisionNote')}
-          className={`flex-1 ${inputCls}`}
+          className="control flex-1"
         />
         <Button size="sm" variant="danger" onClick={() => decide(id, 'rejected', rejectNote)}>
           {tOt('reject')}
@@ -188,7 +185,7 @@ export default function HrRequestsPage() {
         </Button>
       </div>
     ) : (
-      <div className="mt-2 flex flex-wrap justify-end gap-2">
+      <>
         <Button
           size="sm"
           variant="outline"
@@ -202,17 +199,15 @@ export default function HrRequestsPage() {
         <Button size="sm" onClick={() => decide(id, 'approved')}>
           {tOt('approve')}
         </Button>
-      </div>
+      </>
     ));
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 p-4">
-      <div className="min-w-0">
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('nav.requests')}</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">
-          {tab === 'ot' ? tOt('hrSubtitle') : tAtt('hrSubtitle')}
-        </p>
-      </div>
+    <div className="mx-auto max-w-4xl space-y-4 p-4">
+      <PageHeader
+        title={t('nav.requests')}
+        subtitle={tab === 'ot' ? tOt('hrSubtitle') : tAtt('hrSubtitle')}
+      />
 
       <Tabs
         tabs={[
@@ -240,9 +235,7 @@ export default function HrRequestsPage() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-12 text-gray-400">
-          <Loader2 className="h-6 w-6 animate-spin" />
-        </div>
+        <SkeletonList rows={5} />
       ) : tab === 'ot' ? (
         otRows.length === 0 ? (
           <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-gray-300 px-4 py-12 text-center text-sm text-gray-400 dark:border-gray-700">
@@ -250,30 +243,22 @@ export default function HrRequestsPage() {
             {tOt('noRequests')}
           </div>
         ) : (
-          <ul className="space-y-2">
+          <DataList>
             {otRows.map((r) => (
-              <li
+              <DataCard
                 key={r.id}
-                className="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800"
+                accent={STATUS_TONE[r.status]}
+                title={`${r.requester_name} · ${r.work_date}`}
+                status={<StatusBadge tone={STATUS_TONE[r.status]} label={statusLabel(r.status)} />}
+                actions={renderDecideBar(r.id, r.status)}
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 space-y-1">
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">
-                      {r.requester_name} · {r.work_date}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {tOt('requestedOt')}: {r.requested_ot_min} {tOt('minutesSuffix')}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">{r.reason}</p>
-                  </div>
-                  <Badge variant={STATUS_VARIANT[r.status]} size="sm">
-                    {statusLabel(r.status)}
-                  </Badge>
-                </div>
-                {renderDecideBar(r.id, r.status)}
-              </li>
+                <p>
+                  {tOt('requestedOt')}: {r.requested_ot_min} {tOt('minutesSuffix')}
+                </p>
+                <p>{r.reason}</p>
+              </DataCard>
             ))}
-          </ul>
+          </DataList>
         )
       ) : attRows.length === 0 ? (
         <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-gray-300 px-4 py-12 text-center text-sm text-gray-400 dark:border-gray-700">
@@ -281,40 +266,35 @@ export default function HrRequestsPage() {
           {tAtt('noRequests')}
         </div>
       ) : (
-        <ul className="space-y-2">
+        <DataList>
           {attRows.map((r) => (
-            <li
+            <DataCard
               key={r.id}
-              className="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 space-y-1">
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">
-                    {r.requester_name} · {r.business_date} · {kindLabel(r.kind)}
-                  </p>
-                  {r.proposed_ts && (
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {r.proposed_type ? `${r.proposed_type} · ` : ''}
-                      {new Date(r.proposed_ts).toLocaleString()}
-                    </p>
-                  )}
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{r.reason}</p>
-                </div>
-                <div className="flex flex-col items-end gap-1">
-                  <Badge variant={STATUS_VARIANT[r.status]} size="sm">
-                    {statusLabel(r.status)}
-                  </Badge>
+              accent={STATUS_TONE[r.status]}
+              title={`${r.requester_name} · ${r.business_date} · ${kindLabel(r.kind)}`}
+              status={
+                <>
+                  <StatusBadge tone={STATUS_TONE[r.status]} label={statusLabel(r.status)} />
                   {r.status === 'approved' && (
-                    <Badge variant={r.applied ? 'success' : 'warning'} size="sm">
-                      {r.applied ? tAtt('applied') : tAtt('notApplied')}
-                    </Badge>
+                    <StatusBadge
+                      tone={r.applied ? 'good' : 'warn'}
+                      label={r.applied ? tAtt('applied') : tAtt('notApplied')}
+                    />
                   )}
-                </div>
-              </div>
-              {renderDecideBar(r.id, r.status)}
-            </li>
+                </>
+              }
+              actions={renderDecideBar(r.id, r.status)}
+            >
+              {r.proposed_ts && (
+                <p>
+                  {r.proposed_type ? `${r.proposed_type} · ` : ''}
+                  {new Date(r.proposed_ts).toLocaleString()}
+                </p>
+              )}
+              <p>{r.reason}</p>
+            </DataCard>
           ))}
-        </ul>
+        </DataList>
       )}
     </div>
   );

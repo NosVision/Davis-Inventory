@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Loader2, ArrowLeftRight } from 'lucide-react';
-import { Button, Badge, Select, toast } from '@/components/ui';
+import { ArrowLeftRight } from 'lucide-react';
+import { Button, Select, PageHeader, DataList, DataCard, StatusBadge, SkeletonList, toast } from '@/components/ui';
 
 interface StoreOpt {
   id: string;
@@ -24,17 +24,14 @@ interface Swap {
   hr_acked_at: string | null;
 }
 
-const STATUS_VARIANT: Record<Swap['status'], 'warning' | 'success' | 'danger' | 'default'> = {
-  pending: 'warning',
-  approved: 'success',
-  rejected: 'danger',
-  cancelled: 'default',
+const STATUS_TONE: Record<Swap['status'], 'warn' | 'good' | 'critical' | 'neutral'> = {
+  pending: 'warn',
+  approved: 'good',
+  rejected: 'critical',
+  cancelled: 'neutral',
 };
 
 const STATUS_FILTERS = ['all', 'pending', 'approved', 'rejected', 'cancelled'] as const;
-
-const inputCls =
-  'rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white';
 
 export default function HrSwapsPage() {
   const t = useTranslations('hr.swaps');
@@ -160,11 +157,8 @@ export default function HrSwapsPage() {
   }));
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 p-4">
-      <div className="min-w-0">
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('title')}</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">{t('hrSubtitle')}</p>
-      </div>
+    <div className="mx-auto max-w-4xl space-y-4 p-4">
+      <PageHeader title={t('title')} subtitle={t('hrSubtitle')} />
 
       {/* filters */}
       <div className="grid grid-cols-2 gap-3">
@@ -184,97 +178,87 @@ export default function HrSwapsPage() {
 
       {/* list */}
       {loading ? (
-        <div className="flex items-center justify-center py-12 text-gray-400">
-          <Loader2 className="h-6 w-6 animate-spin" />
-        </div>
+        <SkeletonList rows={5} />
       ) : swaps.length === 0 ? (
         <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-gray-300 px-4 py-12 text-center text-sm text-gray-400 dark:border-gray-700">
           <ArrowLeftRight className="h-8 w-8" />
           {t('noSwaps')}
         </div>
       ) : (
-        <ul className="space-y-2">
+        <DataList>
           {swaps.map((s) => (
-            <li
+            <DataCard
               key={s.id}
-              className="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 space-y-1">
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">
-                    {s.requester_name} ({s.requester_date}){' '}
-                    <ArrowLeftRight className="inline h-3.5 w-3.5 align-middle text-gray-400" />{' '}
-                    {s.counterpart_name} ({s.counterpart_date})
-                  </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {t('requester')}: {renderAssignment(s.requester_assignment)} ·{' '}
-                    {t('counterpartLabel')}: {renderAssignment(s.counterpart_assignment)}
-                  </p>
-                  {s.note && (
-                    <p className="text-xs text-gray-500 dark:text-gray-400">{s.note}</p>
-                  )}
-                </div>
-                <Badge variant={STATUS_VARIANT[s.status]} size="sm">
-                  {statusLabel(s.status)}
-                </Badge>
-              </div>
-
-              {s.status === 'pending' &&
-                (rejectId === s.id ? (
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <input
-                      type="text"
-                      value={rejectNote}
-                      onChange={(e) => setRejectNote(e.target.value)}
-                      placeholder={t('decisionNote')}
-                      className={`flex-1 ${inputCls}`}
-                    />
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      onClick={() => decide(s.id, 'rejected', rejectNote)}
-                    >
-                      {t('reject')}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => {
-                        setRejectId(null);
-                        setRejectNote('');
-                      }}
-                    >
-                      {t('cancel')}
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="mt-2 flex flex-wrap justify-end gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setRejectId(s.id);
-                        setRejectNote('');
-                      }}
-                    >
-                      {t('reject')}
-                    </Button>
-                    <Button size="sm" onClick={() => decide(s.id, 'approved')}>
-                      {t('approve')}
-                    </Button>
-                  </div>
-                ))}
-
-              {s.status === 'approved' && !s.hr_acked_at && (
-                <div className="mt-2 flex justify-end">
+              accent={STATUS_TONE[s.status]}
+              title={
+                <>
+                  {s.requester_name} ({s.requester_date}){' '}
+                  <ArrowLeftRight className="inline h-3.5 w-3.5 align-middle text-gray-400" />{' '}
+                  {s.counterpart_name} ({s.counterpart_date})
+                </>
+              }
+              status={<StatusBadge tone={STATUS_TONE[s.status]} label={statusLabel(s.status)} />}
+              actions={
+                s.status === 'pending' ? (
+                  rejectId === s.id ? (
+                    <div className="flex w-full flex-wrap items-center gap-2">
+                      <input
+                        type="text"
+                        value={rejectNote}
+                        onChange={(e) => setRejectNote(e.target.value)}
+                        placeholder={t('decisionNote')}
+                        className="control flex-1"
+                      />
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        onClick={() => decide(s.id, 'rejected', rejectNote)}
+                      >
+                        {t('reject')}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setRejectId(null);
+                          setRejectNote('');
+                        }}
+                      >
+                        {t('cancel')}
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setRejectId(s.id);
+                          setRejectNote('');
+                        }}
+                      >
+                        {t('reject')}
+                      </Button>
+                      <Button size="sm" onClick={() => decide(s.id, 'approved')}>
+                        {t('approve')}
+                      </Button>
+                    </>
+                  )
+                ) : s.status === 'approved' && !s.hr_acked_at ? (
                   <Button size="sm" variant="outline" onClick={() => ack(s.id)}>
                     {t('acknowledge')}
                   </Button>
-                </div>
-              )}
-            </li>
+                ) : undefined
+              }
+            >
+              <p>
+                {t('requester')}: {renderAssignment(s.requester_assignment)} ·{' '}
+                {t('counterpartLabel')}: {renderAssignment(s.counterpart_assignment)}
+              </p>
+              {s.note && <p>{s.note}</p>}
+            </DataCard>
           ))}
-        </ul>
+        </DataList>
       )}
     </div>
   );

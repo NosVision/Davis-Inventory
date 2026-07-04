@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Loader2, Inbox } from 'lucide-react';
-import { Button, Badge, Select, toast } from '@/components/ui';
+import { Inbox } from 'lucide-react';
+import { Button, Select, PageHeader, DataList, DataCard, StatusBadge, SkeletonList, toast } from '@/components/ui';
 
 type Status = 'pending' | 'approved' | 'rejected' | 'cancelled';
 type FieldKey = 'bank_account' | 'emergency_contact';
@@ -21,11 +21,11 @@ interface ChangeRequest {
   requester: { id: string; display_name: string | null; username: string | null } | null;
 }
 
-const STATUS_VARIANT: Record<Status, 'warning' | 'success' | 'danger' | 'default'> = {
-  pending: 'warning',
-  approved: 'success',
-  rejected: 'danger',
-  cancelled: 'default',
+const STATUS_TONE: Record<Status, 'warn' | 'good' | 'critical' | 'neutral'> = {
+  pending: 'warn',
+  approved: 'good',
+  rejected: 'critical',
+  cancelled: 'neutral',
 };
 const STATUS_FILTERS = ['pending', 'approved', 'rejected', 'cancelled', 'all'] as const;
 
@@ -37,9 +37,6 @@ const KNOWN_KEYS = [
   'phone',
   'relation',
 ] as const;
-
-const inputCls =
-  'rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white';
 
 export default function HrProfileRequestsPage() {
   const t = useTranslations('hr.profile');
@@ -125,11 +122,8 @@ export default function HrProfileRequestsPage() {
   }));
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 p-4">
-      <div className="min-w-0">
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('hrTitle')}</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">{t('hrSubtitle')}</p>
-      </div>
+    <div className="mx-auto max-w-4xl space-y-4 p-4">
+      <PageHeader title={t('hrTitle')} subtitle={t('hrSubtitle')} />
 
       <div className="max-w-xs">
         <Select
@@ -141,34 +135,71 @@ export default function HrProfileRequestsPage() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-12 text-gray-400">
-          <Loader2 className="h-6 w-6 animate-spin" />
-        </div>
+        <SkeletonList rows={5} />
       ) : rows.length === 0 ? (
         <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-gray-300 px-4 py-12 text-center text-sm text-gray-400 dark:border-gray-700">
           <Inbox className="h-8 w-8" />
           {t('noRequests')}
         </div>
       ) : (
-        <ul className="space-y-2">
+        <DataList>
           {rows.map((r) => (
-            <li
+            <DataCard
               key={r.id}
-              className="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800"
+              accent={STATUS_TONE[r.status]}
+              title={r.requester?.display_name ?? r.requester?.username ?? '—'}
+              subtitle={fieldLabel(r.field_key)}
+              status={<StatusBadge tone={STATUS_TONE[r.status]} label={statusLabel(r.status)} />}
+              actions={
+                r.status === 'pending' ? (
+                  rejectId === r.id ? (
+                    <div className="flex w-full flex-wrap items-center gap-2">
+                      <input
+                        type="text"
+                        value={rejectNote}
+                        onChange={(e) => setRejectNote(e.target.value)}
+                        placeholder={t('decisionNote')}
+                        className="control flex-1"
+                      />
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        onClick={() => decide(r.id, 'rejected', rejectNote)}
+                      >
+                        {t('reject')}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setRejectId(null);
+                          setRejectNote('');
+                        }}
+                      >
+                        {t('cancel')}
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setRejectId(r.id);
+                          setRejectNote('');
+                        }}
+                      >
+                        {t('reject')}
+                      </Button>
+                      <Button size="sm" onClick={() => decide(r.id, 'approved')}>
+                        {t('approve')}
+                      </Button>
+                    </>
+                  )
+                ) : undefined
+              }
             >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">
-                    {r.requester?.display_name ?? r.requester?.username ?? '—'}
-                  </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{fieldLabel(r.field_key)}</p>
-                </div>
-                <Badge variant={STATUS_VARIANT[r.status]} size="sm">
-                  {statusLabel(r.status)}
-                </Badge>
-              </div>
-
-              <div className="mt-2">
+              <div className="mt-1">
                 <ValueDiff
                   current={r.current_value}
                   next={r.new_value}
@@ -180,64 +211,18 @@ export default function HrProfileRequestsPage() {
               </div>
 
               {r.reason && (
-                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                <p className="mt-2">
                   {t('reason')}: {r.reason}
                 </p>
               )}
               {r.decision_note && (
-                <p className="mt-1 text-xs text-gray-400">
+                <p className="mt-1 text-gray-400">
                   {t('decisionNote')}: {r.decision_note}
                 </p>
               )}
-
-              {r.status === 'pending' &&
-                (rejectId === r.id ? (
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <input
-                      type="text"
-                      value={rejectNote}
-                      onChange={(e) => setRejectNote(e.target.value)}
-                      placeholder={t('decisionNote')}
-                      className={`flex-1 ${inputCls}`}
-                    />
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      onClick={() => decide(r.id, 'rejected', rejectNote)}
-                    >
-                      {t('reject')}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => {
-                        setRejectId(null);
-                        setRejectNote('');
-                      }}
-                    >
-                      {t('cancel')}
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="mt-2 flex flex-wrap justify-end gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setRejectId(r.id);
-                        setRejectNote('');
-                      }}
-                    >
-                      {t('reject')}
-                    </Button>
-                    <Button size="sm" onClick={() => decide(r.id, 'approved')}>
-                      {t('approve')}
-                    </Button>
-                  </div>
-                ))}
-            </li>
+            </DataCard>
           ))}
-        </ul>
+        </DataList>
       )}
     </div>
   );

@@ -20,6 +20,7 @@ import {
   Timer,
   type LucideIcon,
 } from 'lucide-react';
+import { PageHeader } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 
 // Staff ESS home (P5.3) — the personal hub that makes every /me/* self-service surface reachable
@@ -80,10 +81,7 @@ export default function MeHomePage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-4 p-4">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">{title}</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">{subtitle}</p>
-      </div>
+      <PageHeader title={title} subtitle={subtitle} />
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         {TILES.map(({ key, icon: Icon, href, color }) => (

@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Plus, Printer } from 'lucide-react';
-import { Button, Select, Badge, Modal, Input, Textarea, toast } from '@/components/ui';
+import { Plus, Printer, Package, Coins } from 'lucide-react';
+import { Button, Select, Modal, Input, Textarea, PageHeader, KpiRow, StatTile, MoneyValue, StatusBadge, type StatusTone, useConfirm, toast } from '@/components/ui';
 import { DataTable, type Column } from '@/components/data/data-table';
 import { createClient } from '@/lib/supabase/client';
 import { formatBaht } from '@/lib/pos/money';
@@ -29,12 +29,12 @@ interface AssetRow extends Record<string, unknown> {
 
 const STATUSES = ['in_stock', 'issued', 'returned', 'lost', 'damaged'];
 
-const STATUS_VARIANT: Record<string, 'default' | 'info' | 'success' | 'danger' | 'warning'> = {
-  in_stock: 'default',
+const STATUS_TONE: Record<string, StatusTone> = {
+  in_stock: 'neutral',
   issued: 'info',
-  returned: 'success',
-  lost: 'danger',
-  damaged: 'warning',
+  returned: 'good',
+  lost: 'critical',
+  damaged: 'warn',
 };
 
 interface AssetForm {
@@ -65,6 +65,7 @@ function defaultForm(): AssetForm {
 
 export default function AssetsPage() {
   const t = useTranslations('hr.assets');
+  const { confirm, dialog } = useConfirm();
 
   const [rows, setRows] = useState<AssetRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -188,7 +189,7 @@ export default function AssetsPage() {
 
   async function handleDelete() {
     if (isCreate) return;
-    if (!window.confirm(t('confirmDelete'))) return;
+    if (!(await confirm({ title: t('confirmDelete'), tone: 'danger', confirmLabel: t('delete'), cancelLabel: t('cancel') }))) return;
     setDeleting(true);
     try {
       const res = await fetch(`/api/hr/assets/${editId}`, { method: 'DELETE' });
@@ -236,9 +237,7 @@ export default function AssetsPage() {
         key: 'status',
         header: t('status'),
         render: (a) => (
-          <Badge variant={STATUS_VARIANT[a.status] ?? 'default'} size="sm">
-            {t(`statusOpt.${a.status}`)}
-          </Badge>
+          <StatusBadge tone={STATUS_TONE[a.status] ?? 'neutral'} label={t(`statusOpt.${a.status}`)} />
         ),
       },
     ],
@@ -286,22 +285,33 @@ export default function AssetsPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('title')}</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">{t('subtitle')}</p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Button variant="outline" type="button" onClick={printRegister} isLoading={printing} disabled={rows.length === 0 || printing}>
-            <Printer className="h-4 w-4" />
-            {t('register.action')}
-          </Button>
-          <Button onClick={openCreate}>
-            <Plus className="h-4 w-4" />
-            {t('add')}
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title={t('title')}
+        subtitle={t('subtitle')}
+        actions={
+          <>
+            <Button variant="outline" type="button" onClick={printRegister} isLoading={printing} disabled={rows.length === 0 || printing}>
+              <Printer className="h-4 w-4" />
+              {t('register.action')}
+            </Button>
+            <Button onClick={openCreate}>
+              <Plus className="h-4 w-4" />
+              {t('add')}
+            </Button>
+          </>
+        }
+      />
+
+      {/* Lead with the register's key figures — headcount of assets and their total value */}
+      <KpiRow cols={4}>
+        <StatTile label={t('register.count')} value={rows.length} icon={Package} />
+        <StatTile
+          label={t('register.total')}
+          value={<MoneyValue satang={rows.reduce((sum, a) => sum + (a.value_satang ?? 0), 0)} emphasis="hero" />}
+          icon={Coins}
+          tone="accent"
+        />
+      </KpiRow>
 
       {/* filters */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -310,7 +320,7 @@ export default function AssetsPage() {
           onChange={(e) => setQ(e.target.value)}
           placeholder={t('searchPlaceholder')}
           aria-label={t('searchPlaceholder')}
-          className="col-span-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+          className="control col-span-2"
         />
         <Select
           value={status}
@@ -413,6 +423,8 @@ export default function AssetsPage() {
           </div>
         </div>
       </Modal>
+
+      {dialog}
     </div>
   );
 }

@@ -28,6 +28,7 @@ import {
   UserMinus,
   type LucideIcon,
 } from 'lucide-react';
+import { PageHeader } from '@/components/ui';
 
 /**
  * HR module landing / dashboard (P0.3). Tiles route to sub-sections as they land
@@ -65,10 +66,7 @@ export default function HrDashboardPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-4 p-4">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('dashboard')}</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">{t('subtitle')}</p>
-      </div>
+      <PageHeader title={t('dashboard')} subtitle={t('subtitle')} />
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         {NAV_TILES.map(({ key, icon: Icon, href }) => {

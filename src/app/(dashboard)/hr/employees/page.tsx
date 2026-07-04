@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Plus, ArrowLeftRight, History, Printer, IdCard } from 'lucide-react';
-import { Button, Select, Badge, toast } from '@/components/ui';
+import { Button, Select, Badge, PageHeader, StatusBadge, type StatusTone, toast } from '@/components/ui';
 import { DataTable, type Column } from '@/components/data/data-table';
 import { createClient } from '@/lib/supabase/client';
 import { EmployeeFormModal } from './_components/employee-form-modal';
@@ -31,11 +31,11 @@ interface EmployeeRow extends Record<string, unknown> {
 const PAY_TYPES = ['full_monthly', 'pt_hourly', 'pt_daily', 'pt_monthly'];
 const STATUSES = ['active', 'probation', 'resigned', 'terminated'];
 
-const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'danger' | 'default'> = {
-  active: 'success',
-  probation: 'warning',
-  resigned: 'default',
-  terminated: 'danger',
+const STATUS_TONE: Record<string, StatusTone> = {
+  active: 'good',
+  probation: 'warn',
+  resigned: 'neutral',
+  terminated: 'critical',
 };
 
 function bahtFromSatang(satang: number): string {
@@ -249,9 +249,7 @@ export default function EmployeesPage() {
         key: 'status',
         header: t('col.status'),
         render: (e) => (
-          <Badge variant={STATUS_VARIANT[e.status] ?? 'default'} size="sm">
-            {t(`status.${e.status}`)}
-          </Badge>
+          <StatusBadge tone={STATUS_TONE[e.status] ?? 'neutral'} label={t(`status.${e.status}`)} />
         ),
       },
       {
@@ -309,35 +307,33 @@ export default function EmployeesPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('title')}</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            {t('subtitle')} · {t('count', { count })}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Button
-            variant="outline"
-            type="button"
-            onClick={printRegister}
-            isLoading={printing}
-            disabled={rows.length === 0 || printing}
-          >
-            <Printer className="h-4 w-4" />
-            {t('register.action')}
-          </Button>
-          <Button
-            onClick={() => {
-              setEditId(null);
-              setFormOpen(true);
-            }}
-          >
-            <Plus className="h-4 w-4" />
-            {t('add')}
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title={t('title')}
+        subtitle={`${t('subtitle')} · ${t('count', { count })}`}
+        actions={
+          <>
+            <Button
+              variant="outline"
+              type="button"
+              onClick={printRegister}
+              isLoading={printing}
+              disabled={rows.length === 0 || printing}
+            >
+              <Printer className="h-4 w-4" />
+              {t('register.action')}
+            </Button>
+            <Button
+              onClick={() => {
+                setEditId(null);
+                setFormOpen(true);
+              }}
+            >
+              <Plus className="h-4 w-4" />
+              {t('add')}
+            </Button>
+          </>
+        }
+      />
 
       {/* filters */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
@@ -345,7 +341,7 @@ export default function EmployeesPage() {
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder={t('searchPlaceholder')}
-          className="col-span-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white lg:col-span-2"
+          className="control col-span-2 lg:col-span-2"
         />
         <Select value={storeId} onChange={(e) => setStoreId(e.target.value)} placeholder={t('filter.venue')} options={[{ value: '', label: t('filter.all') }, ...opt(stores)]} />
         <Select value={positionId} onChange={(e) => setPositionId(e.target.value)} placeholder={t('filter.position')} options={[{ value: '', label: t('filter.all') }, ...opt(positions)]} />

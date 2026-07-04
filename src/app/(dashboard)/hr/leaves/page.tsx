@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2, Inbox, FileText } from 'lucide-react';
-import { Button, Badge, Select, toast } from '@/components/ui';
+import { Button, Select, PageHeader, DataList, DataCard, StatusBadge, SkeletonList, toast } from '@/components/ui';
 
 interface StoreOpt {
   id: string;
@@ -26,16 +26,13 @@ interface LeaveRow {
   leave_type: { code: string; name_th: string; name_en: string } | null;
 }
 
-const STATUS_VARIANT: Record<Status, 'warning' | 'success' | 'danger' | 'default'> = {
-  pending: 'warning',
-  approved: 'success',
-  rejected: 'danger',
-  cancelled: 'default',
+const STATUS_TONE: Record<Status, 'warn' | 'good' | 'critical' | 'neutral'> = {
+  pending: 'warn',
+  approved: 'good',
+  rejected: 'critical',
+  cancelled: 'neutral',
 };
 const STATUS_FILTERS = ['all', 'pending', 'approved', 'rejected', 'cancelled'] as const;
-
-const inputCls =
-  'rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white';
 
 export default function HrLeavesPage() {
   const t = useTranslations('hr.leaves');
@@ -155,13 +152,13 @@ export default function HrLeavesPage() {
   const renderDecideBar = (id: string, s: Status) =>
     s === 'pending' &&
     (rejectId === id ? (
-      <div className="mt-2 flex flex-wrap items-center gap-2">
+      <div className="flex w-full flex-wrap items-center gap-2">
         <input
           type="text"
           value={rejectNote}
           onChange={(e) => setRejectNote(e.target.value)}
           placeholder={t('decisionNote')}
-          className={`flex-1 ${inputCls}`}
+          className="control flex-1"
         />
         <Button size="sm" variant="danger" onClick={() => decide(id, 'rejected', rejectNote)}>
           {t('reject')}
@@ -178,7 +175,7 @@ export default function HrLeavesPage() {
         </Button>
       </div>
     ) : (
-      <div className="mt-2 flex flex-wrap justify-end gap-2">
+      <>
         <Button
           size="sm"
           variant="outline"
@@ -192,15 +189,12 @@ export default function HrLeavesPage() {
         <Button size="sm" onClick={() => decide(id, 'approved')}>
           {t('approve')}
         </Button>
-      </div>
+      </>
     ));
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 p-4">
-      <div className="min-w-0">
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('hrTitle')}</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">{t('hrSubtitle')}</p>
-      </div>
+    <div className="mx-auto max-w-4xl space-y-4 p-4">
+      <PageHeader title={t('hrTitle')} subtitle={t('hrSubtitle')} />
 
       {/* filters */}
       <div className="grid grid-cols-2 gap-3">
@@ -219,59 +213,55 @@ export default function HrLeavesPage() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-12 text-gray-400">
-          <Loader2 className="h-6 w-6 animate-spin" />
-        </div>
+        <SkeletonList rows={5} />
       ) : rows.length === 0 ? (
         <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-gray-300 px-4 py-12 text-center text-sm text-gray-400 dark:border-gray-700">
           <Inbox className="h-8 w-8" />
           {t('noRequests')}
         </div>
       ) : (
-        <ul className="space-y-2">
+        <DataList>
           {rows.map((r) => (
-            <li
+            <DataCard
               key={r.id}
-              className="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800"
+              accent={STATUS_TONE[r.status]}
+              title={
+                <>
+                  {r.requester?.display_name ?? r.requester?.username ?? '—'}
+                  {' · '}
+                  {r.leave_type?.name_th ?? r.leave_type?.name_en ?? '—'}
+                </>
+              }
+              subtitle={
+                <>
+                  {r.from_date}
+                  {r.to_date !== r.from_date && ` → ${r.to_date}`}
+                  {' · '}
+                  {t('daysPreview', { days: r.days })}
+                </>
+              }
+              status={<StatusBadge tone={STATUS_TONE[r.status]} label={statusLabel(r.status)} />}
+              actions={renderDecideBar(r.id, r.status)}
             >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 space-y-1">
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">
-                    {r.requester?.display_name ?? r.requester?.username ?? '—'}
-                    {' · '}
-                    {r.leave_type?.name_th ?? r.leave_type?.name_en ?? '—'}
-                  </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {r.from_date}
-                    {r.to_date !== r.from_date && ` → ${r.to_date}`}
-                    {' · '}
-                    {t('daysPreview', { days: r.days })}
-                  </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{r.reason}</p>
-                  {r.cert_path && (
-                    <button
-                      type="button"
-                      onClick={() => viewCert(r.id)}
-                      disabled={certLoadingId === r.id}
-                      className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline disabled:opacity-60 dark:text-indigo-400"
-                    >
-                      {certLoadingId === r.id ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <FileText className="h-3.5 w-3.5" />
-                      )}
-                      {t('viewCert')}
-                    </button>
+              <p>{r.reason}</p>
+              {r.cert_path && (
+                <button
+                  type="button"
+                  onClick={() => viewCert(r.id)}
+                  disabled={certLoadingId === r.id}
+                  className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline disabled:opacity-60 dark:text-indigo-400"
+                >
+                  {certLoadingId === r.id ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <FileText className="h-3.5 w-3.5" />
                   )}
-                </div>
-                <Badge variant={STATUS_VARIANT[r.status]} size="sm">
-                  {statusLabel(r.status)}
-                </Badge>
-              </div>
-              {renderDecideBar(r.id, r.status)}
-            </li>
+                  {t('viewCert')}
+                </button>
+              )}
+            </DataCard>
           ))}
-        </ul>
+        </DataList>
       )}
     </div>
   );
