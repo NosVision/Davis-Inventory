@@ -3771,6 +3771,25 @@
       },
       "history": {
         "action": "Change history"
+      },
+      "register": {
+        "action": "Print register",
+        "title": "Employee register",
+        "no": "No.",
+        "code": "Code",
+        "name": "Name",
+        "position": "Position",
+        "department": "Dept",
+        "store": "Store",
+        "pay": "Type",
+        "rate": "Rate",
+        "status": "Status",
+        "headcount": "Headcount",
+        "page": "Page",
+        "generating": "Generating",
+        "done": "PDF created",
+        "fail": "PDF failed",
+        "allCompanies": "All companies"
       }
     }
   },

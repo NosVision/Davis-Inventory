@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Plus, ArrowLeftRight, History } from 'lucide-react';
-import { Button, Select, Badge } from '@/components/ui';
+import { Plus, ArrowLeftRight, History, Printer } from 'lucide-react';
+import { Button, Select, Badge, toast } from '@/components/ui';
 import { DataTable, type Column } from '@/components/data/data-table';
 import { createClient } from '@/lib/supabase/client';
 import { EmployeeFormModal } from './_components/employee-form-modal';
@@ -70,6 +70,46 @@ export default function EmployeesPage() {
   const [transfer, setTransfer] = useState<{ id: string; companyId: string | null; companyName: string | null } | null>(null);
   // salary/position history modal
   const [historyFor, setHistoryFor] = useState<{ id: string; name: string } | null>(null);
+  const [printing, setPrinting] = useState(false);
+
+  const printRegister = async () => {
+    if (rows.length === 0) return;
+    setPrinting(true);
+    try {
+      const { buildEmployeeRegisterPdf, downloadBlob } = await import('./_components/employee-register-pdf');
+      const companies = [...new Set(rows.map((r) => r.company?.name).filter(Boolean))];
+      const companyName = companies.length === 1 ? (companies[0] as string) : t('register.allCompanies');
+      const now = new Date();
+      const generated = new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Bangkok' }).format(now);
+      const blob = await buildEmployeeRegisterPdf({
+        company_name: companyName,
+        generated_label: generated,
+        headcount: rows.length,
+        rows: rows.map((r) => ({
+          code: r.employee_code || '',
+          name: r.profile?.display_name || r.profile?.username || '—',
+          position: r.position?.name || '—',
+          department: r.department?.name || '—',
+          store: r.stores.length ? r.stores.map((s) => s.store_name).join(', ') : '—',
+          pay_type: t(`payType.${r.pay_type}`),
+          rate: bahtFromSatang(r.rate_satang),
+          status: t(`status.${r.status}`),
+        })),
+        labels: {
+          title: t('register.title'), no: t('register.no'), code: t('register.code'), name: t('register.name'),
+          position: t('register.position'), department: t('register.department'), store: t('register.store'),
+          pay: t('register.pay'), rate: t('register.rate'), status: t('register.status'),
+          headcount: t('register.headcount'), page: t('register.page'),
+        },
+      });
+      downloadBlob(blob, `employee-register-${now.toISOString().slice(0, 10)}.pdf`);
+      toast({ type: 'success', title: t('register.done') });
+    } catch {
+      toast({ type: 'error', title: t('register.fail') });
+    } finally {
+      setPrinting(false);
+    }
+  };
 
   useEffect(() => {
     const supabase = createClient();
@@ -217,16 +257,27 @@ export default function EmployeesPage() {
             {t('subtitle')} · {t('count', { count })}
           </p>
         </div>
-        <Button
-          onClick={() => {
-            setEditId(null);
-            setFormOpen(true);
-          }}
-          className="shrink-0"
-        >
-          <Plus className="h-4 w-4" />
-          {t('add')}
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button
+            variant="outline"
+            type="button"
+            onClick={printRegister}
+            isLoading={printing}
+            disabled={rows.length === 0 || printing}
+          >
+            <Printer className="h-4 w-4" />
+            {t('register.action')}
+          </Button>
+          <Button
+            onClick={() => {
+              setEditId(null);
+              setFormOpen(true);
+            }}
+          >
+            <Plus className="h-4 w-4" />
+            {t('add')}
+          </Button>
+        </div>
       </div>
 
       {/* filters */}
