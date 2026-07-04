@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2, UserCircle, Landmark, Phone, Send, Inbox } from 'lucide-react';
-import { Button, Badge, Modal, ModalFooter, toast } from '@/components/ui';
+import { Button, Modal, ModalFooter, PageHeader, DataList, DataCard, StatusBadge, useConfirm, toast } from '@/components/ui';
 
 type Status = 'pending' | 'approved' | 'rejected' | 'cancelled';
 type FieldKey = 'bank_account' | 'emergency_contact';
@@ -35,15 +35,13 @@ interface ChangeRequest {
   created_at: string;
 }
 
-const STATUS_VARIANT: Record<Status, 'warning' | 'success' | 'danger' | 'default'> = {
-  pending: 'warning',
-  approved: 'success',
-  rejected: 'danger',
-  cancelled: 'default',
+// Narrow union so a single map drives both the StatusBadge tone and the DataCard accent rail.
+const STATUS_TONE: Record<Status, 'warn' | 'good' | 'critical' | 'neutral'> = {
+  pending: 'warn',
+  approved: 'good',
+  rejected: 'critical',
+  cancelled: 'neutral',
 };
-
-const inputCls =
-  'mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white';
 
 const KNOWN_KEYS = [
   'bank_name',
@@ -56,6 +54,7 @@ const KNOWN_KEYS = [
 
 export default function MyProfilePage() {
   const t = useTranslations('hr.profile');
+  const { confirm, dialog } = useConfirm();
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [rows, setRows] = useState<ChangeRequest[]>([]);
@@ -220,7 +219,7 @@ export default function MyProfilePage() {
 
   const cancelRequest = useCallback(
     async (id: string) => {
-      if (!window.confirm(t('confirmCancel'))) return;
+      if (!(await confirm({ title: t('confirmCancel'), tone: 'danger', confirmLabel: t('cancel') }))) return;
       try {
         const res = await fetch(`/api/hr/ess/profile-change-requests/${id}/cancel`, {
           method: 'POST',
@@ -232,17 +231,14 @@ export default function MyProfilePage() {
         toast({ type: 'error', title: t('actionFailed') });
       }
     },
-    [t, loadRows]
+    [t, loadRows, confirm]
   );
 
   const emergency = profile?.emergency_contact ?? null;
 
   return (
     <div className="mx-auto max-w-lg space-y-4 p-4">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('title')}</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">{t('subtitle')}</p>
-      </div>
+      <PageHeader title={t('title')} subtitle={t('subtitle')} />
 
       {loading ? (
         <div className="flex items-center justify-center py-12 text-gray-400">
@@ -262,11 +258,7 @@ export default function MyProfilePage() {
               <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
                 {profile.display_name ?? profile.username ?? '—'}
               </h2>
-              {profile.status && (
-                <Badge variant="info" size="sm">
-                  {profile.status}
-                </Badge>
-              )}
+              {profile.status && <StatusBadge tone="info" label={profile.status} />}
             </div>
             <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
               <Field label={t('username')} value={profile.username} />
@@ -334,21 +326,22 @@ export default function MyProfilePage() {
                 {t('noRequests')}
               </div>
             ) : (
-              <ul className="space-y-2">
+              <DataList>
                 {rows.map((r) => (
-                  <li
+                  <DataCard
                     key={r.id}
-                    className="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800"
+                    accent={STATUS_TONE[r.status]}
+                    title={fieldLabel(r.field_key)}
+                    status={<StatusBadge tone={STATUS_TONE[r.status]} label={statusLabel(r.status)} />}
+                    actions={
+                      r.status === 'pending' ? (
+                        <Button variant="outline" size="sm" onClick={() => cancelRequest(r.id)}>
+                          {t('cancel')}
+                        </Button>
+                      ) : undefined
+                    }
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">
-                        {fieldLabel(r.field_key)}
-                      </p>
-                      <Badge variant={STATUS_VARIANT[r.status]} size="sm">
-                        {statusLabel(r.status)}
-                      </Badge>
-                    </div>
-                    <div className="mt-2">
+                    <div className="mt-1">
                       <ValueDiff
                         current={r.current_value}
                         next={r.new_value}
@@ -368,16 +361,9 @@ export default function MyProfilePage() {
                         {t('decisionNote')}: {r.decision_note}
                       </p>
                     )}
-                    {r.status === 'pending' && (
-                      <div className="mt-2 flex justify-end">
-                        <Button variant="outline" size="sm" onClick={() => cancelRequest(r.id)}>
-                          {t('cancel')}
-                        </Button>
-                      </div>
-                    )}
-                  </li>
+                  </DataCard>
                 ))}
-              </ul>
+              </DataList>
             )}
           </div>
         </>
@@ -394,7 +380,7 @@ export default function MyProfilePage() {
         <div className="space-y-3">
           <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">
             {t('key_bank_name')}
-            <input value={bankName} onChange={(e) => setBankName(e.target.value)} className={inputCls} />
+            <input value={bankName} onChange={(e) => setBankName(e.target.value)} className="control mt-1 w-full" />
           </label>
           <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">
             {t('key_bank_account_no')}
@@ -402,7 +388,7 @@ export default function MyProfilePage() {
               value={bankAccountNo}
               onChange={(e) => setBankAccountNo(e.target.value)}
               inputMode="numeric"
-              className={inputCls}
+              className="control mt-1 w-full"
             />
           </label>
           <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">
@@ -410,7 +396,7 @@ export default function MyProfilePage() {
             <input
               value={bankAccountName}
               onChange={(e) => setBankAccountName(e.target.value)}
-              className={inputCls}
+              className="control mt-1 w-full"
             />
           </label>
           <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">
@@ -419,7 +405,7 @@ export default function MyProfilePage() {
               rows={2}
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              className={inputCls}
+              className="control mt-1 w-full"
             />
           </label>
         </div>
@@ -450,7 +436,7 @@ export default function MyProfilePage() {
         <div className="space-y-3">
           <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">
             {t('key_name')}
-            <input value={ecName} onChange={(e) => setEcName(e.target.value)} className={inputCls} />
+            <input value={ecName} onChange={(e) => setEcName(e.target.value)} className="control mt-1 w-full" />
           </label>
           <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">
             {t('key_phone')}
@@ -458,7 +444,7 @@ export default function MyProfilePage() {
               value={ecPhone}
               onChange={(e) => setEcPhone(e.target.value)}
               inputMode="tel"
-              className={inputCls}
+              className="control mt-1 w-full"
             />
           </label>
           <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">
@@ -466,7 +452,7 @@ export default function MyProfilePage() {
             <input
               value={ecRelation}
               onChange={(e) => setEcRelation(e.target.value)}
-              className={inputCls}
+              className="control mt-1 w-full"
             />
           </label>
           <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">
@@ -475,7 +461,7 @@ export default function MyProfilePage() {
               rows={2}
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              className={inputCls}
+              className="control mt-1 w-full"
             />
           </label>
         </div>
@@ -494,6 +480,7 @@ export default function MyProfilePage() {
           </Button>
         </ModalFooter>
       </Modal>
+      {dialog}
     </div>
   );
 }

@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useLocale } from 'next-intl';
 import { Loader2, Plus, Trash2, ArrowLeft, Calculator } from 'lucide-react';
-import { Button, Badge, EmptyState, toast } from '@/components/ui';
+import { Button, EmptyState, PageHeader, SectionHeading, StatusBadge, type StatusTone, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 
 // §G evaluation — period detail: manage evaluator↔employee assignments, compute results after
@@ -17,8 +17,6 @@ interface Result { id: string; employee_id: string; evaluator_count: number; sco
 interface Payout { id: string; amount_satang: number; status: string; input_pct_score: number | null; result: { employee_id: string; score_pct: number | null } | null }
 interface EmployeeOpt { id: string; name: string }
 
-const inputCls =
-  'rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white';
 const nameOf = (p: Profile | null) => p?.display_name || p?.username || '—';
 
 export default function EvalPeriodDetailPage() {
@@ -164,7 +162,7 @@ export default function EvalPeriodDetailPage() {
   const hasNegative = payouts.some((p) => p.amount_satang < 0 && (p.status === 'draft' || p.status === 'approved'));
 
   return (
-    <div className="mx-auto max-w-4xl space-y-4 p-4">
+    <div className="mx-auto max-w-5xl space-y-4 p-4">
       <Link href="/hr/evaluation" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-indigo-600 dark:text-gray-400">
         <ArrowLeft className="h-4 w-4" /> {L.back}
       </Link>
@@ -175,17 +173,20 @@ export default function EvalPeriodDetailPage() {
         <EmptyState icon={Calculator} title={L.notFound} />
       ) : (
         <>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h1 className="text-xl font-bold text-gray-900 dark:text-white">{period.title}</h1>
-              <p className="text-sm text-gray-500 dark:text-gray-400">{period.period_month?.slice(0, 7)} · {period.max_score} pts</p>
-            </div>
-            <Badge variant={period.status === 'open' ? 'info' : period.status === 'closed' ? 'success' : period.status === 'void' ? 'default' : 'warning'}>{period.status}</Badge>
-          </div>
+          <PageHeader
+            title={period.title}
+            subtitle={`${period.period_month?.slice(0, 7)} · ${period.max_score} pts`}
+            actions={
+              <StatusBadge
+                tone={period.status === 'open' ? 'info' : period.status === 'closed' ? 'good' : period.status === 'void' ? 'neutral' : 'warn'}
+                label={period.status}
+              />
+            }
+          />
 
           {/* assignments */}
           <section className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-            <h2 className="mb-3 text-base font-semibold text-gray-900 dark:text-white">{L.assignments}</h2>
+            <SectionHeading title={L.assignments} className="mb-3" />
             {assignments.length === 0 ? (
               <p className="text-sm text-gray-400">{L.noAssignments}</p>
             ) : (
@@ -196,8 +197,8 @@ export default function EvalPeriodDetailPage() {
                       {nameOf(a.evaluator)} <span className="text-gray-400">→</span> {nameOf(a.employee)}
                     </span>
                     <div className="flex items-center gap-2">
-                      <Badge variant={a.status === 'submitted' ? 'success' : 'warning'} size="sm">{a.status === 'submitted' ? L.submitted : L.assigned}</Badge>
-                      <button onClick={() => removeAssignment(a.id)} aria-label={L.remove} title={L.remove} className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20">
+                      <StatusBadge tone={a.status === 'submitted' ? 'good' : 'warn'} label={a.status === 'submitted' ? L.submitted : L.assigned} />
+                      <button onClick={() => removeAssignment(a.id)} aria-label={L.remove} title={L.remove} className="rounded p-2 text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20">
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </div>
@@ -207,13 +208,13 @@ export default function EvalPeriodDetailPage() {
             )}
             <div className="flex flex-wrap items-end gap-2">
               <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">{L.evaluator}
-                <select value={evaluatorId} onChange={(e) => setEvaluatorId(e.target.value)} className={cn('mt-1 w-44', inputCls)}>
+                <select value={evaluatorId} onChange={(e) => setEvaluatorId(e.target.value)} className="control mt-1 w-44">
                   <option value="">—</option>
                   {employees.map((e) => (<option key={e.id} value={e.id}>{e.name}</option>))}
                 </select>
               </label>
               <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">{L.employee}
-                <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className={cn('mt-1 w-44', inputCls)}>
+                <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className="control mt-1 w-44">
                   <option value="">—</option>
                   {employees.map((e) => (<option key={e.id} value={e.id}>{e.name}</option>))}
                 </select>
@@ -224,10 +225,11 @@ export default function EvalPeriodDetailPage() {
 
           {/* results */}
           <section className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-base font-semibold text-gray-900 dark:text-white">{L.results}</h2>
-              <Button size="sm" variant="outline" type="button" onClick={compute} isLoading={computing} icon={<Calculator className="h-4 w-4" />}>{L.compute}</Button>
-            </div>
+            <SectionHeading
+              title={L.results}
+              className="mb-3"
+              extra={<Button size="sm" variant="outline" type="button" onClick={compute} isLoading={computing} icon={<Calculator className="h-4 w-4" />}>{L.compute}</Button>}
+            />
             {results.length === 0 ? (
               <p className="text-sm text-gray-400">{L.noResults}</p>
             ) : (
@@ -256,14 +258,14 @@ export default function EvalPeriodDetailPage() {
 
           {/* payout rule (linear) */}
           <section className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-            <h2 className="text-base font-semibold text-gray-900 dark:text-white">{L.payoutRule}</h2>
-            <p className="mb-3 text-xs text-gray-400">{L.payoutHint}</p>
+            <SectionHeading title={L.payoutRule} />
+            <p className="mb-3 mt-1 text-xs text-gray-400">{L.payoutHint}</p>
             <div className="flex flex-wrap items-end gap-2">
               <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">{L.flat}
-                <input type="number" inputMode="decimal" step={0.01} value={flatBaht} onChange={(e) => setFlatBaht(e.target.value)} placeholder="0.00" className={cn('mt-1 w-32', inputCls)} />
+                <input type="number" inputMode="decimal" step={0.01} value={flatBaht} onChange={(e) => setFlatBaht(e.target.value)} placeholder="0.00" className="control mt-1 w-32" />
               </label>
               <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">{L.perPct}
-                <input type="number" inputMode="decimal" step={0.01} value={perPctBaht} onChange={(e) => setPerPctBaht(e.target.value)} placeholder="0.00" className={cn('mt-1 w-32', inputCls)} />
+                <input type="number" inputMode="decimal" step={0.01} value={perPctBaht} onChange={(e) => setPerPctBaht(e.target.value)} placeholder="0.00" className="control mt-1 w-32" />
               </label>
               <Button size="sm" type="button" onClick={saveRule} isLoading={savingRule}>{L.saveRule}</Button>
               <Button size="sm" variant="outline" type="button" onClick={computePayouts} isLoading={computingPayouts}>{L.computePayouts}</Button>
@@ -272,17 +274,20 @@ export default function EvalPeriodDetailPage() {
 
           {/* payouts drill-down: HR sign-off (approve/void) + apply negatives to SC */}
           <section className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-base font-semibold text-gray-900 dark:text-white">{L.payouts}</h2>
-              <div className="flex gap-2">
-                {hasDraft && (
-                  <Button size="sm" variant="outline" type="button" isLoading={payoutBusy === 'approve-all'} onClick={() => patchPayout({ approve_all: true }, 'approve-all', L.approved)}>{L.approveAll}</Button>
-                )}
-                {hasNegative && (
-                  <Button size="sm" variant="outline" type="button" isLoading={payoutBusy === 'apply-sc'} onClick={applySc}>{L.applySc}</Button>
-                )}
-              </div>
-            </div>
+            <SectionHeading
+              title={L.payouts}
+              className="mb-3"
+              extra={
+                <div className="flex gap-2">
+                  {hasDraft && (
+                    <Button size="sm" variant="outline" type="button" isLoading={payoutBusy === 'approve-all'} onClick={() => patchPayout({ approve_all: true }, 'approve-all', L.approved)}>{L.approveAll}</Button>
+                  )}
+                  {hasNegative && (
+                    <Button size="sm" variant="outline" type="button" isLoading={payoutBusy === 'apply-sc'} onClick={applySc}>{L.applySc}</Button>
+                  )}
+                </div>
+              }
+            />
             {payouts.length === 0 ? (
               <p className="text-sm text-gray-400">{L.noPayouts}</p>
             ) : (
@@ -301,10 +306,10 @@ export default function EvalPeriodDetailPage() {
                     {payouts.map((p) => {
                       const baht = p.amount_satang / 100;
                       const neg = p.amount_satang < 0;
-                      const statusMap: Record<string, { v: 'warning' | 'success' | 'default' | 'info'; l: string }> = {
-                        draft: { v: 'warning', l: L.poDraft }, approved: { v: 'info', l: L.poApproved }, void: { v: 'default', l: L.poVoid }, applied_to_payslip: { v: 'success', l: L.poApplied }, superseded: { v: 'default', l: L.poSuperseded },
+                      const statusMap: Record<string, { tone: StatusTone; l: string }> = {
+                        draft: { tone: 'warn', l: L.poDraft }, approved: { tone: 'info', l: L.poApproved }, void: { tone: 'neutral', l: L.poVoid }, applied_to_payslip: { tone: 'good', l: L.poApplied }, superseded: { tone: 'neutral', l: L.poSuperseded },
                       };
-                      const sb = statusMap[p.status] ?? { v: 'default' as const, l: p.status };
+                      const sb = statusMap[p.status] ?? { tone: 'neutral' as const, l: p.status };
                       const editable = p.status === 'draft' || p.status === 'approved';
                       return (
                         <tr key={p.id} className="bg-white dark:bg-gray-800">
@@ -314,7 +319,7 @@ export default function EvalPeriodDetailPage() {
                             {neg ? '' : '+'}{baht.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             <span className="ml-1 text-[10px] font-normal text-gray-400">{neg ? L.deduction : L.bonus}</span>
                           </td>
-                          <td className="px-3 py-2 text-center"><Badge variant={sb.v} size="sm">{sb.l}</Badge></td>
+                          <td className="px-3 py-2 text-center"><StatusBadge tone={sb.tone} label={sb.l} /></td>
                           <td className="px-3 py-2">
                             <div className="flex justify-end gap-1">
                               {p.status === 'draft' && (

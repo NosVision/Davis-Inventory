@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocale } from 'next-intl';
 import { Loader2, Star, CheckCircle2, ClipboardList } from 'lucide-react';
-import { Button, Badge, EmptyState, Modal, ModalFooter, toast } from '@/components/ui';
+import { Button, EmptyState, Modal, ModalFooter, PageHeader, DataList, DataCard, StatusBadge, useConfirm, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 
 // §G evaluator self-service: score the people assigned to me for an OPEN period. Data comes from
@@ -30,13 +30,9 @@ interface QueueItem {
 }
 interface SavedScore { criterion_id: string; points: number; comment: string | null }
 
-const numCls =
-  'w-24 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white';
-const commentCls =
-  'w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white';
-
 export default function MyEvaluationsPage() {
   const isTh = useLocale() === 'th';
+  const { confirm, dialog } = useConfirm();
   const L = isTh
     ? { title: 'ประเมินเพื่อนร่วมงาน', subtitle: 'ให้คะแนนคนที่ได้รับมอบหมายในงวดที่เปิดอยู่', noPeriods: 'ไม่มีงวดที่ต้องประเมินตอนนี้', noQueue: 'ไม่มีคนให้ประเมินในงวดนี้', progress: 'ความคืบหน้า', pending: 'ค้าง', done: 'เสร็จ', score: 'ให้คะแนน', edit: 'แก้ไข', submitted: 'ส่งแล้ว', criterion: 'หัวข้อ', max: 'เต็ม', points: 'คะแนน', comment: 'หมายเหตุ (ถ้ามี)', saveDraft: 'บันทึกร่าง', submit: 'ส่งผลประเมิน', scoring: 'ให้คะแนน', loadFailed: 'โหลดไม่สำเร็จ', saved: 'บันทึกร่างแล้ว', submittedOk: 'ส่งผลประเมินแล้ว', saveFailed: 'บันทึกไม่สำเร็จ', submitConfirm: 'ส่งผลประเมินคนนี้? หลังส่งต้องให้ HR เปิดให้แก้', outOf: 'จาก', close: 'ปิด' }
     : { title: 'Peer evaluation', subtitle: 'Score the people assigned to you in the open period', noPeriods: 'No periods to evaluate right now', noQueue: 'No one to evaluate in this period', progress: 'Progress', pending: 'Pending', done: 'Done', score: 'Score', edit: 'Edit', submitted: 'Submitted', criterion: 'Criterion', max: 'Max', points: 'Points', comment: 'Comment (optional)', saveDraft: 'Save draft', submit: 'Submit', scoring: 'Scoring', loadFailed: 'Load failed', saved: 'Draft saved', submittedOk: 'Evaluation submitted', saveFailed: 'Save failed', submitConfirm: 'Submit this evaluation? HR must reopen it to edit after submitting.', outOf: 'of', close: 'Close' };
@@ -129,7 +125,7 @@ export default function MyEvaluationsPage() {
 
   const save = async (submit: boolean) => {
     if (!scoringFor) return;
-    if (submit && !window.confirm(L.submitConfirm)) return;
+    if (submit && !(await confirm({ title: L.submitConfirm, tone: 'danger', confirmLabel: L.submit, cancelLabel: L.close }))) return;
     setModalBusy(submit ? 'submit' : 'draft');
     try {
       const res = await fetch('/api/hr/ess/eval/score', {
@@ -155,10 +151,7 @@ export default function MyEvaluationsPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">{L.title}</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">{L.subtitle}</p>
-      </div>
+      <PageHeader title={L.title} subtitle={L.subtitle} />
 
       {loadingPeriods ? (
         <div className="flex items-center justify-center py-16 text-gray-400"><Loader2 className="h-6 w-6 animate-spin" /></div>
@@ -211,30 +204,29 @@ export default function MyEvaluationsPage() {
           ) : queue.length === 0 ? (
             <EmptyState icon={ClipboardList} title={L.noQueue} />
           ) : (
-            <div className="divide-y divide-gray-100 overflow-hidden rounded-xl border border-gray-200 dark:divide-gray-700 dark:border-gray-700">
+            <DataList>
               {queue.map((item) => (
-                <div key={item.assignment_id} className="flex items-center gap-3 bg-white px-4 py-3 dark:bg-gray-800">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate font-medium text-gray-900 dark:text-white">{item.employee_name}</span>
-                      {item.complete && <Badge variant="success">{L.submitted}</Badge>}
-                    </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {item.scored_criteria}/{item.criteria_count} {L.points.toLowerCase()}
-                    </p>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant={item.complete ? 'ghost' : 'outline'}
-                    type="button"
-                    icon={item.complete ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Star className="h-3.5 w-3.5" />}
-                    onClick={() => openScoring(item)}
-                  >
-                    {item.complete ? L.edit : L.score}
-                  </Button>
-                </div>
+                <DataCard
+                  key={item.assignment_id}
+                  accent={item.complete ? 'good' : 'warn'}
+                  title={item.employee_name}
+                  status={item.complete ? <StatusBadge tone="good" label={L.submitted} icon={CheckCircle2} /> : undefined}
+                  actions={
+                    <Button
+                      size="sm"
+                      variant={item.complete ? 'ghost' : 'outline'}
+                      type="button"
+                      icon={item.complete ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Star className="h-3.5 w-3.5" />}
+                      onClick={() => openScoring(item)}
+                    >
+                      {item.complete ? L.edit : L.score}
+                    </Button>
+                  }
+                >
+                  {item.scored_criteria}/{item.criteria_count} {L.points.toLowerCase()}
+                </DataCard>
               ))}
-            </div>
+            </DataList>
           )}
         </>
       )}
@@ -257,7 +249,7 @@ export default function MyEvaluationsPage() {
                       step="any"
                       value={form[c.id]?.points ?? ''}
                       onChange={(e) => setField(c.id, 'points', e.target.value)}
-                      className={numCls}
+                      className="control w-24"
                     />
                     <span className="whitespace-nowrap text-xs text-gray-400">
                       {L.outOf} {c.max_points}
@@ -269,7 +261,7 @@ export default function MyEvaluationsPage() {
                   placeholder={L.comment}
                   value={form[c.id]?.comment ?? ''}
                   onChange={(e) => setField(c.id, 'comment', e.target.value)}
-                  className={commentCls}
+                  className="control w-full"
                 />
               </div>
             ))}
@@ -281,6 +273,7 @@ export default function MyEvaluationsPage() {
           <Button type="button" isLoading={modalBusy === 'submit'} disabled={modalLoading || !allScored || modalBusy === 'draft'} onClick={() => save(true)}>{L.submit}</Button>
         </ModalFooter>
       </Modal>
+      {dialog}
     </div>
   );
 }

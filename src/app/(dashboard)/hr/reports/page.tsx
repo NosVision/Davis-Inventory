@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocale } from 'next-intl';
 import { Loader2, BarChart3, Download, FileText } from 'lucide-react';
-import { Button, toast } from '@/components/ui';
+import { Button, PageHeader, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 
 // §J9 P5.2 statutory reports UI — view/download ภ.ง.ด.1 / สปส.1-10 / ทะเบียนเงินเดือน / ภ.ง.ด.1ก /
@@ -13,8 +13,6 @@ interface Company { id: string; name: string }
 type ReportType = 'pnd1' | 'sso' | 'register' | 'pnd1k' | 'cert50twi';
 const MONTHLY: ReportType[] = ['pnd1', 'sso', 'register'];
 
-const inputCls =
-  'rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white';
 const baht = (s: number) => (Number(s) / 100).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 interface Col { key: string; label: string; money?: boolean }
@@ -142,26 +140,23 @@ export default function HrReportsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-4xl space-y-4 p-4">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">{L.title}</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">{L.subtitle}</p>
-      </div>
+    <div className="mx-auto max-w-6xl space-y-4 p-4">
+      <PageHeader title={L.title} subtitle={L.subtitle} />
 
       <section className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
         <div className="flex flex-wrap items-end gap-2">
           <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">{L.company}
-            <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} className={cn('mt-1 min-w-[12rem]', inputCls)}>
+            <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} className="control mt-1 min-w-[12rem]">
               <option value="">{L.pick}</option>
               {companies.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
             </select>
           </label>
           <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">{L.year}
-            <input type="number" value={yearBe} onChange={(e) => setYearBe(e.target.value)} className={cn('mt-1 w-24', inputCls)} />
+            <input type="number" value={yearBe} onChange={(e) => setYearBe(e.target.value)} className="control mt-1 w-24" />
           </label>
           {MONTHLY.includes(type) && (
             <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">{L.month}
-              <select value={month} onChange={(e) => setMonth(e.target.value)} className={cn('mt-1 w-20', inputCls)}>
+              <select value={month} onChange={(e) => setMonth(e.target.value)} className="control mt-1 w-20">
                 {Array.from({ length: 12 }, (_, i) => (<option key={i + 1} value={i + 1}>{i + 1}</option>))}
               </select>
             </label>

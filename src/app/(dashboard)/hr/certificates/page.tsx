@@ -3,8 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useLocale } from 'next-intl';
 import { Loader2, FileText, Download } from 'lucide-react';
-import { Button, toast } from '@/components/ui';
-import { cn } from '@/lib/utils/cn';
+import { Button, PageHeader, toast } from '@/components/ui';
 
 // §J9 P5.2 — HR issues หนังสือรับรองการทำงาน/เงินเดือน on request. Pick company → employee →
 // salary toggle → generate a Thai PDF (react-pdf, lazy-loaded). Self-contained locale strings.
@@ -18,9 +17,6 @@ interface EmployeeRow {
   position: { name: string | null } | null;
   company: { name: string | null } | null;
 }
-
-const inputCls =
-  'rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white';
 
 const TH_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
 function toThaiDate(iso: string): string {
@@ -109,21 +105,18 @@ export default function HrCertificatesPage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-4 p-4">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">{L.title}</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">{L.subtitle}</p>
-      </div>
+      <PageHeader title={L.title} subtitle={L.subtitle} />
 
       <section className="space-y-4 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">{L.company}
-            <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} className={cn('mt-1', inputCls)}>
+            <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} className="control mt-1">
               <option value="">{L.pick}</option>
               {companies.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
             </select>
           </label>
           <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">{L.employee}
-            <select value={profileId} onChange={(e) => setProfileId(e.target.value)} disabled={!companyId || loadingEmp} className={cn('mt-1', inputCls)}>
+            <select value={profileId} onChange={(e) => setProfileId(e.target.value)} disabled={!companyId || loadingEmp} className="control mt-1">
               <option value="">{L.pick}</option>
               {employees.map((e) => (<option key={e.profile_id} value={e.profile_id}>{nameOf(e.profile)}</option>))}
             </select>
@@ -137,10 +130,10 @@ export default function HrCertificatesPage() {
 
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">{L.issuer}
-            <input type="text" value={issuerName} onChange={(e) => setIssuerName(e.target.value)} placeholder={L.issuerPh} className={cn('mt-1', inputCls)} />
+            <input type="text" value={issuerName} onChange={(e) => setIssuerName(e.target.value)} placeholder={L.issuerPh} className="control mt-1" />
           </label>
           <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">{L.issuerRole}
-            <input type="text" value={issuerRole} onChange={(e) => setIssuerRole(e.target.value)} placeholder={L.rolePh} className={cn('mt-1', inputCls)} />
+            <input type="text" value={issuerRole} onChange={(e) => setIssuerRole(e.target.value)} placeholder={L.rolePh} className="control mt-1" />
           </label>
         </div>
 

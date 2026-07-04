@@ -4,8 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useLocale } from 'next-intl';
 import { Loader2, Star, Plus, Lock, Play, XCircle } from 'lucide-react';
-import { Button, Badge, EmptyState, toast } from '@/components/ui';
-import { cn } from '@/lib/utils/cn';
+import { Button, EmptyState, PageHeader, StatusBadge, type StatusTone, toast } from '@/components/ui';
 
 // §G monthly evaluation — periods management (create / list / status transitions). Criteria are
 // auto-seeded on create (15-item template); assignment/scoring/results drill-down is a later page.
@@ -18,9 +17,6 @@ interface Period {
   max_score: number;
   scope_type: string;
 }
-
-const inputCls =
-  'rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white';
 
 function currentMonth(): string {
   const d = new Date();
@@ -87,30 +83,30 @@ export default function HrEvaluationPage() {
   };
 
   const statusBadge = (s: Period['status']) => {
-    const map = { draft: { v: 'warning' as const, l: L.statusDraft }, open: { v: 'info' as const, l: L.statusOpen }, closed: { v: 'success' as const, l: L.statusClosed }, void: { v: 'default' as const, l: L.statusVoid } };
+    const map: Record<Period['status'], { tone: StatusTone; l: string }> = {
+      draft: { tone: 'warn', l: L.statusDraft },
+      open: { tone: 'info', l: L.statusOpen },
+      closed: { tone: 'good', l: L.statusClosed },
+      void: { tone: 'neutral', l: L.statusVoid },
+    };
     const b = map[s];
-    return <Badge variant={b.v}>{b.l}</Badge>;
+    return <StatusBadge tone={b.tone} label={b.l} />;
   };
 
   return (
-    <div className="mx-auto max-w-4xl space-y-4 p-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">{L.title}</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">{L.subtitle}</p>
-        </div>
-      </div>
+    <div className="mx-auto max-w-5xl space-y-4 p-4">
+      <PageHeader title={L.title} subtitle={L.subtitle} />
 
       {/* create form */}
       <section className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-[16rem] flex-1">
             <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{L.create}</label>
-            <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={L.titlePh} className={cn('w-full', inputCls)} />
+            <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={L.titlePh} className="control w-full" />
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{L.month}</label>
-            <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className={inputCls} />
+            <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="control" />
           </div>
           <Button type="button" onClick={create} isLoading={creating} icon={<Plus className="h-4 w-4" />}>{L.add}</Button>
         </div>

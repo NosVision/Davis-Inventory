@@ -3,7 +3,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useLocale } from 'next-intl';
 import { Loader2, Award } from 'lucide-react';
-import { EmptyState, toast } from '@/components/ui';
+import { EmptyState, PageHeader, ScoreRing, toast } from '@/components/ui';
+
+type RingTone = 'good' | 'accent' | 'warn' | 'critical';
+function ringTone(pct: number): RingTone {
+  return pct >= 80 ? 'good' : pct >= 60 ? 'accent' : pct >= 40 ? 'warn' : 'critical';
+}
 
 // §G employee self-service: my own monthly evaluation results, visible ONLY after a period closes.
 // The per-evaluator breakdown is anonymized (A/B/C…) server-side — this page never receives names.
@@ -14,25 +19,6 @@ interface MyResult {
   score_pct: number | null;
   evaluator_count: number;
   breakdown: Breakdown[];
-}
-
-function ScoreRing({ pct }: { pct: number | null }) {
-  const v = pct == null ? 0 : Math.max(0, Math.min(100, pct));
-  const r = 26;
-  const c = 2 * Math.PI * r;
-  const off = c * (1 - v / 100);
-  const hue = v >= 80 ? 'text-emerald-500' : v >= 60 ? 'text-indigo-500' : v >= 40 ? 'text-amber-500' : 'text-red-500';
-  return (
-    <div className="relative h-16 w-16 shrink-0">
-      <svg viewBox="0 0 64 64" className="h-16 w-16 -rotate-90">
-        <circle cx="32" cy="32" r={r} className="fill-none stroke-gray-100 dark:stroke-gray-700" strokeWidth="6" />
-        <circle cx="32" cy="32" r={r} className={`fill-none ${hue} transition-all`} strokeWidth="6" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={off} />
-      </svg>
-      <span className="absolute inset-0 flex items-center justify-center text-sm font-bold tabular-nums text-gray-900 dark:text-white">
-        {pct == null ? '—' : Math.round(v)}
-      </span>
-    </div>
-  );
 }
 
 export default function MyEvaluationResultsPage() {
@@ -61,10 +47,7 @@ export default function MyEvaluationResultsPage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-4 p-4">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">{L.title}</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">{L.subtitle}</p>
-      </div>
+      <PageHeader title={L.title} subtitle={L.subtitle} />
 
       {loading ? (
         <div className="flex items-center justify-center py-16 text-gray-400"><Loader2 className="h-6 w-6 animate-spin" /></div>
@@ -75,7 +58,14 @@ export default function MyEvaluationResultsPage() {
           {results.map((r, i) => (
             <div key={`${r.period_month}-${i}`} className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
               <div className="flex items-center gap-4">
-                <ScoreRing pct={r.score_pct} />
+                <ScoreRing
+                  pct={r.score_pct ?? 0}
+                  size={72}
+                  strokeWidth={7}
+                  tone={ringTone(r.score_pct ?? 0)}
+                  label={r.score_pct == null ? '—' : String(Math.round(r.score_pct))}
+                  className="shrink-0"
+                />
                 <div className="min-w-0 flex-1">
                   <p className="font-medium text-gray-900 dark:text-white">{r.title || r.period_month?.slice(0, 7)}</p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
