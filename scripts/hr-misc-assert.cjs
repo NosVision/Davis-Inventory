@@ -21,6 +21,7 @@ const bt = load('bank-transfer.ts');
 const ec = load('eval-config.ts');
 const lv = load('leaves.ts');
 const wn = load('warnings.ts');
+const te = load('time-engine.ts');
 
 const R = [];
 const eq = (name, got, want) => R.push({ name, pass: JSON.stringify(got) === JSON.stringify(want), got, want });
@@ -88,6 +89,68 @@ eq('warn amount_baht valid', wn.deriveScEffect('amount_baht', 30000), { ok: true
 eq('warn amount_baht rejects 0', wn.deriveScEffect('amount_baht', 0).ok, false);
 eq('warn amount_baht rejects over ฿1M', wn.deriveScEffect('amount_baht', 100_000_001).ok, false);
 eq('warn percent-level forces amount null', wn.deriveScEffect('deduct_25', 99999).amount_satang, null);
+
+// ── time-engine.ts: computeDaySummary / sumDays / applyOverride ──
+// worked_min + ot_min are pure spans (TZ-independent); build punches as UTC offsets so the
+// numbers are exact regardless of the runner's timezone.
+const DAY = '2026-07-01';
+const at = (h, m) => `${DAY}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00.000Z`;
+const shift = { start_time: '09:00', end_time: '18:00' };
+const baseDay = { businessDate: DAY, shift, isDayOff: false, hasSchedule: true, workHoursPerDay: 8, otEligible: true };
+
+// worked 8h exactly (in 09:00 → out 17:00 UTC = 480 min), no OT
+const d8 = te.computeDaySummary({ ...baseDay, punches: [{ type: 'in', ts: at(9, 0) }, { type: 'out', ts: at(17, 0) }] });
+eq('te worked 480min', d8.worked_min, 480);
+eq('te no OT at exactly 8h', d8.ot_min, 0);
+eq('te not absent', d8.absent, false);
+eq('te not incomplete', d8.incomplete, false);
+
+// worked 10h eligible → OT 120 (past 8h own hours)
+const dOt = te.computeDaySummary({ ...baseDay, punches: [{ type: 'in', ts: at(9, 0) }, { type: 'out', ts: at(19, 0) }] });
+eq('te worked 600min', dOt.worked_min, 600);
+eq('te OT 120min (eligible, past 8h)', dOt.ot_min, 120);
+
+// same 10h but NOT ot_eligible → no OT
+const dNoOt = te.computeDaySummary({ ...baseDay, otEligible: false, punches: [{ type: 'in', ts: at(9, 0) }, { type: 'out', ts: at(19, 0) }] });
+eq('te non-eligible → OT 0 even at 10h', dNoOt.ot_min, 0);
+
+// break clipped to worked window: 1h break inside 8h span → worked 420
+const dBreak = te.computeDaySummary({ ...baseDay, punches: [
+  { type: 'in', ts: at(9, 0) }, { type: 'break_start', ts: at(12, 0) }, { type: 'break_end', ts: at(13, 0) }, { type: 'out', ts: at(17, 0) },
+] });
+eq('te break 60min', dBreak.break_min, 60);
+eq('te worked 420min (8h span − 1h break)', dBreak.worked_min, 420);
+
+// absent: scheduled, no in-punch
+const dAbsent = te.computeDaySummary({ ...baseDay, punches: [] });
+eq('te absent (scheduled, no in)', dAbsent.absent, true);
+eq('te absent worked null', dAbsent.worked_min, null);
+
+// incomplete: in but no out
+const dInc = te.computeDaySummary({ ...baseDay, punches: [{ type: 'in', ts: at(9, 0) }] });
+eq('te incomplete (in, no out)', dInc.incomplete, true);
+eq('te incomplete worked null', dInc.worked_min, null);
+
+// day off but punched → worked_on_day_off
+const dDayOff = te.computeDaySummary({ ...baseDay, isDayOff: true, punches: [{ type: 'in', ts: at(9, 0) }, { type: 'out', ts: at(13, 0) }] });
+eq('te worked_on_day_off', dDayOff.worked_on_day_off, true);
+eq('te day-off not scheduled → not absent', dDayOff.absent, false);
+
+// applyOverride: non-null fields win, null falls through, always flags overridden
+const ov = te.applyOverride(d8, { worked_min: 300, late_min: null, ot_min: 60, absent: null, reason: 'fix' });
+eq('te override worked wins', ov.worked_min, 300);
+eq('te override ot wins', ov.ot_min, 60);
+eq('te override null late falls through', ov.late_min, d8.late_min);
+eq('te override flags overridden', ov.overridden, true);
+eq('te override reason', ov.override_reason, 'fix');
+eq('te no override → unchanged', te.applyOverride(d8, undefined).worked_min, 480);
+
+// sumDays rollup
+const totals = te.sumDays([d8, dOt, dAbsent]);
+eq('sumDays work_days (2 with in)', totals.work_days, 2);
+eq('sumDays absent_days', totals.absent_days, 1);
+eq('sumDays worked_min 480+600', totals.worked_min, 1080);
+eq('sumDays ot_min 0+120', totals.ot_min, 120);
 
 const fail = R.filter((r) => !r.pass);
 for (const r of R) if (!r.pass) console.log(`FAIL ${r.name}: got=${JSON.stringify(r.got)} want=${JSON.stringify(r.want)}`);
