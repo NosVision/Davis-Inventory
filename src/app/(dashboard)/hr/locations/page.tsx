@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { MapPin, LocateFixed } from 'lucide-react';
-import { Button, Input, toast } from '@/components/ui';
+import { Button, Input, PageHeader, StatusBadge, DataCard, DataList, toast } from '@/components/ui';
 
 interface BranchLocation {
   store_id: string;
@@ -129,11 +129,8 @@ export default function LocationsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 p-4">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('title')}</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">{t('subtitle')}</p>
-      </div>
+    <div className="mx-auto max-w-4xl space-y-4 p-4">
+      <PageHeader title={t('title')} subtitle={t('subtitle')} />
 
       {loading ? (
         <div className="py-10 text-center text-sm text-gray-400">…</div>
@@ -142,7 +139,7 @@ export default function LocationsPage() {
           {t('empty')}
         </div>
       ) : (
-        <ul className="space-y-3">
+        <DataList>
           {rows.map((row) => {
             const draft = drafts[row.store_id] ?? { lat: '', lng: '', radius: String(DEFAULT_RADIUS) };
             const isSet = row.lat != null && row.lng != null;
@@ -150,32 +147,50 @@ export default function LocationsPage() {
             const rowLocating = geoId === row.store_id;
 
             return (
-              <li
+              <DataCard
                 key={row.store_id}
-                className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900"
-              >
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex min-w-0 items-center gap-2">
+                accent={isSet ? 'good' : 'neutral'}
+                title={
+                  <span className="flex min-w-0 items-center gap-2">
                     <MapPin className="h-4 w-4 shrink-0 text-indigo-500" />
-                    <span className="truncate font-medium text-gray-900 dark:text-white">
+                    <span className="truncate">
                       {row.store_name ?? row.store_code ?? row.store_id}
                     </span>
                     {row.store_code && (
-                      <span className="shrink-0 text-xs text-gray-400">{row.store_code}</span>
+                      <span className="shrink-0 text-xs font-normal text-gray-400">{row.store_code}</span>
                     )}
-                  </div>
-                  <span
-                    className={
-                      isSet
-                        ? 'shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
-                        : 'shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400'
-                    }
-                  >
-                    {isSet ? t('set') : t('notSet')}
                   </span>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                }
+                status={
+                  <StatusBadge
+                    tone={isSet ? 'good' : 'neutral'}
+                    label={isSet ? t('set') : t('notSet')}
+                  />
+                }
+                actions={
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => useMyLocation(row.store_id)}
+                      isLoading={rowLocating}
+                      disabled={rowSaving}
+                      icon={<LocateFixed className="h-4 w-4" />}
+                    >
+                      {rowLocating ? t('gettingLocation') : t('useMyLocation')}
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => save(row.store_id)}
+                      isLoading={rowSaving}
+                      disabled={rowLocating}
+                    >
+                      {rowSaving ? t('saving') : t('save')}
+                    </Button>
+                  </>
+                }
+              >
+                <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <Input
                     type="number"
                     label={t('lat')}
@@ -198,32 +213,10 @@ export default function LocationsPage() {
                     className="tabular-nums"
                   />
                 </div>
-
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => useMyLocation(row.store_id)}
-                    isLoading={rowLocating}
-                    disabled={rowSaving}
-                    icon={<LocateFixed className="h-4 w-4" />}
-                  >
-                    {rowLocating ? t('gettingLocation') : t('useMyLocation')}
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => save(row.store_id)}
-                    isLoading={rowSaving}
-                    disabled={rowLocating}
-                    className="ml-auto"
-                  >
-                    {rowSaving ? t('saving') : t('save')}
-                  </Button>
-                </div>
-              </li>
+              </DataCard>
             );
           })}
-        </ul>
+        </DataList>
       )}
     </div>
   );

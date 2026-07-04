@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Button, Select, Badge, toast } from '@/components/ui';
+import { Button, Select, PageHeader, StatusBadge, FilterBar, FilterField, toast } from '@/components/ui';
 import { DataTable, type Column } from '@/components/data/data-table';
 import { createClient } from '@/lib/supabase/client';
 import { openBusinessDateBangkok, formatTimeBangkok } from '@/lib/utils/date';
@@ -124,7 +124,7 @@ export default function AttendanceReportPage() {
       {
         key: 'type',
         header: t('colType'),
-        render: (r) => <Badge variant="info" size="sm">{t(TYPE_KEY[r.type] ?? 'in')}</Badge>,
+        render: (r) => <StatusBadge tone="info" label={t(TYPE_KEY[r.type] ?? 'in')} />,
       },
       {
         key: 'branch',
@@ -138,26 +138,12 @@ export default function AttendanceReportPage() {
           const dist =
             r.distance_m != null ? ` · ${Math.round(r.distance_m)} m` : '';
           if (r.in_geofence === true) {
-            return (
-              <Badge variant="success" size="sm">
-                {t('inRange')}
-                {dist}
-              </Badge>
-            );
+            return <StatusBadge tone="good" label={`${t('inRange')}${dist}`} />;
           }
           if (r.in_geofence === false) {
-            return (
-              <Badge variant="warning" size="sm">
-                {t('outRange')}
-                {dist}
-              </Badge>
-            );
+            return <StatusBadge tone="warn" label={`${t('outRange')}${dist}`} />;
           }
-          return (
-            <Badge variant="default" size="sm">
-              {t('noGeofence')}
-            </Badge>
-          );
+          return <StatusBadge tone="neutral" label={t('noGeofence')} />;
         },
       },
       {
@@ -174,9 +160,7 @@ export default function AttendanceReportPage() {
         header: t('colSuspect'),
         render: (r) =>
           r.is_vpn_suspect ? (
-            <Badge variant="danger" size="sm">
-              {t('suspect')}
-            </Badge>
+            <StatusBadge tone="critical" label={t('suspect')} />
           ) : (
             <span className="text-xs text-gray-400 dark:text-gray-500">{t('notSuspect')}</span>
           ),
@@ -213,28 +197,18 @@ export default function AttendanceReportPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-4">
-      <div className="min-w-0">
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('title')}</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">{t('subtitle')}</p>
-      </div>
+      <PageHeader title={t('title')} subtitle={t('subtitle')} />
 
       {/* filters */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <div className="w-full">
-          <label
-            htmlFor="attendance-date"
-            className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300"
-          >
-            {t('filterDate')}
-          </label>
+      <FilterBar>
+        <FilterField label={t('filterDate')}>
           <input
-            id="attendance-date"
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+            className="control"
           />
-        </div>
+        </FilterField>
         <Select
           label={t('filterStore')}
           value={storeId}
@@ -247,7 +221,7 @@ export default function AttendanceReportPage() {
           onChange={(e) => setType(e.target.value)}
           options={typeOptions}
         />
-        <label className="flex items-end gap-2 pb-2.5 text-sm text-gray-700 dark:text-gray-300">
+        <label className="flex items-center gap-2 pb-2 text-sm text-gray-700 dark:text-gray-300">
           <input
             type="checkbox"
             checked={suspectOnly}
@@ -256,7 +230,7 @@ export default function AttendanceReportPage() {
           />
           {t('suspectOnly')}
         </label>
-      </div>
+      </FilterBar>
 
       <p className="text-xs text-gray-500 dark:text-gray-400">
         {t('total')}: <span className="tabular-nums font-medium">{total}</span>

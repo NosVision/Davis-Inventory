@@ -3,7 +3,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2, DoorOpen } from 'lucide-react';
-import { Button, Badge, Modal, ModalFooter, EmptyState, toast } from '@/components/ui';
+import {
+  Button,
+  Modal,
+  ModalFooter,
+  EmptyState,
+  toast,
+  PageHeader,
+  StatusBadge,
+  DataCard,
+  DataList,
+  type StatusTone,
+} from '@/components/ui';
 import {
   SignaturePad,
   type SignaturePadHandle,
@@ -34,21 +45,27 @@ interface Offboarding {
   assets: AssetItem[];
 }
 
-const KIND_BADGE: Record<Kind, 'default' | 'danger'> = {
-  resignation: 'default',
-  termination: 'danger',
+const KIND_TONE: Record<Kind, StatusTone> = {
+  resignation: 'neutral',
+  termination: 'critical',
 };
-const STATUS_BADGE: Record<Status, 'warning' | 'info' | 'success' | 'default'> = {
-  draft: 'warning',
+const STATUS_TONE: Record<Status, StatusTone> = {
+  draft: 'warn',
   pending_signoff: 'info',
-  completed: 'success',
-  cancelled: 'default',
+  completed: 'good',
+  cancelled: 'neutral',
 };
-const RESOLUTION_BADGE: Record<Resolution, 'warning' | 'success' | 'danger'> = {
-  pending: 'warning',
-  returned: 'success',
-  lost: 'danger',
-  damaged: 'danger',
+const STATUS_ACCENT: Record<Status, 'neutral' | 'accent' | 'good' | 'warn'> = {
+  draft: 'warn',
+  pending_signoff: 'accent',
+  completed: 'good',
+  cancelled: 'neutral',
+};
+const RESOLUTION_TONE: Record<Resolution, StatusTone> = {
+  pending: 'warn',
+  returned: 'good',
+  lost: 'critical',
+  damaged: 'critical',
 };
 
 function formatDate(value: string | null): string {
@@ -134,10 +151,7 @@ export default function MyOffboardingPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('myTitle')}</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">{t('mySubtitle')}</p>
-      </div>
+      <PageHeader title={t('myTitle')} subtitle={t('mySubtitle')} />
 
       {loading ? (
         <div className="flex items-center justify-center py-16 text-gray-400">
@@ -146,32 +160,29 @@ export default function MyOffboardingPage() {
       ) : rows.length === 0 ? (
         <EmptyState icon={DoorOpen} title={t('myEmpty')} description={t('myEmptyHint')} />
       ) : (
-        <ul className="space-y-3">
+        <DataList>
           {rows.map((o) => (
-            <li
+            <DataCard
               key={o.id}
-              className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800"
+              accent={STATUS_ACCENT[o.status]}
+              title={<StatusBadge tone={KIND_TONE[o.kind]} label={kindLabel(o.kind)} />}
+              status={<StatusBadge tone={STATUS_TONE[o.status]} label={statusLabel(o.status)} />}
+              actions={
+                canAck(o) ? (
+                  <Button size="sm" onClick={() => setActive(o)}>
+                    {t('acknowledge')}
+                  </Button>
+                ) : undefined
+              }
             >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant={KIND_BADGE[o.kind]} size="sm">
-                      {kindLabel(o.kind)}
-                    </Badge>
-                  </div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {t('noticeDate')}: {formatDate(o.notice_date)}
-                    {' · '}
-                    {t('lastWorkingDate')}: {formatDate(o.last_working_date)}
-                  </p>
-                  {o.reason && (
-                    <p className="text-sm text-gray-700 dark:text-gray-300">{o.reason}</p>
-                  )}
-                </div>
-                <Badge variant={STATUS_BADGE[o.status]} size="sm">
-                  {statusLabel(o.status)}
-                </Badge>
-              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {t('noticeDate')}: {formatDate(o.notice_date)}
+                {' · '}
+                {t('lastWorkingDate')}: {formatDate(o.last_working_date)}
+              </p>
+              {o.reason && (
+                <p className="mt-1 text-sm text-gray-700 dark:text-gray-300">{o.reason}</p>
+              )}
 
               {/* asset checklist (read-only) */}
               <div className="mt-3 space-y-2">
@@ -196,9 +207,10 @@ export default function MyOffboardingPage() {
                             <span className="ml-1 text-xs text-gray-400">· {a.note}</span>
                           )}
                         </div>
-                        <Badge variant={RESOLUTION_BADGE[a.resolution]} size="sm">
-                          {resolutionLabel(a.resolution)}
-                        </Badge>
+                        <StatusBadge
+                          tone={RESOLUTION_TONE[a.resolution]}
+                          label={resolutionLabel(a.resolution)}
+                        />
                       </li>
                     ))}
                   </ul>
@@ -210,17 +222,9 @@ export default function MyOffboardingPage() {
                 <SignChip label={t('empSigned')} done={Boolean(o.employee_signed_at)} />
                 <SignChip label={t('hrSigned')} done={Boolean(o.hr_signed_at)} />
               </div>
-
-              {canAck(o) && (
-                <div className="mt-3 flex justify-end">
-                  <Button size="sm" onClick={() => setActive(o)}>
-                    {t('acknowledge')}
-                  </Button>
-                </div>
-              )}
-            </li>
+            </DataCard>
           ))}
-        </ul>
+        </DataList>
       )}
 
       {/* Acknowledge modal */}
@@ -244,9 +248,11 @@ export default function MyOffboardingPage() {
                     {a.asset_name || '—'}
                     <span className="ml-1 text-xs text-gray-400">{a.asset_code || ''}</span>
                   </span>
-                  <Badge variant={RESOLUTION_BADGE[a.resolution]} size="sm">
-                    {resolutionLabel(a.resolution)}
-                  </Badge>
+                  <StatusBadge
+                    tone={RESOLUTION_TONE[a.resolution]}
+                    label={resolutionLabel(a.resolution)}
+                  />
+
                 </div>
               ))}
             </div>

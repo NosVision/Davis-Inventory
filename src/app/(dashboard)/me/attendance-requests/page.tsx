@@ -3,7 +3,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2, CalendarClock, Send } from 'lucide-react';
-import { Button, Badge, toast } from '@/components/ui';
+import {
+  Button,
+  toast,
+  PageHeader,
+  StatusBadge,
+  DataCard,
+  DataList,
+} from '@/components/ui';
 
 type Kind = 'missing_in' | 'missing_out' | 'wrong_time' | 'other';
 type PunchType = 'in' | 'out' | 'break_start' | 'break_end';
@@ -26,18 +33,16 @@ interface Punch {
   ts: string;
 }
 
-const STATUS_VARIANT: Record<AttReq['status'], 'warning' | 'success' | 'danger' | 'default'> = {
-  pending: 'warning',
-  approved: 'success',
-  rejected: 'danger',
-  cancelled: 'default',
+// Narrowed to the tones valid for both <StatusBadge> and the <DataCard accent> rail.
+const STATUS_TONE: Record<AttReq['status'], 'neutral' | 'good' | 'warn' | 'critical'> = {
+  pending: 'warn',
+  approved: 'good',
+  rejected: 'critical',
+  cancelled: 'neutral',
 };
 
 const KINDS: Kind[] = ['missing_in', 'missing_out', 'wrong_time', 'other'];
 const PUNCH_TYPES: PunchType[] = ['in', 'out', 'break_start', 'break_end'];
-
-const inputCls =
-  'mt-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white';
 
 export default function MyAttendanceRequestsPage() {
   const t = useTranslations('hr.attendanceRequests');
@@ -184,10 +189,7 @@ export default function MyAttendanceRequestsPage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-4 p-4">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('title')}</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">{t('mySubtitle')}</p>
-      </div>
+      <PageHeader title={t('title')} subtitle={t('mySubtitle')} />
 
       {/* File form */}
       <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
@@ -200,7 +202,7 @@ export default function MyAttendanceRequestsPage() {
               type="date"
               value={businessDate}
               onChange={(e) => setBusinessDate(e.target.value)}
-              className={inputCls}
+              className="control mt-1"
             />
           </label>
           <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
@@ -208,7 +210,7 @@ export default function MyAttendanceRequestsPage() {
             <select
               value={kind}
               onChange={(e) => setKind(e.target.value as Kind)}
-              className={inputCls}
+              className="control mt-1"
             >
               {KINDS.map((k) => (
                 <option key={k} value={k}>
@@ -225,7 +227,7 @@ export default function MyAttendanceRequestsPage() {
             <select
               value={proposedType}
               onChange={(e) => setProposedType(e.target.value as PunchType)}
-              className={inputCls}
+              className="control mt-1"
             >
               {PUNCH_TYPES.map((pt) => (
                 <option key={pt} value={pt}>
@@ -242,7 +244,7 @@ export default function MyAttendanceRequestsPage() {
             <select
               value={targetId}
               onChange={(e) => setTargetId(e.target.value)}
-              className={inputCls}
+              className="control mt-1"
             >
               <option value="">{t('selectPunch')}</option>
               {punches.map((p) => (
@@ -264,7 +266,7 @@ export default function MyAttendanceRequestsPage() {
               type="datetime-local"
               value={proposedTs}
               onChange={(e) => setProposedTs(e.target.value)}
-              className={inputCls}
+              className="control mt-1"
             />
           </label>
         )}
@@ -275,7 +277,7 @@ export default function MyAttendanceRequestsPage() {
             type="text"
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            className={inputCls}
+            className="control mt-1"
           />
         </label>
 
@@ -305,43 +307,38 @@ export default function MyAttendanceRequestsPage() {
             {t('noRequests')}
           </div>
         ) : (
-          <ul className="space-y-2">
+          <DataList>
             {rows.map((r) => (
-              <li
+              <DataCard
                 key={r.id}
-                className="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 space-y-1">
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">
-                      {r.business_date} · {kindLabel(r.kind)}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">{r.reason}</p>
-                    {r.decision_note && (
-                      <p className="text-xs text-gray-400">{r.decision_note}</p>
-                    )}
-                  </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <Badge variant={STATUS_VARIANT[r.status]} size="sm">
-                      {statusLabel(r.status)}
-                    </Badge>
+                accent={STATUS_TONE[r.status]}
+                title={`${r.business_date} · ${kindLabel(r.kind)}`}
+                status={
+                  <>
+                    <StatusBadge tone={STATUS_TONE[r.status]} label={statusLabel(r.status)} />
                     {r.status === 'approved' && (
-                      <Badge variant={r.applied ? 'success' : 'warning'} size="sm">
-                        {r.applied ? t('applied') : t('notApplied')}
-                      </Badge>
+                      <StatusBadge
+                        tone={r.applied ? 'good' : 'warn'}
+                        label={r.applied ? t('applied') : t('notApplied')}
+                      />
                     )}
-                  </div>
-                </div>
-                {r.status === 'pending' && (
-                  <div className="mt-2 flex justify-end">
+                  </>
+                }
+                actions={
+                  r.status === 'pending' ? (
                     <Button variant="outline" size="sm" onClick={() => cancel(r.id)}>
                       {t('cancel')}
                     </Button>
-                  </div>
+                  ) : undefined
+                }
+              >
+                <span className="block">{r.reason}</span>
+                {r.decision_note && (
+                  <span className="mt-1 block text-gray-400">{r.decision_note}</span>
                 )}
-              </li>
+              </DataCard>
             ))}
-          </ul>
+          </DataList>
         )}
       </div>
     </div>

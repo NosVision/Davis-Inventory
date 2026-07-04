@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2, Plus, X } from 'lucide-react';
-import { Button, Badge, toast } from '@/components/ui';
+import { Button, PageHeader, StatusBadge, type StatusTone, toast } from '@/components/ui';
 import { todayBangkok } from '@/lib/utils/date';
 
 interface StoreOpt {
@@ -215,50 +215,55 @@ export default function SchedulePage() {
     acknowledged: t('statusAcknowledged'),
     mixed: t('statusMixed'),
   };
+  const statusTone: Record<MonthStatus, StatusTone> = {
+    empty: 'neutral',
+    draft: 'warn',
+    submitted: 'info',
+    acknowledged: 'good',
+    mixed: 'warn',
+  };
 
   return (
     <div className="mx-auto max-w-7xl space-y-4 p-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('title')}</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">{t('subtitle')}</p>
-        </div>
-        <div className="flex flex-wrap items-end gap-2">
-          <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
-            {t('filterStore')}
-            <select
-              value={storeId}
-              onChange={(e) => setStoreId(e.target.value)}
-              className="mt-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-            >
-              {stores.length === 0 && <option value="">{t('noStores')}</option>}
-              {stores.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.store_name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
-            {t('filterMonth')}
-            <input
-              type="month"
-              value={month}
-              onChange={(e) => setMonth(e.target.value)}
-              className="mt-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-            />
-          </label>
-        </div>
-      </div>
+      <PageHeader
+        title={t('title')}
+        subtitle={t('subtitle')}
+        actions={
+          <>
+            <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
+              {t('filterStore')}
+              <select
+                value={storeId}
+                onChange={(e) => setStoreId(e.target.value)}
+                className="control mt-1"
+              >
+                {stores.length === 0 && <option value="">{t('noStores')}</option>}
+                {stores.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.store_name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
+              {t('filterMonth')}
+              <input
+                type="month"
+                value={month}
+                onChange={(e) => setMonth(e.target.value)}
+                className="control mt-1"
+              />
+            </label>
+          </>
+        }
+      />
 
       {/* status + publish actions */}
       <div className="flex flex-wrap items-center gap-2">
-        <Badge
-          variant={monthStatus === 'acknowledged' ? 'success' : monthStatus === 'submitted' ? 'info' : 'default'}
-          size="sm"
-        >
-          {t('statusLabel')}: {statusText[monthStatus]}
-        </Badge>
+        <StatusBadge
+          tone={statusTone[monthStatus]}
+          label={`${t('statusLabel')}: ${statusText[monthStatus]}`}
+        />
         <div className="flex-1" />
         <Button
           size="sm"

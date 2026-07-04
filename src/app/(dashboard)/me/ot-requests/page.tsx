@@ -3,7 +3,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2, Clock, Send } from 'lucide-react';
-import { Button, Badge, toast } from '@/components/ui';
+import {
+  Button,
+  toast,
+  PageHeader,
+  StatusBadge,
+  DataCard,
+  DataList,
+} from '@/components/ui';
 
 interface OtRequest {
   id: string;
@@ -16,15 +23,13 @@ interface OtRequest {
   created_at: string;
 }
 
-const STATUS_VARIANT: Record<OtRequest['status'], 'warning' | 'success' | 'danger' | 'default'> = {
-  pending: 'warning',
-  approved: 'success',
-  rejected: 'danger',
-  cancelled: 'default',
+// Narrowed to the tones valid for both <StatusBadge> and the <DataCard accent> rail.
+const STATUS_TONE: Record<OtRequest['status'], 'neutral' | 'good' | 'warn' | 'critical'> = {
+  pending: 'warn',
+  approved: 'good',
+  rejected: 'critical',
+  cancelled: 'neutral',
 };
-
-const inputCls =
-  'mt-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white';
 
 export default function MyOtRequestsPage() {
   const t = useTranslations('hr.otRequests');
@@ -114,10 +119,7 @@ export default function MyOtRequestsPage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-4 p-4">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('title')}</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">{t('mySubtitle')}</p>
-      </div>
+      <PageHeader title={t('title')} subtitle={t('mySubtitle')} />
 
       {/* File form */}
       <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
@@ -130,7 +132,7 @@ export default function MyOtRequestsPage() {
               type="date"
               value={workDate}
               onChange={(e) => setWorkDate(e.target.value)}
-              className={inputCls}
+              className="control mt-1"
             />
           </label>
           <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
@@ -140,7 +142,7 @@ export default function MyOtRequestsPage() {
               min={1}
               value={minutes}
               onChange={(e) => setMinutes(e.target.value)}
-              className={inputCls}
+              className="control mt-1"
             />
           </label>
         </div>
@@ -151,7 +153,7 @@ export default function MyOtRequestsPage() {
             type="text"
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            className={inputCls}
+            className="control mt-1"
           />
         </label>
 
@@ -181,45 +183,37 @@ export default function MyOtRequestsPage() {
             {t('noRequests')}
           </div>
         ) : (
-          <ul className="space-y-2">
+          <DataList>
             {rows.map((r) => (
-              <li
+              <DataCard
                 key={r.id}
-                className="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 space-y-1">
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">
-                      {r.work_date}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {t('requestedOt')}: {r.requested_ot_min} {t('minutesSuffix')}
-                      {r.status === 'approved' && r.decided_ot_min != null && (
-                        <>
-                          {' · '}
-                          {t('decidedOt')}: {r.decided_ot_min} {t('minutesSuffix')}
-                        </>
-                      )}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">{r.reason}</p>
-                    {r.decision_note && (
-                      <p className="text-xs text-gray-400">{r.decision_note}</p>
-                    )}
-                  </div>
-                  <Badge variant={STATUS_VARIANT[r.status]} size="sm">
-                    {statusLabel(r.status)}
-                  </Badge>
-                </div>
-                {r.status === 'pending' && (
-                  <div className="mt-2 flex justify-end">
+                accent={STATUS_TONE[r.status]}
+                title={r.work_date}
+                status={<StatusBadge tone={STATUS_TONE[r.status]} label={statusLabel(r.status)} />}
+                actions={
+                  r.status === 'pending' ? (
                     <Button variant="outline" size="sm" onClick={() => cancel(r.id)}>
                       {t('cancel')}
                     </Button>
-                  </div>
+                  ) : undefined
+                }
+              >
+                <span className="block">
+                  {t('requestedOt')}: {r.requested_ot_min} {t('minutesSuffix')}
+                  {r.status === 'approved' && r.decided_ot_min != null && (
+                    <>
+                      {' · '}
+                      {t('decidedOt')}: {r.decided_ot_min} {t('minutesSuffix')}
+                    </>
+                  )}
+                </span>
+                <span className="mt-1 block">{r.reason}</span>
+                {r.decision_note && (
+                  <span className="mt-1 block text-gray-400">{r.decision_note}</span>
                 )}
-              </li>
+              </DataCard>
             ))}
-          </ul>
+          </DataList>
         )}
       </div>
     </div>

@@ -3,7 +3,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2, CalendarOff, Send } from 'lucide-react';
-import { Button, Badge, toast } from '@/components/ui';
+import {
+  Button,
+  toast,
+  PageHeader,
+  StatusBadge,
+  DataCard,
+  DataList,
+  useConfirm,
+} from '@/components/ui';
 import { todayBangkok } from '@/lib/utils/date';
 
 type Status = 'pending' | 'approved' | 'rejected' | 'cancelled';
@@ -34,15 +42,13 @@ interface LeaveRow {
   leave_type: { code: string; name_th: string; name_en: string } | null;
 }
 
-const STATUS_VARIANT: Record<Status, 'warning' | 'success' | 'danger' | 'default'> = {
-  pending: 'warning',
-  approved: 'success',
-  rejected: 'danger',
-  cancelled: 'default',
+// Narrowed to the tones valid for both <StatusBadge> and the <DataCard accent> rail.
+const STATUS_TONE: Record<Status, 'neutral' | 'good' | 'warn' | 'critical'> = {
+  pending: 'warn',
+  approved: 'good',
+  rejected: 'critical',
+  cancelled: 'neutral',
 };
-
-const inputCls =
-  'mt-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white';
 
 // Inclusive day count between two YYYY-MM-DD strings; 0 when invalid.
 function inclusiveDays(from: string, to: string): number {
@@ -55,6 +61,7 @@ function inclusiveDays(from: string, to: string): number {
 
 export default function MyLeavesPage() {
   const t = useTranslations('hr.leaves');
+  const { confirm, dialog } = useConfirm();
 
   const [types, setTypes] = useState<LeaveType[]>([]);
   const [rows, setRows] = useState<LeaveRow[]>([]);
@@ -152,7 +159,7 @@ export default function MyLeavesPage() {
 
   const cancel = useCallback(
     async (id: string) => {
-      if (!window.confirm(t('confirmCancel'))) return;
+      if (!(await confirm({ title: t('confirmCancel'), tone: 'danger', confirmLabel: t('cancel') }))) return;
       try {
         const res = await fetch(`/api/hr/ess/leaves/${id}/cancel`, { method: 'POST' });
         if (!res.ok) throw new Error();
@@ -162,7 +169,7 @@ export default function MyLeavesPage() {
         toast({ type: 'error', title: t('actionFailed') });
       }
     },
-    [t, fetchRows]
+    [t, fetchRows, confirm]
   );
 
   const canSubmit =
@@ -173,10 +180,7 @@ export default function MyLeavesPage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-4 p-4">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('title')}</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">{t('mySubtitle')}</p>
-      </div>
+      <PageHeader title={t('title')} subtitle={t('mySubtitle')} />
 
       {/* File form */}
       <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
@@ -187,7 +191,7 @@ export default function MyLeavesPage() {
           <select
             value={typeId}
             onChange={(e) => setTypeId(e.target.value)}
-            className={inputCls}
+            className="control mt-1"
           >
             {types.length === 0 && <option value="">{t('noTypes')}</option>}
             {types.map((ty) => (
@@ -205,7 +209,7 @@ export default function MyLeavesPage() {
               type="date"
               value={fromDate}
               onChange={(e) => setFromDate(e.target.value)}
-              className={inputCls}
+              className="control mt-1"
             />
           </label>
           <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
@@ -215,7 +219,7 @@ export default function MyLeavesPage() {
               value={toDate}
               min={fromDate}
               onChange={(e) => setToDate(e.target.value)}
-              className={inputCls}
+              className="control mt-1"
             />
           </label>
         </div>
@@ -232,7 +236,7 @@ export default function MyLeavesPage() {
             rows={3}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            className={inputCls}
+            className="control mt-1"
           />
         </label>
 
@@ -243,7 +247,7 @@ export default function MyLeavesPage() {
               type="file"
               accept="image/*,application/pdf"
               onChange={(e) => setCert(e.target.files?.[0] ?? null)}
-              className={`${inputCls} file:mr-3 file:rounded-md file:border-0 file:bg-indigo-50 file:px-3 file:py-1 file:text-xs file:font-medium file:text-indigo-600 dark:file:bg-indigo-900/40 dark:file:text-indigo-300`}
+              className="control mt-1 file:mr-3 file:rounded-md file:border-0 file:bg-indigo-50 file:px-3 file:py-1 file:text-xs file:font-medium file:text-indigo-600 dark:file:bg-indigo-900/40 dark:file:text-indigo-300"
             />
             <span className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
               {t('certHint')}
@@ -277,44 +281,37 @@ export default function MyLeavesPage() {
             {t('noLeaves')}
           </div>
         ) : (
-          <ul className="space-y-2">
+          <DataList>
             {rows.map((r) => (
-              <li
+              <DataCard
                 key={r.id}
-                className="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 space-y-1">
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">
-                      {r.leave_type?.name_th ?? r.leave_type?.name_en ?? '—'}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {r.from_date}
-                      {r.to_date !== r.from_date && ` → ${r.to_date}`}
-                      {' · '}
-                      {t('daysPreview', { days: r.days })}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">{r.reason}</p>
-                    {r.decision_note && (
-                      <p className="text-xs text-gray-400">{r.decision_note}</p>
-                    )}
-                  </div>
-                  <Badge variant={STATUS_VARIANT[r.status]} size="sm">
-                    {statusLabel(r.status)}
-                  </Badge>
-                </div>
-                {r.status === 'pending' && (
-                  <div className="mt-2 flex justify-end">
+                accent={STATUS_TONE[r.status]}
+                title={r.leave_type?.name_th ?? r.leave_type?.name_en ?? '—'}
+                status={<StatusBadge tone={STATUS_TONE[r.status]} label={statusLabel(r.status)} />}
+                actions={
+                  r.status === 'pending' ? (
                     <Button variant="outline" size="sm" onClick={() => cancel(r.id)}>
                       {t('cancel')}
                     </Button>
-                  </div>
+                  ) : undefined
+                }
+              >
+                <span className="block">
+                  {r.from_date}
+                  {r.to_date !== r.from_date && ` → ${r.to_date}`}
+                  {' · '}
+                  {t('daysPreview', { days: r.days })}
+                </span>
+                <span className="mt-1 block">{r.reason}</span>
+                {r.decision_note && (
+                  <span className="mt-1 block text-gray-400">{r.decision_note}</span>
                 )}
-              </li>
+              </DataCard>
             ))}
-          </ul>
+          </DataList>
         )}
       </div>
+      {dialog}
     </div>
   );
 }

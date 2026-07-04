@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2, ArrowLeftRight, Send } from 'lucide-react';
-import { Button, Badge, toast } from '@/components/ui';
+import { Button, PageHeader, StatusBadge, DataList, DataCard, toast } from '@/components/ui';
 
 interface Coworker {
   user_id: string;
@@ -21,15 +21,12 @@ interface Swap {
   created_at: string;
 }
 
-const STATUS_VARIANT: Record<Swap['status'], 'warning' | 'success' | 'danger' | 'default'> = {
-  pending: 'warning',
-  approved: 'success',
-  rejected: 'danger',
-  cancelled: 'default',
+const STATUS_TONE: Record<Swap['status'], 'warn' | 'good' | 'critical' | 'neutral'> = {
+  pending: 'warn',
+  approved: 'good',
+  rejected: 'critical',
+  cancelled: 'neutral',
 };
-
-const inputCls =
-  'mt-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white';
 
 export default function MySwapsPage() {
   const t = useTranslations('hr.swaps');
@@ -130,10 +127,7 @@ export default function MySwapsPage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-4 p-4">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('title')}</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">{t('mySubtitle')}</p>
-      </div>
+      <PageHeader title={t('title')} subtitle={t('mySubtitle')} />
 
       {/* File form */}
       <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
@@ -146,7 +140,7 @@ export default function MySwapsPage() {
               type="date"
               value={myDate}
               onChange={(e) => setMyDate(e.target.value)}
-              className={inputCls}
+              className="control mt-1"
             />
           </label>
           <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
@@ -155,7 +149,7 @@ export default function MySwapsPage() {
               type="date"
               value={theirDate}
               onChange={(e) => setTheirDate(e.target.value)}
-              className={inputCls}
+              className="control mt-1"
             />
           </label>
         </div>
@@ -165,7 +159,7 @@ export default function MySwapsPage() {
           <select
             value={counterpartId}
             onChange={(e) => setCounterpartId(e.target.value)}
-            className={inputCls}
+            className="control mt-1"
           >
             <option value="">—</option>
             {coworkers.map((c) => (
@@ -185,7 +179,7 @@ export default function MySwapsPage() {
             type="text"
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            className={inputCls}
+            className="control mt-1"
           />
         </label>
 
@@ -215,35 +209,31 @@ export default function MySwapsPage() {
             {t('noSwaps')}
           </div>
         ) : (
-          <ul className="space-y-2">
+          <DataList>
             {swaps.map((s) => (
-              <li
+              <DataCard
                 key={s.id}
-                className="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">
+                accent={STATUS_TONE[s.status]}
+                title={
+                  <span>
                     {s.requester_name} ({s.requester_date}){' '}
                     <ArrowLeftRight className="inline h-3.5 w-3.5 align-middle text-gray-400" />{' '}
                     {s.counterpart_name} ({s.counterpart_date})
-                  </p>
-                  <Badge variant={STATUS_VARIANT[s.status]} size="sm">
-                    {statusLabel(s.status)}
-                  </Badge>
-                </div>
-                {s.note && (
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{s.note}</p>
-                )}
-                {s.role === 'requester' && s.status === 'pending' && (
-                  <div className="mt-2 flex justify-end">
+                  </span>
+                }
+                status={<StatusBadge tone={STATUS_TONE[s.status]} label={statusLabel(s.status)} />}
+                actions={
+                  s.role === 'requester' && s.status === 'pending' ? (
                     <Button variant="outline" size="sm" onClick={() => cancelSwap(s.id)}>
                       {t('cancel')}
                     </Button>
-                  </div>
-                )}
-              </li>
+                  ) : undefined
+                }
+              >
+                {s.note}
+              </DataCard>
             ))}
-          </ul>
+          </DataList>
         )}
       </div>
     </div>

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { MapPin, RefreshCw, Camera, Loader2 } from 'lucide-react';
-import { Button, Badge, toast } from '@/components/ui';
+import { Button, PageHeader, StatusBadge, DataList, DataCard, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { toBangkokISO, formatTimeBangkok } from '@/lib/utils/date';
 
@@ -262,10 +262,7 @@ export default function CheckinPage() {
   return (
     <div className="mx-auto max-w-md space-y-5 p-4">
       {/* Header */}
-      <div>
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('title')}</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">{t('subtitle')}</p>
-      </div>
+      <PageHeader title={t('title')} subtitle={t('subtitle')} />
 
       {/* Type selector */}
       <div className="grid grid-cols-2 gap-2">
@@ -419,39 +416,27 @@ export default function CheckinPage() {
             {t('noneToday')}
           </p>
         ) : (
-          <ul className="space-y-2">
-            {rows.map((row) => (
-              <li
-                key={row.id}
-                className="flex items-center justify-between gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2.5 dark:border-gray-700 dark:bg-gray-800"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-gray-900 dark:text-white">
-                    {t(TYPE_KEY[row.type])}
-                  </span>
-                  <span className="text-xs text-gray-500 dark:text-gray-400">
-                    {formatTimeBangkok(row.ts)}
-                  </span>
-                </div>
-                <Badge
-                  variant={
-                    row.in_geofence === null
-                      ? 'default'
-                      : row.in_geofence
-                        ? 'success'
-                        : 'warning'
-                  }
-                  size="sm"
-                >
-                  {row.in_geofence === null
-                    ? t('noGeofence')
-                    : row.in_geofence
-                      ? t('inGeofence')
-                      : t('outGeofence')}
-                </Badge>
-              </li>
-            ))}
-          </ul>
+          <DataList>
+            {rows.map((row) => {
+              const geoTone =
+                row.in_geofence === null ? 'neutral' : row.in_geofence ? 'good' : 'warn';
+              const geoLabel =
+                row.in_geofence === null
+                  ? t('noGeofence')
+                  : row.in_geofence
+                    ? t('inGeofence')
+                    : t('outGeofence');
+              return (
+                <DataCard
+                  key={row.id}
+                  accent={geoTone}
+                  title={t(TYPE_KEY[row.type])}
+                  subtitle={formatTimeBangkok(row.ts)}
+                  status={<StatusBadge tone={geoTone} label={geoLabel} />}
+                />
+              );
+            })}
+          </DataList>
         )}
       </div>
     </div>

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { CalendarDays, Loader2 } from 'lucide-react';
-import { Badge } from '@/components/ui';
+import { PageHeader, StatusBadge } from '@/components/ui';
 import { todayBangkok } from '@/lib/utils/date';
 
 interface EssShift {
@@ -56,18 +56,18 @@ export default function MySchedulePage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-4 p-4">
-      <div className="flex items-end justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('myScheduleTitle')}</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">{t('mySubtitle')}</p>
-        </div>
-        <input
-          type="month"
-          value={month}
-          onChange={(e) => setMonth(e.target.value)}
-          className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-        />
-      </div>
+      <PageHeader
+        title={t('myScheduleTitle')}
+        subtitle={t('mySubtitle')}
+        actions={
+          <input
+            type="month"
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+            className="control"
+          />
+        }
+      />
 
       {loading ? (
         <div className="flex items-center justify-center py-10 text-gray-400">
@@ -113,9 +113,10 @@ export default function MySchedulePage() {
                   </div>
                 )}
               </div>
-              <Badge variant={r.status === 'acknowledged' ? 'success' : 'info'} size="sm">
-                {r.status === 'acknowledged' ? t('statusAcknowledged') : t('statusSubmitted')}
-              </Badge>
+              <StatusBadge
+                tone={r.status === 'acknowledged' ? 'good' : 'info'}
+                label={r.status === 'acknowledged' ? t('statusAcknowledged') : t('statusSubmitted')}
+              />
             </li>
           ))}
         </ul>
