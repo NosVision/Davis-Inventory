@@ -25,8 +25,8 @@ export default function EvalPeriodDetailPage() {
   const id = String(params.id);
   const isTh = useLocale() === 'th';
   const L = isTh
-    ? { back: 'กลับ', assignments: 'มอบหมายผู้ประเมิน', evaluator: 'ผู้ประเมิน', employee: 'ผู้ถูกประเมิน', add: 'เพิ่ม', noAssignments: 'ยังไม่มีการมอบหมาย', remove: 'ลบ', compute: 'คำนวณผล', results: 'ผลประเมิน', noResults: 'ยังไม่มีผล (คำนวณหลังปิดงวด)', colEmployee: 'พนักงาน', colEvaluators: 'จำนวนผู้ประเมิน', colScore: 'คะแนน (%)', submitted: 'ส่งแล้ว', assigned: 'รอประเมิน', loadFailed: 'โหลดไม่สำเร็จ', saveFailed: 'บันทึกไม่สำเร็จ', added: 'เพิ่มแล้ว', removed: 'ลบแล้ว', computed: 'คำนวณผลแล้ว', pickBoth: 'เลือกผู้ประเมินและผู้ถูกประเมิน', notFound: 'ไม่พบงวด' }
-    : { back: 'Back', assignments: 'Evaluator assignments', evaluator: 'Evaluator', employee: 'Employee', add: 'Add', noAssignments: 'No assignments yet', remove: 'Remove', compute: 'Compute results', results: 'Results', noResults: 'No results yet (compute after closing)', colEmployee: 'Employee', colEvaluators: 'Evaluators', colScore: 'Score (%)', submitted: 'Submitted', assigned: 'Pending', loadFailed: 'Load failed', saveFailed: 'Save failed', added: 'Added', removed: 'Removed', computed: 'Results computed', pickBoth: 'Pick an evaluator and an employee', notFound: 'Period not found' };
+    ? { back: 'กลับ', assignments: 'มอบหมายผู้ประเมิน', evaluator: 'ผู้ประเมิน', employee: 'ผู้ถูกประเมิน', add: 'เพิ่ม', noAssignments: 'ยังไม่มีการมอบหมาย', remove: 'ลบ', compute: 'คำนวณผล', results: 'ผลประเมิน', noResults: 'ยังไม่มีผล (คำนวณหลังปิดงวด)', colEmployee: 'พนักงาน', colEvaluators: 'จำนวนผู้ประเมิน', colScore: 'คะแนน (%)', submitted: 'ส่งแล้ว', assigned: 'รอประเมิน', loadFailed: 'โหลดไม่สำเร็จ', saveFailed: 'บันทึกไม่สำเร็จ', added: 'เพิ่มแล้ว', removed: 'ลบแล้ว', computed: 'คำนวณผลแล้ว', pickBoth: 'เลือกผู้ประเมินและผู้ถูกประเมิน', notFound: 'ไม่พบงวด', payoutRule: 'สูตรจ่ายโบนัส (เชิงเส้น)', flat: 'ฐาน (บาท)', perPct: 'ต่อ 1% (บาท)', saveRule: 'บันทึกสูตร', computePayouts: 'คำนวณเงิน', ruleSaved: 'บันทึกสูตรแล้ว', payoutsComputed: 'คำนวณเงินแล้ว', payoutHint: 'จ่าย = ฐาน + (ต่อ 1% × คะแนน%) · ติดลบ = หักจาก SC' }
+    : { back: 'Back', assignments: 'Evaluator assignments', evaluator: 'Evaluator', employee: 'Employee', add: 'Add', noAssignments: 'No assignments yet', remove: 'Remove', compute: 'Compute results', results: 'Results', noResults: 'No results yet (compute after closing)', colEmployee: 'Employee', colEvaluators: 'Evaluators', colScore: 'Score (%)', submitted: 'Submitted', assigned: 'Pending', loadFailed: 'Load failed', saveFailed: 'Save failed', added: 'Added', removed: 'Removed', computed: 'Results computed', pickBoth: 'Pick an evaluator and an employee', notFound: 'Period not found', payoutRule: 'Payout formula (linear)', flat: 'Flat (THB)', perPct: 'Per 1% (THB)', saveRule: 'Save formula', computePayouts: 'Compute payouts', ruleSaved: 'Formula saved', payoutsComputed: 'Payouts computed', payoutHint: 'Payout = flat + (per-1% × score%) · negative = SC deduction' };
 
   const [period, setPeriod] = useState<Period | null>(null);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -37,15 +37,20 @@ export default function EvalPeriodDetailPage() {
   const [employeeId, setEmployeeId] = useState('');
   const [adding, setAdding] = useState(false);
   const [computing, setComputing] = useState(false);
+  const [flatBaht, setFlatBaht] = useState('');
+  const [perPctBaht, setPerPctBaht] = useState('');
+  const [savingRule, setSavingRule] = useState(false);
+  const [computingPayouts, setComputingPayouts] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [pRes, aRes, rRes, eRes] = await Promise.all([
+      const [pRes, aRes, rRes, eRes, ruleRes] = await Promise.all([
         fetch('/api/hr/eval/periods'),
         fetch(`/api/hr/eval/periods/${id}/assignments`),
         fetch(`/api/hr/eval/periods/${id}/results`),
         fetch('/api/hr/employees'),
+        fetch(`/api/hr/eval/periods/${id}/payout-rule`),
       ]);
       const pJson = await pRes.json();
       setPeriod(((pJson.data ?? []) as Period[]).find((p) => p.id === id) ?? null);
@@ -53,6 +58,9 @@ export default function EvalPeriodDetailPage() {
       setResults(((await rRes.json()).data ?? []) as Result[]);
       const emps = ((await eRes.json()).data ?? []) as { profile_id: string; profile: Profile | null }[];
       setEmployees(emps.map((e) => ({ id: e.profile_id, name: nameOf(e.profile) })));
+      const rule = ((await ruleRes.json()).data as { rule?: { flat_satang: number; satang_per_pct: number } } | null)?.rule;
+      setFlatBaht(rule ? String(rule.flat_satang / 100) : '');
+      setPerPctBaht(rule ? String(rule.satang_per_pct / 100) : '');
     } catch {
       toast({ type: 'error', title: L.loadFailed });
     } finally {
@@ -94,6 +102,29 @@ export default function EvalPeriodDetailPage() {
       toast({ type: 'success', title: L.computed });
       await load();
     } finally { setComputing(false); }
+  };
+
+  const saveRule = async () => {
+    setSavingRule(true);
+    try {
+      const res = await fetch(`/api/hr/eval/periods/${id}/payout-rule`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ formula_type: 'linear', flat_satang: Math.round((Number(flatBaht) || 0) * 100), satang_per_pct: Math.round((Number(perPctBaht) || 0) * 100) }),
+      });
+      if (!res.ok) { toast({ type: 'error', title: L.saveFailed }); return; }
+      toast({ type: 'success', title: L.ruleSaved });
+    } finally { setSavingRule(false); }
+  };
+
+  const computePayouts = async () => {
+    setComputingPayouts(true);
+    try {
+      const res = await fetch(`/api/hr/eval/periods/${id}/payouts`, { method: 'POST' });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) { toast({ type: 'error', title: L.saveFailed, message: json?.error }); return; }
+      toast({ type: 'success', title: L.payoutsComputed });
+    } finally { setComputingPayouts(false); }
   };
 
   const nameById = (pid: string) => employees.find((e) => e.id === pid)?.name || pid.slice(0, 8);
@@ -187,6 +218,22 @@ export default function EvalPeriodDetailPage() {
                 </table>
               </div>
             )}
+          </section>
+
+          {/* payout rule (linear) */}
+          <section className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+            <h2 className="text-base font-semibold text-gray-900 dark:text-white">{L.payoutRule}</h2>
+            <p className="mb-3 text-xs text-gray-400">{L.payoutHint}</p>
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">{L.flat}
+                <input type="number" inputMode="decimal" step={0.01} value={flatBaht} onChange={(e) => setFlatBaht(e.target.value)} placeholder="0.00" className={cn('mt-1 w-32', inputCls)} />
+              </label>
+              <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">{L.perPct}
+                <input type="number" inputMode="decimal" step={0.01} value={perPctBaht} onChange={(e) => setPerPctBaht(e.target.value)} placeholder="0.00" className={cn('mt-1 w-32', inputCls)} />
+              </label>
+              <Button size="sm" type="button" onClick={saveRule} isLoading={savingRule}>{L.saveRule}</Button>
+              <Button size="sm" variant="outline" type="button" onClick={computePayouts} isLoading={computingPayouts}>{L.computePayouts}</Button>
+            </div>
           </section>
         </>
       )}
