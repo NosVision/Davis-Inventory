@@ -1,24 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
-import { canManageHr } from '@/lib/hr/access';
+import { requireHrManagerForStore } from '@/lib/hr/route-auth';
 
 // GET /api/hr/payslips/[id] — one payslip with its itemized earning + deduction lines.
-// Readable by HR (any) or by the employee it belongs to (own slip). Auth-any at the edge;
-// ownership/HR is enforced explicitly so the ESS slip view can reuse this endpoint.
+// Readable by the employee it belongs to (own slip), by company-wide HR, or by a manager scoped
+// to the payrun's store (§P5.5). Auth-any at the edge; ownership/scope is enforced explicitly so
+// the ESS slip view can reuse this endpoint.
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-  const [profileRes, permsRes] = await Promise.all([
-    supabase.from('profiles').select('role').eq('id', user.id).single(),
-    supabase.from('user_permissions').select('permission').eq('user_id', user.id),
-  ]);
-  const role = (profileRes.data?.role as string) ?? '';
-  const permissions = (permsRes.data ?? []).map((p) => p.permission as string);
-  const isHr = canManageHr({ role, permissions });
 
   const { id } = await params;
   const service = createServiceClient();
@@ -31,9 +24,12 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   if (slErr) return NextResponse.json({ error: 'Failed to load payslip' }, { status: 500 });
   if (!slip) return NextResponse.json({ error: 'Payslip not found' }, { status: 404 });
 
-  // Ownership gate: HR sees any; an employee sees only their own.
-  if (!isHr && slip.user_id !== user.id) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  // Ownership/scope gate: an employee sees only their own; otherwise the caller must be HR for the
+  // payrun's store (company-wide HR, or a manager scoped to a store-scoped payrun's store).
+  if (slip.user_id !== user.id) {
+    const { data: pr } = await service.from('hr_payruns').select('store_id').eq('id', slip.payrun_id).maybeSingle();
+    const auth = await requireHrManagerForStore((pr?.store_id as string | null | undefined) ?? null);
+    if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
   const [earnRes, dedRes, payrunRes, profRes] = await Promise.all([

@@ -11,6 +11,7 @@ const COMPANY = 'faf154a4-ffc4-406b-bf44-58cf1162f873';
 const HRTEST = '3dd19143-aec1-41ac-bc40-dbc0d72196bc'; // manager is scoped here
 const STORE_B = 'c293344a-ffa9-4596-98fc-635ec0426f9e'; // a real store the manager is NOT scoped to
 const YEAR = 2026, MONTH = 7;
+const STAFF = u('hr-test-staff').id;
 const gen = (sess, storeId) => req(sess, 'POST', '/api/hr/payruns', { company_id: COMPANY, period_year: YEAR, period_month: MONTH, ...(storeId ? { store_id: storeId } : {}) });
 const detail = (sess, id) => req(sess, 'GET', `/api/hr/payruns/${id}`);
 const status = async (pr) => (await pr).status;
@@ -66,6 +67,18 @@ const status = async (pr) => (await pr).status;
     check('HR finalize storeB passes gate → 409 empty (not 403)', hrFinB === 409, hrFinB);
     const mgrReopen = await status(req(mgr, 'POST', `/api/hr/payruns/${companyWideId}/reopen`, { reason: 'x' }));
     check('scoped mgr reopen company-wide → 403', mgrReopen === 403, mgrReopen);
+
+    // ── payslip detail scope (payslips/[id] gates on its payrun's store) ──
+    const hrtestSlips = (await req(hr, 'GET', `/api/hr/payruns/${hrtestId}`)).json?.data?.payslips || [];
+    const cwSlips = (await req(hr, 'GET', `/api/hr/payruns/${companyWideId}`)).json?.data?.payslips || [];
+    const hrtestSlip = hrtestSlips[0];
+    const cwStaffSlip = cwSlips.find((s) => s.user_id === STAFF);
+    const cwOtherSlip = cwSlips.find((s) => s.user_id !== STAFF);
+    check('setup: got HRTEST + company-wide slips', !!hrtestSlip && !!cwStaffSlip && !!cwOtherSlip, { h: !!hrtestSlip, s: !!cwStaffSlip, o: !!cwOtherSlip });
+    check('scoped mgr reads HRTEST-payrun slip → 200', (await status(req(mgr, 'GET', `/api/hr/payslips/${hrtestSlip.id}`))) === 200, null);
+    check('scoped mgr reads company-wide-payrun slip → 403', (await status(req(mgr, 'GET', `/api/hr/payslips/${cwStaffSlip.id}`))) === 403, null);
+    check('staff reads OWN slip → 200', (await status(req(staff, 'GET', `/api/hr/payslips/${cwStaffSlip.id}`))) === 200, null);
+    check('staff reads another employee slip → 403', (await status(req(staff, 'GET', `/api/hr/payslips/${cwOtherSlip.id}`))) === 403, null);
   } finally {
     for (const idv of [hrtestId, storeBId]) if (idv) await svc.from('hr_payruns').delete().eq('id', idv);
   }
