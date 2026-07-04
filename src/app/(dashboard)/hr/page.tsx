@@ -57,7 +57,7 @@ const NAV_TILES: { key: string; icon: LucideIcon; href?: string }[] = [
   { key: 'policies', icon: BookOpen, href: '/hr/policies' },
   { key: 'announcements', icon: Megaphone, href: '/hr/announcements' },
   { key: 'audit', icon: ShieldCheck, href: '/hr/audit' },
-  { key: 'reports', icon: BarChart3 },
+  { key: 'reports', icon: BarChart3, href: '/hr/reports' },
 ];
 
 export default function HrDashboardPage() {
