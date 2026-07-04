@@ -3768,6 +3768,9 @@
         "endReason": "End reason",
         "loadFailed": "Failed to load",
         "saveFailed": "Save failed"
+      },
+      "history": {
+        "action": "Change history"
       }
     }
   },

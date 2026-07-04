@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Plus, ArrowLeftRight } from 'lucide-react';
+import { Plus, ArrowLeftRight, History } from 'lucide-react';
 import { Button, Select, Badge } from '@/components/ui';
 import { DataTable, type Column } from '@/components/data/data-table';
 import { createClient } from '@/lib/supabase/client';
 import { EmployeeFormModal } from './_components/employee-form-modal';
 import { TransferModal } from './_components/transfer-modal';
+import { EmployeeHistoryModal } from './_components/employee-history-modal';
 
 interface Ref {
   id: string;
@@ -67,6 +68,8 @@ export default function EmployeesPage() {
 
   // transfer modal
   const [transfer, setTransfer] = useState<{ id: string; companyId: string | null; companyName: string | null } | null>(null);
+  // salary/position history modal
+  const [historyFor, setHistoryFor] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => {
     const supabase = createClient();
@@ -165,24 +168,38 @@ export default function EmployeesPage() {
       {
         key: 'actions',
         header: '',
-        className: 'w-10 text-right',
+        className: 'w-16 text-right',
         render: (e) => (
-          <button
-            type="button"
-            title={t('transfer.action')}
-            aria-label={t('transfer.action')}
-            onClick={(ev) => {
-              ev.stopPropagation();
-              setTransfer({
-                id: e.id,
-                companyId: (e.company_id as string) ?? null,
-                companyName: e.company?.name ?? null,
-              });
-            }}
-            className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-teal-600 dark:hover:bg-gray-700 dark:hover:text-teal-400"
-          >
-            <ArrowLeftRight className="h-4 w-4" />
-          </button>
+          <div className="flex items-center justify-end gap-0.5">
+            <button
+              type="button"
+              title={t('history.action')}
+              aria-label={t('history.action')}
+              onClick={(ev) => {
+                ev.stopPropagation();
+                setHistoryFor({ id: e.id, name: e.profile?.display_name || e.employee_code || '—' });
+              }}
+              className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-700 dark:hover:text-indigo-400"
+            >
+              <History className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              title={t('transfer.action')}
+              aria-label={t('transfer.action')}
+              onClick={(ev) => {
+                ev.stopPropagation();
+                setTransfer({
+                  id: e.id,
+                  companyId: (e.company_id as string) ?? null,
+                  companyName: e.company?.name ?? null,
+                });
+              }}
+              className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-teal-600 dark:hover:bg-gray-700 dark:hover:text-teal-400"
+            >
+              <ArrowLeftRight className="h-4 w-4" />
+            </button>
+          </div>
         ),
       },
     ],
@@ -264,6 +281,12 @@ export default function EmployeesPage() {
           setTransfer(null);
           fetchEmployees();
         }}
+      />
+
+      <EmployeeHistoryModal
+        employeeId={historyFor?.id ?? null}
+        employeeName={historyFor?.name ?? ''}
+        onClose={() => setHistoryFor(null)}
       />
     </div>
   );

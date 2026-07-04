@@ -25,6 +25,7 @@ const SUITES = [
   'scope-time.cjs',    // §P5.5 T3: attendance/override/schedule-ack/warnings-void/dayoff-ack per-store scope
   'scope-assets.cjs',  // §P5.5 T4: locations (per-store geofence) + assets (holder's stores) per-store scope
   'dashboard.cjs',     // §P5.3 daily dashboard: scoped headcount → checked-in/on-leave/not-in partition + validation
+  'emp-history.cjs',   // P1.5 employee salary/position history from audit log (from→to + reason + actor, staff 403)
 ];
 
 let failed = 0;
