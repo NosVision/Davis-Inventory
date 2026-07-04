@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useLocale } from 'next-intl';
 import { Loader2, Star, Plus, Lock, Play, XCircle } from 'lucide-react';
 import { Button, Badge, EmptyState, toast } from '@/components/ui';
@@ -135,7 +136,9 @@ export default function HrEvaluationPage() {
               {periods.map((p) => (
                 <tr key={p.id} className="bg-white dark:bg-gray-800">
                   <td className="px-3 py-2 tabular-nums text-gray-700 dark:text-gray-200">{p.period_month?.slice(0, 7)}</td>
-                  <td className="px-3 py-2 font-medium text-gray-900 dark:text-white">{p.title}</td>
+                  <td className="px-3 py-2 font-medium">
+                    <Link href={`/hr/evaluation/${p.id}`} className="text-indigo-600 hover:underline dark:text-indigo-400">{p.title}</Link>
+                  </td>
                   <td className="px-3 py-2 text-right tabular-nums text-gray-600 dark:text-gray-300">{p.max_score}</td>
                   <td className="px-3 py-2 text-center">{statusBadge(p.status)}</td>
                   <td className="px-3 py-2">
