@@ -5,6 +5,8 @@ import { useTranslations } from 'next-intl';
 import {
   Loader2,
   Wallet,
+  Coins,
+  TrendingDown,
   ChevronDown,
   ChevronRight,
   Plus,
@@ -13,7 +15,18 @@ import {
   Printer,
   Lock,
 } from 'lucide-react';
-import { Button, Badge, EmptyState, toast } from '@/components/ui';
+import {
+  Button,
+  EmptyState,
+  PageHeader,
+  SectionHeading,
+  KpiRow,
+  StatTile,
+  MoneyValue,
+  StatusBadge,
+  useConfirm,
+  toast,
+} from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { formatBaht, bahtToSatang } from '@/lib/pos/money';
 import { ManualDeductionModal, type ManualTarget } from './_components/manual-deduction-modal';
@@ -26,9 +39,6 @@ import type {
   ScRow,
   ScSourceType,
 } from './_components/types';
-
-const inputCls =
-  'rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white';
 
 const PRINT_CSS = `@media print { @page { margin: 1.6cm; } }`;
 
@@ -48,6 +58,7 @@ function currentMonth(): string {
 
 export default function HrServiceChargePage() {
   const t = useTranslations('hr.serviceCharge');
+  const { confirm, dialog } = useConfirm();
 
   const [stores, setStores] = useState<StoreOpt[]>([]);
   const [storeId, setStoreId] = useState('');
@@ -270,7 +281,7 @@ export default function HrServiceChargePage() {
 
   const finalize = async () => {
     if (!pool) return;
-    if (!window.confirm(t('finalizeConfirm'))) return;
+    if (!(await confirm({ title: t('finalizeConfirm'), tone: 'danger', confirmLabel: t('finalize') }))) return;
     setFinalizing(true);
     try {
       const res = await fetch(`/api/hr/service-charge/${pool.id}/finalize`, { method: 'POST' });
@@ -320,38 +331,38 @@ export default function HrServiceChargePage() {
       {/* ── On-screen (hidden while printing) ───────────────────────── */}
       <div className="space-y-4 print:hidden">
         {/* header + filters */}
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('title')}</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">{t('subtitle')}</p>
-          </div>
-          <div className="flex flex-wrap items-end gap-2">
-            <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
-              {t('filterStore')}
-              <select
-                value={storeId}
-                onChange={(e) => setStoreId(e.target.value)}
-                className={cn('mt-1', inputCls)}
-              >
-                {stores.length === 0 && <option value="">{t('noStores')}</option>}
-                {stores.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.store_name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
-              {t('filterMonth')}
-              <input
-                type="month"
-                value={month}
-                onChange={(e) => setMonth(e.target.value)}
-                className={cn('mt-1', inputCls)}
-              />
-            </label>
-          </div>
-        </div>
+        <PageHeader
+          title={t('title')}
+          subtitle={t('subtitle')}
+          actions={
+            <>
+              <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
+                {t('filterStore')}
+                <select
+                  value={storeId}
+                  onChange={(e) => setStoreId(e.target.value)}
+                  className="control mt-1"
+                >
+                  {stores.length === 0 && <option value="">{t('noStores')}</option>}
+                  {stores.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.store_name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
+                {t('filterMonth')}
+                <input
+                  type="month"
+                  value={month}
+                  onChange={(e) => setMonth(e.target.value)}
+                  className="control mt-1"
+                />
+              </label>
+            </>
+          }
+        />
 
         {loading ? (
           <div className="flex items-center justify-center py-16 text-gray-400">
@@ -380,7 +391,7 @@ export default function HrServiceChargePage() {
                       disabled={isFinalized}
                       onChange={(e) => setPoolTotalBaht(e.target.value)}
                       placeholder="0.00"
-                      className={cn('w-40', inputCls, isFinalized && 'opacity-60')}
+                      className={cn('control w-40', isFinalized && 'opacity-60')}
                     />
                     <span className="text-sm text-gray-500 dark:text-gray-400">฿</span>
                   </div>
@@ -394,7 +405,7 @@ export default function HrServiceChargePage() {
                     type="date"
                     value={payDateDisplay}
                     readOnly
-                    className={cn('w-40 cursor-default opacity-70', inputCls)}
+                    className={cn('control w-40 cursor-default opacity-70')}
                   />
                 </div>
 
@@ -408,14 +419,16 @@ export default function HrServiceChargePage() {
                     disabled={isFinalized}
                     onChange={(e) => setNotes(e.target.value)}
                     placeholder={t('notesPlaceholder')}
-                    className={cn('w-full', inputCls, isFinalized && 'opacity-60')}
+                    className={cn('control w-full', isFinalized && 'opacity-60')}
                   />
                 </div>
 
                 <div className="flex items-center gap-2 self-end pb-0.5">
-                  <Badge variant={isFinalized ? 'success' : 'warning'}>
-                    {isFinalized ? t('statusFinalized') : t('statusDraft')}
-                  </Badge>
+                  <StatusBadge
+                    tone={isFinalized ? 'good' : 'warn'}
+                    label={isFinalized ? t('statusFinalized') : t('statusDraft')}
+                    icon={isFinalized ? Lock : undefined}
+                  />
                   {!isFinalized && (
                     <Button onClick={savePool} isLoading={savingPool} disabled={busy} type="button">
                       {pool ? t('savePool') : t('createPool')}
@@ -425,59 +438,83 @@ export default function HrServiceChargePage() {
               </div>
             </section>
 
+            {/* ── Key totals — lead with NET as the hero ───────────── */}
+            {data && (
+              <KpiRow cols={3}>
+                <StatTile
+                  label={t('colAllocated')}
+                  value={<MoneyValue satang={data.totals.allocated} emphasis="kpi" />}
+                  icon={Wallet}
+                  tone="accent"
+                />
+                <StatTile
+                  label={t('colDeductions')}
+                  value={<MoneyValue satang={-data.totals.deducted} emphasis="kpi" signed />}
+                  icon={TrendingDown}
+                  tone="critical"
+                />
+                <StatTile
+                  label={t('colNet')}
+                  value={<MoneyValue satang={data.totals.net} emphasis="hero" tone="good" />}
+                  icon={Coins}
+                  tone="good"
+                />
+              </KpiRow>
+            )}
+
             {/* ── Allocation actions ───────────────────────────────── */}
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-base font-semibold text-gray-900 dark:text-white">
-                {t('allocationsTitle')}
-              </h2>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  type="button"
-                  icon={<RefreshCw className="h-4 w-4" />}
-                  onClick={recompute}
-                  isLoading={recomputing}
-                  disabled={!pool || busy}
-                >
-                  {t('recompute')}
-                </Button>
-                {!isFinalized && (
+            <SectionHeading
+              title={t('allocationsTitle')}
+              extra={
+                <div className="flex flex-wrap gap-2">
                   <Button
+                    variant="outline"
                     size="sm"
                     type="button"
-                    onClick={saveAllocations}
-                    isLoading={savingAlloc}
+                    icon={<RefreshCw className="h-4 w-4" />}
+                    onClick={recompute}
+                    isLoading={recomputing}
                     disabled={!pool || busy}
                   >
-                    {t('saveAllocations')}
+                    {t('recompute')}
                   </Button>
-                )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  type="button"
-                  icon={<Printer className="h-4 w-4" />}
-                  onClick={() => window.print()}
-                  disabled={!data}
-                >
-                  {t('print')}
-                </Button>
-                {!isFinalized && (
+                  {!isFinalized && (
+                    <Button
+                      size="sm"
+                      type="button"
+                      onClick={saveAllocations}
+                      isLoading={savingAlloc}
+                      disabled={!pool || busy}
+                    >
+                      {t('saveAllocations')}
+                    </Button>
+                  )}
                   <Button
-                    variant="danger"
+                    variant="outline"
                     size="sm"
                     type="button"
-                    icon={<Lock className="h-4 w-4" />}
-                    onClick={finalize}
-                    isLoading={finalizing}
-                    disabled={!pool || busy}
+                    icon={<Printer className="h-4 w-4" />}
+                    onClick={() => window.print()}
+                    disabled={!data}
                   >
-                    {t('finalize')}
+                    {t('print')}
                   </Button>
-                )}
-              </div>
-            </div>
+                  {!isFinalized && (
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      type="button"
+                      icon={<Lock className="h-4 w-4" />}
+                      onClick={finalize}
+                      isLoading={finalizing}
+                      disabled={!pool || busy}
+                    >
+                      {t('finalize')}
+                    </Button>
+                  )}
+                </div>
+              }
+            />
 
             {rows.length === 0 ? (
               <EmptyState icon={Wallet} title={t('noEmployees')} />
@@ -534,11 +571,7 @@ export default function HrServiceChargePage() {
                                     }))
                                   }
                                   placeholder="0.00"
-                                  className={cn(
-                                    'w-28 text-right',
-                                    inputCls,
-                                    isFinalized && 'opacity-60'
-                                  )}
+                                  className={cn('control w-28 text-right', isFinalized && 'opacity-60')}
                                 />
                                 <span className="text-xs text-gray-400">฿</span>
                               </div>
@@ -671,6 +704,7 @@ export default function HrServiceChargePage() {
           load();
         }}
       />
+      {dialog}
     </div>
   );
 }

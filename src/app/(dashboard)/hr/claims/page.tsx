@@ -2,8 +2,20 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Loader2, Inbox, ReceiptText, Printer } from 'lucide-react';
-import { Button, Badge, Select, toast } from '@/components/ui';
+import { Loader2, Inbox, ReceiptText, Printer, Clock, Wallet } from 'lucide-react';
+import {
+  Button,
+  Select,
+  PageHeader,
+  KpiRow,
+  StatTile,
+  StatusBadge,
+  MoneyValue,
+  DataCard,
+  DataList,
+  type StatusTone,
+  toast,
+} from '@/components/ui';
 
 interface StoreOpt {
   id: string;
@@ -28,17 +40,21 @@ interface ClaimRow {
   claimant: { id: string; display_name: string | null; username: string | null } | null;
 }
 
-const STATUS_VARIANT: Record<Status, 'warning' | 'success' | 'danger' | 'info' | 'default'> = {
-  pending: 'warning',
-  approved: 'success',
-  rejected: 'danger',
-  paid: 'info',
-  cancelled: 'default',
+const STATUS_TONE: Record<Status, StatusTone> = {
+  pending: 'warn',
+  approved: 'good',
+  rejected: 'critical',
+  paid: 'good',
+  cancelled: 'neutral',
+};
+const STATUS_ACCENT: Record<Status, 'good' | 'warn' | 'critical' | 'neutral'> = {
+  pending: 'warn',
+  approved: 'good',
+  rejected: 'critical',
+  paid: 'good',
+  cancelled: 'neutral',
 };
 const STATUS_FILTERS = ['all', 'pending', 'approved', 'rejected', 'paid', 'cancelled'] as const;
-
-const inputCls =
-  'rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white';
 
 // Format satang (integer) into a ฿ baht string with 2 decimals.
 function formatBaht(satang: number): string {
@@ -154,33 +170,36 @@ export default function HrClaimsPage() {
     label: s === 'all' ? t('statusAll') : statusLabel(s as Status),
   }));
 
-  const renderDecideBar = (id: string, s: Status) =>
-    s === 'pending' &&
-    (rejectId === id ? (
-      <div className="mt-2 flex flex-wrap items-center gap-2 print:hidden">
-        <input
-          type="text"
-          value={rejectNote}
-          onChange={(e) => setRejectNote(e.target.value)}
-          placeholder={t('decisionNote')}
-          className={`flex-1 ${inputCls}`}
-        />
-        <Button size="sm" variant="danger" onClick={() => decide(id, 'rejected', rejectNote)}>
-          {t('reject')}
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => {
-            setRejectId(null);
-            setRejectNote('');
-          }}
-        >
-          {t('cancel')}
-        </Button>
-      </div>
-    ) : (
-      <div className="mt-2 flex flex-wrap justify-end gap-2 print:hidden">
+  const renderDecideBar = (id: string, s: Status) => {
+    if (s !== 'pending') return undefined;
+    if (rejectId === id) {
+      return (
+        <div className="flex w-full flex-wrap items-center gap-2 print:hidden">
+          <input
+            type="text"
+            value={rejectNote}
+            onChange={(e) => setRejectNote(e.target.value)}
+            placeholder={t('decisionNote')}
+            className="control flex-1"
+          />
+          <Button size="sm" variant="danger" onClick={() => decide(id, 'rejected', rejectNote)}>
+            {t('reject')}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setRejectId(null);
+              setRejectNote('');
+            }}
+          >
+            {t('cancel')}
+          </Button>
+        </div>
+      );
+    }
+    return (
+      <div className="flex flex-wrap gap-2 print:hidden">
         <Button
           size="sm"
           variant="outline"
@@ -195,24 +214,26 @@ export default function HrClaimsPage() {
           {t('approve')}
         </Button>
       </div>
-    ));
+    );
+  };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 p-4">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('hrTitle')}</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">{t('hrSubtitle')}</p>
-        </div>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => window.print()}
-          icon={<Printer className="h-4 w-4" />}
-          className="print:hidden"
-        >
-          {t('print')}
-        </Button>
+    <div className="mx-auto max-w-6xl space-y-4 p-4">
+      <div className="print:hidden">
+        <PageHeader
+          title={t('hrTitle')}
+          subtitle={t('hrSubtitle')}
+          actions={
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => window.print()}
+              icon={<Printer className="h-4 w-4" />}
+            >
+              {t('print')}
+            </Button>
+          }
+        />
       </div>
 
       {/* filters */}
@@ -231,6 +252,30 @@ export default function HrClaimsPage() {
         />
       </div>
 
+      {/* KPI summary — lead with pending workload + total value */}
+      {!loading && rows.length > 0 && (
+        <KpiRow cols={3} className="print:hidden">
+          <StatTile label={t('statusAll')} value={rows.length} icon={ReceiptText} />
+          <StatTile
+            label={statusLabel('pending')}
+            value={rows.filter((r) => r.status === 'pending').length}
+            icon={Clock}
+            tone="warn"
+          />
+          <StatTile
+            label={t('colAmount')}
+            value={
+              <MoneyValue
+                satang={rows.reduce((sum, r) => sum + r.amount_satang, 0)}
+                emphasis="hero"
+              />
+            }
+            icon={Wallet}
+            tone="accent"
+          />
+        </KpiRow>
+      )}
+
       {loading ? (
         <div className="flex items-center justify-center py-12 text-gray-400 print:hidden">
           <Loader2 className="h-6 w-6 animate-spin" />
@@ -241,50 +286,40 @@ export default function HrClaimsPage() {
           {t('noClaims')}
         </div>
       ) : (
-        <ul className="space-y-2 print:hidden">
+        <DataList className="print:hidden">
           {rows.map((r) => (
-            <li
+            <DataCard
               key={r.id}
-              className="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800"
+              accent={STATUS_ACCENT[r.status]}
+              title={claimantName(r)}
+              subtitle={typeLabel(r.claim_type)}
+              status={<StatusBadge tone={STATUS_TONE[r.status]} label={statusLabel(r.status)} />}
+              value={<MoneyValue satang={r.amount_satang} emphasis="strong" />}
+              actions={renderDecideBar(r.id, r.status)}
             >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 space-y-1">
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">
-                    {claimantName(r)}
-                    {' · '}
-                    {typeLabel(r.claim_type)}
-                    {' · '}
-                    {formatBaht(r.amount_satang)}
-                  </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{r.claim_date}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{r.description}</p>
-                  {r.receipt_path && (
-                    <button
-                      type="button"
-                      onClick={() => viewReceipt(r.id)}
-                      disabled={receiptLoadingId === r.id}
-                      className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline disabled:opacity-60 dark:text-indigo-400"
-                    >
-                      {receiptLoadingId === r.id ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <ReceiptText className="h-3.5 w-3.5" />
-                      )}
-                      {t('viewReceipt')}
-                    </button>
-                  )}
-                  {r.decision_note && (
-                    <p className="text-xs text-gray-400">{r.decision_note}</p>
-                  )}
-                </div>
-                <Badge variant={STATUS_VARIANT[r.status]} size="sm">
-                  {statusLabel(r.status)}
-                </Badge>
+              <div className="space-y-1">
+                <p>{r.claim_date}</p>
+                <p className="text-gray-500 dark:text-gray-400">{r.description}</p>
+                {r.receipt_path && (
+                  <button
+                    type="button"
+                    onClick={() => viewReceipt(r.id)}
+                    disabled={receiptLoadingId === r.id}
+                    className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline disabled:opacity-60 dark:text-indigo-400"
+                  >
+                    {receiptLoadingId === r.id ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <ReceiptText className="h-3.5 w-3.5" />
+                    )}
+                    {t('viewReceipt')}
+                  </button>
+                )}
+                {r.decision_note && <p className="text-gray-400">{r.decision_note}</p>}
               </div>
-              {renderDecideBar(r.id, r.status)}
-            </li>
+            </DataCard>
           ))}
-        </ul>
+        </DataList>
       )}
 
       {/* Print-only summary — "all documents printable" rule */}

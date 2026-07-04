@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useLocale } from 'next-intl';
 import { Loader2, ArrowLeft, GitCompareArrows } from 'lucide-react';
-import { EmptyState, toast } from '@/components/ui';
+import { EmptyState, PageHeader, KpiRow, StatTile, MoneyValue, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 
 // P4.4 payslip-compare — put one employee's two payruns side by side (A vs B) with per-line and
@@ -16,9 +16,6 @@ interface PayrunRow { id: string; period_year: number; period_month: number; sta
 interface SlipSummary { id: string; user_id: string; name: string; gross_satang: number; sso_satang: number; tax_satang: number; total_deduction_satang: number; net_satang: number }
 interface Line { type: string; label: string; amount_satang: number }
 interface SlipDetail { earnings: Line[]; deductions: Line[]; summary: SlipSummary | null }
-
-const inputCls =
-  'rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white';
 
 const baht = (satang: number) => (satang / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const payrunLabel = (p: PayrunRow) => `${String(p.period_month).padStart(2, '0')}/${p.period_year}${p.status ? ` · ${p.status}` : ''}`;
@@ -175,38 +172,35 @@ export default function PayslipComparePage() {
   );
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 p-4">
+    <div className="mx-auto max-w-4xl space-y-4 p-4">
       <Link href="/hr/payroll" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-indigo-600 dark:text-gray-400">
         <ArrowLeft className="h-4 w-4" /> {L.back}
       </Link>
-      <div>
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">{L.title}</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">{L.subtitle}</p>
-      </div>
+      <PageHeader title={L.title} subtitle={L.subtitle} />
 
       {/* selectors */}
       <section className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">{L.company}
-            <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} className={cn('mt-1', inputCls)}>
+            <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} className="control mt-1">
               <option value="">{L.pick}</option>
               {companies.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
             </select>
           </label>
           <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">{L.employee}
-            <select value={userId} onChange={(e) => setUserId(e.target.value)} disabled={commonEmployees.length === 0} className={cn('mt-1', inputCls)}>
+            <select value={userId} onChange={(e) => setUserId(e.target.value)} disabled={commonEmployees.length === 0} className="control mt-1">
               <option value="">{L.pick}</option>
               {commonEmployees.map((s) => (<option key={s.user_id} value={s.user_id}>{s.name}</option>))}
             </select>
           </label>
           <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">{L.periodA}
-            <select value={payrunA} onChange={(e) => setPayrunA(e.target.value)} disabled={!companyId} className={cn('mt-1', inputCls)}>
+            <select value={payrunA} onChange={(e) => setPayrunA(e.target.value)} disabled={!companyId} className="control mt-1">
               <option value="">{L.pick}</option>
               {payruns.map((p) => (<option key={p.id} value={p.id} disabled={p.id === payrunB}>{payrunLabel(p)}</option>))}
             </select>
           </label>
           <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">{L.periodB}
-            <select value={payrunB} onChange={(e) => setPayrunB(e.target.value)} disabled={!companyId} className={cn('mt-1', inputCls)}>
+            <select value={payrunB} onChange={(e) => setPayrunB(e.target.value)} disabled={!companyId} className="control mt-1">
               <option value="">{L.pick}</option>
               {payruns.map((p) => (<option key={p.id} value={p.id} disabled={p.id === payrunA}>{payrunLabel(p)}</option>))}
             </select>
@@ -221,6 +215,16 @@ export default function PayslipComparePage() {
         <div className="flex items-center justify-center py-12 text-gray-400"><Loader2 className="h-6 w-6 animate-spin" /></div>
       ) : ready ? (
         <>
+          {/* Lead with the net figures + the delta that explains the difference */}
+          <KpiRow cols={3}>
+            <StatTile label={`${L.net} A`} value={<MoneyValue satang={detailA!.summary!.net_satang} emphasis="kpi" />} />
+            <StatTile label={`${L.net} B`} value={<MoneyValue satang={detailB!.summary!.net_satang} emphasis="kpi" />} />
+            <StatTile
+              label={`${L.net} ${L.delta}`}
+              value={<MoneyValue satang={detailB!.summary!.net_satang - detailA!.summary!.net_satang} emphasis="hero" signed />}
+            />
+          </KpiRow>
+
           <div className="space-y-2">
             <h2 className="text-base font-semibold text-gray-900 dark:text-white">{L.earnings}</h2>
             <CompareTable heading={L.colItem} rows={earningRows} />

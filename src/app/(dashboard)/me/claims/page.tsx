@@ -3,7 +3,18 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2, ReceiptText, Send } from 'lucide-react';
-import { Button, Badge, toast } from '@/components/ui';
+import {
+  Button,
+  PageHeader,
+  SectionHeading,
+  StatusBadge,
+  MoneyValue,
+  DataCard,
+  DataList,
+  useConfirm,
+  type StatusTone,
+  toast,
+} from '@/components/ui';
 import { todayBangkok } from '@/lib/utils/date';
 
 type ClaimType = 'travel' | 'medical' | 'supplies' | 'equipment' | 'other';
@@ -30,24 +41,20 @@ interface ClaimRow {
   created_at: string;
 }
 
-const STATUS_VARIANT: Record<Status, 'warning' | 'success' | 'danger' | 'info' | 'default'> = {
-  pending: 'warning',
-  approved: 'success',
-  rejected: 'danger',
-  paid: 'info',
-  cancelled: 'default',
+const STATUS_TONE: Record<Status, StatusTone> = {
+  pending: 'warn',
+  approved: 'good',
+  rejected: 'critical',
+  paid: 'good',
+  cancelled: 'neutral',
 };
-
-const inputCls =
-  'mt-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white';
-
-// Format satang (integer) into a ฿ baht string with 2 decimals.
-function formatBaht(satang: number): string {
-  return `฿${(satang / 100).toLocaleString('th-TH', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-}
+const STATUS_ACCENT: Record<Status, 'good' | 'warn' | 'critical' | 'neutral'> = {
+  pending: 'warn',
+  approved: 'good',
+  rejected: 'critical',
+  paid: 'good',
+  cancelled: 'neutral',
+};
 
 // Convert a baht input string to integer satang; NaN-safe, returns 0 when invalid.
 function bahtToSatang(baht: string): number {
@@ -69,6 +76,8 @@ export default function MyClaimsPage() {
   const [claimDate, setClaimDate] = useState(today);
   const [description, setDescription] = useState('');
   const [receipt, setReceipt] = useState<File | null>(null);
+
+  const { confirm, dialog } = useConfirm();
 
   const typeLabel = useCallback((ct: ClaimType) => t(`type_${ct}`), [t]);
   const statusLabel = useCallback((s: Status) => t(`status_${s}`), [t]);
@@ -131,7 +140,7 @@ export default function MyClaimsPage() {
 
   const cancel = useCallback(
     async (id: string) => {
-      if (!window.confirm(t('confirmCancel'))) return;
+      if (!(await confirm({ title: t('confirmCancel'), tone: 'danger' }))) return;
       try {
         const res = await fetch(`/api/hr/ess/claims/${id}/cancel`, { method: 'POST' });
         if (!res.ok) throw new Error();
@@ -141,26 +150,23 @@ export default function MyClaimsPage() {
         toast({ type: 'error', title: t('actionFailed') });
       }
     },
-    [t, fetchRows]
+    [t, fetchRows, confirm]
   );
 
   return (
     <div className="mx-auto max-w-lg space-y-4 p-4">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('title')}</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">{t('mySubtitle')}</p>
-      </div>
+      <PageHeader title={t('title')} subtitle={t('mySubtitle')} />
 
       {/* File form */}
       <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-        <h2 className="text-sm font-semibold text-gray-900 dark:text-white">{t('fileHeading')}</h2>
+        <SectionHeading title={t('fileHeading')} />
 
         <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
           {t('claimType')}
           <select
             value={claimType}
             onChange={(e) => setClaimType(e.target.value as ClaimType)}
-            className={inputCls}
+            className="control mt-1"
           >
             {CLAIM_TYPES.map((ct) => (
               <option key={ct} value={ct}>
@@ -181,7 +187,7 @@ export default function MyClaimsPage() {
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder={t('amountPlaceholder')}
-              className={inputCls}
+              className="control mt-1"
             />
           </label>
           <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
@@ -191,7 +197,7 @@ export default function MyClaimsPage() {
               value={claimDate}
               max={today}
               onChange={(e) => setClaimDate(e.target.value)}
-              className={inputCls}
+              className="control mt-1"
             />
           </label>
         </div>
@@ -202,7 +208,7 @@ export default function MyClaimsPage() {
             rows={3}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            className={inputCls}
+            className="control mt-1"
           />
         </label>
 
@@ -212,7 +218,7 @@ export default function MyClaimsPage() {
             type="file"
             accept="image/*,application/pdf"
             onChange={(e) => setReceipt(e.target.files?.[0] ?? null)}
-            className={`${inputCls} file:mr-3 file:rounded-md file:border-0 file:bg-indigo-50 file:px-3 file:py-1 file:text-xs file:font-medium file:text-indigo-600 dark:file:bg-indigo-900/40 dark:file:text-indigo-300`}
+            className="control mt-1 file:mr-3 file:rounded-md file:border-0 file:bg-indigo-50 file:px-3 file:py-1 file:text-xs file:font-medium file:text-indigo-600 dark:file:bg-indigo-900/40 dark:file:text-indigo-300"
           />
           <span className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
             {t('receiptHint')}
@@ -232,9 +238,7 @@ export default function MyClaimsPage() {
 
       {/* My claims */}
       <div>
-        <h2 className="mb-2 text-sm font-semibold text-gray-900 dark:text-white">
-          {t('myClaimsHeading')}
-        </h2>
+        <SectionHeading title={t('myClaimsHeading')} className="mb-2" />
         {loading ? (
           <div className="flex items-center justify-center py-10 text-gray-400">
             <Loader2 className="h-5 w-5 animate-spin" />
@@ -245,41 +249,33 @@ export default function MyClaimsPage() {
             {t('noClaims')}
           </div>
         ) : (
-          <ul className="space-y-2">
+          <DataList>
             {rows.map((r) => (
-              <li
+              <DataCard
                 key={r.id}
-                className="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 space-y-1">
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">
-                      {typeLabel(r.claim_type)}
-                      {' · '}
-                      {formatBaht(r.amount_satang)}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">{r.claim_date}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">{r.description}</p>
-                    {r.decision_note && (
-                      <p className="text-xs text-gray-400">{r.decision_note}</p>
-                    )}
-                  </div>
-                  <Badge variant={STATUS_VARIANT[r.status]} size="sm">
-                    {statusLabel(r.status)}
-                  </Badge>
-                </div>
-                {r.status === 'pending' && (
-                  <div className="mt-2 flex justify-end">
+                accent={STATUS_ACCENT[r.status]}
+                title={typeLabel(r.claim_type)}
+                status={<StatusBadge tone={STATUS_TONE[r.status]} label={statusLabel(r.status)} />}
+                value={<MoneyValue satang={r.amount_satang} emphasis="strong" />}
+                actions={
+                  r.status === 'pending' ? (
                     <Button variant="outline" size="sm" onClick={() => cancel(r.id)}>
                       {t('cancel')}
                     </Button>
-                  </div>
-                )}
-              </li>
+                  ) : undefined
+                }
+              >
+                <div className="space-y-1">
+                  <p>{r.claim_date}</p>
+                  <p className="text-gray-500 dark:text-gray-400">{r.description}</p>
+                  {r.decision_note && <p className="text-gray-400">{r.decision_note}</p>}
+                </div>
+              </DataCard>
             ))}
-          </ul>
+          </DataList>
         )}
       </div>
+      {dialog}
     </div>
   );
 }

@@ -2,13 +2,20 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Loader2, Inbox, Plus, Printer, FileText, Ban, PenLine } from 'lucide-react';
+import { Loader2, Inbox, Plus, Printer, FileText, Ban, PenLine, ShieldAlert, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import {
   Button,
-  Badge,
   Select,
   Modal,
   ModalFooter,
+  PageHeader,
+  KpiRow,
+  StatTile,
+  StatusBadge,
+  MoneyValue,
+  DataCard,
+  DataList,
+  type StatusTone,
   toast,
 } from '@/components/ui';
 import {
@@ -78,26 +85,23 @@ const LEVELS: Level[] = [
   'amount_baht',
 ];
 
-const LEVEL_BADGE: Record<Level, 'default' | 'warning' | 'danger' | 'info'> = {
-  verbal: 'default',
-  deduct_25: 'warning',
-  deduct_50: 'warning',
-  deduct_100: 'danger',
-  deduct_200: 'danger',
+const LEVEL_TONE: Record<Level, StatusTone> = {
+  verbal: 'neutral',
+  deduct_25: 'warn',
+  deduct_50: 'warn',
+  deduct_100: 'critical',
+  deduct_200: 'critical',
   amount_baht: 'info',
 };
 
-const STATUS_BADGE: Record<Status, 'warning' | 'success' | 'default'> = {
-  active: 'warning',
-  acknowledged: 'success',
-  void: 'default',
+const STATUS_TONE: Record<Status, StatusTone> = {
+  active: 'warn',
+  acknowledged: 'good',
+  void: 'neutral',
 };
 
 const SIGN_ROLES: SignRole[] = ['employee', 'manager', 'hr'];
 const STATUS_FILTERS = ['all', 'active', 'acknowledged', 'void'] as const;
-
-const inputCls =
-  'mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white';
 
 function bahtFromSatang(satang: number): string {
   return (satang / SATANG_PER_BAHT).toLocaleString('th-TH', {
@@ -352,21 +356,20 @@ export default function HrWarningsPage() {
   }));
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 p-4">
+    <div className="mx-auto max-w-6xl space-y-4 p-4">
       <style>{PRINT_CSS}</style>
 
       {/* On-screen content (hidden while printing) */}
       <div className="space-y-4 print:hidden">
-        {/* header */}
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('title')}</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">{t('subtitle')}</p>
-          </div>
-          <Button size="sm" onClick={openIssue} className="shrink-0" icon={<Plus className="h-4 w-4" />}>
-            {t('issue')}
-          </Button>
-        </div>
+        <PageHeader
+          title={t('title')}
+          subtitle={t('subtitle')}
+          actions={
+            <Button size="sm" onClick={openIssue} icon={<Plus className="h-4 w-4" />}>
+              {t('issue')}
+            </Button>
+          }
+        />
 
         {/* filters */}
         <div className="grid grid-cols-2 gap-3">
@@ -384,6 +387,25 @@ export default function HrWarningsPage() {
           />
         </div>
 
+        {/* KPI summary — lead with the counts that matter */}
+        {!loading && rows.length > 0 && (
+          <KpiRow cols={3}>
+            <StatTile label={t('statusAll')} value={rows.length} icon={ShieldAlert} />
+            <StatTile
+              label={statusLabel('active')}
+              value={rows.filter((w) => w.status === 'active').length}
+              icon={AlertTriangle}
+              tone="warn"
+            />
+            <StatTile
+              label={statusLabel('acknowledged')}
+              value={rows.filter((w) => w.status === 'acknowledged').length}
+              icon={CheckCircle2}
+              tone="good"
+            />
+          </KpiRow>
+        )}
+
         {/* list */}
         {loading ? (
           <div className="flex items-center justify-center py-12 text-gray-400">
@@ -395,108 +417,104 @@ export default function HrWarningsPage() {
             {t('noWarnings')}
           </div>
         ) : (
-          <ul className="space-y-2">
+          <DataList>
             {rows.map((w) => {
               const signed = signedRoles(w);
               return (
-                <li
+                <DataCard
                   key={w.id}
-                  className="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 space-y-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-medium text-gray-900 dark:text-white">
-                          {w.employee?.display_name ?? w.employee?.username ?? '—'}
-                        </span>
-                        <Badge variant={LEVEL_BADGE[w.level]} size="sm">
-                          {levelLabel(w.level)}
-                        </Badge>
-                      </div>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        {t('scEffect')}: {scEffect(w)}
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">{w.reason}</p>
-                      {w.detail && (
-                        <p className="text-xs text-gray-400 dark:text-gray-500">{w.detail}</p>
-                      )}
-                      <p className="text-[11px] text-gray-400">
-                        {t('issuedAt')}: {formatDateTime(w.issued_at)}
-                        {w.expires_at && ` · ${t('expiresAt')}: ${formatDate(w.expires_at)}`}
-                      </p>
-                    </div>
-                    <Badge variant={STATUS_BADGE[w.status]} size="sm">
-                      {statusLabel(w.status)}
-                    </Badge>
-                  </div>
-
-                  {/* 3-party signature chips */}
-                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                    {SIGN_ROLES.map((role) => {
-                      const done = signed.has(role);
-                      return (
-                        <span
-                          key={role}
-                          className={
-                            done
-                              ? 'inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                              : 'inline-flex items-center gap-1 rounded-full border border-dashed border-gray-300 px-2 py-0.5 text-[10px] font-medium text-gray-400 dark:border-gray-600'
-                          }
+                  accent={w.status === 'void' ? 'neutral' : w.status === 'acknowledged' ? 'good' : 'warn'}
+                  title={
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span>{w.employee?.display_name ?? w.employee?.username ?? '—'}</span>
+                      <StatusBadge tone={LEVEL_TONE[w.level]} label={levelLabel(w.level)} />
+                    </span>
+                  }
+                  status={<StatusBadge tone={STATUS_TONE[w.status]} label={statusLabel(w.status)} />}
+                  value={
+                    w.level === 'amount_baht' && w.amount_satang != null ? (
+                      <MoneyValue satang={w.amount_satang} emphasis="strong" tone="critical" />
+                    ) : undefined
+                  }
+                  actions={
+                    <>
+                      {w.status !== 'void' && !signed.has('manager') && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setSignTarget({ id: w.id, role: 'manager' })}
+                          icon={<PenLine className="h-3.5 w-3.5" />}
                         >
-                          {done ? '✓' : '○'} {roleLabel(role)}
-                        </span>
-                      );
-                    })}
+                          {t('signAsManager')}
+                        </Button>
+                      )}
+                      {w.status !== 'void' && !signed.has('hr') && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setSignTarget({ id: w.id, role: 'hr' })}
+                          icon={<PenLine className="h-3.5 w-3.5" />}
+                        >
+                          {t('signAsHr')}
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => doPrint(w)}
+                        icon={<Printer className="h-3.5 w-3.5" />}
+                      >
+                        {t('print')}
+                      </Button>
+                      {w.status !== 'void' && (
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          onClick={() => {
+                            setVoidReason('');
+                            setVoidId(w.id);
+                          }}
+                          icon={<Ban className="h-3.5 w-3.5" />}
+                        >
+                          {t('void')}
+                        </Button>
+                      )}
+                    </>
+                  }
+                >
+                  <div className="space-y-1">
+                    <p>
+                      {t('scEffect')}: {scEffect(w)}
+                    </p>
+                    <p className="text-gray-500 dark:text-gray-400">{w.reason}</p>
+                    {w.detail && <p className="text-gray-400 dark:text-gray-500">{w.detail}</p>}
+                    <p className="text-[11px] text-gray-400">
+                      {t('issuedAt')}: {formatDateTime(w.issued_at)}
+                      {w.expires_at && ` · ${t('expiresAt')}: ${formatDate(w.expires_at)}`}
+                    </p>
+                    {/* 3-party signature chips */}
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      {SIGN_ROLES.map((role) => {
+                        const done = signed.has(role);
+                        return (
+                          <span
+                            key={role}
+                            className={
+                              done
+                                ? 'inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                                : 'inline-flex items-center gap-1 rounded-full border border-dashed border-gray-300 px-2 py-0.5 text-[10px] font-medium text-gray-400 dark:border-gray-600'
+                            }
+                          >
+                            {done ? '✓' : '○'} {roleLabel(role)}
+                          </span>
+                        );
+                      })}
+                    </div>
                   </div>
-
-                  {/* actions */}
-                  <div className="mt-2 flex flex-wrap justify-end gap-2">
-                    {w.status !== 'void' && !signed.has('manager') && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setSignTarget({ id: w.id, role: 'manager' })}
-                        icon={<PenLine className="h-3.5 w-3.5" />}
-                      >
-                        {t('signAsManager')}
-                      </Button>
-                    )}
-                    {w.status !== 'void' && !signed.has('hr') && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setSignTarget({ id: w.id, role: 'hr' })}
-                        icon={<PenLine className="h-3.5 w-3.5" />}
-                      >
-                        {t('signAsHr')}
-                      </Button>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => doPrint(w)}
-                      icon={<Printer className="h-3.5 w-3.5" />}
-                    >
-                      {t('print')}
-                    </Button>
-                    {w.status !== 'void' && (
-                      <Button
-                        size="sm"
-                        variant="danger"
-                        onClick={() => {
-                          setVoidReason('');
-                          setVoidId(w.id);
-                        }}
-                        icon={<Ban className="h-3.5 w-3.5" />}
-                      >
-                        {t('void')}
-                      </Button>
-                    )}
-                  </div>
-                </li>
+                </DataCard>
               );
             })}
-          </ul>
+          </DataList>
         )}
       </div>
 
@@ -550,7 +568,7 @@ export default function HrWarningsPage() {
                 setEmployeeId(e.target.value);
                 setStoreId('');
               }}
-              className={inputCls}
+              className="control mt-1 w-full"
             >
               <option value="">{t('selectEmployee')}</option>
               {employees.map((emp) => (
@@ -566,7 +584,7 @@ export default function HrWarningsPage() {
             <select
               value={storeId}
               onChange={(e) => setStoreId(e.target.value)}
-              className={inputCls}
+              className="control mt-1 w-full"
               disabled={!selectedEmployee}
             >
               <option value="">{t('storeCompanyWide')}</option>
@@ -583,7 +601,7 @@ export default function HrWarningsPage() {
             <select
               value={level}
               onChange={(e) => setLevel(e.target.value as Level)}
-              className={inputCls}
+              className="control mt-1 w-full"
             >
               {LEVELS.map((l) => (
                 <option key={l} value={l}>
@@ -603,7 +621,7 @@ export default function HrWarningsPage() {
                 value={amountBaht}
                 onChange={(e) => setAmountBaht(e.target.value)}
                 placeholder="0.00"
-                className={inputCls}
+                className="control mt-1 w-full"
               />
             </label>
           )}
@@ -615,7 +633,7 @@ export default function HrWarningsPage() {
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder={t('reasonPlaceholder')}
-              className={inputCls}
+              className="control mt-1 w-full"
             />
           </label>
 
@@ -626,7 +644,7 @@ export default function HrWarningsPage() {
               value={detail}
               onChange={(e) => setDetail(e.target.value)}
               placeholder={t('detailPlaceholder')}
-              className={inputCls}
+              className="control mt-1 w-full"
             />
           </label>
 
@@ -636,7 +654,7 @@ export default function HrWarningsPage() {
               type="file"
               accept="image/*,application/pdf"
               onChange={(e) => setEvidence(e.target.files?.[0] ?? null)}
-              className={`${inputCls} file:mr-3 file:rounded-md file:border-0 file:bg-indigo-50 file:px-3 file:py-1 file:text-xs file:font-medium file:text-indigo-600 dark:file:bg-indigo-900/40 dark:file:text-indigo-300`}
+              className="control mt-1 w-full file:mr-3 file:rounded-md file:border-0 file:bg-indigo-50 file:px-3 file:py-1 file:text-xs file:font-medium file:text-indigo-600 dark:file:bg-indigo-900/40 dark:file:text-indigo-300"
             />
           </label>
         </div>
@@ -686,7 +704,7 @@ export default function HrWarningsPage() {
             value={voidReason}
             onChange={(e) => setVoidReason(e.target.value)}
             placeholder={t('voidReasonPlaceholder')}
-            className={inputCls}
+            className="control mt-1 w-full"
           />
         </div>
         <ModalFooter>

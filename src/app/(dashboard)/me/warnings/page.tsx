@@ -3,7 +3,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2, ShieldAlert } from 'lucide-react';
-import { Button, Badge, Modal, ModalFooter, EmptyState, toast } from '@/components/ui';
+import {
+  Button,
+  Modal,
+  ModalFooter,
+  EmptyState,
+  PageHeader,
+  StatusBadge,
+  MoneyValue,
+  DataCard,
+  DataList,
+  type StatusTone,
+  toast,
+} from '@/components/ui';
 import {
   SignaturePad,
   type SignaturePadHandle,
@@ -46,18 +58,18 @@ interface Warning {
 
 const SATANG_PER_BAHT = 100;
 
-const LEVEL_BADGE: Record<Level, 'default' | 'warning' | 'danger' | 'info'> = {
-  verbal: 'default',
-  deduct_25: 'warning',
-  deduct_50: 'warning',
-  deduct_100: 'danger',
-  deduct_200: 'danger',
+const LEVEL_TONE: Record<Level, StatusTone> = {
+  verbal: 'neutral',
+  deduct_25: 'warn',
+  deduct_50: 'warn',
+  deduct_100: 'critical',
+  deduct_200: 'critical',
   amount_baht: 'info',
 };
-const STATUS_BADGE: Record<Status, 'warning' | 'success' | 'default'> = {
-  active: 'warning',
-  acknowledged: 'success',
-  void: 'default',
+const STATUS_TONE: Record<Status, StatusTone> = {
+  active: 'warn',
+  acknowledged: 'good',
+  void: 'neutral',
 };
 const OTHER_ROLES: Exclude<SignRole, 'employee'>[] = ['manager', 'hr'];
 
@@ -167,10 +179,7 @@ export default function MyWarningsPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('myTitle')}</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">{t('mySubtitle')}</p>
-      </div>
+      <PageHeader title={t('myTitle')} subtitle={t('mySubtitle')} />
 
       {loading ? (
         <div className="flex items-center justify-center py-16 text-gray-400">
@@ -179,63 +188,60 @@ export default function MyWarningsPage() {
       ) : rows.length === 0 ? (
         <EmptyState icon={ShieldAlert} title={t('noWarnings')} />
       ) : (
-        <ul className="space-y-2">
+        <DataList>
           {rows.map((w) => {
             const signed = hasEmployeeSigned(w);
             return (
-              <li
+              <DataCard
                 key={w.id}
-                className="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant={LEVEL_BADGE[w.level]} size="sm">
-                        {levelLabel(w.level)}
-                      </Badge>
-                      <span className="text-xs text-gray-500 dark:text-gray-400">
-                        {t('scEffect')}: {scEffect(w)}
-                      </span>
-                    </div>
-                    <p className="text-sm text-gray-800 dark:text-gray-200">{w.reason}</p>
-                    {w.detail && (
-                      <p className="text-xs text-gray-500 dark:text-gray-400">{w.detail}</p>
-                    )}
-                    <p className="text-[11px] text-gray-400">
-                      {t('issuedBy')}: {w.issuer?.display_name ?? w.issuer?.username ?? '—'}
-                      {' · '}
-                      {t('issuedAt')}: {formatDateTime(w.issued_at)}
-                      {w.expires_at && ` · ${t('expiresAt')}: ${formatDate(w.expires_at)}`}
-                    </p>
-                  </div>
-                  <Badge variant={STATUS_BADGE[w.status]} size="sm">
-                    {statusLabel(w.status)}
-                  </Badge>
-                </div>
-
-                {/* signature status */}
-                <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                  <SignChip label={roleLabel('employee')} done={signed} />
-                  {OTHER_ROLES.map((role) => (
-                    <SignChip
-                      key={role}
-                      label={roleLabel(role)}
-                      done={w.signatures.some((s) => s.role === role)}
-                    />
-                  ))}
-                </div>
-
-                {!signed && w.status !== 'void' && (
-                  <div className="mt-2 flex justify-end">
+                accent={w.status === 'void' ? 'neutral' : w.status === 'acknowledged' ? 'good' : 'warn'}
+                title={
+                  <span className="flex flex-wrap items-center gap-2">
+                    <StatusBadge tone={LEVEL_TONE[w.level]} label={levelLabel(w.level)} />
+                    <span className="text-sm font-normal text-gray-500 dark:text-gray-400">
+                      {t('scEffect')}: {scEffect(w)}
+                    </span>
+                  </span>
+                }
+                status={<StatusBadge tone={STATUS_TONE[w.status]} label={statusLabel(w.status)} />}
+                value={
+                  w.level === 'amount_baht' && w.amount_satang != null ? (
+                    <MoneyValue satang={w.amount_satang} emphasis="strong" tone="critical" />
+                  ) : undefined
+                }
+                actions={
+                  !signed && w.status !== 'void' ? (
                     <Button size="sm" onClick={() => setActive(w)}>
                       {t('acknowledge')}
                     </Button>
+                  ) : undefined
+                }
+              >
+                <div className="space-y-1">
+                  <p className="text-sm text-gray-800 dark:text-gray-200">{w.reason}</p>
+                  {w.detail && <p className="text-gray-500 dark:text-gray-400">{w.detail}</p>}
+                  <p className="text-[11px] text-gray-400">
+                    {t('issuedBy')}: {w.issuer?.display_name ?? w.issuer?.username ?? '—'}
+                    {' · '}
+                    {t('issuedAt')}: {formatDateTime(w.issued_at)}
+                    {w.expires_at && ` · ${t('expiresAt')}: ${formatDate(w.expires_at)}`}
+                  </p>
+                  {/* signature status */}
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                    <SignChip label={roleLabel('employee')} done={signed} />
+                    {OTHER_ROLES.map((role) => (
+                      <SignChip
+                        key={role}
+                        label={roleLabel(role)}
+                        done={w.signatures.some((s) => s.role === role)}
+                      />
+                    ))}
                   </div>
-                )}
-              </li>
+                </div>
+              </DataCard>
             );
           })}
-        </ul>
+        </DataList>
       )}
 
       {/* Acknowledge modal */}

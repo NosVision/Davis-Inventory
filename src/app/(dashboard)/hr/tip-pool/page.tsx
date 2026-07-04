@@ -2,8 +2,19 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocale } from 'next-intl';
-import { Loader2, Coins, ChevronDown, ChevronRight, Plus, X, Printer, Lock } from 'lucide-react';
-import { Button, Badge, EmptyState, toast } from '@/components/ui';
+import { Loader2, Coins, Wallet, TrendingDown, ChevronDown, ChevronRight, Plus, X, Printer, Lock } from 'lucide-react';
+import {
+  Button,
+  EmptyState,
+  PageHeader,
+  SectionHeading,
+  KpiRow,
+  StatTile,
+  MoneyValue,
+  StatusBadge,
+  useConfirm,
+  toast,
+} from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { formatBaht, bahtToSatang } from '@/lib/pos/money';
 
@@ -19,8 +30,6 @@ interface TipData { pool: TipPool | null; allocations: TipAllocation[]; totals: 
 interface EmployeeRef { id: string; display_name: string | null; username: string | null }
 interface TipRow { userId: string; name: string; allocation: TipAllocation | null }
 
-const inputCls =
-  'rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white';
 const PRINT_CSS = `@media print { @page { margin: 1.6cm; } .tip-noprint { display: none !important; } }`;
 
 function currentMonth(): string {
@@ -33,6 +42,8 @@ export default function HrTipPoolPage() {
   const L = isTh
     ? { title: 'กองทุนทิป', subtitle: 'จัดสรรทิปต่อคนต่อเดือน (กรอกยอดเอง)', store: 'สาขา', month: 'งวด', noStores: 'ไม่มีสาขาที่จัดการได้', loadFailed: 'โหลดไม่สำเร็จ', poolTotal: 'ยอดทิปรวม', payDate: 'วันจ่าย', notes: 'หมายเหตุ', notesPh: 'หมายเหตุ (ถ้ามี)', draft: 'ร่าง', finalized: 'ปิดงวดแล้ว', createPool: 'สร้างกองทิป', savePool: 'บันทึกยอด', allocations: 'การจัดสรร', saveAllocations: 'บันทึกการจัดสรร', print: 'พิมพ์', finalize: 'ปิดงวด', colEmployee: 'พนักงาน', colAllocated: 'จัดสรร', colDeductions: 'หัก', colNet: 'สุทธิ', totals: 'รวม', noEmployees: 'ไม่มีพนักงาน', noDeductions: 'ไม่มีรายการหัก', addDeduction: 'เพิ่มรายการหัก', delete: 'ลบ', dedLabelPh: 'เหตุผล', savePoolFirst: 'บันทึกยอดกองก่อน', saveAllocHint: 'บันทึกการจัดสรรก่อนจึงเพิ่มรายการหักได้', finalizeConfirm: 'ปิดงวดกองทิปนี้? จะแก้ไขไม่ได้อีก', saved: 'บันทึกแล้ว', finalizedMsg: 'ปิดงวดแล้ว', locked: 'ปิดงวดแล้ว แก้ไขไม่ได้', invalid: 'กรอกจำนวนให้ถูกต้อง', add: 'เพิ่ม' }
     : { title: 'Tip pool', subtitle: 'Allocate tips per person per month (manual)', store: 'Store', month: 'Period', noStores: 'No manageable stores', loadFailed: 'Load failed', poolTotal: 'Total tips', payDate: 'Pay date', notes: 'Notes', notesPh: 'Notes (optional)', draft: 'Draft', finalized: 'Finalized', createPool: 'Create pool', savePool: 'Save total', allocations: 'Allocations', saveAllocations: 'Save allocations', print: 'Print', finalize: 'Finalize', colEmployee: 'Employee', colAllocated: 'Allocated', colDeductions: 'Deductions', colNet: 'Net', totals: 'Total', noEmployees: 'No employees', noDeductions: 'No deductions', addDeduction: 'Add deduction', delete: 'Delete', dedLabelPh: 'Reason', savePoolFirst: 'Save the pool total first', saveAllocHint: 'Save allocations before adding a deduction', finalizeConfirm: 'Finalize this tip pool? It cannot be edited afterwards.', saved: 'Saved', finalizedMsg: 'Finalized', locked: 'Finalized — locked', invalid: 'Enter a valid amount', add: 'Add' };
+
+  const { confirm, dialog } = useConfirm();
 
   const [stores, setStores] = useState<StoreOpt[]>([]);
   const [storeId, setStoreId] = useState('');
@@ -151,7 +162,8 @@ export default function HrTipPoolPage() {
   };
 
   const finalize = async () => {
-    if (!pool || !window.confirm(L.finalizeConfirm)) return;
+    if (!pool) return;
+    if (!(await confirm({ title: L.finalizeConfirm, tone: 'danger', confirmLabel: L.finalize }))) return;
     setFinalizing(true);
     try {
       const res = await fetch(`/api/hr/tip-pool/${pool.id}/finalize`, { method: 'POST' });
@@ -168,23 +180,24 @@ export default function HrTipPoolPage() {
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-4">
       <style>{PRINT_CSS}</style>
-      <div className="flex flex-wrap items-end justify-between gap-3 tip-noprint">
-        <div className="min-w-0">
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">{L.title}</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">{L.subtitle}</p>
-        </div>
-        <div className="flex flex-wrap items-end gap-2">
-          <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">{L.store}
-            <select value={storeId} onChange={(e) => setStoreId(e.target.value)} className={cn('mt-1', inputCls)}>
-              {stores.length === 0 && <option value="">{L.noStores}</option>}
-              {stores.map((s) => (<option key={s.id} value={s.id}>{s.store_name}</option>))}
-            </select>
-          </label>
-          <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">{L.month}
-            <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className={cn('mt-1', inputCls)} />
-          </label>
-        </div>
-      </div>
+      <PageHeader
+        title={L.title}
+        subtitle={L.subtitle}
+        className="tip-noprint"
+        actions={
+          <>
+            <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">{L.store}
+              <select value={storeId} onChange={(e) => setStoreId(e.target.value)} className="control mt-1">
+                {stores.length === 0 && <option value="">{L.noStores}</option>}
+                {stores.map((s) => (<option key={s.id} value={s.id}>{s.store_name}</option>))}
+              </select>
+            </label>
+            <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">{L.month}
+              <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="control mt-1" />
+            </label>
+          </>
+        }
+      />
 
       {loading ? (
         <div className="flex items-center justify-center py-16 text-gray-400"><Loader2 className="h-6 w-6 animate-spin" /></div>
@@ -199,33 +212,44 @@ export default function HrTipPoolPage() {
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{L.poolTotal}</label>
                 <div className="flex items-center gap-1">
-                  <input type="number" inputMode="decimal" min={0} step={0.01} value={poolTotalBaht} disabled={isFinalized} onChange={(e) => setPoolTotalBaht(e.target.value)} placeholder="0.00" className={cn('w-40', inputCls, isFinalized && 'opacity-60')} />
+                  <input type="number" inputMode="decimal" min={0} step={0.01} value={poolTotalBaht} disabled={isFinalized} onChange={(e) => setPoolTotalBaht(e.target.value)} placeholder="0.00" className={cn('control w-40', isFinalized && 'opacity-60')} />
                   <span className="text-sm text-gray-500 dark:text-gray-400">฿</span>
                 </div>
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{L.payDate}</label>
-                <input type="date" value={payDateDisplay} readOnly className={cn('w-40 cursor-default opacity-70', inputCls)} />
+                <input type="date" value={payDateDisplay} readOnly className={cn('control w-40 cursor-default opacity-70')} />
               </div>
               <div className="min-w-[12rem] flex-1">
                 <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{L.notes}</label>
-                <input type="text" value={notes} disabled={isFinalized} onChange={(e) => setNotes(e.target.value)} placeholder={L.notesPh} className={cn('w-full', inputCls, isFinalized && 'opacity-60')} />
+                <input type="text" value={notes} disabled={isFinalized} onChange={(e) => setNotes(e.target.value)} placeholder={L.notesPh} className={cn('control w-full', isFinalized && 'opacity-60')} />
               </div>
               <div className="flex items-center gap-2 self-end pb-0.5">
-                <Badge variant={isFinalized ? 'success' : 'warning'}>{isFinalized ? L.finalized : L.draft}</Badge>
+                <StatusBadge tone={isFinalized ? 'good' : 'warn'} label={isFinalized ? L.finalized : L.draft} icon={isFinalized ? Lock : undefined} />
                 {!isFinalized && (<Button onClick={savePool} isLoading={savingPool} disabled={busy} type="button">{pool ? L.savePool : L.createPool}</Button>)}
               </div>
             </div>
           </section>
 
-          <div className="flex flex-wrap items-center justify-between gap-2 tip-noprint">
-            <h2 className="text-base font-semibold text-gray-900 dark:text-white">{L.allocations}</h2>
-            <div className="flex flex-wrap gap-2">
-              {!isFinalized && (<Button size="sm" type="button" onClick={saveAllocations} isLoading={savingAlloc} disabled={!pool || busy}>{L.saveAllocations}</Button>)}
-              <Button variant="outline" size="sm" type="button" icon={<Printer className="h-4 w-4" />} onClick={() => window.print()} disabled={!data}>{L.print}</Button>
-              {!isFinalized && (<Button variant="danger" size="sm" type="button" icon={<Lock className="h-4 w-4" />} onClick={finalize} isLoading={finalizing} disabled={!pool || busy}>{L.finalize}</Button>)}
-            </div>
-          </div>
+          {data && (
+            <KpiRow cols={3} className="tip-noprint">
+              <StatTile label={L.colAllocated} value={<MoneyValue satang={data.totals.allocated} emphasis="kpi" />} icon={Wallet} tone="accent" />
+              <StatTile label={L.colDeductions} value={<MoneyValue satang={-data.totals.deducted} emphasis="kpi" signed />} icon={TrendingDown} tone="critical" />
+              <StatTile label={L.colNet} value={<MoneyValue satang={data.totals.net} emphasis="hero" tone="good" />} icon={Coins} tone="good" />
+            </KpiRow>
+          )}
+
+          <SectionHeading
+            title={L.allocations}
+            className="tip-noprint"
+            extra={
+              <div className="flex flex-wrap gap-2">
+                {!isFinalized && (<Button size="sm" type="button" onClick={saveAllocations} isLoading={savingAlloc} disabled={!pool || busy}>{L.saveAllocations}</Button>)}
+                <Button variant="outline" size="sm" type="button" icon={<Printer className="h-4 w-4" />} onClick={() => window.print()} disabled={!data}>{L.print}</Button>
+                {!isFinalized && (<Button variant="danger" size="sm" type="button" icon={<Lock className="h-4 w-4" />} onClick={finalize} isLoading={finalizing} disabled={!pool || busy}>{L.finalize}</Button>)}
+              </div>
+            }
+          />
 
           {rows.length === 0 ? (
             <EmptyState icon={Coins} title={L.noEmployees} />
@@ -259,7 +283,7 @@ export default function HrTipPoolPage() {
                           </td>
                           <td className="px-3 py-2 text-right">
                             <div className="flex items-center justify-end gap-1">
-                              <input type="number" inputMode="decimal" min={0} step={0.01} value={allocInputs[r.userId] ?? ''} disabled={isFinalized} onChange={(e) => setAllocInputs((prev) => ({ ...prev, [r.userId]: e.target.value }))} placeholder="0.00" className={cn('w-28 text-right', inputCls, isFinalized && 'opacity-60')} />
+                              <input type="number" inputMode="decimal" min={0} step={0.01} value={allocInputs[r.userId] ?? ''} disabled={isFinalized} onChange={(e) => setAllocInputs((prev) => ({ ...prev, [r.userId]: e.target.value }))} placeholder="0.00" className={cn('control w-28 text-right', isFinalized && 'opacity-60')} />
                               <span className="text-xs text-gray-400">฿</span>
                             </div>
                           </td>
@@ -289,8 +313,8 @@ export default function HrTipPoolPage() {
                               ) : (<p className="text-xs text-gray-400">{L.noDeductions}</p>)}
                               {a && !isFinalized && (
                                 <div className="mt-2 flex flex-wrap items-center gap-2 tip-noprint">
-                                  <input type="text" value={draft.label} onChange={(e) => setDedDraft((p) => ({ ...p, [r.userId]: { ...draft, label: e.target.value } }))} placeholder={L.dedLabelPh} className={cn('w-40', inputCls)} />
-                                  <input type="number" inputMode="decimal" min={0} step={0.01} value={draft.amount} onChange={(e) => setDedDraft((p) => ({ ...p, [r.userId]: { ...draft, amount: e.target.value } }))} placeholder="0.00" className={cn('w-28', inputCls)} />
+                                  <input type="text" value={draft.label} onChange={(e) => setDedDraft((p) => ({ ...p, [r.userId]: { ...draft, label: e.target.value } }))} placeholder={L.dedLabelPh} className="control w-40" />
+                                  <input type="number" inputMode="decimal" min={0} step={0.01} value={draft.amount} onChange={(e) => setDedDraft((p) => ({ ...p, [r.userId]: { ...draft, amount: e.target.value } }))} placeholder="0.00" className="control w-28" />
                                   <span className="text-xs text-gray-400">฿</span>
                                   <Button variant="ghost" size="sm" type="button" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => addDeduction(a.id)}>{L.add}</Button>
                                 </div>
@@ -318,6 +342,7 @@ export default function HrTipPoolPage() {
           )}
         </>
       )}
+      {dialog}
     </div>
   );
 }

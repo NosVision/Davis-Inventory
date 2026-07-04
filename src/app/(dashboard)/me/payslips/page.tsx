@@ -3,8 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2, Wallet, Printer, X } from 'lucide-react';
-import { Button, EmptyState, Modal, ModalFooter, toast } from '@/components/ui';
-import { formatBaht } from '@/lib/pos/money';
+import { Button, EmptyState, Modal, ModalFooter, PageHeader, DataList, DataCard, MoneyValue, toast } from '@/components/ui';
 import { PayslipView, type PayslipDetailData } from '@/components/hr/payslip-view';
 
 interface MyPayslip {
@@ -59,34 +58,24 @@ export default function MyPayslipsPage() {
     <div className="mx-auto max-w-lg space-y-4 p-4">
       <style>{PRINT_CSS}</style>
       <div className="print:hidden">
-        <div className="mb-3">
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">{t('myTitle')}</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">{t('mySubtitle')}</p>
-        </div>
+        <PageHeader title={t('myTitle')} subtitle={t('mySubtitle')} className="mb-3" />
 
         {loading ? (
           <div className="flex justify-center py-10 text-gray-400"><Loader2 className="h-5 w-5 animate-spin" /></div>
         ) : rows.length === 0 ? (
           <EmptyState icon={Wallet} title={t('noPayslips')} />
         ) : (
-          <ul className="space-y-2">
+          <DataList>
             {rows.map((r) => (
-              <li key={r.id}>
-                <button
-                  onClick={() => open(r.id)}
-                  className="flex w-full items-center justify-between rounded-xl border border-gray-200 bg-white p-3 text-left hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700/50"
-                >
-                  <div>
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">
-                      {r.period_month ? String(r.period_month).padStart(2, '0') : '—'}/{r.period_year ?? '—'}
-                    </p>
-                    {r.pay_date && <p className="text-xs text-gray-400">{t('payDate')} {r.pay_date}</p>}
-                  </div>
-                  <span className="text-base font-semibold tabular-nums text-gray-900 dark:text-white">{formatBaht(r.net_satang)} ฿</span>
-                </button>
-              </li>
+              <DataCard
+                key={r.id}
+                onClick={() => open(r.id)}
+                title={`${r.period_month ? String(r.period_month).padStart(2, '0') : '—'}/${r.period_year ?? '—'}`}
+                subtitle={r.pay_date ? `${t('payDate')} ${r.pay_date}` : undefined}
+                value={<MoneyValue satang={r.net_satang} emphasis="strong" tone="good" />}
+              />
             ))}
-          </ul>
+          </DataList>
         )}
       </div>
 
