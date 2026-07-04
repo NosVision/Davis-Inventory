@@ -3800,6 +3800,31 @@
         "done": "PDF created",
         "fail": "PDF failed",
         "allCompanies": "All companies"
+      },
+      "profile": {
+        "action": "Print profile",
+        "docTitle": "Employee profile",
+        "job": "Position",
+        "position": "Position",
+        "department": "Department",
+        "company": "Company",
+        "stores": "Stores",
+        "payType": "Pay type",
+        "employment": "Employment",
+        "status": "Status",
+        "startDate": "Start date",
+        "probationEnd": "Probation end",
+        "compensation": "Compensation",
+        "rate": "Rate",
+        "statutory": "SSO / Tax",
+        "ssoEnrolled": "SSO enrolled",
+        "ssoNo": "SSO no.",
+        "taxMode": "Tax mode",
+        "taxId": "Tax ID",
+        "yes": "Yes",
+        "no": "No",
+        "done": "PDF created",
+        "fail": "PDF failed"
       }
     }
   },

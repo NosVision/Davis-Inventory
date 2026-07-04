@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Plus, ArrowLeftRight, History, Printer } from 'lucide-react';
+import { Plus, ArrowLeftRight, History, Printer, IdCard } from 'lucide-react';
 import { Button, Select, Badge, toast } from '@/components/ui';
 import { DataTable, type Column } from '@/components/data/data-table';
 import { createClient } from '@/lib/supabase/client';
@@ -71,6 +71,55 @@ export default function EmployeesPage() {
   // salary/position history modal
   const [historyFor, setHistoryFor] = useState<{ id: string; name: string } | null>(null);
   const [printing, setPrinting] = useState(false);
+  const [profilePrintId, setProfilePrintId] = useState<string | null>(null);
+
+  const printProfile = async (e: EmployeeRow) => {
+    setProfilePrintId(e.id);
+    try {
+      const res = await fetch(`/api/hr/employees/${e.id}`);
+      const d = (await res.json())?.data as Record<string, unknown> | undefined;
+      if (!res.ok || !d) { toast({ type: 'error', title: t('profile.fail') }); return; }
+      const { buildEmployeeProfilePdf, downloadBlob } = await import('./_components/employee-profile-pdf');
+      const s = (v: unknown) => (v == null || v === '' ? '' : String(v));
+      const name = e.profile?.display_name || e.profile?.username || '—';
+      const now = new Date();
+      const blob = await buildEmployeeProfilePdf({
+        doc_title: t('profile.docTitle'),
+        name,
+        code_status: `${e.employee_code || '—'} · ${t(`status.${e.status}`)}`,
+        generated_label: new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Bangkok' }).format(now),
+        sections: [
+          { title: t('profile.job'), fields: [
+            { label: t('profile.position'), value: s(e.position?.name) },
+            { label: t('profile.department'), value: s(e.department?.name) },
+            { label: t('profile.company'), value: s(e.company?.name) },
+            { label: t('profile.stores'), value: e.stores.length ? e.stores.map((x) => x.store_name).join(', ') : '' },
+            { label: t('profile.payType'), value: t(`payType.${e.pay_type}`) },
+          ] },
+          { title: t('profile.employment'), fields: [
+            { label: t('profile.status'), value: t(`status.${e.status}`) },
+            { label: t('profile.startDate'), value: s(d.start_date) },
+            { label: t('profile.probationEnd'), value: s(d.probation_end) },
+          ] },
+          { title: t('profile.compensation'), fields: [
+            { label: t('profile.rate'), value: bahtFromSatang(e.rate_satang) },
+          ] },
+          { title: t('profile.statutory'), fields: [
+            { label: t('profile.ssoEnrolled'), value: d.sso_enrolled ? t('profile.yes') : t('profile.no') },
+            { label: t('profile.ssoNo'), value: s(d.sso_no) },
+            { label: t('profile.taxMode'), value: s(d.tax_mode) },
+            { label: t('profile.taxId'), value: s(d.tax_id) },
+          ] },
+        ],
+      });
+      downloadBlob(blob, `employee-profile-${e.employee_code || e.id.slice(0, 8)}.pdf`);
+      toast({ type: 'success', title: t('profile.done') });
+    } catch {
+      toast({ type: 'error', title: t('profile.fail') });
+    } finally {
+      setProfilePrintId(null);
+    }
+  };
 
   const printRegister = async () => {
     if (rows.length === 0) return;
@@ -208,9 +257,19 @@ export default function EmployeesPage() {
       {
         key: 'actions',
         header: '',
-        className: 'w-16 text-right',
+        className: 'w-24 text-right',
         render: (e) => (
           <div className="flex items-center justify-end gap-0.5">
+            <button
+              type="button"
+              title={t('profile.action')}
+              aria-label={t('profile.action')}
+              disabled={profilePrintId === e.id}
+              onClick={(ev) => { ev.stopPropagation(); printProfile(e); }}
+              className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-emerald-600 disabled:opacity-50 dark:hover:bg-gray-700 dark:hover:text-emerald-400"
+            >
+              <IdCard className="h-4 w-4" />
+            </button>
             <button
               type="button"
               title={t('history.action')}
