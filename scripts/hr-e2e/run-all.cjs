@@ -27,6 +27,7 @@ const SUITES = [
   'dashboard.cjs',     // §P5.3 daily dashboard: scoped headcount → checked-in/on-leave/not-in partition + validation
   'emp-history.cjs',   // P1.5 employee salary/position history from audit log (from→to + reason + actor, staff 403)
   'dashboard-alerts.cjs', // P1.5 HR reminders: probation-ending + work-anniversary within window (days_left/years), scope + staff 403
+  'overview.cjs',      // §P5.3 dashboard redesign: today+month aggregate feed — partitions (total+per-venue), /daily consistency, trend shape, scope + staff 403
 ];
 
 let failed = 0;
