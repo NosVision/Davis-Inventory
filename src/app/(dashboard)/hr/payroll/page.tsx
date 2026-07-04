@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Loader2, Wallet, Play, Lock, LockOpen, Printer, X, FileText, Settings2 } from 'lucide-react';
+import { Loader2, Wallet, Play, Lock, LockOpen, Printer, X, FileText, Settings2, Percent } from 'lucide-react';
 import { Button, Badge, EmptyState, Modal, ModalFooter, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { formatBaht } from '@/lib/pos/money';
 import { PayslipView, type PayslipDetailData } from '@/components/hr/payslip-view';
 import { RecurringModal } from './_components/recurring-modal';
+import { TaxAllowanceModal } from './_components/tax-allowance-modal';
 
 interface CompanyOpt {
   id: string;
@@ -63,6 +64,7 @@ export default function HrPayrollPage() {
   const [slip, setSlip] = useState<PayslipDetailData | null>(null);
   const [printSlip, setPrintSlip] = useState<PayslipDetailData | null>(null);
   const [recurringFor, setRecurringFor] = useState<{ employeeId: string; name: string } | null>(null);
+  const [taxAllowFor, setTaxAllowFor] = useState<{ employeeId: string; name: string } | null>(null);
 
   // companies → default first
   useEffect(() => {
@@ -326,6 +328,11 @@ export default function HrPayrollPage() {
                                     <Settings2 className="h-4 w-4" />
                                   </button>
                                 )}
+                                {s.employee_id && (
+                                  <button onClick={() => setTaxAllowFor({ employeeId: s.employee_id as string, name: s.name })} title="ลดหย่อนภาษี (ล.ย.01)" aria-label="ลดหย่อนภาษี (ล.ย.01)" className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-700">
+                                    <Percent className="h-4 w-4" />
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -368,6 +375,14 @@ export default function HrPayrollPage() {
           employeeId={recurringFor.employeeId}
           name={recurringFor.name}
           onClose={() => setRecurringFor(null)}
+        />
+      )}
+
+      {taxAllowFor && (
+        <TaxAllowanceModal
+          employeeId={taxAllowFor.employeeId}
+          name={taxAllowFor.name}
+          onClose={() => setTaxAllowFor(null)}
         />
       )}
 

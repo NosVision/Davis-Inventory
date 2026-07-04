@@ -27,7 +27,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
   const { data: slips, error: slErr } = await service
     .from('hr_payslips')
-    .select('id, user_id, rate_satang, pay_type, tax_mode, worked_days, gross_satang, sso_satang, tax_satang, total_deduction_satang, net_satang')
+    .select('id, user_id, employee_id, rate_satang, pay_type, tax_mode, worked_days, gross_satang, sso_satang, tax_satang, total_deduction_satang, net_satang')
     .eq('payrun_id', id);
   if (slErr) return NextResponse.json({ error: 'Failed to load payslips' }, { status: 500 });
 
