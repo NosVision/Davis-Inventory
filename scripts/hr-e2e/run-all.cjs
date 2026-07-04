@@ -14,6 +14,7 @@ const SUITES = [
   'pvd.cjs',           // provident_fund deduction line: enroll 3% → net drops by exact amount → disenroll
   'tip-pool.cjs',      // tip pool → alloc → deduction (net) → 'tip' earning line on slip → finalize 409 → staff 403
   'eval.cjs',          // §G evaluation: seed → 2 evaluators → 2-layer RLS → compute → payout → closed anonymized results
+  'eval-money.cjs',    // §G↔payslip: approve route (draft→approved) → positive payout flows to slip eval_bonus
   'reports.cjs',       // §J9 statutory reports: ภงด.1/1ก/สปส/50ทวิ/register reconcile + e-filing CSV + HR-only guard
 ];
 

@@ -96,6 +96,77 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
   return NextResponse.json({ data: { period_id: id, payouts: (inserted ?? []).length } });
 }
 
+// PATCH /api/hr/eval/periods/[id]/payouts — HR sign-off on the computed drafts (§G money control:
+// a computed payout is a PROPOSAL; only an APPROVED positive payout flows to the payslip eval_bonus,
+// and negative approved/draft payouts feed apply-sc). body { payout_id, status } for one, or
+// { approve_all: true } to approve every draft in the period. Terminal payouts
+// (applied_to_payslip / superseded) are immutable here.
+const PATCHABLE_STATUS = ['approved', 'void', 'draft'] as const;
+const TERMINAL_PAYOUT_STATUS = "('applied_to_payslip','superseded')";
+
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireHrManager();
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  const { id } = await params;
+  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  const service = createServiceClient();
+
+  // Scope guard: only payouts whose result belongs to THIS period are addressable.
+  const { data: results, error: rErr } = await service.from(RESULTS).select('id').eq('period_id', id);
+  if (rErr) return NextResponse.json({ error: rErr.message }, { status: 500 });
+  const resultIds = (results ?? []).map((r) => r.id as string);
+  if (resultIds.length === 0) return NextResponse.json({ error: 'No results for this period' }, { status: 409 });
+
+  // Bulk approve all drafts.
+  if (body.approve_all === true) {
+    const { data: updated, error } = await service
+      .from(PAYOUTS)
+      .update({ status: 'approved' })
+      .in('result_id', resultIds)
+      .eq('status', 'draft')
+      .select('id');
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    await logHrAudit(service, {
+      actorId: auth.userId, action: 'update', table: PAYOUTS, recordId: id,
+      before: null, after: { approved: (updated ?? []).length }, reason: 'evaluation payouts approved (bulk)',
+    });
+    return NextResponse.json({ data: { approved: (updated ?? []).length } });
+  }
+
+  // Single transition.
+  const payoutId = typeof body.payout_id === 'string' ? body.payout_id : '';
+  const target = body.status as (typeof PATCHABLE_STATUS)[number];
+  if (!payoutId) return NextResponse.json({ error: 'payout_id (or approve_all) is required' }, { status: 400 });
+  if (!PATCHABLE_STATUS.includes(target)) {
+    return NextResponse.json({ error: 'status must be approved, void, or draft' }, { status: 400 });
+  }
+
+  const { data: po, error: poErr } = await service
+    .from(PAYOUTS).select('id, status, result_id').eq('id', payoutId).maybeSingle();
+  if (poErr) return NextResponse.json({ error: poErr.message }, { status: 500 });
+  if (!po || !resultIds.includes(po.result_id as string)) {
+    return NextResponse.json({ error: 'Payout not found in this period' }, { status: 404 });
+  }
+
+  // Compare-and-set that also refuses to touch an already-consumed payout.
+  const { data: updated, error } = await service
+    .from(PAYOUTS)
+    .update({ status: target })
+    .eq('id', payoutId)
+    .not('status', 'in', TERMINAL_PAYOUT_STATUS)
+    .select('id, status');
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!updated || updated.length === 0) {
+    return NextResponse.json({ error: 'Payout already applied/superseded' }, { status: 409 });
+  }
+
+  await logHrAudit(service, {
+    actorId: auth.userId, action: 'update', table: PAYOUTS, recordId: payoutId,
+    before: { status: po.status }, after: { status: target }, reason: `evaluation payout ${target}`,
+  });
+  return NextResponse.json({ data: { id: payoutId, status: target } });
+}
+
 // Freeze the engine rule as plain JSON for the payout snapshot (the rule is already plain data).
 function freezeRule(rule: EvalPayoutRule): Record<string, unknown> {
   return JSON.parse(JSON.stringify(rule));
