@@ -24,6 +24,7 @@ const SUITES = [
   'scope-offboarding.cjs', // §P5.5 T2: per-store scope on offboarding family + documents (row store_id)
   'scope-time.cjs',    // §P5.5 T3: attendance/override/schedule-ack/warnings-void/dayoff-ack per-store scope
   'scope-assets.cjs',  // §P5.5 T4: locations (per-store geofence) + assets (holder's stores) per-store scope
+  'dashboard.cjs',     // §P5.3 daily dashboard: scoped headcount → checked-in/on-leave/not-in partition + validation
 ];
 
 let failed = 0;
