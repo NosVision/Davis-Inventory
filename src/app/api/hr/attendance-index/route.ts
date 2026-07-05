@@ -9,6 +9,7 @@ import {
   type TimesheetOverride,
 } from '@/lib/hr/time-engine';
 import { computeAttendanceScore, type AttendanceScore } from '@/lib/hr/attendance-score';
+import { getHrPolicies } from '@/lib/hr/policy';
 
 // GET /api/hr/attendance-index?user_ids=a,b,c&from&to — the work index (attendance score) for a
 // SET of employees at once, cross-store, for HR surfaces that aren't store-scoped (e.g. the
@@ -121,6 +122,7 @@ export async function GET(request: NextRequest) {
     ovrByUser.set(o.user_id, m);
   }
 
+  const scoreCfg = (await getHrPolicies(service)).work_index;
   const out: Record<string, AttendanceScore> = {};
   for (const uid of userIds) {
     const emp = empByUser.get(uid);
@@ -149,7 +151,7 @@ export async function GET(request: NextRequest) {
       if ((day.late_min ?? 0) > 0) { lateDays++; lateMinutes += day.late_min ?? 0; }
       if (day.incomplete && !day.absent) incompleteDays++;
     }
-    const score = computeAttendanceScore({ scheduledDays, absentDays, lateDays, lateMinutes, incompleteDays, otMinutes });
+    const score = computeAttendanceScore({ scheduledDays, absentDays, lateDays, lateMinutes, incompleteDays, otMinutes }, scoreCfg);
     if (score) out[uid] = score;
   }
 

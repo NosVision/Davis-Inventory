@@ -9,6 +9,7 @@ import {
   type DaySummary,
   type TimesheetOverride,
 } from '@/lib/hr/time-engine';
+import { getHrPolicies } from '@/lib/hr/policy';
 
 interface OverrideRow {
   business_date: string;
@@ -143,5 +144,8 @@ export async function GET(request: NextRequest) {
     return applyOverride(derived, overrideByDate.get(date));
   });
 
-  return NextResponse.json({ from, to, work_hours_per_day: workHours, ot_eligible: otEligible, days, totals: sumDays(days) });
+  // score_config: the owner-tunable work-index knobs so the client card scores with the same
+  // rules HR sees (defaults = historical constants when no policy rows exist).
+  const scoreConfig = (await getHrPolicies(service)).work_index;
+  return NextResponse.json({ from, to, work_hours_per_day: workHours, ot_eligible: otEligible, days, totals: sumDays(days), score_config: scoreConfig });
 }

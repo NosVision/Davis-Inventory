@@ -34,23 +34,57 @@ export interface AttendanceScore {
 
 const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
 
-export function bandOf(overall: number): ScoreBand {
-  if (overall >= 90) return 'excellent';
-  if (overall >= 75) return 'good';
-  if (overall >= 60) return 'fair';
+// Owner-tunable (hr_policy_settings key 'work_index'); defaults equal the original constants.
+export interface ScoreConfig {
+  w_punctuality: number;
+  w_attendance: number;
+  w_completeness: number;
+  p_late_day: number;
+  p_late_30min: number;
+  p_late_cap: number;
+  p_absent_day: number;
+  p_incomplete_day: number;
+  band_excellent: number;
+  band_good: number;
+  band_fair: number;
+}
+export const DEFAULT_SCORE_CONFIG: ScoreConfig = {
+  w_punctuality: 50,
+  w_attendance: 35,
+  w_completeness: 15,
+  p_late_day: 12,
+  p_late_30min: 5,
+  p_late_cap: 30,
+  p_absent_day: 25,
+  p_incomplete_day: 10,
+  band_excellent: 90,
+  band_good: 75,
+  band_fair: 60,
+};
+
+export function bandOf(overall: number, cfg: ScoreConfig = DEFAULT_SCORE_CONFIG): ScoreBand {
+  if (overall >= cfg.band_excellent) return 'excellent';
+  if (overall >= cfg.band_good) return 'good';
+  if (overall >= cfg.band_fair) return 'fair';
   return 'poor';
 }
 
 /** null เมื่อยังไม่มีวันทำงานในช่วง — ผู้เรียกแสดง "ยังไม่มีข้อมูลพอ" แทนคะแนนหลอกๆ */
-export function computeAttendanceScore(input: AttendanceScoreInput): AttendanceScore | null {
+export function computeAttendanceScore(
+  input: AttendanceScoreInput,
+  cfg: ScoreConfig = DEFAULT_SCORE_CONFIG
+): AttendanceScore | null {
   if (input.scheduledDays <= 0) return null;
 
   const punctuality = clamp(
-    100 - input.lateDays * 12 - Math.min(30, Math.floor(input.lateMinutes / 30) * 5)
+    100 - input.lateDays * cfg.p_late_day - Math.min(cfg.p_late_cap, Math.floor(input.lateMinutes / 30) * cfg.p_late_30min)
   );
-  const attendance = clamp(100 - input.absentDays * 25);
-  const completeness = clamp(100 - input.incompleteDays * 10);
-  const overall = clamp(punctuality * 0.5 + attendance * 0.35 + completeness * 0.15);
+  const attendance = clamp(100 - input.absentDays * cfg.p_absent_day);
+  const completeness = clamp(100 - input.incompleteDays * cfg.p_incomplete_day);
+  const wSum = cfg.w_punctuality + cfg.w_attendance + cfg.w_completeness || 100;
+  const overall = clamp(
+    (punctuality * cfg.w_punctuality + attendance * cfg.w_attendance + completeness * cfg.w_completeness) / wSum
+  );
 
   const recommendations: Recommendation[] = [];
   if (input.absentDays > 0) {
@@ -71,5 +105,5 @@ export function computeAttendanceScore(input: AttendanceScoreInput): AttendanceS
     recommendations.push({ key: 'otHigh', params: { hours: Math.round(input.otMinutes / 60) } });
   }
 
-  return { overall, band: bandOf(overall), components: { punctuality, attendance, completeness }, recommendations };
+  return { overall, band: bandOf(overall, cfg), components: { punctuality, attendance, completeness }, recommendations };
 }

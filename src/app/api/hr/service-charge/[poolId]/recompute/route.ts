@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { requireStoreManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import { classifyLeaveEffect, enumerateDates } from '@/lib/hr/leaves';
+import { getHrPolicies } from '@/lib/hr/policy';
 import {
   computeWarningScDeduction,
   computeLeaveScDeduction,
@@ -63,6 +64,7 @@ interface LeaveRow {
 export async function POST(_request: Request, { params }: { params: Promise<{ poolId: string }> }) {
   const { poolId } = await params;
   const service = createServiceClient();
+  const policies = await getHrPolicies(service);
 
   const { data: pool, error: poolErr } = await service
     .from(POOL)
@@ -151,7 +153,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ po
     //     200% warning / a large amount_baht penalty ('warning' family), and an evaluation SC
     //     penalty larger than a month's SC ('eval' family). Reads the prior pool's carry per family
     //     and lays down a matching '*_carry' line here, itself carrying any residual overflow. ---
-    if (prevPool) {
+    if (prevPool && policies.warning_carry_enabled) {
       const { data: prevAlloc, error: prevAllocErr } = await service
         .from(ALLOC)
         .select('id')
@@ -228,7 +230,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ po
       const from = clampMax(lv.from_date, periodStart);
       const to = clampMin(lv.to_date, periodEnd);
       const scDays = enumerateDates(from, to).filter((d) => !dayOffSet.has(d)).length;
-      const { amount_satang } = computeLeaveScDeduction(allocated, scDays);
+      const { amount_satang } = computeLeaveScDeduction(allocated, scDays, policies.sc_leave_divisor);
       if (amount_satang > 0) {
         lines.push({
           allocation_id: allocId,

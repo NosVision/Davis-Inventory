@@ -15,6 +15,7 @@ import {
 } from '@/components/hr/timesheet-parts';
 import { TimesheetEditModal, type EditTarget } from './_components/timesheet-edit-modal';
 import { AttendanceScoreCard } from '@/components/hr/attendance-score-card';
+import type { ScoreConfig } from '@/lib/hr/attendance-score';
 
 interface StoreOpt {
   id: string;
@@ -46,6 +47,7 @@ export default function HrTimesheetPage() {
   const [to, setTo] = useState<string>(() => openBusinessDateBangkok());
   const [from, setFrom] = useState<string>(() => addDaysStr(openBusinessDateBangkok(), -6));
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [scoreConfig, setScoreConfig] = useState<ScoreConfig | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
 
@@ -80,6 +82,7 @@ export default function HrTimesheetPage() {
       if (!res.ok) throw new Error('load failed');
       const j = await res.json();
       setEmployees((j.employees ?? []) as Employee[]);
+      if (j.score_config) setScoreConfig(j.score_config as ScoreConfig);
     } catch {
       toast({ type: 'error', title: t('loadFailed') });
       setEmployees([]);
@@ -153,7 +156,7 @@ export default function HrTimesheetPage() {
             return (
               <section key={emp.user_id} className="space-y-2">
                 <SectionHeading title={emp.name} />
-                <AttendanceScoreCard days={emp.days} today={openBusinessDateBangkok()} compact />
+                <AttendanceScoreCard days={emp.days} today={openBusinessDateBangkok()} compact config={scoreConfig} />
                 <SummaryChips totals={emp.totals} />
                 {hasData ? (
                   <DayTable

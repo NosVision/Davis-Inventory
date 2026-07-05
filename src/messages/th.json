@@ -2626,6 +2626,7 @@
       "identityClaims": "ยืนยันตัวตนพนักงาน",
       "orgChart": "ผังองค์กร",
       "companies": "บริษัท & กติกาเงินเดือน",
+      "policySettings": "กติกา & นโยบาย",
       "attendance": "ลงเวลา",
       "schedule": "ตารางงาน",
       "timesheet": "บันทึกเวลา",

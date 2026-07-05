@@ -11,6 +11,7 @@ import {
 } from '@/lib/hr/time-engine';
 import { classifyLeaveEffect, countLeaveDays, enumerateDates } from '@/lib/hr/leaves';
 import { computePayslip, type PayrollInput, type PayslipLine, type PayType, type TaxMode } from '@/lib/hr/payroll';
+import { getHrPolicies } from '@/lib/hr/policy';
 
 const DEFAULT_WORK_HOURS = 9;
 
@@ -124,6 +125,8 @@ export async function POST(request: NextRequest) {
     day_divisor: Number(company.day_divisor) || 30,
     ot1_multiplier: Number((company.ot_multipliers as { ot1?: number } | null)?.ot1) || 1.5,
   };
+  // Group-wide policy knobs (late tiers etc.) — defaults equal the historical constants.
+  const policies = await getHrPolicies(service);
 
   // Active employees of the company (optionally one store).
   const { data: empRows, error: empErr } = await service
@@ -427,6 +430,7 @@ export async function POST(request: NextRequest) {
       extraEarnings,
       scNetSatang: scNetByUser.get(uid) ?? 0,
       tipNetSatang: tipNetByUser.get(uid) ?? 0,
+      lateTiers: policies.late_tiers,
     };
     const slip = computePayslip(input);
     assembled.push({

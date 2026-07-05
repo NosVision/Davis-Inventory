@@ -94,12 +94,15 @@ export function validatePartTimeDocs(
   return null;
 }
 
-/** start_date + 119 days, as YYYY-MM-DD, or null when no start_date. */
-export function computeProbationEnd(startDate: string | null | undefined): string | null {
+/** start_date + probation days (owner-tunable via hr_policy_settings; default 119), or null. */
+export function computeProbationEnd(
+  startDate: string | null | undefined,
+  probationDays: number = PROBATION_DAYS
+): string | null {
   if (!startDate) return null;
   const d = new Date(`${startDate}T00:00:00Z`);
   if (Number.isNaN(d.getTime())) return null;
-  d.setUTCDate(d.getUTCDate() + PROBATION_DAYS);
+  d.setUTCDate(d.getUTCDate() + probationDays);
   return d.toISOString().slice(0, 10);
 }
 

@@ -39,6 +39,7 @@ const SUITES = [
   'ess-profile.cjs',   // self-service profile: own phone (validated+audited), own avatar, identity fields exposed, anon blocked
   'attendance-index.cjs', // bulk work-index endpoint: score matches pure lib exactly, scope-filtered, invalid range 400, staff 403
   'companies.cjs',     // company payroll knobs: GET exposes, money edits need reason + audited, validations, staff 403
+  'policy-settings.cjs', // group-wide policy knobs: PUT probation 30 → onboarding computes start+30, reset → 119; guards + audit
 ];
 
 let failed = 0;

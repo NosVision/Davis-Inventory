@@ -64,9 +64,13 @@ export function computeWarningScDeduction(
  * (personal leave and sick-without-cert deduct SC; sick-with-cert also deducts SC but keeps
  * salary — the caller decides `scLeaveDays` via classifyLeaveEffect). No carry.
  */
-export function computeLeaveScDeduction(allocated: number, scLeaveDays: number): ScDeductionResult {
+export function computeLeaveScDeduction(
+  allocated: number,
+  scLeaveDays: number,
+  divisor: number = SC_DAY_DIVISOR // owner-tunable via hr_policy_settings 'sc_leave_divisor'
+): ScDeductionResult {
   if (scLeaveDays <= 0 || allocated <= 0) return { amount_satang: 0, carry_satang: 0 };
-  const raw = Math.round((allocated * scLeaveDays) / SC_DAY_DIVISOR);
+  const raw = Math.round((allocated * scLeaveDays) / divisor);
   const amount = Math.min(raw, allocated);
   return { amount_satang: amount, carry_satang: 0 };
 }

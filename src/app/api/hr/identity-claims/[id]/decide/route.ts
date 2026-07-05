@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import { computeProbationEnd } from '@/lib/hr/employees';
+import { getHrPolicies } from '@/lib/hr/policy';
 import { notifyUser } from '@/lib/notifications/service';
 
 // POST /api/hr/identity-claims/[id]/decide { decision: approve|reject, note? } — HR verifies an
@@ -113,7 +114,7 @@ export async function POST(
       rate_satang: ident.rate_satang ?? 0,
       pay_type: ident.pay_type ?? 'full_monthly',
       start_date: ident.start_date,
-      probation_end: computeProbationEnd(ident.start_date as string | null),
+      probation_end: computeProbationEnd(ident.start_date as string | null, (await getHrPolicies(service)).probation_days),
       sso_enrolled: ident.sso_enrolled ?? true,
       tax_mode: ident.tax_mode ?? 'progressive',
       status: 'active',

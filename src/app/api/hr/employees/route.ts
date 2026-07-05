@@ -8,6 +8,9 @@ import {
   applyPartTimeProfile,
   validatePartTimeDocs,
   computeProbationEnd,
+} from '@/lib/hr/employees';
+import { getHrPolicies } from '@/lib/hr/policy';
+import {
   type EmployeeDocument,
 } from '@/lib/hr/employees';
 
@@ -134,7 +137,8 @@ export async function POST(request: NextRequest) {
     const withForced0 = applyPartTimeProfile({ ...picked0.fields, pay_type: picked0.fields.pay_type as string });
     const fields0: Record<string, unknown> = { ...withForced0 };
     if (fields0.start_date && !fields0.probation_end) {
-      fields0.probation_end = computeProbationEnd(fields0.start_date as string);
+      const policies0 = await getHrPolicies(createServiceClient());
+      fields0.probation_end = computeProbationEnd(fields0.start_date as string, policies0.probation_days);
     }
     const docs0 = (fields0.documents as EmployeeDocument[] | undefined) ?? [];
     const docErr0 = validatePartTimeDocs(fields0.pay_type as string, docs0);
@@ -236,7 +240,8 @@ export async function POST(request: NextRequest) {
   const withForced = applyPartTimeProfile({ ...picked.fields, pay_type: picked.fields.pay_type as string });
   const fields: Record<string, unknown> = { ...withForced };
   if (fields.start_date && !fields.probation_end) {
-    fields.probation_end = computeProbationEnd(fields.start_date as string);
+    const policies = await getHrPolicies(createServiceClient());
+    fields.probation_end = computeProbationEnd(fields.start_date as string, policies.probation_days);
   }
   const docs = (fields.documents as EmployeeDocument[] | undefined) ?? [];
   const docErr = validatePartTimeDocs(fields.pay_type as string, docs);

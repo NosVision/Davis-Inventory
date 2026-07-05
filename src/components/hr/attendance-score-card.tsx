@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 import { Sparkles, AlertTriangle, Info } from 'lucide-react';
 import { ScoreRing } from '@/components/ui';
-import { computeAttendanceScore, type ScoreBand } from '@/lib/hr/attendance-score';
+import { computeAttendanceScore, DEFAULT_SCORE_CONFIG, type ScoreBand, type ScoreConfig } from '@/lib/hr/attendance-score';
 import type { DaySummary } from '@/components/hr/timesheet-parts';
 
 // "ดัชนีการทำงาน" — friendly attendance index over the employee's own timesheet range
@@ -47,11 +47,14 @@ export function AttendanceScoreCard({
   days,
   today,
   compact = false,
+  config = DEFAULT_SCORE_CONFIG,
 }: {
   days: DaySummary[];
   today: string;
   /** HR list view: small ring + band + the top recommendation on one line */
   compact?: boolean;
+  /** owner-tunable work-index knobs (hr_policy_settings) — servers attach it as score_config */
+  config?: ScoreConfig;
 }) {
   const t = useTranslations('hr.timesheet');
 
@@ -65,7 +68,7 @@ export function AttendanceScoreCard({
     lateMinutes: workdays.reduce((acc, d) => acc + (d.late_min ?? 0), 0),
     incompleteDays: workdays.filter((d) => d.incomplete && !d.absent).length,
     otMinutes: past.reduce((acc, d) => acc + (d.ot_min ?? 0), 0),
-  });
+  }, config);
 
   if (!score) return null;
 

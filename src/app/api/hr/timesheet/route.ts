@@ -10,6 +10,7 @@ import {
   type DaySummary,
   type TimesheetOverride,
 } from '@/lib/hr/time-engine';
+import { getHrPolicies } from '@/lib/hr/policy';
 
 interface OverrideRow {
   user_id: string;
@@ -200,5 +201,6 @@ export async function GET(request: NextRequest) {
     })
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  return NextResponse.json({ employees: staff, from, to });
+  const scoreConfig = (await getHrPolicies(service)).work_index;
+  return NextResponse.json({ employees: staff, from, to, score_config: scoreConfig });
 }

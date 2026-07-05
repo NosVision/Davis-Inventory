@@ -192,6 +192,28 @@ const poor = as.computeAttendanceScore({ ...base, lateDays: 5, lateMinutes: 200,
 eq('score: heavy late+absent → overall 38 poor, minute penalty capped', [poor.components.punctuality, poor.overall, poor.band], [10, 38, 'poor']);
 eq('score: band boundaries 90/75/60', [as.bandOf(90), as.bandOf(89), as.bandOf(75), as.bandOf(74), as.bandOf(60), as.bandOf(59)], ['excellent', 'good', 'good', 'fair', 'fair', 'poor']);
 
+// ── policy knobs (owner-tunable) — defaults MUST equal historical constants ──
+const pol = load('policy.ts');
+const pr = load('payroll.ts');
+eq('policy: defaults equal historical late tiers', pol.POLICY_DEFAULTS.late_tiers, { tier1_satang: 5000, tier2_from_min: 31, tier2_satang: 10000, tier3_from_min: 60, tier3_satang_per_hour: 25000 });
+eq('policy: probation default 119 / sc divisor 30 / carry on', [pol.POLICY_DEFAULTS.probation_days, pol.POLICY_DEFAULTS.sc_leave_divisor, pol.POLICY_DEFAULTS.warning_carry_enabled], [119, 30, true]);
+eq('policy: mergePolicies clamps junk to defaults', pol.mergePolicies([{ key: 'probation_days', value: { days: 9999 } }, { key: 'sc_leave_divisor', value: { divisor: 'x' } }]).probation_days, 119);
+eq('policy: mergePolicies applies valid overrides', pol.mergePolicies([{ key: 'probation_days', value: { days: 90 } }]).probation_days, 90);
+// late fn honours custom tiers, and default path unchanged
+eq('late: default 25min → ฿50', pr.lateDeductionForMinutes(25), 5000);
+eq('late: custom tiers 25min → ฿70', pr.lateDeductionForMinutes(25, { tier1_satang: 7000, tier2_from_min: 31, tier2_satang: 10000, tier3_from_min: 60, tier3_satang_per_hour: 25000 }), 7000);
+eq('late: custom tier2 from 16 → 25min hits tier2', pr.lateDeductionForMinutes(25, { tier1_satang: 5000, tier2_from_min: 16, tier2_satang: 12000, tier3_from_min: 60, tier3_satang_per_hour: 25000 }), 12000);
+// probation custom days
+eq('probation: custom 30 days', em.computeProbationEnd('2026-01-01', 30), '2026-01-31');
+eq('probation: default still 119', em.computeProbationEnd('2026-01-01'), '2026-04-30');
+// sc divisor custom
+const sc = load('service-charge.ts');
+eq('sc leave: default ÷30', sc.computeLeaveScDeduction(3_000_000, 1).amount_satang, 100000);
+eq('sc leave: custom ÷26', sc.computeLeaveScDeduction(2_600_000, 1, 26).amount_satang, 100000);
+// score custom config: harsher absent penalty + higher band
+const asCustom = as.computeAttendanceScore({ scheduledDays: 20, absentDays: 1, lateDays: 0, lateMinutes: 0, incompleteDays: 0, otMinutes: 0 }, { w_punctuality: 50, w_attendance: 35, w_completeness: 15, p_late_day: 12, p_late_30min: 5, p_late_cap: 30, p_absent_day: 50, p_incomplete_day: 10, band_excellent: 95, band_good: 75, band_fair: 60 });
+eq('score: custom absent penalty 50 → attendance 50, overall 83 good (band_excellent 95)', [asCustom.components.attendance, asCustom.overall, asCustom.band], [50, 83, 'good']);
+
 const fail = R.filter((r) => !r.pass);
 for (const r of R) if (!r.pass) console.log(`FAIL ${r.name}: got=${JSON.stringify(r.got)} want=${JSON.stringify(r.want)}`);
 console.log(`\nHR_MISC_ASSERT = ${R.length - fail.length}/${R.length} ${fail.length ? 'FAILED' : 'ALL PASS'}`);

@@ -18,11 +18,30 @@ export const LATE_TIER_15_SATANG = 5000;
 export const LATE_TIER_30_SATANG = 10000;
 export const LATE_TIER_60_SATANG = 25000;
 
-export function lateDeductionForMinutes(lateMin: number): number {
+// Owner-tunable (hr_policy_settings key 'late_tiers'); the default equals the sheet-calibrated
+// constants above, so with no setting rows the math is byte-identical to before.
+export interface LateTiers {
+  tier1_satang: number;
+  tier2_from_min: number;
+  tier2_satang: number;
+  tier3_from_min: number;
+  tier3_satang_per_hour: number;
+}
+export const DEFAULT_LATE_TIERS: LateTiers = {
+  tier1_satang: LATE_TIER_15_SATANG,
+  tier2_from_min: 31,
+  tier2_satang: LATE_TIER_30_SATANG,
+  tier3_from_min: 60,
+  tier3_satang_per_hour: LATE_TIER_60_SATANG,
+};
+
+export function lateDeductionForMinutes(lateMin: number, tiers: LateTiers = DEFAULT_LATE_TIERS): number {
   if (lateMin <= 0) return 0;
-  if (lateMin >= 60) return LATE_TIER_60_SATANG * Math.floor(lateMin / 60);
-  if (lateMin > 30) return LATE_TIER_30_SATANG;
-  return LATE_TIER_15_SATANG; // charged from the very first minute (sheet: L:1 → ฿50)
+  if (lateMin >= tiers.tier3_from_min) {
+    return tiers.tier3_satang_per_hour * Math.floor(lateMin / tiers.tier3_from_min);
+  }
+  if (lateMin >= tiers.tier2_from_min) return tiers.tier2_satang;
+  return tiers.tier1_satang; // charged from the very first minute (sheet: L:1 → ฿50)
 }
 
 // ── Thai progressive PND1 annual brackets (baht) ────────────────────────────────
@@ -184,6 +203,7 @@ export interface PayrollInput {
   extraEarnings: ExtraEarning[];
   scNetSatang: number; // net Service Charge for the period (P4.1); 0 for part-time
   tipNetSatang?: number; // net Tip pool for the period (P4.4, same mechanism as SC); 0/undefined = none
+  lateTiers?: LateTiers; // owner-tunable late-fine table (hr_policy_settings); default = sheet-calibrated
 }
 
 export interface Payslip {
@@ -355,9 +375,10 @@ export function computePayslip(input: PayrollInput): Payslip {
   }
 
   // Late (§E table), one charge per late day, summed into a single line.
-  const lateTotal = ts.late_minutes_per_occurrence.reduce((s, m) => s + lateDeductionForMinutes(m), 0);
+  const lateTiers = input.lateTiers ?? DEFAULT_LATE_TIERS;
+  const lateTotal = ts.late_minutes_per_occurrence.reduce((s, m) => s + lateDeductionForMinutes(m, lateTiers), 0);
   if (lateTotal > 0) {
-    const lateCount = ts.late_minutes_per_occurrence.filter((m) => lateDeductionForMinutes(m) > 0).length;
+    const lateCount = ts.late_minutes_per_occurrence.filter((m) => lateDeductionForMinutes(m, lateTiers) > 0).length;
     deductions.push({ type: 'late', label: 'late', amount_satang: lateTotal, ref: `${lateCount}x` });
   }
 
