@@ -44,6 +44,7 @@ const PRINT_CSS = `@media print { @page { margin: 1.6cm; } }`;
 
 const SOURCE_STYLES: Record<ScSourceType, string> = {
   warning: 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  warning_carry: 'bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400',
   leave: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
   late: 'bg-orange-50 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
   eval: 'bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
@@ -313,7 +314,9 @@ export default function HrServiceChargePage() {
   const sourceLabel = (s: ScSourceType) =>
     s === 'warning'
       ? t('srcWarning')
-      : s === 'leave'
+      : s === 'warning_carry'
+        ? t('srcWarningCarry')
+        : s === 'leave'
         ? t('srcLeave')
         : s === 'late'
           ? t('srcLate')

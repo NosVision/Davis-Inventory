@@ -6,6 +6,7 @@ import { classifyLeaveEffect, enumerateDates } from '@/lib/hr/leaves';
 import {
   computeWarningScDeduction,
   computeLeaveScDeduction,
+  computeCarryScDeduction,
   computeNetSc,
 } from '@/lib/hr/service-charge';
 
@@ -19,6 +20,13 @@ function nextMonthFirst(periodMonth: string): string {
   const ny = m === 12 ? y + 1 : y;
   const nm = m === 12 ? 1 : m + 1;
   return `${ny}-${String(nm).padStart(2, '0')}-01`;
+}
+// The month BEFORE a 'YYYY-MM-01' period, as 'YYYY-MM-01'.
+function prevMonthFirst(periodMonth: string): string {
+  const [y, m] = periodMonth.split('-').map(Number);
+  const py = m === 1 ? y - 1 : y;
+  const pm = m === 1 ? 12 : m - 1;
+  return `${py}-${String(pm).padStart(2, '0')}-01`;
 }
 // The day before a 'YYYY-MM-DD' date.
 function prevDay(dateStr: string): string {
@@ -81,6 +89,17 @@ export async function POST(_request: Request, { params }: { params: Promise<{ po
   const periodStartTs = `${periodStart}T00:00:00+07:00`;
   const nextStartTs = `${nextStart}T00:00:00+07:00`;
 
+  // The PRIOR month's pool for this store — used to carry an unfinished multi-cycle warning
+  // (e.g. the 2nd month of a 200% warning) into this period. Null when this is the first month.
+  const prevStart = prevMonthFirst(periodStart);
+  const { data: prevPool, error: prevPoolErr } = await service
+    .from(POOL)
+    .select('id')
+    .eq('store_id', pool.store_id as string)
+    .eq('period_month', prevStart)
+    .maybeSingle();
+  if (prevPoolErr) return NextResponse.json({ error: 'Failed to load prior pool' }, { status: 500 });
+
   const { data: allocs, error: allocErr } = await service
     .from(ALLOC)
     .select('id, user_id, allocated_satang')
@@ -125,6 +144,46 @@ export async function POST(_request: Request, { params }: { params: Promise<{ po
           auto: true,
           created_by: auth.userId,
         });
+      }
+    }
+
+    // --- Carry from the PRIOR month's warning deductions (2nd+ month of a 200% warning, or the
+    //     residual of a large amount_baht penalty). Reads the prior pool's 'warning' + 'warning_carry'
+    //     lines for this user and lays down a 'warning_carry' line here, itself carrying any overflow. ---
+    if (prevPool) {
+      const { data: prevAlloc, error: prevAllocErr } = await service
+        .from(ALLOC)
+        .select('id')
+        .eq('pool_id', prevPool.id as string)
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (prevAllocErr) {
+        return NextResponse.json({ error: 'Failed to load prior allocation' }, { status: 500 });
+      }
+      if (prevAlloc) {
+        const { data: prevCarryRows, error: prevCarryErr } = await service
+          .from(DED)
+          .select('carry_satang')
+          .eq('allocation_id', prevAlloc.id as string)
+          .in('source_type', ['warning', 'warning_carry'])
+          .gt('carry_satang', 0);
+        if (prevCarryErr) {
+          return NextResponse.json({ error: 'Failed to load prior carry' }, { status: 500 });
+        }
+        const priorCarry = (prevCarryRows ?? []).reduce((s, d) => s + (Number(d.carry_satang) || 0), 0);
+        const { amount_satang, carry_satang } = computeCarryScDeduction(allocated, priorCarry);
+        if (amount_satang > 0 || carry_satang > 0) {
+          lines.push({
+            allocation_id: allocId,
+            source_type: 'warning_carry',
+            source_ref: prevPool.id,
+            label: 'Warning carry (prev month)',
+            amount_satang,
+            carry_satang,
+            auto: true,
+            created_by: auth.userId,
+          });
+        }
       }
     }
 

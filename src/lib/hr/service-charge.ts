@@ -20,6 +20,16 @@ function splitWithCarry(rawDeduct: number, allocated: number): ScDeductionResult
   return { amount_satang: amount, carry_satang: raw - amount };
 }
 
+/**
+ * Apply a prior period's carried-over deduction (e.g. the 2nd month of a 200% warning, or the
+ * residual of a large amount_baht penalty) against THIS period's allocation, carrying any part
+ * that still overflows to the next period. Same clamp-with-carry semantics as a warning.
+ */
+export function computeCarryScDeduction(allocated: number, priorCarrySatang: number): ScDeductionResult {
+  if (priorCarrySatang <= 0) return { amount_satang: 0, carry_satang: 0 };
+  return splitWithCarry(priorCarrySatang, allocated);
+}
+
 export interface WarningScInput {
   /** verbal | deduct_25 | deduct_50 | deduct_100 | deduct_200 | amount_baht */
   level: string;

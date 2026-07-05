@@ -12,7 +12,7 @@ const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'hr', 'serv
 const js = ts.transpileModule(src, { compilerOptions: { module: 'commonjs', target: 'es2020' } }).outputText;
 const mod = { exports: {} };
 new Function('module', 'exports', 'require', js)(mod, mod.exports, require);
-const { computeWarningScDeduction, computeLeaveScDeduction, computeEvalScDeduction, computeNetSc } = mod.exports;
+const { computeWarningScDeduction, computeLeaveScDeduction, computeEvalScDeduction, computeCarryScDeduction, computeNetSc } = mod.exports;
 
 const R = [];
 const eq = (name, got, want) => R.push({ name, pass: JSON.stringify(got) === JSON.stringify(want), got, want });
@@ -35,6 +35,12 @@ eq('eval −200 baht → deduct 20000 satang', computeEvalScDeduction(ALLOC, -20
 eq('eval positive (bonus) → no SC deduction', computeEvalScDeduction(ALLOC, 100_000), { amount_satang: 0, carry_satang: 0 });
 eq('eval 0 → nothing', computeEvalScDeduction(ALLOC, 0), { amount_satang: 0, carry_satang: 0 });
 eq('eval huge deduction over alloc → carry', computeEvalScDeduction(ALLOC, -1_500_000), { amount_satang: 1_000_000, carry_satang: 500_000 });
+
+// ── carry from a prior month (2nd month of a 200% warning, or amount_baht residual) ──
+eq('carry within this alloc → fully applied, no further carry', computeCarryScDeduction(ALLOC, 1_000_000), { amount_satang: 1_000_000, carry_satang: 0 });
+eq('carry smaller than alloc', computeCarryScDeduction(ALLOC, 400_000), { amount_satang: 400_000, carry_satang: 0 });
+eq('carry over this alloc → chains further', computeCarryScDeduction(ALLOC, 1_500_000), { amount_satang: 1_000_000, carry_satang: 500_000 });
+eq('zero/negative carry → nothing', computeCarryScDeduction(ALLOC, 0), { amount_satang: 0, carry_satang: 0 });
 
 // ── net SC = alloc − Σ deductions, floored 0 ────────────────────────────────────
 eq('net after warning+leave', computeNetSc(ALLOC, [{ amount_satang: 500_000 }, { amount_satang: 66_667 }]), ALLOC - 500_000 - 66_667);

@@ -28,6 +28,7 @@ const SUITES = [
   'emp-history.cjs',   // P1.5 employee salary/position history from audit log (from→to + reason + actor, staff 403)
   'dashboard-alerts.cjs', // P1.5 HR reminders: probation-ending + work-anniversary within window (days_left/years), scope + staff 403
   'overview.cjs',      // §P5.3 dashboard redesign: today+month aggregate feed — partitions (total+per-venue), /daily consistency, trend shape, scope + staff 403
+  'sc-carry.cjs',      // §H cross-period SC carry: 200% warning month A → auto warning_carry line month B (recompute), idempotent + control
 ];
 
 let failed = 0;
