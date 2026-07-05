@@ -35,6 +35,7 @@ const SUITES = [
   'employees-link.cjs', // link-existing onboarding: hr_employees attaches to an existing profiles.id (no new account), guards + audit
   'identity-claim.cjs', // identity-claim flow: unlinked user picks their real name → HR notified → approve creates linked employee + audit
   'avatar.cjs',        // P1.5 employee avatar: multipart upload → public bucket + profiles.avatar_url, replace deletes old, type guard + 403 + audit
+  'org-chart.cjs',     // P1.5 org chart: scope-aware reporting feed, nesting reflects supervisor_id, staff 403
 ];
 
 let failed = 0;
