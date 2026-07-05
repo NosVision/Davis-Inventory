@@ -3033,6 +3033,8 @@
       "identityUnlinked": "บัญชีของคุณยังไม่ผูกกับประวัติพนักงาน — กดปุ่มเพื่อยืนยันชื่อจริงของคุณ",
       "identityPending": "ระบุชื่อ \"{name}\" แล้ว — รอ HR ตรวจสอบ",
       "identityLinkNow": "ผูกชื่อ",
+      "viewPayslips": "สลิปเงินเดือน",
+      "viewTimesheet": "ประวัติการทำงาน",
       "myRequestsHeading": "คำขอแก้ไขของฉัน",
       "noRequests": "ยังไม่มีคำขอแก้ไข",
       "currentLabel": "ข้อมูลปัจจุบัน",

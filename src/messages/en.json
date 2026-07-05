@@ -3032,6 +3032,8 @@
       "identityUnlinked": "Your account is not linked to an employee record yet — confirm your real name",
       "identityPending": "Claimed \"{name}\" — awaiting HR review",
       "identityLinkNow": "Link now",
+      "viewPayslips": "Payslips",
+      "viewTimesheet": "Work history",
       "myRequestsHeading": "My change requests",
       "noRequests": "No change requests yet",
       "currentLabel": "Current",

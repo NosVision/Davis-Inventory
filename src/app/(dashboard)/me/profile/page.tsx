@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Loader2, UserCircle, Landmark, Phone, Send, Inbox } from 'lucide-react';
+import Link from 'next/link';
+import { Loader2, UserCircle, Landmark, Phone, Send, Inbox, Wallet, CalendarClock } from 'lucide-react';
 import { Button, Modal, ModalFooter, PageHeader, ViewToggle, useViewMode, DataList, DataCard, StatusBadge, useConfirm, toast } from '@/components/ui';
 
 type Status = 'pending' | 'approved' | 'rejected' | 'cancelled';
@@ -384,6 +385,22 @@ export default function MyProfilePage() {
                 }
               />
             </dl>
+
+            {/* quick links — the two things people open their profile to check */}
+            <div className="grid grid-cols-2 gap-2 border-t border-gray-100 pt-3 dark:border-gray-700/60">
+              <Link
+                href="/me/payslips"
+                className="flex items-center justify-center gap-1.5 rounded-lg bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 transition-colors hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-300 dark:hover:bg-indigo-900/50"
+              >
+                <Wallet className="h-4 w-4" /> {t('viewPayslips')}
+              </Link>
+              <Link
+                href="/me/timesheet"
+                className="flex items-center justify-center gap-1.5 rounded-lg bg-teal-50 px-3 py-2 text-xs font-semibold text-teal-700 transition-colors hover:bg-teal-100 dark:bg-teal-900/30 dark:text-teal-300 dark:hover:bg-teal-900/50"
+              >
+                <CalendarClock className="h-4 w-4" /> {t('viewTimesheet')}
+              </Link>
+            </div>
           </div>
 
           {/* Bank account */}
