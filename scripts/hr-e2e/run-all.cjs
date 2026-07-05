@@ -38,6 +38,7 @@ const SUITES = [
   'org-chart.cjs',     // P1.5 org chart: scope-aware reporting feed, nesting reflects supervisor_id, staff 403
   'ess-profile.cjs',   // self-service profile: own phone (validated+audited), own avatar, identity fields exposed, anon blocked
   'attendance-index.cjs', // bulk work-index endpoint: score matches pure lib exactly, scope-filtered, invalid range 400, staff 403
+  'companies.cjs',     // company payroll knobs: GET exposes, money edits need reason + audited, validations, staff 403
 ];
 
 let failed = 0;

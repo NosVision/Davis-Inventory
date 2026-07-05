@@ -28,6 +28,7 @@ import {
   UserMinus,
   UserCheck2,
   Network,
+  Building2,
   type LucideIcon,
 } from 'lucide-react';
 import { PageHeader } from '@/components/ui';
@@ -42,6 +43,7 @@ const NAV_TILES: { key: string; icon: LucideIcon; href?: string }[] = [
   { key: 'identityClaims', icon: UserCheck2, href: '/hr/identity-claims' },
   { key: 'org', icon: Briefcase, href: '/hr/org' },
   { key: 'orgChart', icon: Network, href: '/hr/org-chart' },
+  { key: 'companies', icon: Building2, href: '/hr/companies' },
   { key: 'attendance', icon: Clock, href: '/hr/attendance' },
   { key: 'schedule', icon: CalendarDays, href: '/hr/schedule' },
   { key: 'timesheet', icon: CalendarClock, href: '/hr/timesheet' },
