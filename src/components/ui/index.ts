@@ -14,6 +14,7 @@ export { StatTile, KpiRow } from './stat-tile';
 export { MoneyValue } from './money-value';
 export { StatusBadge, type StatusTone } from './status-badge';
 export { DataCard, DataList } from './data-card';
+export { ViewToggle, useViewMode, type ViewMode } from './view-toggle';
 export { FilterBar, FilterField } from './filter-bar';
 export { useConfirm, usePromptDialog } from './confirm-dialog';
 export { Skeleton, SkeletonList } from './skeleton';

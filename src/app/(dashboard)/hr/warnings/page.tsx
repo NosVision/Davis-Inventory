@@ -9,6 +9,8 @@ import {
   Modal,
   ModalFooter,
   PageHeader,
+  ViewToggle,
+  useViewMode,
   KpiRow,
   StatTile,
   StatusBadge,
@@ -133,6 +135,7 @@ export default function HrWarningsPage() {
   // filters
   const [filterStore, setFilterStore] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [view, setView] = useViewMode('hr-warnings');
 
   // issue modal
   const [issueOpen, setIssueOpen] = useState(false);
@@ -365,9 +368,12 @@ export default function HrWarningsPage() {
           title={t('title')}
           subtitle={t('subtitle')}
           actions={
-            <Button size="sm" onClick={openIssue} icon={<Plus className="h-4 w-4" />}>
-              {t('issue')}
-            </Button>
+            <>
+              <ViewToggle value={view} onChange={setView} />
+              <Button size="sm" onClick={openIssue} icon={<Plus className="h-4 w-4" />}>
+                {t('issue')}
+              </Button>
+            </>
           }
         />
 
@@ -417,7 +423,7 @@ export default function HrWarningsPage() {
             {t('noWarnings')}
           </div>
         ) : (
-          <DataList>
+          <DataList compact={view === 'compact'}>
             {rows.map((w) => {
               const signed = signedRoles(w);
               return (
