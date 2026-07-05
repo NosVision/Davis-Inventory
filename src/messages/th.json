@@ -2622,6 +2622,7 @@
     "nav": {
       "employees": "พนักงาน",
       "identityClaims": "ยืนยันตัวตนพนักงาน",
+      "orgChart": "ผังองค์กร",
       "attendance": "ลงเวลา",
       "schedule": "ตารางงาน",
       "timesheet": "บันทึกเวลา",
