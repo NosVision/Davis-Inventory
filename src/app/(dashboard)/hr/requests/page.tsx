@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Inbox } from 'lucide-react';
-import { Button, Select, Tabs, PageHeader, DataList, DataCard, StatusBadge, SkeletonList, toast } from '@/components/ui';
+import { Button, Select, Tabs, PageHeader, DataList, DataCard, StatusBadge, SkeletonList, ViewToggle, useViewMode, toast } from '@/components/ui';
 
 interface StoreOpt {
   id: string;
@@ -51,6 +51,7 @@ export default function HrRequestsPage() {
   const [stores, setStores] = useState<StoreOpt[]>([]);
   const [storeId, setStoreId] = useState('');
   const [status, setStatus] = useState<string>('pending');
+  const [view, setView] = useViewMode('hr-requests');
 
   const [otRows, setOtRows] = useState<OtRow[]>([]);
   const [attRows, setAttRows] = useState<AttRow[]>([]);
@@ -207,6 +208,7 @@ export default function HrRequestsPage() {
       <PageHeader
         title={t('nav.requests')}
         subtitle={tab === 'ot' ? tOt('hrSubtitle') : tAtt('hrSubtitle')}
+        actions={<ViewToggle value={view} onChange={setView} />}
       />
 
       <Tabs
@@ -243,7 +245,7 @@ export default function HrRequestsPage() {
             {tOt('noRequests')}
           </div>
         ) : (
-          <DataList>
+          <DataList compact={view === 'compact'}>
             {otRows.map((r) => (
               <DataCard
                 key={r.id}
@@ -266,7 +268,7 @@ export default function HrRequestsPage() {
           {tAtt('noRequests')}
         </div>
       ) : (
-        <DataList>
+        <DataList compact={view === 'compact'}>
           {attRows.map((r) => (
             <DataCard
               key={r.id}

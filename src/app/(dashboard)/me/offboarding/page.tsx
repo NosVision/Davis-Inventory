@@ -10,6 +10,8 @@ import {
   EmptyState,
   toast,
   PageHeader,
+  ViewToggle,
+  useViewMode,
   StatusBadge,
   DataCard,
   DataList,
@@ -82,6 +84,7 @@ export default function MyOffboardingPage() {
   const [active, setActive] = useState<Offboarding | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const sigRef = useRef<SignaturePadHandle | null>(null);
+  const [view, setView] = useViewMode('me-offboarding');
 
   const kindLabel = useCallback((k: Kind) => t(`kind_${k}`), [t]);
   const statusLabel = useCallback((s: Status) => t(`status_${s}`), [t]);
@@ -151,7 +154,11 @@ export default function MyOffboardingPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4">
-      <PageHeader title={t('myTitle')} subtitle={t('mySubtitle')} />
+      <PageHeader
+        title={t('myTitle')}
+        subtitle={t('mySubtitle')}
+        actions={<ViewToggle value={view} onChange={setView} />}
+      />
 
       {loading ? (
         <div className="flex items-center justify-center py-16 text-gray-400">
@@ -160,7 +167,7 @@ export default function MyOffboardingPage() {
       ) : rows.length === 0 ? (
         <EmptyState icon={DoorOpen} title={t('myEmpty')} description={t('myEmptyHint')} />
       ) : (
-        <DataList>
+        <DataList compact={view === 'compact'}>
           {rows.map((o) => (
             <DataCard
               key={o.id}

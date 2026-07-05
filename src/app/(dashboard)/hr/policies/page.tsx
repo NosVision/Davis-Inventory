@@ -11,6 +11,8 @@ import {
   Modal,
   ModalFooter,
   PageHeader,
+  ViewToggle,
+  useViewMode,
   KpiRow,
   StatTile,
   StatusBadge,
@@ -77,6 +79,7 @@ export default function PoliciesPage() {
   const [rows, setRows] = useState<Policy[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [view, setView] = useViewMode('hr-policies');
 
   // editor modal (create + edit)
   const [editorOpen, setEditorOpen] = useState(false);
@@ -245,10 +248,13 @@ export default function PoliciesPage() {
         title={t('title')}
         subtitle={t('subtitle')}
         actions={
-          <Button size="sm" onClick={openCreate} className="shrink-0">
-            <Plus className="h-4 w-4" />
-            {t('add')}
-          </Button>
+          <>
+            <ViewToggle value={view} onChange={setView} />
+            <Button size="sm" onClick={openCreate} className="shrink-0">
+              <Plus className="h-4 w-4" />
+              {t('add')}
+            </Button>
+          </>
         }
       />
 
@@ -269,7 +275,7 @@ export default function PoliciesPage() {
           {t('empty')}
         </div>
       ) : (
-        <DataList>
+        <DataList compact={view === 'compact'}>
           {rows.map((row) => (
             <DataCard
               key={row.id}

@@ -10,6 +10,8 @@ import {
   StatusBadge,
   DataCard,
   DataList,
+  ViewToggle,
+  useViewMode,
   useConfirm,
 } from '@/components/ui';
 import { todayBangkok } from '@/lib/utils/date';
@@ -67,6 +69,7 @@ export default function MyLeavesPage() {
   const [rows, setRows] = useState<LeaveRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [view, setView] = useViewMode('me-leaves');
 
   const today = todayBangkok();
   const [typeId, setTypeId] = useState('');
@@ -180,7 +183,11 @@ export default function MyLeavesPage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-4 p-4">
-      <PageHeader title={t('title')} subtitle={t('mySubtitle')} />
+      <PageHeader
+        title={t('title')}
+        subtitle={t('mySubtitle')}
+        actions={<ViewToggle value={view} onChange={setView} />}
+      />
 
       {/* File form */}
       <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
@@ -281,7 +288,7 @@ export default function MyLeavesPage() {
             {t('noLeaves')}
           </div>
         ) : (
-          <DataList>
+          <DataList compact={view === 'compact'}>
             {rows.map((r) => (
               <DataCard
                 key={r.id}

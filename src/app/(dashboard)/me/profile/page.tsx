@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2, UserCircle, Landmark, Phone, Send, Inbox } from 'lucide-react';
-import { Button, Modal, ModalFooter, PageHeader, DataList, DataCard, StatusBadge, useConfirm, toast } from '@/components/ui';
+import { Button, Modal, ModalFooter, PageHeader, ViewToggle, useViewMode, DataList, DataCard, StatusBadge, useConfirm, toast } from '@/components/ui';
 
 type Status = 'pending' | 'approved' | 'rejected' | 'cancelled';
 type FieldKey = 'bank_account' | 'emergency_contact';
@@ -56,6 +56,7 @@ export default function MyProfilePage() {
   const t = useTranslations('hr.profile');
   const { confirm, dialog } = useConfirm();
 
+  const [view, setView] = useViewMode('me-profile');
   const [profile, setProfile] = useState<Profile | null>(null);
   const [rows, setRows] = useState<ChangeRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -238,7 +239,7 @@ export default function MyProfilePage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-4 p-4">
-      <PageHeader title={t('title')} subtitle={t('subtitle')} />
+      <PageHeader title={t('title')} subtitle={t('subtitle')} actions={<ViewToggle value={view} onChange={setView} />} />
 
       {loading ? (
         <div className="flex items-center justify-center py-12 text-gray-400">
@@ -326,7 +327,7 @@ export default function MyProfilePage() {
                 {t('noRequests')}
               </div>
             ) : (
-              <DataList>
+              <DataList compact={view === 'compact'}>
                 {rows.map((r) => (
                   <DataCard
                     key={r.id}

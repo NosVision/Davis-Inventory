@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { MapPin, LocateFixed } from 'lucide-react';
-import { Button, Input, PageHeader, StatusBadge, DataCard, DataList, toast } from '@/components/ui';
+import { Button, Input, PageHeader, StatusBadge, DataCard, DataList, ViewToggle, useViewMode, toast } from '@/components/ui';
 
 interface BranchLocation {
   store_id: string;
@@ -38,6 +38,7 @@ export default function LocationsPage() {
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [geoId, setGeoId] = useState<string | null>(null);
+  const [view, setView] = useViewMode('hr-locations');
 
   const fetchRows = useCallback(async () => {
     setLoading(true);
@@ -130,7 +131,11 @@ export default function LocationsPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-4 p-4">
-      <PageHeader title={t('title')} subtitle={t('subtitle')} />
+      <PageHeader
+        title={t('title')}
+        subtitle={t('subtitle')}
+        actions={<ViewToggle value={view} onChange={setView} />}
+      />
 
       {loading ? (
         <div className="py-10 text-center text-sm text-gray-400">…</div>
@@ -139,7 +144,7 @@ export default function LocationsPage() {
           {t('empty')}
         </div>
       ) : (
-        <DataList>
+        <DataList compact={view === 'compact'}>
           {rows.map((row) => {
             const draft = drafts[row.store_id] ?? { lat: '', lng: '', radius: String(DEFAULT_RADIUS) };
             const isSet = row.lat != null && row.lng != null;

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { MapPin, RefreshCw, Camera, Loader2 } from 'lucide-react';
-import { Button, PageHeader, StatusBadge, DataList, DataCard, toast } from '@/components/ui';
+import { Button, PageHeader, StatusBadge, DataList, DataCard, ViewToggle, useViewMode, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { toBangkokISO, formatTimeBangkok } from '@/lib/utils/date';
 
@@ -54,6 +54,7 @@ export default function CheckinPage() {
   const [submitting, setSubmitting] = useState(false);
   const [rows, setRows] = useState<AttendanceRow[]>([]);
   const [loadingList, setLoadingList] = useState(true);
+  const [view, setView] = useViewMode('me-checkin');
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -262,7 +263,11 @@ export default function CheckinPage() {
   return (
     <div className="mx-auto max-w-md space-y-5 p-4">
       {/* Header */}
-      <PageHeader title={t('title')} subtitle={t('subtitle')} />
+      <PageHeader
+        title={t('title')}
+        subtitle={t('subtitle')}
+        actions={<ViewToggle value={view} onChange={setView} />}
+      />
 
       {/* Type selector */}
       <div className="grid grid-cols-2 gap-2">
@@ -416,7 +421,7 @@ export default function CheckinPage() {
             {t('noneToday')}
           </p>
         ) : (
-          <DataList>
+          <DataList compact={view === 'compact'}>
             {rows.map((row) => {
               const geoTone =
                 row.in_geofence === null ? 'neutral' : row.in_geofence ? 'good' : 'warn';

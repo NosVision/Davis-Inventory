@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2, Inbox, FileText } from 'lucide-react';
-import { Button, Select, PageHeader, DataList, DataCard, StatusBadge, SkeletonList, toast } from '@/components/ui';
+import { Button, Select, PageHeader, ViewToggle, useViewMode, DataList, DataCard, StatusBadge, SkeletonList, toast } from '@/components/ui';
 
 interface StoreOpt {
   id: string;
@@ -47,6 +47,7 @@ export default function HrLeavesPage() {
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState('');
   const [certLoadingId, setCertLoadingId] = useState<string | null>(null);
+  const [view, setView] = useViewMode('hr-leaves');
 
   const statusLabel = useCallback(
     (s: Status) =>
@@ -194,7 +195,11 @@ export default function HrLeavesPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-4 p-4">
-      <PageHeader title={t('hrTitle')} subtitle={t('hrSubtitle')} />
+      <PageHeader
+        title={t('hrTitle')}
+        subtitle={t('hrSubtitle')}
+        actions={<ViewToggle value={view} onChange={setView} />}
+      />
 
       {/* filters */}
       <div className="grid grid-cols-2 gap-3">
@@ -220,7 +225,7 @@ export default function HrLeavesPage() {
           {t('noRequests')}
         </div>
       ) : (
-        <DataList>
+        <DataList compact={view === 'compact'}>
           {rows.map((r) => (
             <DataCard
               key={r.id}

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { ArrowLeftRight } from 'lucide-react';
-import { Button, Select, PageHeader, DataList, DataCard, StatusBadge, SkeletonList, toast } from '@/components/ui';
+import { Button, Select, PageHeader, DataList, DataCard, StatusBadge, SkeletonList, ViewToggle, useViewMode, toast } from '@/components/ui';
 
 interface StoreOpt {
   id: string;
@@ -39,6 +39,7 @@ export default function HrSwapsPage() {
   const [stores, setStores] = useState<StoreOpt[]>([]);
   const [storeId, setStoreId] = useState('');
   const [status, setStatus] = useState<string>('all');
+  const [view, setView] = useViewMode('hr-swaps');
 
   const [swaps, setSwaps] = useState<Swap[]>([]);
   const [loading, setLoading] = useState(true);
@@ -158,7 +159,11 @@ export default function HrSwapsPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-4 p-4">
-      <PageHeader title={t('title')} subtitle={t('hrSubtitle')} />
+      <PageHeader
+        title={t('title')}
+        subtitle={t('hrSubtitle')}
+        actions={<ViewToggle value={view} onChange={setView} />}
+      />
 
       {/* filters */}
       <div className="grid grid-cols-2 gap-3">
@@ -185,7 +190,7 @@ export default function HrSwapsPage() {
           {t('noSwaps')}
         </div>
       ) : (
-        <DataList>
+        <DataList compact={view === 'compact'}>
           {swaps.map((s) => (
             <DataCard
               key={s.id}

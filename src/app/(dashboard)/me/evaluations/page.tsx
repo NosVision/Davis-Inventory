@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocale } from 'next-intl';
 import { Loader2, Star, CheckCircle2, ClipboardList } from 'lucide-react';
-import { Button, EmptyState, Modal, ModalFooter, PageHeader, DataList, DataCard, StatusBadge, useConfirm, toast } from '@/components/ui';
+import { Button, EmptyState, Modal, ModalFooter, PageHeader, ViewToggle, useViewMode, DataList, DataCard, StatusBadge, useConfirm, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 
 // §G evaluator self-service: score the people assigned to me for an OPEN period. Data comes from
@@ -37,6 +37,7 @@ export default function MyEvaluationsPage() {
     ? { title: 'ประเมินเพื่อนร่วมงาน', subtitle: 'ให้คะแนนคนที่ได้รับมอบหมายในงวดที่เปิดอยู่', noPeriods: 'ไม่มีงวดที่ต้องประเมินตอนนี้', noQueue: 'ไม่มีคนให้ประเมินในงวดนี้', progress: 'ความคืบหน้า', pending: 'ค้าง', done: 'เสร็จ', score: 'ให้คะแนน', edit: 'แก้ไข', submitted: 'ส่งแล้ว', criterion: 'หัวข้อ', max: 'เต็ม', points: 'คะแนน', comment: 'หมายเหตุ (ถ้ามี)', saveDraft: 'บันทึกร่าง', submit: 'ส่งผลประเมิน', scoring: 'ให้คะแนน', loadFailed: 'โหลดไม่สำเร็จ', saved: 'บันทึกร่างแล้ว', submittedOk: 'ส่งผลประเมินแล้ว', saveFailed: 'บันทึกไม่สำเร็จ', submitConfirm: 'ส่งผลประเมินคนนี้? หลังส่งต้องให้ HR เปิดให้แก้', outOf: 'จาก', close: 'ปิด' }
     : { title: 'Peer evaluation', subtitle: 'Score the people assigned to you in the open period', noPeriods: 'No periods to evaluate right now', noQueue: 'No one to evaluate in this period', progress: 'Progress', pending: 'Pending', done: 'Done', score: 'Score', edit: 'Edit', submitted: 'Submitted', criterion: 'Criterion', max: 'Max', points: 'Points', comment: 'Comment (optional)', saveDraft: 'Save draft', submit: 'Submit', scoring: 'Scoring', loadFailed: 'Load failed', saved: 'Draft saved', submittedOk: 'Evaluation submitted', saveFailed: 'Save failed', submitConfirm: 'Submit this evaluation? HR must reopen it to edit after submitting.', outOf: 'of', close: 'Close' };
 
+  const [view, setView] = useViewMode('me-evaluations');
   const [periods, setPeriods] = useState<PeriodItem[]>([]);
   const [loadingPeriods, setLoadingPeriods] = useState(true);
   const [activePeriod, setActivePeriod] = useState<string | null>(null);
@@ -151,7 +152,7 @@ export default function MyEvaluationsPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4">
-      <PageHeader title={L.title} subtitle={L.subtitle} />
+      <PageHeader title={L.title} subtitle={L.subtitle} actions={<ViewToggle value={view} onChange={setView} />} />
 
       {loadingPeriods ? (
         <div className="flex items-center justify-center py-16 text-gray-400"><Loader2 className="h-6 w-6 animate-spin" /></div>
@@ -204,7 +205,7 @@ export default function MyEvaluationsPage() {
           ) : queue.length === 0 ? (
             <EmptyState icon={ClipboardList} title={L.noQueue} />
           ) : (
-            <DataList>
+            <DataList compact={view === 'compact'}>
               {queue.map((item) => (
                 <DataCard
                   key={item.assignment_id}

@@ -7,6 +7,8 @@ import {
   Button,
   Select,
   PageHeader,
+  ViewToggle,
+  useViewMode,
   KpiRow,
   StatTile,
   StatusBadge,
@@ -77,6 +79,7 @@ export default function HrClaimsPage() {
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState('');
   const [receiptLoadingId, setReceiptLoadingId] = useState<string | null>(null);
+  const [view, setView] = useViewMode('hr-claims');
 
   const claimantName = (r: ClaimRow) =>
     r.claimant?.display_name ?? r.claimant?.username ?? '—';
@@ -224,14 +227,17 @@ export default function HrClaimsPage() {
           title={t('hrTitle')}
           subtitle={t('hrSubtitle')}
           actions={
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => window.print()}
-              icon={<Printer className="h-4 w-4" />}
-            >
-              {t('print')}
-            </Button>
+            <>
+              <ViewToggle value={view} onChange={setView} />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => window.print()}
+                icon={<Printer className="h-4 w-4" />}
+              >
+                {t('print')}
+              </Button>
+            </>
           }
         />
       </div>
@@ -286,7 +292,7 @@ export default function HrClaimsPage() {
           {t('noClaims')}
         </div>
       ) : (
-        <DataList className="print:hidden">
+        <DataList compact={view === 'compact'} className="print:hidden">
           {rows.map((r) => (
             <DataCard
               key={r.id}

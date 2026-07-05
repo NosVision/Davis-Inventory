@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2, ArrowLeftRight, Send } from 'lucide-react';
-import { Button, PageHeader, StatusBadge, DataList, DataCard, toast } from '@/components/ui';
+import { Button, PageHeader, ViewToggle, useViewMode, StatusBadge, DataList, DataCard, toast } from '@/components/ui';
 
 interface Coworker {
   user_id: string;
@@ -40,6 +40,7 @@ export default function MySwapsPage() {
   const [counterpartId, setCounterpartId] = useState('');
   const [theirDate, setTheirDate] = useState('');
   const [note, setNote] = useState('');
+  const [view, setView] = useViewMode('me-swaps');
 
   const statusLabel = useCallback(
     (s: Swap['status']) =>
@@ -127,7 +128,11 @@ export default function MySwapsPage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-4 p-4">
-      <PageHeader title={t('title')} subtitle={t('mySubtitle')} />
+      <PageHeader
+        title={t('title')}
+        subtitle={t('mySubtitle')}
+        actions={<ViewToggle value={view} onChange={setView} />}
+      />
 
       {/* File form */}
       <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
@@ -209,7 +214,7 @@ export default function MySwapsPage() {
             {t('noSwaps')}
           </div>
         ) : (
-          <DataList>
+          <DataList compact={view === 'compact'}>
             {swaps.map((s) => (
               <DataCard
                 key={s.id}

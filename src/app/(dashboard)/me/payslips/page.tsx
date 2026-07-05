@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2, Wallet, Printer, X } from 'lucide-react';
-import { Button, EmptyState, Modal, ModalFooter, PageHeader, DataList, DataCard, MoneyValue, toast } from '@/components/ui';
+import { Button, EmptyState, Modal, ModalFooter, PageHeader, DataList, DataCard, MoneyValue, ViewToggle, useViewMode, toast } from '@/components/ui';
 import { PayslipView, type PayslipDetailData } from '@/components/hr/payslip-view';
 
 interface MyPayslip {
@@ -23,6 +23,7 @@ export default function MyPayslipsPage() {
   const [loading, setLoading] = useState(true);
   const [slip, setSlip] = useState<PayslipDetailData | null>(null);
   const [printSlip, setPrintSlip] = useState<PayslipDetailData | null>(null);
+  const [view, setView] = useViewMode('me-payslips');
 
   useEffect(() => {
     (async () => {
@@ -58,14 +59,19 @@ export default function MyPayslipsPage() {
     <div className="mx-auto max-w-lg space-y-4 p-4">
       <style>{PRINT_CSS}</style>
       <div className="print:hidden">
-        <PageHeader title={t('myTitle')} subtitle={t('mySubtitle')} className="mb-3" />
+        <PageHeader
+          title={t('myTitle')}
+          subtitle={t('mySubtitle')}
+          className="mb-3"
+          actions={<ViewToggle value={view} onChange={setView} />}
+        />
 
         {loading ? (
           <div className="flex justify-center py-10 text-gray-400"><Loader2 className="h-5 w-5 animate-spin" /></div>
         ) : rows.length === 0 ? (
           <EmptyState icon={Wallet} title={t('noPayslips')} />
         ) : (
-          <DataList>
+          <DataList compact={view === 'compact'}>
             {rows.map((r) => (
               <DataCard
                 key={r.id}

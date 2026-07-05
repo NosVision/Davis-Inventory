@@ -23,6 +23,8 @@ import {
   StatusBadge,
   DataList,
   DataCard,
+  ViewToggle,
+  useViewMode,
   toast,
   type StatusTone,
 } from '@/components/ui';
@@ -140,6 +142,7 @@ export default function HrOffboardingPage() {
   const [loading, setLoading] = useState(true);
   const [errored, setErrored] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [view, setView] = useViewMode('hr-offboarding');
 
   // initiate modal
   const [initOpen, setInitOpen] = useState(false);
@@ -475,9 +478,12 @@ export default function HrOffboardingPage() {
           title={t('title')}
           subtitle={t('subtitle')}
           actions={
-            <Button size="sm" onClick={openInitiate} icon={<Plus className="h-4 w-4" />}>
-              {t('initiate')}
-            </Button>
+            <>
+              <ViewToggle value={view} onChange={setView} />
+              <Button size="sm" onClick={openInitiate} icon={<Plus className="h-4 w-4" />}>
+                {t('initiate')}
+              </Button>
+            </>
           }
         />
 
@@ -509,7 +515,7 @@ export default function HrOffboardingPage() {
             {t('empty')}
           </div>
         ) : (
-          <DataList>
+          <DataList compact={view === 'compact'}>
             {rows.map((o) => (
               <DataCard
                 key={o.id}

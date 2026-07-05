@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Inbox } from 'lucide-react';
-import { Button, Select, PageHeader, DataList, DataCard, StatusBadge, SkeletonList, toast } from '@/components/ui';
+import { Button, Select, PageHeader, DataList, DataCard, StatusBadge, SkeletonList, ViewToggle, useViewMode, toast } from '@/components/ui';
 
 type Status = 'pending' | 'approved' | 'rejected' | 'cancelled';
 type FieldKey = 'bank_account' | 'emergency_contact';
@@ -42,6 +42,7 @@ export default function HrProfileRequestsPage() {
   const t = useTranslations('hr.profile');
 
   const [status, setStatus] = useState<string>('pending');
+  const [view, setView] = useViewMode('hr-profile-requests');
   const [rows, setRows] = useState<ChangeRequest[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -123,7 +124,11 @@ export default function HrProfileRequestsPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-4 p-4">
-      <PageHeader title={t('hrTitle')} subtitle={t('hrSubtitle')} />
+      <PageHeader
+        title={t('hrTitle')}
+        subtitle={t('hrSubtitle')}
+        actions={<ViewToggle value={view} onChange={setView} />}
+      />
 
       <div className="max-w-xs">
         <Select
@@ -142,7 +147,7 @@ export default function HrProfileRequestsPage() {
           {t('noRequests')}
         </div>
       ) : (
-        <DataList>
+        <DataList compact={view === 'compact'}>
           {rows.map((r) => (
             <DataCard
               key={r.id}

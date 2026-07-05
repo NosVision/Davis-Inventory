@@ -9,6 +9,8 @@ import {
   ModalFooter,
   EmptyState,
   PageHeader,
+  ViewToggle,
+  useViewMode,
   StatusBadge,
   MoneyValue,
   DataCard,
@@ -98,6 +100,7 @@ export default function MyWarningsPage() {
   const [active, setActive] = useState<Warning | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const sigRef = useRef<SignaturePadHandle | null>(null);
+  const [view, setView] = useViewMode('me-warnings');
 
   const levelLabel = useCallback((l: Level) => t(`level_${l}`), [t]);
   const statusLabel = useCallback((s: Status) => t(`status_${s}`), [t]);
@@ -179,7 +182,11 @@ export default function MyWarningsPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4">
-      <PageHeader title={t('myTitle')} subtitle={t('mySubtitle')} />
+      <PageHeader
+        title={t('myTitle')}
+        subtitle={t('mySubtitle')}
+        actions={<ViewToggle value={view} onChange={setView} />}
+      />
 
       {loading ? (
         <div className="flex items-center justify-center py-16 text-gray-400">
@@ -188,7 +195,7 @@ export default function MyWarningsPage() {
       ) : rows.length === 0 ? (
         <EmptyState icon={ShieldAlert} title={t('noWarnings')} />
       ) : (
-        <DataList>
+        <DataList compact={view === 'compact'}>
           {rows.map((w) => {
             const signed = hasEmployeeSigned(w);
             return (

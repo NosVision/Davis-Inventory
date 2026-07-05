@@ -7,6 +7,8 @@ import {
   Button,
   toast,
   PageHeader,
+  ViewToggle,
+  useViewMode,
   StatusBadge,
   DataCard,
   DataList,
@@ -58,6 +60,7 @@ export default function MyAttendanceRequestsPage() {
   const [targetId, setTargetId] = useState('');
   const [reason, setReason] = useState('');
   const [punches, setPunches] = useState<Punch[]>([]);
+  const [view, setView] = useViewMode('me-attendance-requests');
 
   const statusLabel = useCallback(
     (s: AttReq['status']) =>
@@ -189,7 +192,11 @@ export default function MyAttendanceRequestsPage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-4 p-4">
-      <PageHeader title={t('title')} subtitle={t('mySubtitle')} />
+      <PageHeader
+        title={t('title')}
+        subtitle={t('mySubtitle')}
+        actions={<ViewToggle value={view} onChange={setView} />}
+      />
 
       {/* File form */}
       <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
@@ -307,7 +314,7 @@ export default function MyAttendanceRequestsPage() {
             {t('noRequests')}
           </div>
         ) : (
-          <DataList>
+          <DataList compact={view === 'compact'}>
             {rows.map((r) => (
               <DataCard
                 key={r.id}

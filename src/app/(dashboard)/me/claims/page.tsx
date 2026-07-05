@@ -6,6 +6,8 @@ import { Loader2, ReceiptText, Send } from 'lucide-react';
 import {
   Button,
   PageHeader,
+  ViewToggle,
+  useViewMode,
   SectionHeading,
   StatusBadge,
   MoneyValue,
@@ -78,6 +80,7 @@ export default function MyClaimsPage() {
   const [receipt, setReceipt] = useState<File | null>(null);
 
   const { confirm, dialog } = useConfirm();
+  const [view, setView] = useViewMode('me-claims');
 
   const typeLabel = useCallback((ct: ClaimType) => t(`type_${ct}`), [t]);
   const statusLabel = useCallback((s: Status) => t(`status_${s}`), [t]);
@@ -155,7 +158,11 @@ export default function MyClaimsPage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-4 p-4">
-      <PageHeader title={t('title')} subtitle={t('mySubtitle')} />
+      <PageHeader
+        title={t('title')}
+        subtitle={t('mySubtitle')}
+        actions={<ViewToggle value={view} onChange={setView} />}
+      />
 
       {/* File form */}
       <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
@@ -249,7 +256,7 @@ export default function MyClaimsPage() {
             {t('noClaims')}
           </div>
         ) : (
-          <DataList>
+          <DataList compact={view === 'compact'}>
             {rows.map((r) => (
               <DataCard
                 key={r.id}

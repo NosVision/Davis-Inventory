@@ -7,6 +7,8 @@ import {
   Button,
   EmptyState,
   PageHeader,
+  ViewToggle,
+  useViewMode,
   DataList,
   DataCard,
   toast,
@@ -24,6 +26,7 @@ export default function MyAnnouncementsPage() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [view, setView] = useViewMode('me-announcements');
 
   const fetchAnnouncements = useCallback(async () => {
     setLoading(true);
@@ -69,7 +72,11 @@ export default function MyAnnouncementsPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4">
-      <PageHeader title={t('annTitle')} subtitle={t('annSubtitle')} />
+      <PageHeader
+        title={t('annTitle')}
+        subtitle={t('annSubtitle')}
+        actions={<ViewToggle value={view} onChange={setView} />}
+      />
 
       {loading ? (
         <div className="flex items-center justify-center py-16 text-gray-400">
@@ -78,7 +85,7 @@ export default function MyAnnouncementsPage() {
       ) : announcements.length === 0 ? (
         <EmptyState icon={Megaphone} title={t('annEmpty')} />
       ) : (
-        <DataList>
+        <DataList compact={view === 'compact'}>
           {announcements.map((a) => {
             const busy = busyId === a.id;
             return (

@@ -9,6 +9,8 @@ import {
   ModalFooter,
   EmptyState,
   PageHeader,
+  ViewToggle,
+  useViewMode,
   StatusBadge,
   DataList,
   DataCard,
@@ -36,6 +38,7 @@ export default function MyPoliciesPage() {
   const [loading, setLoading] = useState(true);
   const [active, setActive] = useState<Policy | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [view, setView] = useViewMode('me-policies');
 
   const sigRef = useRef<SignaturePadHandle | null>(null);
 
@@ -93,7 +96,11 @@ export default function MyPoliciesPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4">
-      <PageHeader title={t('policiesTitle')} subtitle={t('policiesSubtitle')} />
+      <PageHeader
+        title={t('policiesTitle')}
+        subtitle={t('policiesSubtitle')}
+        actions={<ViewToggle value={view} onChange={setView} />}
+      />
 
       {loading ? (
         <div className="flex items-center justify-center py-16 text-gray-400">
@@ -102,7 +109,7 @@ export default function MyPoliciesPage() {
       ) : policies.length === 0 ? (
         <EmptyState icon={FileText} title={t('empty')} />
       ) : (
-        <DataList>
+        <DataList compact={view === 'compact'}>
           {policies.map((p) => (
             <DataCard
               key={p.id}

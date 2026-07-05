@@ -7,6 +7,8 @@ import {
   Button,
   toast,
   PageHeader,
+  ViewToggle,
+  useViewMode,
   StatusBadge,
   DataCard,
   DataList,
@@ -41,6 +43,7 @@ export default function MyOtRequestsPage() {
   const [workDate, setWorkDate] = useState('');
   const [minutes, setMinutes] = useState('');
   const [reason, setReason] = useState('');
+  const [view, setView] = useViewMode('me-ot-requests');
 
   const statusLabel = useCallback(
     (s: OtRequest['status']) =>
@@ -119,7 +122,11 @@ export default function MyOtRequestsPage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-4 p-4">
-      <PageHeader title={t('title')} subtitle={t('mySubtitle')} />
+      <PageHeader
+        title={t('title')}
+        subtitle={t('mySubtitle')}
+        actions={<ViewToggle value={view} onChange={setView} />}
+      />
 
       {/* File form */}
       <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
@@ -183,7 +190,7 @@ export default function MyOtRequestsPage() {
             {t('noRequests')}
           </div>
         ) : (
-          <DataList>
+          <DataList compact={view === 'compact'}>
             {rows.map((r) => (
               <DataCard
                 key={r.id}
