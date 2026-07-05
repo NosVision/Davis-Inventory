@@ -17,17 +17,22 @@ function plusDaysISO(baseIso, n) { return new Date(Date.parse(`${baseIso}T00:00:
   const probStaff = u('hr-test-staff').id;    // → probation ending in 7d
   const annivStaff = u('hr-test-staff9').id;  // → 2-year anniversary in 5d
 
+  const ssoStaff = u('hr-test-parttime').id;  // → repurposed: past-probation full-time w/o SSO
+
   // snapshot originals
   const orig = {};
-  for (const pid of [probStaff, annivStaff]) {
-    const { data } = await svc.from('hr_employees').select('status, probation_end, start_date').eq('profile_id', pid).maybeSingle();
+  for (const pid of [probStaff, annivStaff, ssoStaff]) {
+    const { data } = await svc.from('hr_employees').select('status, probation_end, start_date, pay_type, sso_enrolled, tax_mode, ot_eligible, work_hours_per_day, ot_hour_divisor').eq('profile_id', pid).maybeSingle();
     orig[pid] = data;
   }
 
   let restored = false;
   const restore = async () => {
-    for (const pid of [probStaff, annivStaff]) {
-      if (orig[pid]) await svc.from('hr_employees').update({ status: orig[pid].status, probation_end: orig[pid].probation_end, start_date: orig[pid].start_date }).eq('profile_id', pid);
+    for (const pid of [probStaff, annivStaff, ssoStaff]) {
+      if (orig[pid]) {
+        const o = orig[pid];
+        await svc.from('hr_employees').update({ status: o.status, probation_end: o.probation_end, start_date: o.start_date, pay_type: o.pay_type, sso_enrolled: o.sso_enrolled, tax_mode: o.tax_mode, ot_eligible: o.ot_eligible, work_hours_per_day: o.work_hours_per_day, ot_hour_divisor: o.ot_hour_divisor }).eq('profile_id', pid);
+      }
     }
     restored = true;
   };
@@ -59,6 +64,24 @@ function plusDaysISO(baseIso, n) { return new Date(Date.parse(`${baseIso}T00:00:
     const nd = narrow.json?.data;
     check('window=3 excludes 7d probation', !(nd?.probation_ending || []).some((x) => x.user_id === probStaff), nd?.probation_ending);
     check('window=3 excludes 5d anniversary', !(nd?.anniversaries || []).some((x) => x.user_id === annivStaff), nd?.anniversaries);
+
+    // SSO-pending nudge: full-time, probation passed 10d ago, sso_enrolled=false → surfaced
+    const passedEnd = plusDaysISO(today, -10);
+    await svc.from('hr_employees').update({ status: 'active', pay_type: 'full_monthly', probation_end: passedEnd, sso_enrolled: false }).eq('profile_id', ssoStaff);
+    const r2 = await req(hr, 'GET', '/api/hr/dashboard/alerts');
+    const sp = (r2.json?.data?.sso_pending || []).find((x) => x.user_id === ssoStaff);
+    check('sso_pending surfaced (past probation, not enrolled)', !!sp, r2.json?.data?.sso_pending);
+    check('sso_pending days_over = 10', sp?.days_over === 10, sp?.days_over);
+
+    // enrolling clears the nudge
+    await svc.from('hr_employees').update({ sso_enrolled: true }).eq('profile_id', ssoStaff);
+    const r3 = await req(hr, 'GET', '/api/hr/dashboard/alerts');
+    check('enrolled → sso_pending cleared', !(r3.json?.data?.sso_pending || []).some((x) => x.user_id === ssoStaff), r3.json?.data?.sso_pending);
+
+    // part-time never nudges (no SSO by policy)
+    await svc.from('hr_employees').update({ pay_type: 'pt_hourly', sso_enrolled: false }).eq('profile_id', ssoStaff);
+    const r4 = await req(hr, 'GET', '/api/hr/dashboard/alerts');
+    check('part-time excluded from sso_pending', !(r4.json?.data?.sso_pending || []).some((x) => x.user_id === ssoStaff), r4.json?.data?.sso_pending);
 
     const s = await req(staff, 'GET', '/api/hr/dashboard/alerts');
     check('staff alerts FORBIDDEN (401/403)', s.status === 401 || s.status === 403, s.status);

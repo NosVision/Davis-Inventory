@@ -3,14 +3,19 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { resolveHrScope } from '@/lib/hr/route-auth';
 
 // GET /api/hr/dashboard/alerts?window_days= — forward-looking HR reminders for the caller's scope
-// (§P1.5): (1) probation ending within the window (status='probation', probation_end in range) and
-// (2) upcoming work anniversaries (start_date's month-day in range). Read-only. Dates are handled
-// as calendar dates (no time) in the Bangkok business sense; the page passes no timezone.
+// (§P1.5): (1) probation ending within the window (status='probation', probation_end in range),
+// (2) upcoming work anniversaries (start_date's month-day in range), and (3) SSO pending —
+// full-time staff PAST probation who still aren't enrolled in social security (sso_enrolled=false).
+// (3) deliberately nudges instead of auto-flipping the flag: real enrolment needs สปส. paperwork,
+// so HR registers first, then ticks the box (per the owner, 2026-07-05). Read-only. Dates are
+// calendar dates in the Bangkok business sense; the page passes no timezone.
 interface EmpRow {
   profile_id: string;
   status: string;
   start_date: string | null;
   probation_end: string | null;
+  pay_type: string | null;
+  sso_enrolled: boolean | null;
   profile: { display_name: string | null; username: string | null; active: boolean | null } | null;
 }
 const DAY_MS = 86_400_000;
@@ -68,12 +73,12 @@ export async function GET(request: NextRequest) {
     const { data: us, error } = await service.from('user_stores').select('user_id').in('store_id', storeIds);
     if (error) return NextResponse.json({ error: 'Scope lookup failed' }, { status: 500 });
     scopedUserIds = new Set((us ?? []).map((r) => r.user_id as string));
-    if (scopedUserIds.size === 0) return NextResponse.json({ data: { window_days: windowDays, probation_ending: [], anniversaries: [] } });
+    if (scopedUserIds.size === 0) return NextResponse.json({ data: { window_days: windowDays, probation_ending: [], anniversaries: [], sso_pending: [] } });
   }
 
   let q = service
     .from('hr_employees')
-    .select('profile_id, status, start_date, probation_end, profile:profiles!hr_employees_profile_id_fkey(display_name, username, active)')
+    .select('profile_id, status, start_date, probation_end, pay_type, sso_enrolled, profile:profiles!hr_employees_profile_id_fkey(display_name, username, active)')
     .in('status', ['active', 'probation']);
   if (scopedUserIds) q = q.in('profile_id', [...scopedUserIds]);
   const { data, error } = await q;
@@ -96,5 +101,24 @@ export async function GET(request: NextRequest) {
     .filter((x): x is { user_id: string; name: string; date: string; years: number; days_left: number } => x !== null)
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  return NextResponse.json({ data: { window_days: windowDays, probation_ending, anniversaries } });
+  // Past probation but still not in SSO — full-time only (part-time gets no SSO by policy, §Q9).
+  // Overdue has no window: once probation_end passes, the nudge stays until HR enrols + ticks.
+  const sso_pending = rows
+    .filter(
+      (e) =>
+        e.pay_type === 'full_monthly' &&
+        e.sso_enrolled === false &&
+        e.probation_end !== null &&
+        e.probation_end < today
+    )
+    .map((e) => ({
+      user_id: e.profile_id,
+      name: nameOf(e.profile),
+      date: e.probation_end as string,
+      days_over: daysBetween(e.probation_end as string, today),
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(0, 50);
+
+  return NextResponse.json({ data: { window_days: windowDays, probation_ending, anniversaries, sso_pending } });
 }
