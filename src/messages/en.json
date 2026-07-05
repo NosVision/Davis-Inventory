@@ -2620,6 +2620,7 @@
     "comingSoon": "This section is under construction",
     "nav": {
       "employees": "Employees",
+      "identityClaims": "Identity claims",
       "attendance": "Attendance",
       "schedule": "Schedule",
       "timesheet": "Timesheet",

@@ -33,6 +33,7 @@ const SUITES = [
   'leave-reason.cjs',  // audit gap #8: requires_reason=false lets a leave be filed without a reason; true rejects 400
   'swap-notify.cjs',   // §Q5 swap flow: file → HR notified → HR approve → schedules exchange + audit + both employees notified
   'employees-link.cjs', // link-existing onboarding: hr_employees attaches to an existing profiles.id (no new account), guards + audit
+  'identity-claim.cjs', // identity-claim flow: unlinked user picks their real name → HR notified → approve creates linked employee + audit
 ];
 
 let failed = 0;

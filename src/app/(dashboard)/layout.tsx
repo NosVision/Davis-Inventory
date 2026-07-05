@@ -6,6 +6,7 @@ import type { Store, UserPermission } from '@/types/database';
 import type { Permission } from '@/types/roles';
 import { DashboardLayoutClient } from './layout-client';
 import { PasswordChangeBanner } from '@/components/layout/password-change-banner';
+import { IdentityClaimModal } from '@/components/hr/identity-claim-modal';
 
 export default async function DashboardLayout({
   children,
@@ -93,6 +94,7 @@ export default async function DashboardLayout({
       useDesktop={useDesktop}
     >
       {profile.must_change_password && <PasswordChangeBanner />}
+      <IdentityClaimModal role={profile.role as string} />
       {children}
     </DashboardLayoutClient>
   );

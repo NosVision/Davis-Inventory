@@ -26,6 +26,7 @@ import {
   FileText,
   UserCog,
   UserMinus,
+  UserCheck2,
   type LucideIcon,
 } from 'lucide-react';
 import { PageHeader } from '@/components/ui';
@@ -37,6 +38,7 @@ import { PageHeader } from '@/components/ui';
 const NAV_TILES: { key: string; icon: LucideIcon; href?: string }[] = [
   { key: 'today', icon: LayoutDashboard, href: '/hr/dashboard' },
   { key: 'employees', icon: Users, href: '/hr/employees' },
+  { key: 'identityClaims', icon: UserCheck2, href: '/hr/identity-claims' },
   { key: 'org', icon: Briefcase, href: '/hr/org' },
   { key: 'attendance', icon: Clock, href: '/hr/attendance' },
   { key: 'schedule', icon: CalendarDays, href: '/hr/schedule' },

@@ -2621,6 +2621,7 @@
     "comingSoon": "ส่วนนี้กำลังพัฒนา",
     "nav": {
       "employees": "พนักงาน",
+      "identityClaims": "ยืนยันตัวตนพนักงาน",
       "attendance": "ลงเวลา",
       "schedule": "ตารางงาน",
       "timesheet": "บันทึกเวลา",

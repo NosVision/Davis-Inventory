@@ -82,6 +82,12 @@ export function resolveNotificationUrl(
     case 'hr_swap_result':
       return '/me/swaps';
 
+    // ยืนยันตัวตนพนักงาน (HR ตรวจ / ผลของพนักงาน)
+    case 'hr_identity_claim':
+      return '/hr/identity-claims';
+    case 'hr_identity_result':
+      return '/me';
+
     // โปรโมชั่น
     case 'promotion':
       return '/notifications';
