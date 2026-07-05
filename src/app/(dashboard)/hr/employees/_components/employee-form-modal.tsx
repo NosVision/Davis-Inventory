@@ -163,6 +163,11 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
   const [createdPassword, setCreatedPassword] = useState<string | null>(null);
   const [createdWarnings, setCreatedWarnings] = useState<string[]>([]);
 
+  // Employee profile photo (edit mode): shown as a circle preview; upload replaces
+  // profiles.avatar_url via the scoped avatar route (P1.5).
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+
   // "Link existing user" mode — attach the hr_employees record to an account the person
   // already logs in with (keeps punches/schedule/payslip RLS on the same profiles.id).
   const [linkMode, setLinkMode] = useState(false);
@@ -227,6 +232,8 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
     setLinkMode(false);
     setLinkProfileId('');
     setLinkSearch('');
+    setAvatarUrl(null);
+    setAvatarBusy(false);
     if (employeeId === null) {
       setForm(defaultForm());
       setDocuments([]);
@@ -251,7 +258,8 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
         return;
       }
       const d = json.data as Record<string, unknown>;
-      const profile = (d.profile ?? {}) as { display_name?: string | null; username?: string | null };
+      const profile = (d.profile ?? {}) as { display_name?: string | null; username?: string | null; avatar_url?: string | null };
+      setAvatarUrl(profile.avatar_url ?? null);
       const ec = (d.emergency_contact && typeof d.emergency_contact === 'object'
         ? d.emergency_contact
         : {}) as { name?: string; phone?: string; relation?: string };
@@ -368,6 +376,24 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
     const relation = form.em_relation.trim();
     if (!name && !phone && !relation) return null;
     return { name, phone, relation };
+  }
+
+  async function handleAvatarUpload(file: File) {
+    if (employeeId === null) return;
+    setAvatarBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch(`/api/hr/employees/${employeeId}/avatar`, { method: 'POST', body: fd });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof json.error === 'string' ? json.error : undefined);
+      setAvatarUrl((json.data?.avatar_url as string) ?? null);
+      toast({ type: 'success', title: t('avatarUpdated') });
+    } catch (e) {
+      toast({ type: 'error', title: t('avatarFailed'), message: e instanceof Error ? e.message : undefined });
+    } finally {
+      setAvatarBusy(false);
+    }
   }
 
   function hasRequiredPartTimeDocs(): boolean {
@@ -644,7 +670,33 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
           {/* Employment */}
           <SectionHeader>{t('secEmployment')}</SectionHeader>
           {!isCreate && (
-            <Input label={t('displayName')} value={form.display_name} onChange={(e) => update('display_name', e.target.value)} />
+            <>
+              <div className="flex items-center gap-3 sm:col-span-2">
+                {avatarUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={avatarUrl} alt="" className="h-14 w-14 rounded-full object-cover ring-2 ring-gray-200 dark:ring-gray-700" />
+                ) : (
+                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gray-100 text-lg font-semibold text-gray-400 dark:bg-gray-700 dark:text-gray-500">
+                    {(form.display_name || '?').charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <label className={`cursor-pointer rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700/50 ${avatarBusy ? 'pointer-events-none opacity-50' : ''}`}>
+                  {avatarBusy ? '…' : t('avatarUpload')}
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    disabled={avatarBusy}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleAvatarUpload(f);
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
+              </div>
+              <Input label={t('displayName')} value={form.display_name} onChange={(e) => update('display_name', e.target.value)} />
+            </>
           )}
           <Select
             label={t('company')}

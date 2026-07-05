@@ -34,6 +34,7 @@ const SUITES = [
   'swap-notify.cjs',   // §Q5 swap flow: file → HR notified → HR approve → schedules exchange + audit + both employees notified
   'employees-link.cjs', // link-existing onboarding: hr_employees attaches to an existing profiles.id (no new account), guards + audit
   'identity-claim.cjs', // identity-claim flow: unlinked user picks their real name → HR notified → approve creates linked employee + audit
+  'avatar.cjs',        // P1.5 employee avatar: multipart upload → public bucket + profiles.avatar_url, replace deletes old, type guard + 403 + audit
 ];
 
 let failed = 0;
