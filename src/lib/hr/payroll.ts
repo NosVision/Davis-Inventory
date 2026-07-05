@@ -27,7 +27,6 @@ export function lateDeductionForMinutes(lateMin: number): number {
 const PERSONAL_ALLOWANCE_BAHT = 60_000;
 const EXPENSE_RATE = 0.5;
 const EXPENSE_CAP_BAHT = 100_000;
-const SSO_ANNUAL_CAP_BAHT = 9_000;
 const TAX_BRACKETS: { upTo: number; rate: number }[] = [
   { upTo: 150_000, rate: 0 },
   { upTo: 300_000, rate: 0.05 },
@@ -42,8 +41,11 @@ const TAX_BRACKETS: { upTo: number; rate: number }[] = [
 /**
  * Monthly PND1 withholding (satang) from a monthly labour base (satang), by the standard
  * annualize → deduct expense+personal+SSO+allowances → bracket → ÷12 method. `ssoMonthlySatang`
- * is the employee's own monthly SSO contribution (its annual sum, capped at ฿9,000, is
- * deductible). `extraAllowancesBaht` is the ANNUAL sum of the employee's ล.ย.01 tax allowances
+ * is the employee's own monthly SSO contribution; its ACTUAL annual sum is tax-deductible (the
+ * amount is already bounded by the SSO contribution cap — ฿875/mo = ฿10,500/yr at the 2026 ฿17,500
+ * wage ceiling; the old ฿9,000/yr limit dated to the ฿750/mo cap and over-taxed high earners,
+ * matched to the client's real payroll where a ฿50k salary withholds ฿1,704.17, not ฿1,716.67).
+ * `extraAllowancesBaht` is the ANNUAL sum of the employee's ล.ย.01 tax allowances
  * beyond the standard ฿60k personal one (spouse ฿60k, child ฿30k, parent, life/health
  * insurance, provident fund, home-loan interest, donations, …) — 0 when none are on file, so
  * an employee with no ล.ย.01 filed withholds exactly as before.
@@ -55,7 +57,7 @@ export function progressiveMonthlyTaxSatang(
 ): number {
   const annualBaht = (monthlyBaseSatang / 100) * 12;
   const expense = Math.min(annualBaht * EXPENSE_RATE, EXPENSE_CAP_BAHT);
-  const ssoAnnual = Math.min((ssoMonthlySatang / 100) * 12, SSO_ANNUAL_CAP_BAHT);
+  const ssoAnnual = (ssoMonthlySatang / 100) * 12; // actual contribution (already capped at ฿875/mo)
   const allowances = Math.max(0, extraAllowancesBaht);
   const taxable = Math.max(0, annualBaht - expense - PERSONAL_ALLOWANCE_BAHT - ssoAnnual - allowances);
 

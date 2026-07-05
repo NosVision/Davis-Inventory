@@ -97,8 +97,10 @@ eq('S4 sso (uncapped)', ded(s4, 'sso'), 45_000);
 eq('S4 net', s4.net_satang, 785_000);
 
 // ── S5: ล.ย.01 progressive tax allowance ──────────────────────────────────────
-eq('S5 no-allowance tax', progressiveMonthlyTaxSatang(5_000_000, 87_500, 0), 171_667);
-eq('S5 +120k allowance tax', progressiveMonthlyTaxSatang(5_000_000, 87_500, 120_000), 71_667);
+// ฿50,000 salary + SSO ฿875 → PND1 ฿1,704.17/mo. Matches the client's real payroll sheet
+// ("6. Payment June 2026"): SSO tax deduction = actual ฿10,500/yr (875×12), NOT the old ฿9,000 cap.
+eq('S5 no-allowance tax', progressiveMonthlyTaxSatang(5_000_000, 87_500, 0), 170_417);
+eq('S5 +120k allowance tax', progressiveMonthlyTaxSatang(5_000_000, 87_500, 120_000), 70_417);
 eq('S5 +281k allowance → 0', progressiveMonthlyTaxSatang(5_000_000, 87_500, 281_000), 0);
 eq('S5 negative allowance clamped', progressiveMonthlyTaxSatang(5_000_000, 87_500, -50_000),
    progressiveMonthlyTaxSatang(5_000_000, 87_500, 0));
@@ -112,9 +114,9 @@ const empPvd = {
 };
 const sPvd = slip(empPvd);
 eq('S6 pvd deduction', ded(sPvd, 'provident_fund'), 150_000);
-eq('S6 tax reduced by pvd allowance', ded(sPvd, 'tax'), 156_667);
+eq('S6 tax reduced by pvd allowance', ded(sPvd, 'tax'), 155_417);
 const sNoPvd = slip({ ...empPvd, pvd_enrolled: false });
-eq('S6 net drop = pvd - taxSaving', sNoPvd.net_satang - sPvd.net_satang, 150_000 - (171_667 - 156_667));
+eq('S6 net drop = pvd - taxSaving', sNoPvd.net_satang - sPvd.net_satang, 150_000 - (170_417 - 155_417));
 eq('S6 part-time no pvd line',
    ded(slip({ ...empPvd, pay_type: 'pt_monthly', sso_enrolled: false }), 'provident_fund'), 0);
 

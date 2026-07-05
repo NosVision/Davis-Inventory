@@ -81,12 +81,13 @@ Deductions:
 > These extend the engine (same `computePayslip`). All use a ฿50,000/mo (5,000,000 satang)
 > full_monthly employee, 30 worked days, SSO ฿875, no OT/leave/late for isolation.
 > PND1 ladder: 0–150k @0, 150k–300k @5%, 300k–500k @10%, … Standard deductions: expense
-> 50% cap ฿100k, personal ฿60k, SSO annual cap ฿9k.
+> 50% cap ฿100k, personal ฿60k, SSO = actual annual contribution (฿875×12 = **฿10,500**, the 2026
+> ฿17,500 ceiling; the old ฿9,000 cap dated to the ฿750/mo era and over-taxed high earners).
 
 ## S5 — ล.ย.01 tax allowance (progressive) — matches `progressiveMonthlyTaxSatang` assert 5/5
-Base ฿50,000/mo → annual ฿600,000. expense=100k, personal=60k, sso=9k.
-- **No allowance:** taxable = 600k−100k−60k−9k = **431,000** → tax/yr = 7,500 + (131k@10%=13,100) = **20,600** → /12 → **171,667 satang/mo** (฿1,716.67)
-- **+฿120,000 allowance** (spouse 60k + child 30k + insurance 30k): taxable = 431k−120k = **311,000** → tax/yr = 7,500 + (11k@10%=1,100) = **8,600** → /12 → **71,667 satang/mo** (฿716.67)
+Base ฿50,000/mo → annual ฿600,000. expense=100k, personal=60k, sso=**10,500** (actual, ตรงไฟล์จริง June 2026).
+- **No allowance:** taxable = 600k−100k−60k−10.5k = **429,500** → tax/yr = 7,500 + (129.5k@10%=12,950) = **20,450** → /12 → **170,417 satang/mo** (฿1,704.17 — ตรงกับสลิปจริง)
+- **+฿120,000 allowance** (spouse 60k + child 30k + insurance 30k): taxable = 429.5k−120k = **309,500** → tax/yr = 7,500 + (9.5k@10%=950) = **8,450** → /12 → **70,417 satang/mo** (฿704.17)
 - **+฿281,000 allowance** (taxable → 150,000, bottom of ladder): tax/yr = **0** → **0/mo**
 
 ## S6 — PVD (กองทุนสำรองเลี้ยงชีพ) — matches PVD assert 10/10
