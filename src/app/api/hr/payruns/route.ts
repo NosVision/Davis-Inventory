@@ -363,7 +363,14 @@ export async function POST(request: NextRequest) {
       const from = lv.from_date < start ? start : lv.from_date;
       const to = lv.to_date > end ? end : lv.to_date;
       for (const d of enumerateDates(from, to)) if (!holidaySet.has(d)) leaveCovered.add(d);
-      const daysInCycle = countLeaveDays(from, to, holidaySet);
+      // A leave day only docks salary/travel if the employee was rostered to work it: exclude
+      // public holidays AND the employee's scheduled weekly day-offs (is_day_off) — matching the
+      // leave-approval timesheet path. Dates with no schedule row yet still count (can't assume a
+      // future day off). Previously this counted every calendar day → over-docked a leave that
+      // spanned a day off (e.g. 7 days docked instead of 6).
+      const daysInCycle = enumerateDates(from, to).filter(
+        (d) => !holidaySet.has(d) && schedByCell.get(`${uid}|${d}`)?.is_day_off !== true
+      ).length;
       return {
         leave_id: lv.id,
         label: t?.code ?? 'leave',

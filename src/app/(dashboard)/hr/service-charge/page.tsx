@@ -48,6 +48,7 @@ const SOURCE_STYLES: Record<ScSourceType, string> = {
   leave: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
   late: 'bg-orange-50 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
   eval: 'bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+  eval_carry: 'bg-fuchsia-50 text-fuchsia-700 dark:bg-fuchsia-900/30 dark:text-fuchsia-400',
   manual: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
 };
 
@@ -322,7 +323,9 @@ export default function HrServiceChargePage() {
           ? t('srcLate')
           : s === 'eval'
             ? t('srcEval')
-            : t('srcManual');
+            : s === 'eval_carry'
+              ? t('srcEvalCarry')
+              : t('srcManual');
 
   const payDateDisplay = pool?.pay_date ?? `${month}-15`;
   const busy = savingPool || savingAlloc || recomputing || finalizing;

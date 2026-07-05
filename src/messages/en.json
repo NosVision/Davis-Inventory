@@ -2908,6 +2908,7 @@
       "srcLeave": "Leave",
       "srcLate": "Late",
       "srcEval": "Evaluation",
+      "srcEvalCarry": "Evaluation (carried)",
       "srcManual": "Manual"
     },
     "offboarding": {

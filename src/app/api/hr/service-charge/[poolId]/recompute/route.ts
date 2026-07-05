@@ -147,9 +147,10 @@ export async function POST(_request: Request, { params }: { params: Promise<{ po
       }
     }
 
-    // --- Carry from the PRIOR month's warning deductions (2nd+ month of a 200% warning, or the
-    //     residual of a large amount_baht penalty). Reads the prior pool's 'warning' + 'warning_carry'
-    //     lines for this user and lays down a 'warning_carry' line here, itself carrying any overflow. ---
+    // --- Carry from the PRIOR month's deductions that overflowed one month: the 2nd+ month of a
+    //     200% warning / a large amount_baht penalty ('warning' family), and an evaluation SC
+    //     penalty larger than a month's SC ('eval' family). Reads the prior pool's carry per family
+    //     and lays down a matching '*_carry' line here, itself carrying any residual overflow. ---
     if (prevPool) {
       const { data: prevAlloc, error: prevAllocErr } = await service
         .from(ALLOC)
@@ -161,31 +162,52 @@ export async function POST(_request: Request, { params }: { params: Promise<{ po
         return NextResponse.json({ error: 'Failed to load prior allocation' }, { status: 500 });
       }
       if (prevAlloc) {
-        const { data: prevCarryRows, error: prevCarryErr } = await service
-          .from(DED)
-          .select('carry_satang')
-          .eq('allocation_id', prevAlloc.id as string)
-          .in('source_type', ['warning', 'warning_carry'])
-          .gt('carry_satang', 0);
-        if (prevCarryErr) {
-          return NextResponse.json({ error: 'Failed to load prior carry' }, { status: 500 });
-        }
-        const priorCarry = (prevCarryRows ?? []).reduce((s, d) => s + (Number(d.carry_satang) || 0), 0);
-        const { amount_satang, carry_satang } = computeCarryScDeduction(allocated, priorCarry);
-        if (amount_satang > 0 || carry_satang > 0) {
-          lines.push({
-            allocation_id: allocId,
-            source_type: 'warning_carry',
-            source_ref: prevPool.id,
-            label: 'Warning carry (prev month)',
-            amount_satang,
-            carry_satang,
-            auto: true,
-            created_by: auth.userId,
-          });
+        const CARRY_FAMILIES = [
+          { sources: ['warning', 'warning_carry'], outType: 'warning_carry', label: 'Warning carry (prev month)' },
+          { sources: ['eval', 'eval_carry'], outType: 'eval_carry', label: 'Evaluation carry (prev month)' },
+        ];
+        for (const fam of CARRY_FAMILIES) {
+          const { data: prevCarryRows, error: prevCarryErr } = await service
+            .from(DED)
+            .select('carry_satang')
+            .eq('allocation_id', prevAlloc.id as string)
+            .in('source_type', fam.sources)
+            .gt('carry_satang', 0);
+          if (prevCarryErr) {
+            return NextResponse.json({ error: 'Failed to load prior carry' }, { status: 500 });
+          }
+          const priorCarry = (prevCarryRows ?? []).reduce((s, d) => s + (Number(d.carry_satang) || 0), 0);
+          const { amount_satang, carry_satang } = computeCarryScDeduction(allocated, priorCarry);
+          if (amount_satang > 0 || carry_satang > 0) {
+            lines.push({
+              allocation_id: allocId,
+              source_type: fam.outType,
+              source_ref: prevPool.id,
+              label: fam.label,
+              amount_satang,
+              carry_satang,
+              auto: true,
+              created_by: auth.userId,
+            });
+          }
         }
       }
     }
+
+    // The employee's scheduled weekly day-offs in this period — a leave day that falls on a day off
+    // does NOT dock SC (they weren't rostered to work it), matching the salary path in payruns.
+    const { data: schedOff, error: schedOffErr } = await service
+      .from('hr_schedule')
+      .select('work_date')
+      .eq('user_id', userId)
+      .eq('store_id', pool.store_id as string)
+      .eq('is_day_off', true)
+      .gte('work_date', periodStart)
+      .lte('work_date', periodEnd);
+    if (schedOffErr) {
+      return NextResponse.json({ error: 'Failed to load schedule day-offs' }, { status: 500 });
+    }
+    const dayOffSet = new Set((schedOff ?? []).map((r) => r.work_date as string));
 
     // --- Approved leaves overlapping this period that dock SC. ---
     const { data: leaves, error: leaveErr } = await service
@@ -205,7 +227,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ po
       if (!effect.deductSc) continue;
       const from = clampMax(lv.from_date, periodStart);
       const to = clampMin(lv.to_date, periodEnd);
-      const scDays = enumerateDates(from, to).length;
+      const scDays = enumerateDates(from, to).filter((d) => !dayOffSet.has(d)).length;
       const { amount_satang } = computeLeaveScDeduction(allocated, scDays);
       if (amount_satang > 0) {
         lines.push({
@@ -221,9 +243,16 @@ export async function POST(_request: Request, { params }: { params: Promise<{ po
       }
     }
 
-    // Only now (after both source queries succeeded) swap the auto lines: clear the old
-    // auto-computed lines (manual lines stay) and insert the freshly computed set.
-    await service.from(DED).delete().eq('allocation_id', allocId).eq('auto', true);
+    // Only now (after every source query succeeded) swap the auto lines this route OWNS. Scope the
+    // delete to the source types recompute produces (warning/warning_carry/leave/eval_carry) so it
+    // never wipes lines owned by other routes — notably 'eval' (laid down by eval apply-sc) and
+    // 'manual' (auto=false). Deleting all auto lines here previously erased applied eval SC penalties.
+    await service
+      .from(DED)
+      .delete()
+      .eq('allocation_id', allocId)
+      .eq('auto', true)
+      .in('source_type', ['warning', 'warning_carry', 'leave', 'eval_carry']);
     if (lines.length > 0) {
       await service.from(DED).insert(lines);
     }

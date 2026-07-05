@@ -2909,6 +2909,7 @@
       "srcLeave": "ลา",
       "srcLate": "มาสาย",
       "srcEval": "ประเมินผล",
+      "srcEvalCarry": "ประเมินผล (ยกมา)",
       "srcManual": "หักเอง"
     },
     "offboarding": {

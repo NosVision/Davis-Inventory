@@ -29,6 +29,7 @@ const SUITES = [
   'dashboard-alerts.cjs', // P1.5 HR reminders: probation-ending + work-anniversary within window (days_left/years), scope + staff 403
   'overview.cjs',      // §P5.3 dashboard redesign: today+month aggregate feed — partitions (total+per-venue), /daily consistency, trend shape, scope + staff 403
   'sc-carry.cjs',      // §H cross-period SC carry: 200% warning month A → auto warning_carry line month B (recompute), idempotent + control
+  'sc-recompute-fixes.cjs', // audit bugs 1-3: recompute preserves eval SC line + carries eval overflow + excludes scheduled day-off from leave SC
 ];
 
 let failed = 0;
