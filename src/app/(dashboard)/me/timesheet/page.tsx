@@ -13,6 +13,7 @@ import {
   type DaySummary,
   type TimesheetTotals,
 } from '@/components/hr/timesheet-parts';
+import { AttendanceScoreCard } from '@/components/hr/attendance-score-card';
 
 interface EssTimesheet {
   from: string;
@@ -90,6 +91,7 @@ export default function MyTimesheetPage() {
         </p>
       ) : (
         <div className="space-y-3">
+          <AttendanceScoreCard days={data.days} today={openBusinessDateBangkok()} />
           <SummaryChips totals={data.totals} />
           {hasData ? (
             <DayTable days={data.days} />

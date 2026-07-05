@@ -171,6 +171,27 @@ const ftKept = em.applyPartTimeProfile({ pay_type: 'full_monthly', tax_mode: 'pr
 eq('full-time keeps tax_mode', ftKept.tax_mode, 'progressive');
 eq('full-time keeps sso', ftKept.sso_enrolled, true);
 
+// ── attendance-score: ดัชนีการทำงาน (ESS work index) — bands, penalties, recommendations ──
+const as = load('attendance-score.ts');
+const base = { scheduledDays: 20, absentDays: 0, lateDays: 0, lateMinutes: 0, incompleteDays: 0, otMinutes: 0 };
+eq('score: no scheduled days → null', as.computeAttendanceScore({ ...base, scheduledDays: 0 }), null);
+const perfect = as.computeAttendanceScore(base);
+eq('score: perfect = 100 excellent', [perfect.overall, perfect.band], [100, 'excellent']);
+eq('score: perfect rec', perfect.recommendations.map((r) => r.key), ['perfect']);
+const mild = as.computeAttendanceScore({ ...base, lateDays: 1, lateMinutes: 10 });
+eq('score: 1 late day → punctuality 88, overall 94, rec lateMild', [mild.components.punctuality, mild.overall, mild.recommendations[0].key], [88, 94, 'lateMild']);
+const severe = as.computeAttendanceScore({ ...base, lateDays: 3, lateMinutes: 95 });
+eq('score: 3 late/95min → punctuality 49, overall 75 good, rec lateSevere', [severe.components.punctuality, severe.overall, severe.band, severe.recommendations[0].key], [49, 75, 'good', 'lateSevere']);
+const abs2 = as.computeAttendanceScore({ ...base, absentDays: 2 });
+eq('score: 2 absent → attendance 50, overall 83, rec absent', [abs2.components.attendance, abs2.overall, abs2.recommendations[0].key], [50, 83, 'absent']);
+const inc2 = as.computeAttendanceScore({ ...base, incompleteDays: 2 });
+eq('score: 2 incomplete → completeness 80, overall 97, rec incomplete', [inc2.components.completeness, inc2.overall, inc2.recommendations[0].key], [80, 97, 'incomplete']);
+const ot = as.computeAttendanceScore({ ...base, otMinutes: 660 });
+eq('score: high OT appends informational rec (11h)', ot.recommendations.map((r) => r.key).includes('otHigh') && ot.recommendations.find((r) => r.key === 'otHigh').params.hours, 11);
+const poor = as.computeAttendanceScore({ ...base, lateDays: 5, lateMinutes: 200, absentDays: 2 });
+eq('score: heavy late+absent → overall 38 poor, minute penalty capped', [poor.components.punctuality, poor.overall, poor.band], [10, 38, 'poor']);
+eq('score: band boundaries 90/75/60', [as.bandOf(90), as.bandOf(89), as.bandOf(75), as.bandOf(74), as.bandOf(60), as.bandOf(59)], ['excellent', 'good', 'good', 'fair', 'fair', 'poor']);
+
 const fail = R.filter((r) => !r.pass);
 for (const r of R) if (!r.pass) console.log(`FAIL ${r.name}: got=${JSON.stringify(r.got)} want=${JSON.stringify(r.want)}`);
 console.log(`\nHR_MISC_ASSERT = ${R.length - fail.length}/${R.length} ${fail.length ? 'FAILED' : 'ALL PASS'}`);
