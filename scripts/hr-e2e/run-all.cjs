@@ -36,6 +36,7 @@ const SUITES = [
   'identity-claim.cjs', // identity-claim flow: unlinked user picks their real name → HR notified → approve creates linked employee + audit
   'avatar.cjs',        // P1.5 employee avatar: multipart upload → public bucket + profiles.avatar_url, replace deletes old, type guard + 403 + audit
   'org-chart.cjs',     // P1.5 org chart: scope-aware reporting feed, nesting reflects supervisor_id, staff 403
+  'ess-profile.cjs',   // self-service profile: own phone (validated+audited), own avatar, identity fields exposed, anon blocked
 ];
 
 let failed = 0;
