@@ -153,6 +153,8 @@ export interface RegisterLineInput {
   tax_satang: number; // tax withheld
   total_deduction_satang: number; // all deductions on the slip
   net_satang: number; // take-home
+  /** employer PVD match for this slip (rate_satang × pvd_employer_rate for enrolled staff); 0/omitted when none */
+  pvd_employer_satang?: number;
 }
 export interface PayrollRegister {
   lines: RegisterLineInput[];
@@ -162,8 +164,9 @@ export interface PayrollRegister {
   total_tax_satang: number;
   total_deduction_satang: number;
   total_net_satang: number;
-  /** Employer's total labor cost = gross + employer SSO match (Thai SSO symmetric). */
+  /** Employer's total labor cost = gross + employer SSO match + employer PVD match. */
   employer_sso_satang: number;
+  employer_pvd_satang: number;
   total_labor_cost_satang: number;
 }
 
@@ -175,6 +178,7 @@ export interface PayrollRegister {
 export function buildPayrollRegister(slips: RegisterLineInput[]): PayrollRegister {
   const totalSso = slips.reduce((s, l) => s + l.sso_satang, 0);
   const totalGross = slips.reduce((s, l) => s + l.gross_satang, 0);
+  const totalPvd = slips.reduce((s, l) => s + (l.pvd_employer_satang ?? 0), 0);
   return {
     lines: slips,
     employee_count: slips.length,
@@ -184,7 +188,8 @@ export function buildPayrollRegister(slips: RegisterLineInput[]): PayrollRegiste
     total_deduction_satang: slips.reduce((s, l) => s + l.total_deduction_satang, 0),
     total_net_satang: slips.reduce((s, l) => s + l.net_satang, 0),
     employer_sso_satang: totalSso, // employer matches the employee SSO
-    total_labor_cost_satang: totalGross + totalSso,
+    employer_pvd_satang: totalPvd, // employer PVD match (0 when no one is enrolled)
+    total_labor_cost_satang: totalGross + totalSso + totalPvd,
   };
 }
 

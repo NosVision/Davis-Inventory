@@ -60,6 +60,7 @@ interface FormState {
   // provident fund (PVD) — full-time only; rate held as a whole-number percent string (e.g. "3")
   pvd_enrolled: boolean;
   pvd_employee_rate: string;
+  pvd_employer_rate: string;
   // bank
   bank_name: string;
   bank_account_no: string;
@@ -118,6 +119,7 @@ function defaultForm(): FormState {
     tax_id: '',
     pvd_enrolled: false,
     pvd_employee_rate: '',
+    pvd_employer_rate: '',
     bank_name: '',
     bank_account_no: '',
     bank_account_name: '',
@@ -256,6 +258,7 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
         tax_id: (d.tax_id as string) ?? '',
         pvd_enrolled: Boolean(d.pvd_enrolled),
         pvd_employee_rate: d.pvd_employee_rate != null ? String(Math.round((d.pvd_employee_rate as number) * 10000) / 100) : '',
+        pvd_employer_rate: d.pvd_employer_rate != null ? String(Math.round((d.pvd_employer_rate as number) * 10000) / 100) : '',
         bank_name: (d.bank_name as string) ?? '',
         bank_account_no: (d.bank_account_no as string) ?? '',
         bank_account_name: (d.bank_account_name as string) ?? '',
@@ -387,6 +390,7 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
       sso_enrolled: effSso,
       pvd_enrolled: effPvdEnrolled,
       pvd_employee_rate: effPvdRate,
+      pvd_employer_rate: effPvdEnrolled ? (Number(form.pvd_employer_rate) || 0) / 100 : 0,
       emergency_contact: buildEmergency(),
       documents,
       start_date: form.start_date || null,
@@ -721,6 +725,17 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
                 value={form.pvd_employee_rate}
                 disabled={!form.pvd_enrolled}
                 onChange={(e) => update('pvd_employee_rate', e.target.value)}
+              />
+              <Input
+                type="number"
+                min={0}
+                max={15}
+                step="0.5"
+                inputMode="decimal"
+                label={t('pvdEmployerRate')}
+                value={form.pvd_employer_rate}
+                disabled={!form.pvd_enrolled}
+                onChange={(e) => update('pvd_employer_rate', e.target.value)}
               />
             </>
           )}

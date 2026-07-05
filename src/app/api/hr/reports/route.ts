@@ -16,6 +16,8 @@ import {
 interface EnrichedSlip extends PayslipLineInput {
   total_deduction_satang: number;
   net_satang: number;
+  /** employer PVD match for this slip (register/labor-cost reporting) */
+  pvd_employer_satang: number;
 }
 
 // Statutory report routes (P5.2, §J9). HR only. Aggregate FINALIZED payslips for a company over a
@@ -30,6 +32,9 @@ interface EmpMeta {
   tax_id: string | null;
   sso_no: string | null;
   rate_satang: number;
+  pvd_enrolled: boolean;
+  pvd_employer_rate: number;
+  pay_type: string | null;
 }
 interface SlipRow {
   employee_id: string | null;
@@ -158,10 +163,17 @@ async function assembleLines(
   if (empIds.length) {
     const { data: emps } = await service
       .from('hr_employees')
-      .select('id, tax_id, sso_no, rate_satang')
+      .select('id, tax_id, sso_no, rate_satang, pvd_enrolled, pvd_employer_rate, pay_type')
       .in('id', empIds);
     for (const e of (emps ?? []) as (EmpMeta & { id: string })[]) {
-      empById.set(e.id, { tax_id: e.tax_id, sso_no: e.sso_no, rate_satang: Number(e.rate_satang) || 0 });
+      empById.set(e.id, {
+        tax_id: e.tax_id,
+        sso_no: e.sso_no,
+        rate_satang: Number(e.rate_satang) || 0,
+        pvd_enrolled: Boolean(e.pvd_enrolled),
+        pvd_employer_rate: Number(e.pvd_employer_rate) || 0,
+        pay_type: e.pay_type ?? null,
+      });
     }
   }
   const nameByUser = new Map<string, string>();
@@ -185,6 +197,12 @@ async function assembleLines(
       sso_wage_base_satang: wageBase,
       total_deduction_satang: s.total_deduction_satang,
       net_satang: s.net_satang,
+      // Employer PVD match (full-time enrolled only): rate_satang × employer rate at today's
+      // config (rates rarely change; slips don't snapshot the employer side).
+      pvd_employer_satang:
+        emp && emp.pvd_enrolled && emp.pay_type === 'full_monthly' && emp.pvd_employer_rate > 0
+          ? Math.round(emp.rate_satang * emp.pvd_employer_rate)
+          : 0,
     };
   });
 }
@@ -198,6 +216,7 @@ function registerLine(l: EnrichedSlip) {
     tax_satang: l.tax_satang,
     total_deduction_satang: l.total_deduction_satang,
     net_satang: l.net_satang,
+    pvd_employer_satang: l.pvd_employer_satang,
   };
 }
 

@@ -3745,6 +3745,7 @@
         "taxId": "Tax ID",
         "pvdEnrolled": "Provident fund (PVD)",
         "pvdRate": "PVD rate (%)",
+        "pvdEmployerRate": "PVD employer match (%)",
         "bankName": "Bank",
         "bankAccountNo": "Account number",
         "bankAccountName": "Account name",

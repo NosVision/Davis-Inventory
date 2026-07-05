@@ -24,6 +24,7 @@ interface LeaveType {
   name_th: string;
   name_en: string;
   requires_cert: boolean;
+  requires_reason: boolean;
   advance_notice_days: number;
   probational_allowed: boolean;
   paid: boolean;
@@ -95,6 +96,8 @@ export default function MyLeavesPage() {
     [types, typeId]
   );
   const requiresCert = Boolean(selectedType?.requires_cert);
+  // reason mandatory unless the type opts out (requires_reason=false)
+  const requiresReason = selectedType?.requires_reason !== false;
   const dayCount = inclusiveDays(fromDate, toDate);
 
   const fetchTypes = useCallback(async () => {
@@ -130,7 +133,8 @@ export default function MyLeavesPage() {
   }, [fetchTypes, fetchRows]);
 
   const submit = useCallback(async () => {
-    if (!typeId || !fromDate || !toDate || !reason.trim() || dayCount <= 0) return;
+    if (!typeId || !fromDate || !toDate || dayCount <= 0) return;
+    if (requiresReason && !reason.trim()) return;
     if (requiresCert && !cert) {
       toast({ type: 'error', title: t('certRequired') });
       return;
@@ -158,7 +162,7 @@ export default function MyLeavesPage() {
     } finally {
       setSubmitting(false);
     }
-  }, [typeId, fromDate, toDate, reason, dayCount, requiresCert, cert, t, today, fetchRows]);
+  }, [typeId, fromDate, toDate, reason, dayCount, requiresCert, requiresReason, cert, t, today, fetchRows]);
 
   const cancel = useCallback(
     async (id: string) => {
@@ -176,7 +180,8 @@ export default function MyLeavesPage() {
   );
 
   const canSubmit =
-    Boolean(typeId && fromDate && toDate && reason.trim()) &&
+    Boolean(typeId && fromDate && toDate) &&
+    (!requiresReason || Boolean(reason.trim())) &&
     dayCount > 0 &&
     (!requiresCert || Boolean(cert)) &&
     !submitting;

@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
   if (fromDate > toDate) {
     return NextResponse.json({ error: 'to_date must be on or after from_date' }, { status: 400 });
   }
-  if (!reason) return NextResponse.json({ error: 'A reason is required' }, { status: 400 });
+  // reason requirement is per leave type (requires_reason) — checked after the type loads below.
 
   const service = createServiceClient();
 
@@ -102,6 +102,11 @@ export async function POST(request: NextRequest) {
   const leaveType = leaveTypeRow as unknown as LeaveType;
   if (leaveType.company_id != null && leaveType.company_id !== companyId) {
     return NextResponse.json({ error: 'Leave type not available for your company' }, { status: 400 });
+  }
+  // A reason is required unless the type explicitly opts out (requires_reason=false). Previously
+  // this was unconditional, making the config flag inert (audit gap #8).
+  if (leaveType.requires_reason !== false && !reason) {
+    return NextResponse.json({ error: 'A reason is required' }, { status: 400 });
   }
 
   // Holiday-adjusted working-day count for the range.

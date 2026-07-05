@@ -68,6 +68,13 @@ eq('register total net', reg.total_net_satang, 2_250_000 + 2_047_500);
 eq('register total sso (employee)', reg.total_sso_satang, 175_000);
 eq('register employer sso matches', reg.employer_sso_satang, 175_000);
 eq('register labor cost = gross + employer sso', reg.total_labor_cost_satang, (2_472_500 + 2_135_000) + 175_000);
+eq('register employer pvd defaults 0', reg.employer_pvd_satang, 0);
+// employer PVD match joins the labor cost when slips carry pvd_employer_satang
+const regPvd = buildPayrollRegister([
+  { employee_id: 'e1', employee_name: 'a', gross_satang: 1_000_000, sso_satang: 50_000, tax_satang: 0, total_deduction_satang: 50_000, net_satang: 950_000, pvd_employer_satang: 30_000 },
+]);
+eq('register employer pvd summed', regPvd.employer_pvd_satang, 30_000);
+eq('register labor cost includes employer pvd', regPvd.total_labor_cost_satang, 1_000_000 + 50_000 + 30_000);
 // net + deductions must tie to gross per the slips
 eq('register ties: net+ded = gross', reg.total_net_satang + reg.total_deduction_satang, reg.total_gross_satang);
 

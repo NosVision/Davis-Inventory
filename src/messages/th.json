@@ -3746,6 +3746,7 @@
         "taxId": "เลขผู้เสียภาษี",
         "pvdEnrolled": "กองทุนสำรองเลี้ยงชีพ (PVD)",
         "pvdRate": "อัตรา PVD (%)",
+        "pvdEmployerRate": "นายจ้างสมทบ PVD (%)",
         "bankName": "ธนาคาร",
         "bankAccountNo": "เลขบัญชี",
         "bankAccountName": "ชื่อบัญชี",

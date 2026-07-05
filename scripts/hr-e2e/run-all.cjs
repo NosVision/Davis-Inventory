@@ -30,6 +30,7 @@ const SUITES = [
   'overview.cjs',      // §P5.3 dashboard redesign: today+month aggregate feed — partitions (total+per-venue), /daily consistency, trend shape, scope + staff 403
   'sc-carry.cjs',      // §H cross-period SC carry: 200% warning month A → auto warning_carry line month B (recompute), idempotent + control
   'sc-recompute-fixes.cjs', // audit bugs 1-3: recompute preserves eval SC line + carries eval overflow + excludes scheduled day-off from leave SC
+  'leave-reason.cjs',  // audit gap #8: requires_reason=false lets a leave be filed without a reason; true rejects 400
 ];
 
 let failed = 0;
