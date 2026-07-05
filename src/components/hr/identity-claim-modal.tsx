@@ -56,6 +56,24 @@ export function IdentityClaimModal({ role }: { role: string }) {
     })();
   }, [eligible]);
 
+  // Manual entry point (e.g. the "ผูกชื่อ" button on /me/profile) — force-open regardless of
+  // snooze; re-check the API so an already-linked user never gets a dead prompt.
+  useEffect(() => {
+    if (!eligible) return;
+    const onOpen = async () => {
+      try {
+        const res = await fetch('/api/hr/ess/identity');
+        const d = (await res.json())?.data;
+        if (!res.ok || d?.linked || d?.claim) return;
+        try { localStorage.removeItem(DONE_KEY); } catch { /* ignore */ }
+        setStep('ask');
+        setOpen(true);
+      } catch { /* ignore */ }
+    };
+    window.addEventListener('hr-identity-open', onOpen);
+    return () => window.removeEventListener('hr-identity-open', onOpen);
+  }, [eligible]);
+
   useEffect(() => {
     if (step !== 'pick') return;
     if (debounce.current) clearTimeout(debounce.current);

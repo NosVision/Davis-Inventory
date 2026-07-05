@@ -5,14 +5,12 @@ import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import {
   Wine,
-  ClipboardCheck,
   ClipboardList,
-  Repeat,
   LayoutDashboard,
   MessageSquare,
   BookOpen,
-  ArrowLeftRight,
   UserCircle,
+  Warehouse as WarehouseIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { useAuthStore } from '@/stores/auth-store';
@@ -28,24 +26,29 @@ interface NavItem {
   color: string;
 }
 
-// เมนูสำหรับ owner/manager/accountant/hq
+// โครงเมนูใหม่ (เจ้าของเคาะ 2026-07-05): แถบล่างนิ่ง 5 ปุ่ม ทุก role มี "ของฉัน" (ESS —
+// เช็คอิน/ผูกชื่อ/สลิป) · เมนูคลังหลายตัวยุบเป็นปุ่ม "คลัง" เดียว เปิดหน้า hub (/warehouse)
+// แทนการ morph แถบ — แถบล่างเป็นหลักยึด ไม่เปลี่ยนรูปไปมา
+
+// owner/manager/accountant/hq (จอเล็ก)
 const desktopRoleNavItems: NavItem[] = [
-  { labelKey: 'nav.stock', href: '/stock', icon: ClipboardCheck, color: 'indigo' },
-  { labelKey: 'nav.depositWithdraw', href: '/deposit', icon: Wine, color: 'emerald' },
-  { labelKey: 'nav.overview', href: '/overview', icon: LayoutDashboard, color: 'violet' },
+  { labelKey: 'nav.warehouse', href: '/warehouse', icon: WarehouseIcon, color: 'indigo' },
   { labelKey: 'nav.chat', href: '/chat', icon: MessageSquare, color: 'blue' },
+  { labelKey: 'nav.overview', href: '/overview', icon: LayoutDashboard, color: 'violet' },
+  { labelKey: 'nav.me', href: '/me', icon: UserCircle, color: 'teal' },
   { labelKey: 'nav.guide', href: '/guide', icon: BookOpen, color: 'sky' },
 ];
 
-// เมนูสำหรับ staff — ฝากเหล้า / เบิกเหล้า / แชท / งานบุคคลของฉัน (ESS)
+// staff — ฝาก/เบิกคือเมนูคลังเดียวที่ใช้ → ปุ่มตรง ไม่ต้องผ่าน hub
 const staffNavItems: NavItem[] = [
   { labelKey: 'nav.depositWithdraw', href: '/deposit', icon: Wine, color: 'emerald' },
+  { labelKey: 'nav.tasks', href: '/tasks', icon: ClipboardList, color: 'indigo' },
   { labelKey: 'nav.chat', href: '/chat', icon: MessageSquare, color: 'blue' },
   { labelKey: 'nav.me', href: '/me', icon: UserCircle, color: 'teal' },
   { labelKey: 'nav.guide', href: '/guide', icon: BookOpen, color: 'sky' },
 ];
 
-// เมนูสำหรับ technician (ช่าง) — ห้องงาน (รวมแจ้งซ่อม+งานประจำแล้ว) แชท คู่มือ
+// technician (ช่าง) — ห้องงาน (รวมแจ้งซ่อม+งานประจำแล้ว) แชท ของฉัน คู่มือ
 const technicianNavItems: NavItem[] = [
   { labelKey: 'nav.tasks', href: '/tasks', icon: ClipboardList, color: 'indigo' },
   { labelKey: 'nav.chat', href: '/chat', icon: MessageSquare, color: 'blue' },
@@ -53,13 +56,13 @@ const technicianNavItems: NavItem[] = [
   { labelKey: 'nav.guide', href: '/guide', icon: BookOpen, color: 'sky' },
 ];
 
-// เมนูสำหรับ bar — นับสต๊อค ฝากเหล้า ยืม โอน แชท
+// bar — งานคลังทั้งชุด (นับสต๊อค/ฝากเบิก/โอน/ยืม) อยู่ในปุ่ม "คลัง" เดียว
 const barNavItems: NavItem[] = [
-  { labelKey: 'nav.countStock', href: '/stock', icon: ClipboardCheck, color: 'indigo' },
-  { labelKey: 'nav.depositWithdraw', href: '/deposit', icon: Wine, color: 'emerald' },
+  { labelKey: 'nav.warehouse', href: '/warehouse', icon: WarehouseIcon, color: 'indigo' },
+  { labelKey: 'nav.tasks', href: '/tasks', icon: ClipboardList, color: 'indigo' },
   { labelKey: 'nav.chat', href: '/chat', icon: MessageSquare, color: 'blue' },
-  { labelKey: 'nav.borrowItem', href: '/borrow', icon: Repeat, color: 'rose' },
-  { labelKey: 'nav.transfer', href: '/transfer', icon: ArrowLeftRight, color: 'blue' },
+  { labelKey: 'nav.me', href: '/me', icon: UserCircle, color: 'teal' },
+  { labelKey: 'nav.guide', href: '/guide', icon: BookOpen, color: 'sky' },
 ];
 
 export function BottomNav() {

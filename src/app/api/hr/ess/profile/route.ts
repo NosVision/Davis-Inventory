@@ -29,7 +29,7 @@ export async function GET() {
 
   const { data: profile, error: profileErr } = await service
     .from('profiles')
-    .select('display_name, username')
+    .select('display_name, username, avatar_url, phone')
     .eq('id', user.id)
     .maybeSingle();
   if (profileErr) return NextResponse.json({ error: 'Failed to load profile' }, { status: 500 });
@@ -50,6 +50,8 @@ export async function GET() {
     data: {
       display_name: (profile?.display_name as string | null) ?? null,
       username: (profile?.username as string | null) ?? null,
+      avatar_url: (profile?.avatar_url as string | null) ?? null,
+      phone: (profile?.phone as string | null) ?? null,
       position: position?.name ?? null,
       department: department?.name ?? null,
       company: company?.name ?? null,

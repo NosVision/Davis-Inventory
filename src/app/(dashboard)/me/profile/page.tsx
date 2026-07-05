@@ -11,6 +11,8 @@ type FieldKey = 'bank_account' | 'emergency_contact';
 interface Profile {
   display_name: string | null;
   username: string | null;
+  avatar_url: string | null;
+  phone: string | null;
   position: string | null;
   department: string | null;
   company: string | null;
@@ -121,11 +123,69 @@ export default function MyProfilePage() {
     }
   }, []);
 
+  // Self-service extras (owner ask 2026-07-05): own photo, own phone, identity-link status.
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [phoneOpen, setPhoneOpen] = useState(false);
+  const [phoneDraft, setPhoneDraft] = useState('');
+  const [phoneBusy, setPhoneBusy] = useState(false);
+  const [identity, setIdentity] = useState<{ linked: boolean; claim: { full_name_th: string } | null } | null>(null);
+
+  const loadIdentity = useCallback(async () => {
+    try {
+      const res = await fetch('/api/hr/ess/identity');
+      const json = await res.json().catch(() => ({}));
+      if (res.ok) setIdentity(json.data ?? null);
+    } catch { /* the banner simply stays hidden */ }
+  }, []);
+
+  const uploadAvatar = useCallback(async (file: File) => {
+    setAvatarBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/hr/ess/avatar', { method: 'POST', body: fd });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof json.error === 'string' ? json.error : undefined);
+      setProfile((p) => (p ? { ...p, avatar_url: (json.data?.avatar_url as string) ?? p.avatar_url } : p));
+      toast({ type: 'success', title: t('photoUpdated') });
+    } catch (e) {
+      toast({ type: 'error', title: t('actionFailed'), message: e instanceof Error ? e.message : undefined });
+    } finally {
+      setAvatarBusy(false);
+    }
+  }, [t]);
+
+  const savePhone = useCallback(async () => {
+    setPhoneBusy(true);
+    try {
+      const res = await fetch('/api/hr/ess/profile/contact', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: phoneDraft }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof json.error === 'string' ? json.error : undefined);
+      setProfile((p) => (p ? { ...p, phone: (json.data?.phone as string | null) ?? null } : p));
+      setPhoneOpen(false);
+      toast({ type: 'success', title: t('phoneUpdated') });
+    } catch (e) {
+      toast({ type: 'error', title: t('actionFailed'), message: e instanceof Error ? e.message : undefined });
+    } finally {
+      setPhoneBusy(false);
+    }
+  }, [phoneDraft, t]);
+
+  // Opens the app-wide identity-claim modal (it listens for this event and skips its snooze).
+  const openIdentityClaim = useCallback(() => {
+    try { localStorage.removeItem('hr-identity-snooze'); } catch { /* ignore */ }
+    window.dispatchEvent(new Event('hr-identity-open'));
+  }, []);
+
   const loadAll = useCallback(async () => {
     setLoading(true);
-    await Promise.all([loadProfile(), loadRows()]);
+    await Promise.all([loadProfile(), loadRows(), loadIdentity()]);
     setLoading(false);
-  }, [loadProfile, loadRows]);
+  }, [loadProfile, loadRows, loadIdentity]);
 
   useEffect(() => {
     loadAll();
@@ -252,15 +312,65 @@ export default function MyProfilePage() {
         </div>
       ) : (
         <>
-          {/* Read-only profile */}
+          {/* Read-only profile + self-service (photo / phone / identity link) */}
           <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-            <div className="flex items-center gap-2">
-              <UserCircle className="h-5 w-5 text-gray-400" />
-              <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
-                {profile.display_name ?? profile.username ?? '—'}
-              </h2>
-              {profile.status && <StatusBadge tone="info" label={profile.status} />}
+            <div className="flex items-center gap-3">
+              {profile.avatar_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={profile.avatar_url} alt="" className="h-14 w-14 shrink-0 rounded-full object-cover ring-2 ring-gray-200 dark:ring-gray-700" />
+              ) : (
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-lg font-semibold text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-300">
+                  {(profile.display_name || profile.username || '?').charAt(0).toUpperCase()}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <h2 className="truncate text-sm font-semibold text-gray-900 dark:text-white">
+                    {profile.display_name ?? profile.username ?? '—'}
+                  </h2>
+                  {profile.status && <StatusBadge tone="info" label={profile.status} />}
+                </div>
+                <label className={`mt-1 inline-block cursor-pointer rounded-lg border border-gray-300 px-2.5 py-1 text-[11px] font-medium text-gray-600 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700/50 ${avatarBusy ? 'pointer-events-none opacity-50' : ''}`}>
+                  {avatarBusy ? '…' : t('uploadPhoto')}
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    disabled={avatarBusy}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) uploadAvatar(f);
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
+              </div>
             </div>
+
+            {/* identity link status — the door into the claim flow (also auto-pops app-wide) */}
+            {identity && !identity.linked && (
+              <div className="flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 dark:border-amber-800 dark:bg-amber-900/10">
+                <p className="text-xs text-amber-700 dark:text-amber-400">
+                  {identity.claim ? t('identityPending', { name: identity.claim.full_name_th }) : t('identityUnlinked')}
+                </p>
+                {!identity.claim && (
+                  <Button size="sm" onClick={openIdentityClaim}>{t('identityLinkNow')}</Button>
+                )}
+              </div>
+            )}
+
+            {/* phone — self-service, applies immediately */}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-2 text-xs">
+                <Phone className="h-4 w-4 shrink-0 text-gray-400" />
+                <span className="text-gray-500 dark:text-gray-400">{t('phone')}:</span>
+                <span className="truncate font-medium text-gray-800 dark:text-gray-100">{profile.phone || '—'}</span>
+              </div>
+              <Button size="sm" variant="outline" onClick={() => { setPhoneDraft(profile.phone ?? ''); setPhoneOpen(true); }}>
+                {t('editPhone')}
+              </Button>
+            </div>
+
             <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
               <Field label={t('username')} value={profile.username} />
               <Field label={t('position')} value={profile.position} />
@@ -479,6 +589,23 @@ export default function MyProfilePage() {
           >
             {t('submitRequest')}
           </Button>
+        </ModalFooter>
+      </Modal>
+
+      {/* self-service phone edit */}
+      <Modal isOpen={phoneOpen} onClose={() => setPhoneOpen(false)} title={t('editPhone')} size="sm">
+        <input
+          type="tel"
+          value={phoneDraft}
+          onChange={(e) => setPhoneDraft(e.target.value)}
+          placeholder="08x-xxx-xxxx"
+          className="control w-full"
+          aria-label={t('phone')}
+          autoFocus
+        />
+        <ModalFooter>
+          <Button variant="ghost" onClick={() => setPhoneOpen(false)}>{t('cancel')}</Button>
+          <Button onClick={savePhone} isLoading={phoneBusy}>{t('save')}</Button>
         </ModalFooter>
       </Modal>
       {dialog}
