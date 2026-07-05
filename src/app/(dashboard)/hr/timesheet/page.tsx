@@ -14,6 +14,7 @@ import {
   type TimesheetTotals,
 } from '@/components/hr/timesheet-parts';
 import { TimesheetEditModal, type EditTarget } from './_components/timesheet-edit-modal';
+import { AttendanceScoreCard } from '@/components/hr/attendance-score-card';
 
 interface StoreOpt {
   id: string;
@@ -152,6 +153,7 @@ export default function HrTimesheetPage() {
             return (
               <section key={emp.user_id} className="space-y-2">
                 <SectionHeading title={emp.name} />
+                <AttendanceScoreCard days={emp.days} today={openBusinessDateBangkok()} compact />
                 <SummaryChips totals={emp.totals} />
                 {hasData ? (
                   <DayTable
