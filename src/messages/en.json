@@ -3730,6 +3730,7 @@
         "supervisor": "Supervisor",
         "employeeCode": "Employee code",
         "startDate": "Start date",
+        "birthDate": "Birth date",
         "probationEnd": "Probation ends",
         "rate": "Rate (THB)",
         "rateHintFull": "Monthly salary",

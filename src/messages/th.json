@@ -3731,6 +3731,7 @@
         "supervisor": "หัวหน้างาน",
         "employeeCode": "รหัสพนักงาน",
         "startDate": "วันเริ่มงาน",
+        "birthDate": "วันเกิด",
         "probationEnd": "ครบทดลองงาน",
         "rate": "เรต (บาท)",
         "rateHintFull": "เงินเดือน",

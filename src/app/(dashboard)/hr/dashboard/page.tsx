@@ -16,6 +16,7 @@ import {
   CalendarClock,
   PartyPopper,
   ShieldAlert,
+  Cake,
   UserPlus,
   UserMinus,
   AlertTriangle,
@@ -45,7 +46,8 @@ interface StoreOpt { id: string; store_name: string | null; store_code: string |
 interface ProbationAlert { user_id: string; name: string; date: string; days_left: number }
 interface AnnivAlert { user_id: string; name: string; date: string; years: number; days_left: number }
 interface SsoPendingAlert { user_id: string; name: string; date: string; days_over: number }
-interface Alerts { window_days: number; probation_ending: ProbationAlert[]; anniversaries: AnnivAlert[]; sso_pending?: SsoPendingAlert[] }
+interface BirthdayAlert { user_id: string; name: string; date: string; days_left: number }
+interface Alerts { window_days: number; probation_ending: ProbationAlert[]; anniversaries: AnnivAlert[]; birthdays?: BirthdayAlert[]; sso_pending?: SsoPendingAlert[] }
 interface Overview {
   business_date: string;
   month: string;
@@ -84,13 +86,18 @@ function fmtMonth(iso: string): string {
   const [y, m] = iso.split('-');
   return m ? `${m}/${y}` : iso;
 }
+// birthday display: day/month only (the year is the person's business, not the dashboard's)
+function fmtDM(iso: string): string {
+  const [, m, d] = iso.split('-');
+  return d ? `${d}/${m}` : iso;
+}
 const baht = (satang: number) => `฿${(satang / 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
 export default function HrDailyDashboardPage() {
   const isTh = useLocale() === 'th';
   const L = isTh
-    ? { title: 'แดชบอร์ด HR', subtitle: 'ภาพรวมวันนี้และเดือนนี้ — ในความดูแลของคุณ', date: 'วันที่', store: 'สาขา', allStores: 'ทุกสาขา', refresh: 'รีเฟรช', headcount: 'พนักงาน', checkedIn: 'เข้างานแล้ว', onLeave: 'ลา', notIn: 'ยังไม่เข้า', late: 'มาสาย', pending: 'รออนุมัติ', copyLine: 'คัดลอกสรุปไปไลน์', copied: 'คัดลอกแล้ว', copyFailed: 'คัดลอกไม่สำเร็จ', loadFailed: 'โหลดไม่สำเร็จ', none: '—', people: 'คน', daysWord: 'วัน', todaySection: 'วันนี้', monthSection: 'เดือนนี้', attendanceToday: 'สัดส่วนการเข้างานวันนี้', byVenue: 'แบ่งตามสาขา (วันนี้)', byVenueHint: 'แตะแถบเพื่อกรองสาขา', dailyTrend: 'การเข้างานรายวัน (สะสมทั้งเดือน)', leaveByType: 'วันลาตามประเภท', noLeave: 'ไม่มีวันลาเดือนนี้', newHires: 'พนักงานใหม่', offboarded: 'พ้นสภาพ', warningsMonth: 'ใบเตือน', payrollCard: 'เงินเดือนงวดนี้', payrollNone: 'ยังไม่สร้างรอบเงินเดือน', runsWord: 'รอบ', finalizedWord: 'ปิดงวดแล้ว', slipsWord: 'สลิป', netTotal: 'สุทธิรวม', netHidden: 'ซ่อนยอดสุทธิ (ความเป็นส่วนตัว)', evalCard: 'การประเมินเดือนนี้', evalNone: 'ยังไม่มีรอบประเมิน', submittedWord: 'ส่งแล้ว', pendingCard: 'คิวรออนุมัติ', pendingLeaves: 'คำขอลา', pendingOt: 'ขอโอที', pendingAtt: 'ขอแก้เวลา', pendingClaims: 'เบิกค่าใช้จ่าย', pendingProfile: 'แก้ข้อมูลส่วนตัว', alerts: 'แจ้งเตือน HR', probationEnding: 'ครบทดลองงาน', anniversary: 'ครบรอบงาน', ssoPending: 'ครบทดลองงานแล้ว ยังไม่เข้าประกันสังคม', ssoPendingHint: 'ขึ้นทะเบียน สปส. แล้วติ๊ก "เข้าประกันสังคม" ในโปรไฟล์พนักงาน', overDays: (n: number) => (n === 0 ? 'ครบวันนี้' : `เกินมา ${n} วัน`), inDays: (n: number) => (n === 0 ? 'วันนี้' : `อีก ${n} วัน`), yearsWord: (n: number) => `${n} ปี` }
-    : { title: 'HR dashboard', subtitle: 'The full picture for today and this month — within your scope', date: 'Date', store: 'Store', allStores: 'All stores', refresh: 'Refresh', headcount: 'Headcount', checkedIn: 'Checked in', onLeave: 'On leave', notIn: 'Not in', late: 'Late', pending: 'Pending', copyLine: 'Copy summary for LINE', copied: 'Copied', copyFailed: 'Copy failed', loadFailed: 'Load failed', none: '—', people: '', daysWord: 'days', todaySection: 'Today', monthSection: 'This month', attendanceToday: "Today's attendance mix", byVenue: 'By venue (today)', byVenueHint: 'Tap a bar to filter by venue', dailyTrend: 'Daily attendance (month to date)', leaveByType: 'Leave days by type', noLeave: 'No leave this month', newHires: 'New hires', offboarded: 'Offboarded', warningsMonth: 'Warnings', payrollCard: 'Payroll this period', payrollNone: 'No payrun yet', runsWord: 'runs', finalizedWord: 'finalized', slipsWord: 'slips', netTotal: 'Net total', netHidden: 'Net hidden (privacy)', evalCard: 'Evaluation this month', evalNone: 'No evaluation period', submittedWord: 'submitted', pendingCard: 'Pending approvals', pendingLeaves: 'Leave requests', pendingOt: 'OT requests', pendingAtt: 'Time corrections', pendingClaims: 'Claims', pendingProfile: 'Profile changes', alerts: 'HR reminders', probationEnding: 'Probation ending', anniversary: 'Work anniversary', ssoPending: 'Past probation, not in SSO', ssoPendingHint: 'Register with SSO, then tick "SSO enrolled" on the employee profile', overDays: (n: number) => (n === 0 ? 'due today' : `${n}d over`), inDays: (n: number) => (n === 0 ? 'today' : `in ${n}d`), yearsWord: (n: number) => `${n}y` };
+    ? { title: 'แดชบอร์ด HR', subtitle: 'ภาพรวมวันนี้และเดือนนี้ — ในความดูแลของคุณ', date: 'วันที่', store: 'สาขา', allStores: 'ทุกสาขา', refresh: 'รีเฟรช', headcount: 'พนักงาน', checkedIn: 'เข้างานแล้ว', onLeave: 'ลา', notIn: 'ยังไม่เข้า', late: 'มาสาย', pending: 'รออนุมัติ', copyLine: 'คัดลอกสรุปไปไลน์', copied: 'คัดลอกแล้ว', copyFailed: 'คัดลอกไม่สำเร็จ', loadFailed: 'โหลดไม่สำเร็จ', none: '—', people: 'คน', daysWord: 'วัน', todaySection: 'วันนี้', monthSection: 'เดือนนี้', attendanceToday: 'สัดส่วนการเข้างานวันนี้', byVenue: 'แบ่งตามสาขา (วันนี้)', byVenueHint: 'แตะแถบเพื่อกรองสาขา', dailyTrend: 'การเข้างานรายวัน (สะสมทั้งเดือน)', leaveByType: 'วันลาตามประเภท', noLeave: 'ไม่มีวันลาเดือนนี้', newHires: 'พนักงานใหม่', offboarded: 'พ้นสภาพ', warningsMonth: 'ใบเตือน', payrollCard: 'เงินเดือนงวดนี้', payrollNone: 'ยังไม่สร้างรอบเงินเดือน', runsWord: 'รอบ', finalizedWord: 'ปิดงวดแล้ว', slipsWord: 'สลิป', netTotal: 'สุทธิรวม', netHidden: 'ซ่อนยอดสุทธิ (ความเป็นส่วนตัว)', evalCard: 'การประเมินเดือนนี้', evalNone: 'ยังไม่มีรอบประเมิน', submittedWord: 'ส่งแล้ว', pendingCard: 'คิวรออนุมัติ', pendingLeaves: 'คำขอลา', pendingOt: 'ขอโอที', pendingAtt: 'ขอแก้เวลา', pendingClaims: 'เบิกค่าใช้จ่าย', pendingProfile: 'แก้ข้อมูลส่วนตัว', alerts: 'แจ้งเตือน HR', probationEnding: 'ครบทดลองงาน', anniversary: 'ครบรอบงาน', birthday: 'วันเกิดพนักงาน', ssoPending: 'ครบทดลองงานแล้ว ยังไม่เข้าประกันสังคม', ssoPendingHint: 'ขึ้นทะเบียน สปส. แล้วติ๊ก "เข้าประกันสังคม" ในโปรไฟล์พนักงาน', overDays: (n: number) => (n === 0 ? 'ครบวันนี้' : `เกินมา ${n} วัน`), inDays: (n: number) => (n === 0 ? 'วันนี้' : `อีก ${n} วัน`), yearsWord: (n: number) => `${n} ปี` }
+    : { title: 'HR dashboard', subtitle: 'The full picture for today and this month — within your scope', date: 'Date', store: 'Store', allStores: 'All stores', refresh: 'Refresh', headcount: 'Headcount', checkedIn: 'Checked in', onLeave: 'On leave', notIn: 'Not in', late: 'Late', pending: 'Pending', copyLine: 'Copy summary for LINE', copied: 'Copied', copyFailed: 'Copy failed', loadFailed: 'Load failed', none: '—', people: '', daysWord: 'days', todaySection: 'Today', monthSection: 'This month', attendanceToday: "Today's attendance mix", byVenue: 'By venue (today)', byVenueHint: 'Tap a bar to filter by venue', dailyTrend: 'Daily attendance (month to date)', leaveByType: 'Leave days by type', noLeave: 'No leave this month', newHires: 'New hires', offboarded: 'Offboarded', warningsMonth: 'Warnings', payrollCard: 'Payroll this period', payrollNone: 'No payrun yet', runsWord: 'runs', finalizedWord: 'finalized', slipsWord: 'slips', netTotal: 'Net total', netHidden: 'Net hidden (privacy)', evalCard: 'Evaluation this month', evalNone: 'No evaluation period', submittedWord: 'submitted', pendingCard: 'Pending approvals', pendingLeaves: 'Leave requests', pendingOt: 'OT requests', pendingAtt: 'Time corrections', pendingClaims: 'Claims', pendingProfile: 'Profile changes', alerts: 'HR reminders', probationEnding: 'Probation ending', anniversary: 'Work anniversary', birthday: 'Employee birthdays', ssoPending: 'Past probation, not in SSO', ssoPendingHint: 'Register with SSO, then tick "SSO enrolled" on the employee profile', overDays: (n: number) => (n === 0 ? 'due today' : `${n}d over`), inDays: (n: number) => (n === 0 ? 'today' : `in ${n}d`), yearsWord: (n: number) => `${n}y` };
 
   const chartLabels: ChartLabels = {
     checkedIn: L.checkedIn,
@@ -442,7 +449,7 @@ export default function HrDailyDashboardPage() {
         </>
       )}
 
-      {alerts && (alerts.probation_ending.length > 0 || alerts.anniversaries.length > 0 || (alerts.sso_pending?.length ?? 0) > 0) && (
+      {alerts && (alerts.probation_ending.length > 0 || alerts.anniversaries.length > 0 || (alerts.birthdays?.length ?? 0) > 0 || (alerts.sso_pending?.length ?? 0) > 0) && (
         <div>
           <h2 className="mb-2 text-sm font-semibold text-gray-700 dark:text-gray-200">{L.alerts}</h2>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -487,6 +494,21 @@ export default function HrDailyDashboardPage() {
                     <li key={a.user_id} className="flex items-center justify-between gap-2 text-sm">
                       <span className="truncate text-gray-800 dark:text-gray-100">{a.name}</span>
                       <span className="whitespace-nowrap text-xs text-violet-600 dark:text-violet-400">{L.yearsWord(a.years)} · {L.inDays(a.days_left)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {(alerts.birthdays?.length ?? 0) > 0 && (
+              <div className="rounded-xl border border-pink-200 bg-pink-50/50 p-4 dark:border-pink-800 dark:bg-pink-900/10">
+                <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-pink-700 dark:text-pink-400">
+                  <Cake className="h-4 w-4" /> {L.birthday}
+                </div>
+                <ul className="space-y-1">
+                  {(alerts.birthdays ?? []).map((a) => (
+                    <li key={a.user_id} className="flex items-center justify-between gap-2 text-sm">
+                      <span className="truncate text-gray-800 dark:text-gray-100">{a.name}</span>
+                      <span className="whitespace-nowrap text-xs text-pink-600 dark:text-pink-400">{fmtDM(a.date)} · {L.inDays(a.days_left)}</span>
                     </li>
                   ))}
                 </ul>

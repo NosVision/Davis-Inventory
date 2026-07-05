@@ -22,7 +22,7 @@ function plusDaysISO(baseIso, n) { return new Date(Date.parse(`${baseIso}T00:00:
   // snapshot originals
   const orig = {};
   for (const pid of [probStaff, annivStaff, ssoStaff]) {
-    const { data } = await svc.from('hr_employees').select('status, probation_end, start_date, pay_type, sso_enrolled, tax_mode, ot_eligible, work_hours_per_day, ot_hour_divisor').eq('profile_id', pid).maybeSingle();
+    const { data } = await svc.from('hr_employees').select('status, probation_end, start_date, birth_date, pay_type, sso_enrolled, tax_mode, ot_eligible, work_hours_per_day, ot_hour_divisor').eq('profile_id', pid).maybeSingle();
     orig[pid] = data;
   }
 
@@ -31,7 +31,7 @@ function plusDaysISO(baseIso, n) { return new Date(Date.parse(`${baseIso}T00:00:
     for (const pid of [probStaff, annivStaff, ssoStaff]) {
       if (orig[pid]) {
         const o = orig[pid];
-        await svc.from('hr_employees').update({ status: o.status, probation_end: o.probation_end, start_date: o.start_date, pay_type: o.pay_type, sso_enrolled: o.sso_enrolled, tax_mode: o.tax_mode, ot_eligible: o.ot_eligible, work_hours_per_day: o.work_hours_per_day, ot_hour_divisor: o.ot_hour_divisor }).eq('profile_id', pid);
+        await svc.from('hr_employees').update({ status: o.status, probation_end: o.probation_end, start_date: o.start_date, birth_date: o.birth_date, pay_type: o.pay_type, sso_enrolled: o.sso_enrolled, tax_mode: o.tax_mode, ot_eligible: o.ot_eligible, work_hours_per_day: o.work_hours_per_day, ot_hour_divisor: o.ot_hour_divisor }).eq('profile_id', pid);
       }
     }
     restored = true;
@@ -64,6 +64,16 @@ function plusDaysISO(baseIso, n) { return new Date(Date.parse(`${baseIso}T00:00:
     const nd = narrow.json?.data;
     check('window=3 excludes 7d probation', !(nd?.probation_ending || []).some((x) => x.user_id === probStaff), nd?.probation_ending);
     check('window=3 excludes 5d anniversary', !(nd?.anniversaries || []).some((x) => x.user_id === annivStaff), nd?.anniversaries);
+
+    // Birthday in 6d (born 1995, same month-day) → surfaced with days_left, no age leaked
+    const bdayNext = plusDaysISO(today, 6);
+    await svc.from('hr_employees').update({ birth_date: `1995${bdayNext.slice(4)}` }).eq('profile_id', annivStaff);
+    const rb = await req(hr, 'GET', '/api/hr/dashboard/alerts?window_days=14');
+    const bd = (rb.json?.data?.birthdays || []).find((x) => x.user_id === annivStaff);
+    check('birthday surfaced', !!bd, rb.json?.data?.birthdays);
+    check('birthday days_left = 6, no age field', bd?.days_left === 6 && !('years' in (bd || {})), bd);
+    const rbNarrow = await req(hr, 'GET', '/api/hr/dashboard/alerts?window_days=3');
+    check('window=3 excludes 6d birthday', !(rbNarrow.json?.data?.birthdays || []).some((x) => x.user_id === annivStaff), rbNarrow.json?.data?.birthdays);
 
     // SSO-pending nudge: full-time, probation passed 10d ago, sso_enrolled=false → surfaced
     const passedEnd = plusDaysISO(today, -10);

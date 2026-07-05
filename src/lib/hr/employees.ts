@@ -55,6 +55,7 @@ export interface EmployeeWritable {
   documents: EmployeeDocument[];
   start_date: string | null;
   probation_end: string | null;
+  birth_date: string | null;
   status: EmployeeStatus;
   end_date: string | null;
   end_reason: string | null;
@@ -216,7 +217,7 @@ export function pickEmployeeFields(
   setRange('pvd_employee_rate', 0, 0.15); // Thai PVD 2–15% (fraction); DB CHECK also enforces
   setRange('pvd_employer_rate', 0, 0.15);
   ['company_id', 'position_id', 'department_id', 'supervisor_id'].forEach(setStrOrNull);
-  ['start_date', 'probation_end', 'end_date'].forEach(setDate);
+  ['start_date', 'probation_end', 'end_date', 'birth_date'].forEach(setDate);
   ['employee_code', 'bank_name', 'bank_account_no', 'bank_account_name', 'sso_no', 'tax_id',
     'end_reason', 'notes'].forEach(setStrOrNull);
   if (has('emergency_contact')) out.emergency_contact = body.emergency_contact ?? null;

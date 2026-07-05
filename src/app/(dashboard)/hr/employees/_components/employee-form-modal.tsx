@@ -41,6 +41,7 @@ interface FormState {
   supervisor_id: string;
   employee_code: string;
   start_date: string;
+  birth_date: string;
   status: string;
   end_date: string;
   end_reason: string;
@@ -103,6 +104,7 @@ function defaultForm(): FormState {
     supervisor_id: '',
     employee_code: '',
     start_date: '',
+    birth_date: '',
     status: 'active',
     end_date: '',
     end_reason: '',
@@ -264,6 +266,7 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
         supervisor_id: (d.supervisor_id as string) ?? '',
         employee_code: (d.employee_code as string) ?? '',
         start_date: (d.start_date as string) ?? '',
+        birth_date: (d.birth_date as string) ?? '',
         status: (d.status as string) ?? 'active',
         end_date: (d.end_date as string) ?? '',
         end_reason: (d.end_reason as string) ?? '',
@@ -423,6 +426,7 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
       emergency_contact: buildEmergency(),
       documents,
       start_date: form.start_date || null,
+      birth_date: form.birth_date || null,
       status: form.status,
     };
 
@@ -677,6 +681,12 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
             label={t('startDate')}
             value={form.start_date}
             onChange={(e) => update('start_date', e.target.value)}
+          />
+          <Input
+            type="date"
+            label={t('birthDate')}
+            value={form.birth_date}
+            onChange={(e) => update('birth_date', e.target.value)}
           />
           <Select
             label={tc('status')}

@@ -14,6 +14,7 @@ interface EmpRow {
   status: string;
   start_date: string | null;
   probation_end: string | null;
+  birth_date: string | null;
   pay_type: string | null;
   sso_enrolled: boolean | null;
   profile: { display_name: string | null; username: string | null; active: boolean | null } | null;
@@ -73,12 +74,12 @@ export async function GET(request: NextRequest) {
     const { data: us, error } = await service.from('user_stores').select('user_id').in('store_id', storeIds);
     if (error) return NextResponse.json({ error: 'Scope lookup failed' }, { status: 500 });
     scopedUserIds = new Set((us ?? []).map((r) => r.user_id as string));
-    if (scopedUserIds.size === 0) return NextResponse.json({ data: { window_days: windowDays, probation_ending: [], anniversaries: [], sso_pending: [] } });
+    if (scopedUserIds.size === 0) return NextResponse.json({ data: { window_days: windowDays, probation_ending: [], anniversaries: [], birthdays: [], sso_pending: [] } });
   }
 
   let q = service
     .from('hr_employees')
-    .select('profile_id, status, start_date, probation_end, pay_type, sso_enrolled, profile:profiles!hr_employees_profile_id_fkey(display_name, username, active)')
+    .select('profile_id, status, start_date, probation_end, birth_date, pay_type, sso_enrolled, profile:profiles!hr_employees_profile_id_fkey(display_name, username, active)')
     .in('status', ['active', 'probation']);
   if (scopedUserIds) q = q.in('profile_id', [...scopedUserIds]);
   const { data, error } = await q;
@@ -101,6 +102,18 @@ export async function GET(request: NextRequest) {
     .filter((x): x is { user_id: string; name: string; date: string; years: number; days_left: number } => x !== null)
     .sort((a, b) => a.date.localeCompare(b.date));
 
+  // Upcoming birthdays — same month-day windowing as anniversaries (no age in the payload;
+  // the reminder is "wish them", not "how old are they").
+  const birthdays = rows
+    .map((e) => {
+      if (!e.birth_date) return null;
+      const next = nextAnniversary(e.birth_date, today);
+      if (!next || next.iso < today || next.iso > horizon) return null;
+      return { user_id: e.profile_id, name: nameOf(e.profile), date: next.iso, days_left: daysBetween(today, next.iso) };
+    })
+    .filter((x): x is { user_id: string; name: string; date: string; days_left: number } => x !== null)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
   // Past probation but still not in SSO — full-time only (part-time gets no SSO by policy, §Q9).
   // Overdue has no window: once probation_end passes, the nudge stays until HR enrols + ticks.
   const sso_pending = rows
@@ -120,5 +133,5 @@ export async function GET(request: NextRequest) {
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(0, 50);
 
-  return NextResponse.json({ data: { window_days: windowDays, probation_ending, anniversaries, sso_pending } });
+  return NextResponse.json({ data: { window_days: windowDays, probation_ending, anniversaries, birthdays, sso_pending } });
 }
