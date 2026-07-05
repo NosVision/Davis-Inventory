@@ -76,6 +76,12 @@ export function resolveNotificationUrl(
     case 'repair_completed':
       return '/repairs';
 
+    // สลับวันหยุด (HR queue / ผลของพนักงาน)
+    case 'hr_swap_request':
+      return '/hr/swaps';
+    case 'hr_swap_result':
+      return '/me/swaps';
+
     // โปรโมชั่น
     case 'promotion':
       return '/notifications';

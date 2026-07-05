@@ -34,7 +34,9 @@ export type NotificationType =
   | 'repair_purchase_request' // ช่างขออนุมัติสั่งซื้อ (for owner)
   | 'repair_approved'         // owner อนุมัติสั่งซื้อ (for technician)
   | 'repair_rejected'         // owner ไม่อนุมัติ (for technician)
-  | 'repair_completed';       // งานซ่อมเสร็จแล้ว (for reporter)
+  | 'repair_completed'        // งานซ่อมเสร็จแล้ว (for reporter)
+  | 'hr_swap_request'         // มีคำขอสลับวันหยุดใหม่ (for HR)
+  | 'hr_swap_result';         // ผลอนุมัติสลับวันหยุด (for the two employees)
 
 export interface NotifyUserParams {
   userId: string;
@@ -119,6 +121,8 @@ const TYPE_TO_PREF: Record<NotificationType, keyof NotificationPreferences> = {
   repair_approved: 'notify_repair',
   repair_rejected: 'notify_repair',
   repair_completed: 'notify_repair',
+  hr_swap_request: 'notify_approval_request', // HR sees swap requests under approvals
+  hr_swap_result: 'notify_approval_request',  // employees see the decision under approvals
 };
 
 // Customer-facing notification types that respect store_settings toggles

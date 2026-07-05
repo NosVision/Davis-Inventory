@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { notifyHrManagers } from '@/lib/hr/notify';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_OPEN_SWAPS = 20;
@@ -159,6 +160,30 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json({ error: 'Failed to file swap' }, { status: 500 });
   }
+
+  // Notify HR that a swap awaits approval (§Q5 flow: file → notify HR → HR approves).
+  // Best-effort — a notification failure must never fail the filing itself.
+  try {
+    const { data: names } = await service
+      .from('profiles')
+      .select('id, display_name, username')
+      .in('id', [user.id, counterpartId]);
+    const nameOf = (id: string) => {
+      const p = (names ?? []).find((x) => x.id === id);
+      return p?.display_name || p?.username || '—';
+    };
+    await notifyHrManagers(service, {
+      storeId,
+      type: 'hr_swap_request',
+      title: 'คำขอสลับวันหยุดใหม่',
+      body: `${nameOf(user.id)} ขอสลับวันหยุด ${requesterDate} ↔ ${nameOf(counterpartId)} (${counterpartDate}) — รออนุมัติ`,
+      data: { swap_id: data.id, url: '/hr/swaps' },
+      excludeUserId: user.id,
+    });
+  } catch (e) {
+    console.error('[hr/ess/dayoff-swaps] notify HR failed:', e);
+  }
+
   return NextResponse.json({ data }, { status: 201 });
 }
 
