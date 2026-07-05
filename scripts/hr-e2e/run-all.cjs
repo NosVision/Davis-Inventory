@@ -32,6 +32,7 @@ const SUITES = [
   'sc-recompute-fixes.cjs', // audit bugs 1-3: recompute preserves eval SC line + carries eval overflow + excludes scheduled day-off from leave SC
   'leave-reason.cjs',  // audit gap #8: requires_reason=false lets a leave be filed without a reason; true rejects 400
   'swap-notify.cjs',   // §Q5 swap flow: file → HR notified → HR approve → schedules exchange + audit + both employees notified
+  'employees-link.cjs', // link-existing onboarding: hr_employees attaches to an existing profiles.id (no new account), guards + audit
 ];
 
 let failed = 0;

@@ -161,6 +161,13 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
   const [createdPassword, setCreatedPassword] = useState<string | null>(null);
   const [createdWarnings, setCreatedWarnings] = useState<string[]>([]);
 
+  // "Link existing user" mode — attach the hr_employees record to an account the person
+  // already logs in with (keeps punches/schedule/payslip RLS on the same profiles.id).
+  const [linkMode, setLinkMode] = useState(false);
+  const [linkProfileId, setLinkProfileId] = useState('');
+  const [linkSearch, setLinkSearch] = useState('');
+  const [linkables, setLinkables] = useState<{ id: string; username: string | null; display_name: string | null; role: string }[]>([]);
+
   // dropdown option data
   const [companies, setCompanies] = useState<RefOpt[]>([]);
   const [positions, setPositions] = useState<RefOpt[]>([]);
@@ -195,6 +202,18 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
     })();
   }, []);
 
+  // Linkable accounts (create mode): active users without an employee record yet.
+  useEffect(() => {
+    if (!isOpen || employeeId !== null) return;
+    (async () => {
+      try {
+        const res = await fetch('/api/hr/employees/linkable');
+        const json = await res.json().catch(() => ({}));
+        if (res.ok) setLinkables((json.data ?? []) as typeof linkables);
+      } catch { /* link mode simply shows an empty list */ }
+    })();
+  }, [isOpen, employeeId]);
+
   // Reset / prefill whenever the modal opens or the target employee changes.
   useEffect(() => {
     if (!isOpen) return;
@@ -203,6 +222,9 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
     setCreatedWarnings([]);
     setSubmitting(false);
     setUploading(null);
+    setLinkMode(false);
+    setLinkProfileId('');
+    setLinkSearch('');
     if (employeeId === null) {
       setForm(defaultForm());
       setDocuments([]);
@@ -355,10 +377,17 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
 
     // Validation (mirrors server rules).
     if (isCreate) {
-      const username = form.username.trim().toLowerCase();
-      if (!/^[a-z0-9._-]{3,}$/.test(username)) {
-        toast({ type: 'error', title: t('requiredUsername') });
-        return;
+      if (linkMode) {
+        if (!linkProfileId) {
+          toast({ type: 'error', title: t('requiredLinkUser') });
+          return;
+        }
+      } else {
+        const username = form.username.trim().toLowerCase();
+        if (!/^[a-z0-9._-]{3,}$/.test(username)) {
+          toast({ type: 'error', title: t('requiredUsername') });
+          return;
+        }
       }
     }
     if (partTime && !hasRequiredPartTimeDocs()) {
@@ -405,8 +434,9 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
       url = '/api/hr/employees';
       method = 'POST';
       body = {
-        username: form.username.trim().toLowerCase(),
-        role: form.role,
+        ...(linkMode
+          ? { link_profile_id: linkProfileId }
+          : { username: form.username.trim().toLowerCase(), role: form.role }),
         storeIds: form.storeIds,
         company_id: form.company_id || null,
         rate_satang: rateSatang,
@@ -464,7 +494,11 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
         setSubmitting(false);
         return;
       }
-      if (isCreate) {
+      if (isCreate && json.linked) {
+        // Linked an existing account — no temp password to hand over.
+        toast({ type: 'success', title: t('linkedOk') });
+        onSaved();
+      } else if (isCreate) {
         const pwd = typeof json.tempPassword === 'string' ? json.tempPassword : '';
         toast({ type: 'success', title: t('createdOk'), message: `${t('tempPasswordMsg')} ${pwd}` });
         setCreatedWarnings(Array.isArray(json.warnings) ? (json.warnings as string[]) : []);
@@ -522,28 +556,84 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
         <div className="py-16 text-center text-sm text-gray-500 dark:text-gray-400">{tc('loading')}</div>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {/* Account (create only) */}
+          {/* Account (create only) — a brand-new login OR link an account the person already uses */}
           {isCreate && (
             <>
               <SectionHeader>{t('secAccount')}</SectionHeader>
-              <Input
-                label={t('username')}
-                value={form.username}
-                onChange={(e) => update('username', e.target.value.toLowerCase())}
-                placeholder="jane.doe"
-                autoComplete="off"
-              />
-              <Input
-                label={t('displayName')}
-                value={form.display_name}
-                onChange={(e) => update('display_name', e.target.value)}
-              />
-              <Select
-                label={t('role')}
-                value={form.role}
-                onChange={(e) => update('role', e.target.value)}
-                options={ROLE_OPTIONS.map((r) => ({ value: r, label: capitalize(r) }))}
-              />
+              <div className="sm:col-span-2">
+                <div className="inline-flex items-center gap-0.5 rounded-lg bg-gray-100 p-0.5 dark:bg-gray-800">
+                  <button
+                    type="button"
+                    onClick={() => setLinkMode(false)}
+                    aria-pressed={!linkMode}
+                    className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${!linkMode ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-700 dark:text-indigo-400' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
+                  >
+                    {t('createNewAccount')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLinkMode(true)}
+                    aria-pressed={linkMode}
+                    className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${linkMode ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-700 dark:text-indigo-400' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}
+                  >
+                    {t('linkExisting')}
+                  </button>
+                </div>
+              </div>
+              {linkMode ? (
+                <>
+                  <Input
+                    label={t('linkSearch')}
+                    value={linkSearch}
+                    onChange={(e) => setLinkSearch(e.target.value)}
+                    placeholder="ชื่อ / username"
+                    autoComplete="off"
+                  />
+                  <Select
+                    label={t('linkUser')}
+                    value={linkProfileId}
+                    onChange={(e) => setLinkProfileId(e.target.value)}
+                    options={[
+                      { value: '', label: '—' },
+                      ...linkables
+                        .filter((p) => {
+                          const q = linkSearch.trim().toLowerCase();
+                          if (!q) return true;
+                          return (
+                            String(p.username ?? '').toLowerCase().includes(q) ||
+                            String(p.display_name ?? '').toLowerCase().includes(q)
+                          );
+                        })
+                        .slice(0, 100)
+                        .map((p) => ({
+                          value: p.id,
+                          label: `${p.display_name || p.username || '—'} (${p.username ?? '—'} · ${p.role})`,
+                        })),
+                    ]}
+                  />
+                </>
+              ) : (
+                <>
+                  <Input
+                    label={t('username')}
+                    value={form.username}
+                    onChange={(e) => update('username', e.target.value.toLowerCase())}
+                    placeholder="jane.doe"
+                    autoComplete="off"
+                  />
+                  <Input
+                    label={t('displayName')}
+                    value={form.display_name}
+                    onChange={(e) => update('display_name', e.target.value)}
+                  />
+                  <Select
+                    label={t('role')}
+                    value={form.role}
+                    onChange={(e) => update('role', e.target.value)}
+                    options={ROLE_OPTIONS.map((r) => ({ value: r, label: capitalize(r) }))}
+                  />
+                </>
+              )}
             </>
           )}
 

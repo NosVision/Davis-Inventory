@@ -117,11 +117,94 @@ export async function GET(request: NextRequest) {
 }
 
 // POST /api/hr/employees — onboard a new person: auth account + profile + hr_employees.
+// OR link an EXISTING account: pass `link_profile_id` and no new auth user is created — the
+// hr_employees row attaches to the profile the person already logs in with, so their punches,
+// schedule, leaves and payslip self-read (all keyed on profiles.id) line up with their HR record.
 export async function POST(request: NextRequest) {
   const auth = await requireHrManager();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+
+  // ── Link-existing mode ──────────────────────────────────────────────────────
+  const linkProfileId = typeof body.link_profile_id === 'string' ? body.link_profile_id : '';
+  if (linkProfileId) {
+    const picked0 = pickEmployeeFields(body, false);
+    if (!picked0.ok) return NextResponse.json({ error: 'Validation failed', fields: picked0.errors }, { status: 400 });
+    const withForced0 = applyPartTimeProfile({ ...picked0.fields, pay_type: picked0.fields.pay_type as string });
+    const fields0: Record<string, unknown> = { ...withForced0 };
+    if (fields0.start_date && !fields0.probation_end) {
+      fields0.probation_end = computeProbationEnd(fields0.start_date as string);
+    }
+    const docs0 = (fields0.documents as EmployeeDocument[] | undefined) ?? [];
+    const docErr0 = validatePartTimeDocs(fields0.pay_type as string, docs0);
+    if (docErr0) return NextResponse.json({ error: docErr0 }, { status: 400 });
+
+    const service = createServiceClient();
+    const { data: prof, error: profErr } = await service
+      .from('profiles')
+      .select('id, username, role, active')
+      .eq('id', linkProfileId)
+      .maybeSingle();
+    if (profErr) return NextResponse.json({ error: 'Failed to load profile' }, { status: 500 });
+    if (!prof) return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
+    if (!prof.active) return NextResponse.json({ error: 'Profile is deactivated' }, { status: 400 });
+    // Same policy as onboarding: never an owner or customer account. (No role change happens
+    // here — linking grants nothing — so the owner-only elevated-role gate does not apply.)
+    if (prof.role === 'owner' || prof.role === 'customer') {
+      return NextResponse.json({ error: `Cannot link a '${prof.role}' account as an employee` }, { status: 400 });
+    }
+    const { data: dup } = await service
+      .from('hr_employees')
+      .select('id')
+      .eq('profile_id', linkProfileId)
+      .maybeSingle();
+    if (dup) return NextResponse.json({ error: 'This user already has an employee record' }, { status: 409 });
+
+    const { data: emp, error: empErr } = await service
+      .from('hr_employees')
+      .insert({ profile_id: linkProfileId, ...fields0, created_by: auth.userId })
+      .select('*')
+      .single();
+    if (empErr) {
+      if ((empErr as { code?: string }).code === '23505') {
+        return NextResponse.json({ error: 'This user already has an employee record' }, { status: 409 });
+      }
+      return NextResponse.json({ error: empErr.message }, { status: 500 });
+    }
+
+    // Venue assignment: only add memberships the account doesn't already have.
+    const warnings: string[] = [];
+    const linkStoreIds = Array.isArray(body.storeIds)
+      ? body.storeIds.filter((s): s is string => typeof s === 'string')
+      : [];
+    if (linkStoreIds.length) {
+      const { data: existing } = await service
+        .from('user_stores')
+        .select('store_id')
+        .eq('user_id', linkProfileId);
+      const have = new Set((existing ?? []).map((r) => r.store_id as string));
+      const missing = linkStoreIds.filter((sid) => !have.has(sid));
+      if (missing.length) {
+        const { error: storesErr } = await service
+          .from('user_stores')
+          .insert(missing.map((sid) => ({ user_id: linkProfileId, store_id: sid })));
+        if (storesErr) warnings.push('Store assignment failed — assign venues manually');
+      }
+    }
+
+    await logHrAudit(service, {
+      actorId: auth.userId,
+      action: 'create',
+      table: 'hr_employees',
+      recordId: emp.id,
+      before: null,
+      after: emp,
+      reason: `Linked existing account ${prof.username ?? linkProfileId}`,
+    });
+
+    return NextResponse.json({ id: emp.id, profileId: linkProfileId, linked: true, warnings }, { status: 201 });
+  }
 
   const username = String(body.username ?? '').trim().toLowerCase();
   if (!/^[a-z0-9._-]{3,}$/.test(username)) {
