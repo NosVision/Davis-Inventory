@@ -24,8 +24,8 @@ export default function EvalPeriodDetailPage() {
   const id = String(params.id);
   const isTh = useLocale() === 'th';
   const L = isTh
-    ? { back: 'กลับ', assignments: 'มอบหมายผู้ประเมิน', evaluator: 'ผู้ประเมิน', employee: 'ผู้ถูกประเมิน', add: 'เพิ่ม', noAssignments: 'ยังไม่มีการมอบหมาย', remove: 'ลบ', compute: 'คำนวณผล', results: 'ผลประเมิน', noResults: 'ยังไม่มีผล (คำนวณหลังปิดงวด)', colEmployee: 'พนักงาน', colEvaluators: 'จำนวนผู้ประเมิน', colScore: 'คะแนน (%)', submitted: 'ส่งแล้ว', assigned: 'รอประเมิน', loadFailed: 'โหลดไม่สำเร็จ', saveFailed: 'บันทึกไม่สำเร็จ', added: 'เพิ่มแล้ว', removed: 'ลบแล้ว', computed: 'คำนวณผลแล้ว', pickBoth: 'เลือกผู้ประเมินและผู้ถูกประเมิน', notFound: 'ไม่พบงวด', payoutRule: 'สูตรจ่ายโบนัส (เชิงเส้น)', flat: 'ฐาน (บาท)', perPct: 'ต่อ 1% (บาท)', saveRule: 'บันทึกสูตร', computePayouts: 'คำนวณเงิน', ruleSaved: 'บันทึกสูตรแล้ว', payoutsComputed: 'คำนวณเงินแล้ว', payoutHint: 'จ่าย = ฐาน + (ต่อ 1% × คะแนน%) · ติดลบ = หักจาก SC', payouts: 'รายการจ่าย/หัก', noPayouts: 'ยังไม่มีรายการ (กดคำนวณเงิน)', colAmount: 'จำนวน (บาท)', colStatus: 'สถานะ', approve: 'อนุมัติ', reject: 'ปฏิเสธ', approveAll: 'อนุมัติทั้งหมด', applySc: 'ลงหัก SC', poDraft: 'ร่าง', poApproved: 'อนุมัติแล้ว', poVoid: 'ยกเลิก', poApplied: 'ลงบัญชีแล้ว', poSuperseded: 'ถูกแทนที่', bonus: 'โบนัส', deduction: 'หัก', approved: 'อนุมัติแล้ว', rejected: 'ปฏิเสธแล้ว', applied: 'ลงหัก SC แล้ว', applyResult: 'ลงหัก' }
-    : { back: 'Back', assignments: 'Evaluator assignments', evaluator: 'Evaluator', employee: 'Employee', add: 'Add', noAssignments: 'No assignments yet', remove: 'Remove', compute: 'Compute results', results: 'Results', noResults: 'No results yet (compute after closing)', colEmployee: 'Employee', colEvaluators: 'Evaluators', colScore: 'Score (%)', submitted: 'Submitted', assigned: 'Pending', loadFailed: 'Load failed', saveFailed: 'Save failed', added: 'Added', removed: 'Removed', computed: 'Results computed', pickBoth: 'Pick an evaluator and an employee', notFound: 'Period not found', payoutRule: 'Payout formula (linear)', flat: 'Flat (THB)', perPct: 'Per 1% (THB)', saveRule: 'Save formula', computePayouts: 'Compute payouts', ruleSaved: 'Formula saved', payoutsComputed: 'Payouts computed', payoutHint: 'Payout = flat + (per-1% × score%) · negative = SC deduction', payouts: 'Payouts / deductions', noPayouts: 'No payouts yet (press Compute payouts)', colAmount: 'Amount (THB)', colStatus: 'Status', approve: 'Approve', reject: 'Reject', approveAll: 'Approve all', applySc: 'Apply to SC', poDraft: 'Draft', poApproved: 'Approved', poVoid: 'Void', poApplied: 'Applied', poSuperseded: 'Superseded', bonus: 'Bonus', deduction: 'Deduct', approved: 'Approved', rejected: 'Rejected', applied: 'Applied to SC', applyResult: 'Applied' };
+    ? { back: 'กลับ', assignments: 'มอบหมายผู้ประเมิน', evaluator: 'ผู้ประเมิน', employee: 'ผู้ถูกประเมิน', add: 'เพิ่ม', noAssignments: 'ยังไม่มีการมอบหมาย', remove: 'ลบ', compute: 'คำนวณผล', results: 'ผลประเมิน', noResults: 'ยังไม่มีผล (คำนวณหลังปิดงวด)', colEmployee: 'พนักงาน', colEvaluators: 'จำนวนผู้ประเมิน', colScore: 'คะแนน (%)', submitted: 'ส่งแล้ว', assigned: 'รอประเมิน', loadFailed: 'โหลดไม่สำเร็จ', saveFailed: 'บันทึกไม่สำเร็จ', added: 'เพิ่มแล้ว', removed: 'ลบแล้ว', computed: 'คำนวณผลแล้ว', pickBoth: 'เลือกผู้ประเมินและผู้ถูกประเมิน', notFound: 'ไม่พบงวด', payoutRule: 'สูตรจ่ายโบนัส (เชิงเส้น)', flat: 'ฐาน (บาท)', perPct: 'ต่อ 1% (บาท)', saveRule: 'บันทึกสูตร', computePayouts: 'คำนวณเงิน', ruleSaved: 'บันทึกสูตรแล้ว', payoutsComputed: 'คำนวณเงินแล้ว', payoutHint: 'จ่าย = ฐาน + (ต่อ 1% × คะแนน%) · ติดลบ = หักจาก SC', payouts: 'รายการจ่าย/หัก', noPayouts: 'ยังไม่มีรายการ (กดคำนวณเงิน)', colAmount: 'จำนวน (บาท)', colStatus: 'สถานะ', approve: 'อนุมัติ', reject: 'ปฏิเสธ', approveAll: 'อนุมัติทั้งหมด', applySc: 'ลงหัก SC', poDraft: 'ร่าง', poApproved: 'อนุมัติแล้ว', poVoid: 'ยกเลิก', poApplied: 'ลงบัญชีแล้ว', poSuperseded: 'ถูกแทนที่', bonus: 'โบนัส', deduction: 'หัก', approved: 'อนุมัติแล้ว', rejected: 'ปฏิเสธแล้ว', applied: 'ลงหัก SC แล้ว', applyResult: 'ลงหัก', colWorkIndex: 'ดัชนีเวลา' }
+    : { back: 'Back', assignments: 'Evaluator assignments', evaluator: 'Evaluator', employee: 'Employee', add: 'Add', noAssignments: 'No assignments yet', remove: 'Remove', compute: 'Compute results', results: 'Results', noResults: 'No results yet (compute after closing)', colEmployee: 'Employee', colEvaluators: 'Evaluators', colScore: 'Score (%)', submitted: 'Submitted', assigned: 'Pending', loadFailed: 'Load failed', saveFailed: 'Save failed', added: 'Added', removed: 'Removed', computed: 'Results computed', pickBoth: 'Pick an evaluator and an employee', notFound: 'Period not found', payoutRule: 'Payout formula (linear)', flat: 'Flat (THB)', perPct: 'Per 1% (THB)', saveRule: 'Save formula', computePayouts: 'Compute payouts', ruleSaved: 'Formula saved', payoutsComputed: 'Payouts computed', payoutHint: 'Payout = flat + (per-1% × score%) · negative = SC deduction', payouts: 'Payouts / deductions', noPayouts: 'No payouts yet (press Compute payouts)', colAmount: 'Amount (THB)', colStatus: 'Status', approve: 'Approve', reject: 'Reject', approveAll: 'Approve all', applySc: 'Apply to SC', poDraft: 'Draft', poApproved: 'Approved', poVoid: 'Void', poApplied: 'Applied', poSuperseded: 'Superseded', bonus: 'Bonus', deduction: 'Deduct', approved: 'Approved', rejected: 'Rejected', applied: 'Applied to SC', applyResult: 'Applied', colWorkIndex: 'Work index' };
 
   const [period, setPeriod] = useState<Period | null>(null);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -158,6 +158,25 @@ export default function EvalPeriodDetailPage() {
   };
 
   const nameById = (pid: string) => employees.find((e) => e.id === pid)?.name || pid.slice(0, 8);
+
+  // Work index (attendance score) for the period's month — HR sees peer score + time
+  // discipline side by side before deciding SC deductions. Names/ids come from results.
+  const [workIndex, setWorkIndex] = useState<Record<string, WorkIndexScore>>({});
+  useEffect(() => {
+    if (!period?.period_month || results.length === 0) return;
+    const month = period.period_month.slice(0, 7);
+    const [y, m] = month.split('-').map(Number);
+    const fromD = `${month}-01`;
+    const toD = `${month}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`;
+    const ids = results.map((r) => r.employee_id).join(',');
+    (async () => {
+      try {
+        const res = await fetch(`/api/hr/attendance-index?user_ids=${ids}&from=${fromD}&to=${toD}`);
+        const json = await res.json().catch(() => ({}));
+        if (res.ok) setWorkIndex((json.data ?? {}) as Record<string, WorkIndexScore>);
+      } catch { /* column simply shows — */ }
+    })();
+  }, [period?.period_month, results]);
   const hasDraft = payouts.some((p) => p.status === 'draft');
   const hasNegative = payouts.some((p) => p.amount_satang < 0 && (p.status === 'draft' || p.status === 'approved'));
 
@@ -240,6 +259,7 @@ export default function EvalPeriodDetailPage() {
                       <th className="px-3 py-2">{L.colEmployee}</th>
                       <th className="px-3 py-2 text-right">{L.colEvaluators}</th>
                       <th className="px-3 py-2 text-right">{L.colScore}</th>
+                      <th className="px-3 py-2 text-right">{L.colWorkIndex}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
@@ -248,6 +268,7 @@ export default function EvalPeriodDetailPage() {
                         <td className="px-3 py-2 font-medium text-gray-900 dark:text-white">{r.name || nameById(r.employee_id)}</td>
                         <td className="px-3 py-2 text-right tabular-nums text-gray-600 dark:text-gray-300">{r.evaluator_count}</td>
                         <td className="px-3 py-2 text-right font-semibold tabular-nums text-gray-900 dark:text-white">{r.score_pct == null ? '—' : `${Number(r.score_pct).toFixed(1)}%`}</td>
+                        <td className="px-3 py-2 text-right"><WorkIndexBadge score={workIndex[r.employee_id]} isTh={isTh} /></td>
                       </tr>
                     ))}
                   </tbody>
@@ -341,5 +362,27 @@ export default function EvalPeriodDetailPage() {
         </>
       )}
     </div>
+  );
+}
+
+interface WorkIndexScore { overall: number; band: 'excellent' | 'good' | 'fair' | 'poor' }
+
+const BADGE_TONE: Record<WorkIndexScore['band'], string> = {
+  excellent: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+  good: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300',
+  fair: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+  poor: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+};
+const BAND_TH: Record<WorkIndexScore['band'], string> = { excellent: 'ดีเยี่ยม', good: 'ดี', fair: 'พอใช้', poor: 'ควรปรับปรุง' };
+const BAND_EN: Record<WorkIndexScore['band'], string> = { excellent: 'Excellent', good: 'Good', fair: 'Fair', poor: 'Improve' };
+
+// Attendance score of the SAME month as the eval period — peer score and time discipline are
+// different dimensions, so this renders beside (never inside) the evaluation score.
+function WorkIndexBadge({ score, isTh }: { score: WorkIndexScore | undefined; isTh: boolean }) {
+  if (!score) return <span className="text-xs text-gray-300 dark:text-gray-600">—</span>;
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${BADGE_TONE[score.band]}`}>
+      {score.overall} · {(isTh ? BAND_TH : BAND_EN)[score.band]}
+    </span>
   );
 }
