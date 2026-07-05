@@ -10,16 +10,19 @@
 // point it becomes a satang figure. All ÷30 uses the company day_divisor (default 30).
 
 // ── §E late-deduction table (per late occurrence, by minutes late) ──────────────
-// >15 min → ฿50 · >30 min → ฿100 · >1h → ฿250. One charge per late day.
+// Calibrated to the client's LIVE payroll sheet ("6. Payment June 2026", 13 late rows):
+// 1–30 min → ฿50 · 31–59 → ฿100 · ≥1h → ฿250 per full hour (60–119 → 250, 120 → 500 — both
+// observed). The earlier plan text ("free under 15, flat 250 over an hour") does not match the
+// sheet, which charges ฿50 from the very first minute (L:1 → 50) and ฿250 at exactly 60.
 export const LATE_TIER_15_SATANG = 5000;
 export const LATE_TIER_30_SATANG = 10000;
 export const LATE_TIER_60_SATANG = 25000;
 
 export function lateDeductionForMinutes(lateMin: number): number {
-  if (lateMin > 60) return LATE_TIER_60_SATANG;
+  if (lateMin <= 0) return 0;
+  if (lateMin >= 60) return LATE_TIER_60_SATANG * Math.floor(lateMin / 60);
   if (lateMin > 30) return LATE_TIER_30_SATANG;
-  if (lateMin > 15) return LATE_TIER_15_SATANG;
-  return 0;
+  return LATE_TIER_15_SATANG; // charged from the very first minute (sheet: L:1 → ฿50)
 }
 
 // ── Thai progressive PND1 annual brackets (baht) ────────────────────────────────
