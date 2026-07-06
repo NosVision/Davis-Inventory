@@ -59,6 +59,8 @@ export default function PayrunReviewPage() {
   const [passErr, setPassErr] = useState<string | null>(null);
   // draft tax inputs (บาท string) keyed by payslip_id — only CHANGED rows are submitted
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  // focus filter: show only the people the engine computed a non-zero tax for (the real "check these")
+  const [onlyTaxed, setOnlyTaxed] = useState(false);
 
   const load = useCallback(async (code: string) => {
     setChecking(true);
@@ -184,6 +186,8 @@ export default function PayrunReviewPage() {
   const { payrun, rows } = data;
   const period = `${String(payrun.period_month).padStart(2, '0')}/${payrun.period_year}`;
   const readOnly = payrun.status !== 'draft';
+  const taxedCount = rows.filter((r) => r.tax_satang > 0).length;
+  const visibleRows = onlyTaxed ? rows.filter((r) => r.tax_satang > 0) : rows;
   const totals = rows.reduce(
     (a, r) => ({ gross: a.gross + r.gross_satang, sso: a.sso + r.sso_satang, tax: a.tax + r.tax_satang, net: a.net + r.net_satang }),
     { gross: 0, sso: 0, tax: 0, net: 0 }
@@ -226,23 +230,32 @@ export default function PayrunReviewPage() {
         </div>
       )}
 
-      {/* guidance */}
-      <div className="mx-auto mt-3 max-w-5xl px-4">
+      {/* guidance + filter */}
+      <div className="mx-auto mt-3 flex max-w-5xl flex-wrap items-center justify-between gap-2 px-4">
         <p className="text-xs text-gray-500">
           กรอก <span className="font-semibold text-indigo-600">ภาษี (บาท)</span> เฉพาะคนที่ต้องปรับ — ช่องว่าง = ใช้ตัวเลขปัจจุบันตามระบบ ·
-          แถวสีเหลือง = โหมดภาษีขั้นบันได (กลุ่มที่มักต้องกรอก)
+          <span className="ml-1 rounded bg-amber-100 px-1 text-amber-700">แถวสีเหลือง</span> = คนที่ระบบคำนวณว่ามีภาษี (มักต้องตรวจ)
         </p>
+        <button
+          type="button"
+          onClick={() => setOnlyTaxed((v) => !v)}
+          aria-pressed={onlyTaxed}
+          className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${onlyTaxed ? 'bg-indigo-600 text-white' : 'border border-gray-300 bg-white text-gray-600 hover:bg-gray-50'}`}
+        >
+          {onlyTaxed ? `เฉพาะคนมีภาษี (${taxedCount})` : `แสดงทั้งหมด (${rows.length})`}
+        </button>
       </div>
 
       {/* table */}
       <div className="mx-auto mt-2 max-w-5xl px-4">
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-          <table className="w-full min-w-[56rem] text-sm">
+          <table className="w-full min-w-[60rem] text-sm">
             <thead className="bg-gray-100 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500">
               <tr>
                 <th className="px-2 py-2">#</th>
                 <th className="px-2 py-2">รหัส</th>
                 <th className="px-2 py-2">ชื่อ</th>
+                <th className="px-2 py-2">ประเภทภาษี</th>
                 <th className="px-2 py-2 text-right">เงินเดือน</th>
                 <th className="px-2 py-2 text-right">OT</th>
                 <th className="px-2 py-2 text-right">เบี้ย/อื่นๆ</th>
@@ -256,13 +269,15 @@ export default function PayrunReviewPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {rows.map((r, i) => {
-                const progressive = r.tax_mode === 'progressive';
+              {visibleRows.map((r, i) => {
+                const hasTax = r.tax_satang > 0; // the real "please check" signal, not tax_mode
+                const treatment = r.sso_satang > 0 ? { t: 'สปส. 5%', c: 'bg-blue-100 text-blue-700' } : r.tax_mode === 'withholding_3pct' ? { t: '3%', c: 'bg-purple-100 text-purple-700' } : { t: 'ขั้นบันได', c: 'bg-amber-100 text-amber-700' };
                 return (
-                  <tr key={r.payslip_id} className={progressive ? 'bg-amber-50/60' : 'bg-white'}>
+                  <tr key={r.payslip_id} className={hasTax ? 'bg-amber-50/60' : 'bg-white'}>
                     <td className="px-2 py-1.5 text-gray-400">{i + 1}</td>
                     <td className="px-2 py-1.5 tabular-nums text-gray-500">{r.employee_code ?? '—'}</td>
                     <td className="max-w-40 truncate px-2 py-1.5 font-medium">{r.name}</td>
+                    <td className="px-2 py-1.5"><span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${treatment.c}`}>{treatment.t}</span></td>
                     <td className="px-2 py-1.5 text-right tabular-nums">{baht(r.salary_satang)}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums">{baht(r.ot_satang)}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums">{baht(r.allowance_satang)}</td>
@@ -283,7 +298,7 @@ export default function PayrunReviewPage() {
                         value={drafts[r.payslip_id] ?? ''}
                         onChange={(e) => setDrafts((d) => ({ ...d, [r.payslip_id]: e.target.value }))}
                         placeholder={baht(r.tax_satang)}
-                        className={`w-24 rounded-lg border px-2 py-1 text-right text-sm tabular-nums outline-none focus:ring-2 focus:ring-indigo-300 ${progressive ? 'border-amber-300 bg-white' : 'border-gray-200 bg-gray-50'} disabled:opacity-40`}
+                        className={`w-24 rounded-lg border px-2 py-1 text-right text-sm tabular-nums outline-none focus:ring-2 focus:ring-indigo-300 ${hasTax ? 'border-amber-300 bg-white' : 'border-gray-200 bg-gray-50'} disabled:opacity-40`}
                         aria-label={`ภาษีของ ${r.name}`}
                       />
                     </td>
@@ -294,7 +309,7 @@ export default function PayrunReviewPage() {
             </tbody>
             <tfoot className="bg-gray-50 text-xs font-bold">
               <tr>
-                <td colSpan={7} className="px-2 py-2 text-right text-gray-500">รวมทั้งงวด</td>
+                <td colSpan={8} className="px-2 py-2 text-right text-gray-500">รวมทั้งงวด</td>
                 <td className="px-2 py-2 text-right tabular-nums">{baht(totals.gross)}</td>
                 <td />
                 <td className="px-2 py-2 text-right tabular-nums">{baht(totals.sso)}</td>
