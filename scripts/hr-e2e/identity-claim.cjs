@@ -35,6 +35,7 @@ const HR_ID = u('hr-test-hr').id;
     company_id: co.id, store_id: HRTEST, full_name_th: FULLNAME, position_text: 'Service',
     rate_satang: 1_250_000, pay_type: 'full_monthly', start_date: '2024-05-01',
     sso_enrolled: true, tax_mode: 'progressive', sheet_ref: 'E2E#1', created_by: HR_ID,
+    bank_name: 'BBL', bank_account_no: '0123456789', full_name_en: 'Mr. Identity Tester', employee_code: '9001',
   }).select('id').single();
   check('setup: pending identity seeded', !ins.error, ins.error?.message);
   const identId = ins.data.id;
@@ -53,6 +54,7 @@ const HR_ID = u('hr-test-hr').id;
     const found = (opt.json?.data ?? []).find((o) => o.full_name_th === FULLNAME);
     check('options: seeded name searchable', !!found, opt.json?.data?.length);
     check('options: no salary fields leaked', found && !('rate_satang' in found) && !('tax_mode' in found), found && Object.keys(found));
+    check('options: no bank fields leaked', found && !('bank_account_no' in found) && !('bank_name' in found), found && Object.keys(found));
 
     // claim
     const cl = await req(me, 'POST', '/api/hr/ess/identity/claim', { identity_id: identId });
@@ -83,9 +85,10 @@ const HR_ID = u('hr-test-hr').id;
     check('HR approve 200', dec.status === 200, `${dec.status} ${(dec.text || '').slice(0, 140)}`);
     empId = dec.json?.data?.employee_id ?? null;
 
-    const { data: emp } = await svc.from('hr_employees').select('profile_id, rate_satang, sso_enrolled, start_date, company_id').eq('id', empId).maybeSingle();
+    const { data: emp } = await svc.from('hr_employees').select('profile_id, rate_satang, sso_enrolled, start_date, company_id, bank_name, bank_account_no, employee_code').eq('id', empId).maybeSingle();
     check('employee linked to the EXISTING profile', emp?.profile_id === uid, emp);
     check('employee seeded from the sheet row (rate ฿12,500)', emp?.rate_satang === 1_250_000 && emp?.sso_enrolled === true && emp?.start_date === '2024-05-01', emp);
+    check('bank + code copied onto the employee', emp?.bank_name === 'BBL' && emp?.bank_account_no === '0123456789' && emp?.employee_code === '9001', { bank: emp?.bank_name, acct: emp?.bank_account_no, code: emp?.employee_code });
 
     const { data: identAfter } = await svc.from('hr_pending_identities').select('status, linked_employee_id').eq('id', identId).maybeSingle();
     check('identity marked linked', identAfter?.status === 'linked' && identAfter?.linked_employee_id === empId, identAfter);

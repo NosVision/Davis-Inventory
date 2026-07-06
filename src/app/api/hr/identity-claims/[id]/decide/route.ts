@@ -111,6 +111,9 @@ export async function POST(
       profile_id: claimant,
       company_id: ident.company_id,
       full_name: ident.full_name_th, // formal payroll name (slips/accountant review print this)
+      employee_code: ident.employee_code ?? null,
+      bank_name: ident.bank_name ?? null,
+      bank_account_no: ident.bank_account_no ?? null,
       position_id: positionId,
       rate_satang: ident.rate_satang ?? 0,
       pay_type: ident.pay_type ?? 'full_monthly',
