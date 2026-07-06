@@ -18,7 +18,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
   const { data: slip, error: slErr } = await service
     .from('hr_payslips')
-    .select('id, payrun_id, user_id, rate_satang, pay_type, tax_mode, worked_days, gross_satang, sso_satang, tax_satang, total_deduction_satang, net_satang')
+    .select('id, payrun_id, user_id, employee_id, rate_satang, pay_type, tax_mode, worked_days, gross_satang, sso_satang, tax_satang, total_deduction_satang, net_satang')
     .eq('id', id)
     .maybeSingle();
   if (slErr) return NextResponse.json({ error: 'Failed to load payslip' }, { status: 500 });
@@ -32,21 +32,31 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
-  const [earnRes, dedRes, payrunRes, profRes, ovrRes] = await Promise.all([
+  const [earnRes, dedRes, payrunRes, profRes, ovrRes, empRes] = await Promise.all([
     service.from('hr_payslip_earnings').select('type, label, amount_satang, ref, sort').eq('payslip_id', id).order('sort'),
     service.from('hr_payslip_deductions').select('type, label, amount_satang, reason, ref, sort').eq('payslip_id', id).order('sort'),
     service.from('hr_payruns').select('id, company_id, period_year, period_month, cycle_start, cycle_end, pay_date, status, company:hr_companies(name, address)').eq('id', slip.payrun_id).maybeSingle(),
     service.from('profiles').select('username, display_name').eq('id', slip.user_id).maybeSingle(),
     service.from('hr_payslip_tax_overrides').select('tax_satang, note, set_via, updated_at').eq('payrun_id', slip.payrun_id).eq('profile_id', slip.user_id).maybeSingle(),
+    // slip-form print header fields (§ dot-matrix form): code / real name / bank account
+    service.from('hr_employees').select('employee_code, display_name, bank_account_no').eq('id', (slip.employee_id as string) ?? '00000000-0000-0000-0000-000000000000').maybeSingle(),
   ]);
   if (earnRes.error || dedRes.error) {
     return NextResponse.json({ error: 'Failed to load payslip lines' }, { status: 500 });
   }
 
-  const employeeName = profRes.data?.display_name || profRes.data?.username || '—';
+  const emp = empRes.data as { employee_code: string | null; display_name: string | null; bank_account_no: string | null } | null;
+  const employeeName = emp?.display_name || profRes.data?.display_name || profRes.data?.username || '—';
+  const nickname = profRes.data?.display_name && profRes.data.display_name !== employeeName ? profRes.data.display_name : null;
   return NextResponse.json({
     data: {
-      payslip: { ...slip, employee_name: employeeName },
+      payslip: {
+        ...slip,
+        employee_name: employeeName,
+        employee_code: emp?.employee_code ?? null,
+        nickname,
+        bank_account_no: emp?.bank_account_no ?? null,
+      },
       payrun: payrunRes.data ?? null,
       earnings: earnRes.data ?? [],
       deductions: dedRes.data ?? [],

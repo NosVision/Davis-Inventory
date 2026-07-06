@@ -2781,6 +2781,8 @@
       "viewSlip": "View slip",
       "recurring": "Recurring items",
       "sendToAccountant": "Send to accountant",
+      "printCalibrate": "Alignment test print",
+      "printCalibrateHint": "Prints a placeholder form (X/9) on the real slip paper to check field positions",
       "reviewLinkHint": "Link for the accounting office — they view the whole run and key taxes without an account; HR is notified on save",
       "reviewLinkCreate": "Create link",
       "reviewLinkRegen": "Create new link (old one stops working)",

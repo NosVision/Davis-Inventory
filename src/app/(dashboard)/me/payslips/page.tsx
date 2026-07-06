@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { Loader2, Wallet, Printer, X } from 'lucide-react';
 import { Button, EmptyState, Modal, ModalFooter, PageHeader, DataList, DataCard, MoneyValue, ViewToggle, useViewMode, toast } from '@/components/ui';
 import { PayslipView, type PayslipDetailData } from '@/components/hr/payslip-view';
+import { PayslipFormPrint } from '@/components/hr/payslip-form-print';
 
 interface MyPayslip {
   id: string;
@@ -15,7 +16,7 @@ interface MyPayslip {
   pay_date: string | null;
 }
 
-const PRINT_CSS = `@media print { @page { size: 9in 5.5in; margin: 0.5in; } }`;
+const PRINT_CSS = `@media print { @page { size: 9in 5.5in; margin: 0.3in; } }`;
 
 export default function MyPayslipsPage() {
   const t = useTranslations('hr.payslip');
@@ -98,7 +99,7 @@ export default function MyPayslipsPage() {
       )}
 
       <div className="hidden print:block">
-        {printSlip && <PayslipView data={printSlip} print />}
+        {printSlip && <PayslipFormPrint data={printSlip} />}
       </div>
     </div>
   );

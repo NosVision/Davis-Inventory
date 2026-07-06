@@ -14,6 +14,10 @@ export interface PayslipDetailData {
   payslip: {
     id: string;
     employee_name?: string;
+    employee_code?: string | null;
+    nickname?: string | null;
+    bank_account_no?: string | null;
+    rate_satang?: number;
     pay_type: string;
     tax_mode?: string;
     worked_days?: number;

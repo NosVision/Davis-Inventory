@@ -8,6 +8,7 @@ import { Button, EmptyState, Modal, ModalFooter, PageHeader, KpiRow, StatTile, M
 import { cn } from '@/lib/utils/cn';
 import { formatBaht } from '@/lib/pos/money';
 import { PayslipView, type PayslipDetailData } from '@/components/hr/payslip-view';
+import { PayslipFormPrint } from '@/components/hr/payslip-form-print';
 import { RecurringModal } from './_components/recurring-modal';
 import { TaxAllowanceModal } from './_components/tax-allowance-modal';
 
@@ -41,7 +42,18 @@ interface PayrunDetail {
   totals: { gross: number; net: number; sso: number; tax: number };
 }
 
-const PRINT_CSS = `@media print { @page { size: 9in 5.5in; margin: 0.5in; } }`;
+const PRINT_CSS = `@media print { @page { size: 9in 5.5in; margin: 0.3in; } }`;
+
+// dummy slip for the alignment test print — X/9 placeholders land where real data will
+const CALIBRATE_DATA: PayslipDetailData = {
+  payslip: {
+    id: 'calibrate', employee_name: 'XXXXXX XXXXXX', employee_code: '9999', nickname: 'XXXX',
+    bank_account_no: '9999999999', rate_satang: 0, pay_type: 'full_monthly', worked_days: 99,
+    gross_satang: 999999, sso_satang: 0, tax_satang: 0, total_deduction_satang: 999999, net_satang: 999999,
+  },
+  payrun: { period_year: 2026, period_month: 1, pay_date: null, company: { name: 'COMPANY NAME CO., LTD.', address: '99 Address line, Bangkok 10110, Thailand' } },
+  earnings: [], deductions: [],
+};
 
 function currentMonth(): string {
   const d = new Date();
@@ -334,6 +346,9 @@ export default function HrPayrollPage() {
                     {detail.payrun.pay_date ? ` · ${t('payDate')} ${detail.payrun.pay_date}` : ''}
                   </div>
                   <div className="flex gap-2">
+                    <Button variant="ghost" size="sm" icon={<Printer className="h-4 w-4" />} onClick={() => doPrint(CALIBRATE_DATA)} title={t('printCalibrateHint')}>
+                      {t('printCalibrate')}
+                    </Button>
                     <Button variant="outline" size="sm" icon={<Send className="h-4 w-4" />} onClick={openReviewLink} disabled={busy || detail.payslips.length === 0}>
                       {t('sendToAccountant')}
                     </Button>
@@ -507,9 +522,9 @@ export default function HrPayrollPage() {
         />
       )}
 
-      {/* print-only slip */}
+      {/* print-only slip — fixed-position 9×5.5" security-form layout */}
       <div className="hidden print:block">
-        {printSlip && <PayslipView data={printSlip} print />}
+        {printSlip && <PayslipFormPrint data={printSlip} calibrate={printSlip.payslip.id === 'calibrate'} />}
       </div>
     </div>
   );
