@@ -8,7 +8,7 @@ import { notifyUser, type NotificationType } from '@/lib/notifications/service';
 export async function notifyHrManagers(
   service: SupabaseClient,
   params: {
-    storeId: string;
+    storeId: string | null;
     type: NotificationType;
     title: string;
     body: string;

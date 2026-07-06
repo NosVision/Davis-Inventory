@@ -38,11 +38,13 @@ export type NotificationType =
   | 'hr_swap_request'         // มีคำขอสลับวันหยุดใหม่ (for HR)
   | 'hr_swap_result'          // ผลอนุมัติสลับวันหยุด (for the two employees)
   | 'hr_identity_claim'       // พนักงานยืนยันตัวตน รอ HR ตรวจ (for HR)
-  | 'hr_identity_result';     // ผลการตรวจยืนยันตัวตน (for the employee)
+  | 'hr_identity_result'      // ผลการตรวจยืนยันตัวตน (for the employee)
+  | 'hr_tax_submitted';       // สนง.บัญชีบันทึกภาษีผ่านลิงก์แล้ว (for HR)
 
 export interface NotifyUserParams {
   userId: string;
-  storeId: string;
+  /** null = แจ้งเตือนระดับบริษัท/ทั้งเครือ (ไม่ผูกสาขา) — notifications.store_id is nullable */
+  storeId: string | null;
   type: NotificationType;
   title: string;
   body: string;
@@ -127,6 +129,7 @@ const TYPE_TO_PREF: Record<NotificationType, keyof NotificationPreferences> = {
   hr_swap_result: 'notify_approval_request',  // employees see the decision under approvals
   hr_identity_claim: 'notify_approval_request',
   hr_identity_result: 'notify_approval_request',
+  hr_tax_submitted: 'notify_approval_request',
 };
 
 // Customer-facing notification types that respect store_settings toggles

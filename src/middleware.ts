@@ -24,6 +24,8 @@ const PUBLIC_ROUTES = [
   '/api/hr-checklist',           // owner saves checklist picks (no login); GET self-guards auth
   '/api/customer',               // /api/customer/* — each route does its own auth
   '/customer',                   // LIFF customer page itself
+  '/review',                     // /review/[token] — accountant payrun review (token IS the auth)
+  '/api/hr/payrun-review',       // token-gated payrun review API (hashed-token check inside)
 ];
 const CUSTOMER_ROUTES = ['/customer'];
 

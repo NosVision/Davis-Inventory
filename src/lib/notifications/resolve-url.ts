@@ -88,6 +88,10 @@ export function resolveNotificationUrl(
     case 'hr_identity_result':
       return '/me';
 
+    // สนง.บัญชีบันทึกภาษีผ่านลิงก์
+    case 'hr_tax_submitted':
+      return '/hr/payroll';
+
     // โปรโมชั่น
     case 'promotion':
       return '/notifications';

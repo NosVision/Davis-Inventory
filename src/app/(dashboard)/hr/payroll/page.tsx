@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { Loader2, Wallet, Play, Lock, LockOpen, Printer, X, FileText, Settings2, Percent, GitCompareArrows, Users, Coins } from 'lucide-react';
+import { Loader2, Wallet, Play, Lock, LockOpen, Printer, X, FileText, Settings2, Percent, GitCompareArrows, Users, Coins, Send } from 'lucide-react';
 import { Button, EmptyState, Modal, ModalFooter, PageHeader, KpiRow, StatTile, MoneyValue, StatusBadge, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { formatBaht } from '@/lib/pos/money';
@@ -186,6 +186,52 @@ export default function HrPayrollPage() {
     }
   }, [detail, t, loadPayruns, openPayrun]);
 
+  // accountant review link — mint (revokes any previous), show once, copy, revoke
+  const [reviewLink, setReviewLink] = useState<{ url: string; expires_at: string } | null>(null);
+  const [reviewStatus, setReviewStatus] = useState<{ created_at: string; accessed_at: string | null; saved_at: string | null } | null>(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [minting, setMinting] = useState(false);
+
+  const openReviewLink = useCallback(async () => {
+    if (!detail) return;
+    setReviewOpen(true);
+    setReviewLink(null);
+    try {
+      const res = await fetch(`/api/hr/payruns/${detail.payrun.id}/review-link`);
+      const json = await res.json().catch(() => ({}));
+      if (res.ok) setReviewStatus(json.data ?? null);
+    } catch { /* status chip stays empty */ }
+  }, [detail]);
+
+  const mintReviewLink = useCallback(async () => {
+    if (!detail) return;
+    setMinting(true);
+    try {
+      const res = await fetch(`/api/hr/payruns/${detail.payrun.id}/review-link`, { method: 'POST' });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof json.error === 'string' ? json.error : undefined);
+      setReviewLink(json.data as { url: string; expires_at: string });
+      setReviewStatus({ created_at: new Date().toISOString(), accessed_at: null, saved_at: null });
+    } catch (e) {
+      toast({ type: 'error', title: t('actionFailed'), message: e instanceof Error ? e.message : undefined });
+    } finally {
+      setMinting(false);
+    }
+  }, [detail, t]);
+
+  const revokeReviewLink = useCallback(async () => {
+    if (!detail) return;
+    try {
+      const res = await fetch(`/api/hr/payruns/${detail.payrun.id}/review-link`, { method: 'DELETE' });
+      if (!res.ok) throw new Error();
+      setReviewLink(null);
+      setReviewStatus(null);
+      toast({ type: 'success', title: t('reviewLinkRevoked') });
+    } catch {
+      toast({ type: 'error', title: t('actionFailed') });
+    }
+  }, [detail, t]);
+
   const openSlip = useCallback(async (id: string) => {
     try {
       const res = await fetch(`/api/hr/payslips/${id}`);
@@ -288,6 +334,9 @@ export default function HrPayrollPage() {
                     {detail.payrun.pay_date ? ` · ${t('payDate')} ${detail.payrun.pay_date}` : ''}
                   </div>
                   <div className="flex gap-2">
+                    <Button variant="outline" size="sm" icon={<Send className="h-4 w-4" />} onClick={openReviewLink} disabled={busy || detail.payslips.length === 0}>
+                      {t('sendToAccountant')}
+                    </Button>
                     {isFinalized ? (
                       <Button variant="outline" size="sm" icon={<LockOpen className="h-4 w-4" />} onClick={reopen} disabled={busy}>
                         {t('reopen')}
@@ -376,6 +425,49 @@ export default function HrPayrollPage() {
           </div>
         </div>
       </div>
+
+      {/* accountant review link modal */}
+      {reviewOpen && detail && (
+        <Modal isOpen onClose={() => setReviewOpen(false)} title={t('sendToAccountant')} size="md">
+          <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">{t('reviewLinkHint')}</p>
+          {reviewStatus && !reviewLink && (
+            <div className="mb-3 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+              {t('reviewLinkExisting')} · {t('reviewLinkOpened')}: {reviewStatus.accessed_at ? new Date(reviewStatus.accessed_at).toLocaleString() : '—'} · {t('reviewLinkSaved')}: {reviewStatus.saved_at ? new Date(reviewStatus.saved_at).toLocaleString() : '—'}
+            </div>
+          )}
+          {reviewLink ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <input readOnly value={reviewLink.url} className="control w-full text-xs" onFocus={(e) => e.target.select()} />
+                <Button
+                  size="sm"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(reviewLink.url);
+                      toast({ type: 'success', title: t('reviewLinkCopied') });
+                    } catch {
+                      toast({ type: 'error', title: t('actionFailed') });
+                    }
+                  }}
+                >
+                  {t('copy')}
+                </Button>
+              </div>
+              <p className="text-[11px] text-amber-600 dark:text-amber-400">{t('reviewLinkOnce', { date: new Date(reviewLink.expires_at).toLocaleDateString() })}</p>
+            </div>
+          ) : (
+            <Button onClick={mintReviewLink} isLoading={minting} icon={<Send className="h-4 w-4" />}>
+              {reviewStatus ? t('reviewLinkRegen') : t('reviewLinkCreate')}
+            </Button>
+          )}
+          <ModalFooter>
+            {reviewStatus && (
+              <Button variant="outline" onClick={revokeReviewLink}>{t('reviewLinkRevoke')}</Button>
+            )}
+            <Button variant="ghost" onClick={() => setReviewOpen(false)}>{t('close')}</Button>
+          </ModalFooter>
+        </Modal>
+      )}
 
       {/* payslip detail modal */}
       {slip && (
