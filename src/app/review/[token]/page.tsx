@@ -52,25 +52,48 @@ export default function PayrunReviewPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedBanner, setSavedBanner] = useState(false);
+  // passcode gate — the accountant enters the code HR shared before any data loads
+  const [locked, setLocked] = useState(true);
+  const [passcode, setPasscode] = useState('');
+  const [checking, setChecking] = useState(false);
+  const [passErr, setPassErr] = useState<string | null>(null);
   // draft tax inputs (บาท string) keyed by payslip_id — only CHANGED rows are submitted
   const [drafts, setDrafts] = useState<Record<string, string>>({});
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (code: string) => {
+    setChecking(true);
+    setPassErr(null);
     try {
-      const res = await fetch(`/api/hr/payrun-review/${token}`);
+      const res = await fetch(`/api/hr/payrun-review/${token}?passcode=${encodeURIComponent(code)}`);
       const json = await res.json().catch(() => ({}));
+      if (res.status === 401 && json?.locked) {
+        setPassErr('รหัสไม่ถูกต้อง');
+        return;
+      }
       if (!res.ok) throw new Error(typeof json.error === 'string' ? json.error : 'โหลดไม่สำเร็จ');
       setData(json.data as ReviewData);
+      setLocked(false);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'โหลดไม่สำเร็จ');
+      setLocked(false); // a non-passcode error (expired/revoked) shows the error card, not the gate
     } finally {
+      setChecking(false);
       setLoading(false);
     }
   }, [token]);
 
-  useEffect(() => { load(); }, [load]);
+  // probe once: if the link itself is dead (expired/revoked/bad), surface that instead of the gate
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`/api/hr/payrun-review/${token}`);
+        const json = await res.json().catch(() => ({}));
+        if (res.status === 401 && json?.locked) { setLoading(false); return; } // healthy link, needs passcode
+        if (!res.ok) { setError(typeof json.error === 'string' ? json.error : 'ลิงก์ใช้ไม่ได้'); setLocked(false); }
+      } catch { setError('โหลดไม่สำเร็จ'); setLocked(false); } finally { setLoading(false); }
+    })();
+  }, [token]);
 
   const changed = useMemo(() => {
     if (!data) return [];
@@ -91,19 +114,19 @@ export default function PayrunReviewPage() {
       const res = await fetch(`/api/hr/payrun-review/${token}/taxes`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ entries: changed }),
+        body: JSON.stringify({ entries: changed, passcode }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(typeof json.error === 'string' ? json.error : 'บันทึกไม่สำเร็จ');
       setDrafts({});
       setSavedBanner(true);
-      await load();
+      await load(passcode);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'บันทึกไม่สำเร็จ');
     } finally {
       setSaving(false);
     }
-  }, [changed, token, load]);
+  }, [changed, token, load, passcode]);
 
   if (loading) {
     return (
@@ -120,6 +143,39 @@ export default function PayrunReviewPage() {
           <p className="text-sm font-semibold text-gray-700">{error}</p>
           <p className="mt-1 text-xs text-gray-400">ลิงก์อาจหมดอายุหรือถูกยกเลิก — ติดต่อ HR เพื่อขอลิงก์ใหม่</p>
         </div>
+      </div>
+    );
+  }
+
+  // passcode gate — shown until the correct code loads the data
+  if (locked && !data) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6">
+        <form
+          onSubmit={(e) => { e.preventDefault(); if (passcode.trim()) load(passcode.trim()); }}
+          className="w-full max-w-xs rounded-2xl border border-gray-200 bg-white p-7 text-center shadow-sm"
+        >
+          <Lock className="mx-auto mb-3 h-9 w-9 text-indigo-400" />
+          <p className="mb-1 text-sm font-semibold text-gray-800">ใส่รหัสเพื่อเปิดเอกสาร</p>
+          <p className="mb-4 text-xs text-gray-400">รหัสที่ HR แจ้งมาพร้อมลิงก์</p>
+          <input
+            autoFocus
+            inputMode="numeric"
+            value={passcode}
+            onChange={(e) => setPasscode(e.target.value)}
+            placeholder="••••"
+            className="w-full rounded-xl border border-gray-300 px-4 py-2.5 text-center text-lg tracking-[0.4em] outline-none focus:ring-2 focus:ring-indigo-300"
+            aria-label="รหัสผ่าน"
+          />
+          {passErr && <p className="mt-2 text-xs text-red-500">{passErr}</p>}
+          <button
+            type="submit"
+            disabled={checking || !passcode.trim()}
+            className="mt-4 w-full rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 disabled:opacity-40"
+          >
+            {checking ? '…' : 'เปิด'}
+          </button>
+        </form>
       </div>
     );
   }
@@ -149,7 +205,7 @@ export default function PayrunReviewPage() {
             </p>
           </div>
           <a
-            href={`/api/hr/payrun-review/${token}/export`}
+            href={`/api/hr/payrun-review/${token}/export?passcode=${encodeURIComponent(passcode)}`}
             className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
           >
             <Download className="h-4 w-4" /> ดาวน์โหลด Excel

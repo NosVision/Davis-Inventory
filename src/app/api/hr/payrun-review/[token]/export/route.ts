@@ -8,13 +8,18 @@ const b = (satang: number) => Math.round(satang) / 100;
 // GET /api/hr/payrun-review/[token]/export — the same summary as the review page, as a real
 // .xlsx (the accounting office's familiar Payment-file shape) for their own records. PUBLIC,
 // token-gated like the rest of the review family.
-export async function GET(_request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const service = createServiceClient();
 
   const loaded = await loadReviewLink(service, token);
   if (!loaded.ok) return NextResponse.json({ error: loaded.error }, { status: loaded.status });
-  const { payrun } = loaded;
+  const { link, payrun } = loaded;
+
+  const passcode = request.nextUrl.searchParams.get('passcode') ?? '';
+  if (passcode !== link.passcode) {
+    return NextResponse.json({ error: 'ต้องใส่รหัสให้ถูกต้อง' }, { status: 401 });
+  }
 
   const rows = await buildPayrunReviewRows(service, payrun.id);
   if (rows === null) return NextResponse.json({ error: 'Failed to load payrun' }, { status: 500 });

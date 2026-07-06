@@ -19,12 +19,16 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   if (!loaded.ok) return NextResponse.json({ error: loaded.error }, { status: loaded.status });
   const { link, payrun } = loaded;
 
+  const body0 = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  if (String(body0.passcode ?? '') !== link.passcode) {
+    return NextResponse.json({ error: 'ต้องใส่รหัสให้ถูกต้อง', locked: true }, { status: 401 });
+  }
+
   if (payrun.status !== 'draft') {
     return NextResponse.json({ error: 'งวดนี้ปิดแล้ว — แก้ไขไม่ได้ กรุณาติดต่อ HR' }, { status: 409 });
   }
 
-  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-  const raw = Array.isArray(body.entries) ? body.entries : null;
+  const raw = Array.isArray(body0.entries) ? body0.entries : null;
   if (!raw || raw.length === 0) return NextResponse.json({ error: 'entries is required' }, { status: 400 });
   if (raw.length > MAX_ENTRIES) return NextResponse.json({ error: 'Too many entries' }, { status: 400 });
 

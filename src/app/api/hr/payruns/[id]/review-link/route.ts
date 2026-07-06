@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManagerForStore } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
-import { newReviewToken, hashReviewToken, REVIEW_LINK_TTL_DAYS } from '@/lib/hr/review-link';
+import { newReviewToken, hashReviewToken, REVIEW_LINK_TTL_DAYS, normalizePasscode, DEFAULT_REVIEW_PASSCODE } from '@/lib/hr/review-link';
 
 async function authForPayrun(service: ReturnType<typeof createServiceClient>, payrunId: string) {
   const { data: payrun } = await service.from('hr_payruns').select('id, store_id, status').eq('id', payrunId).maybeSingle();
@@ -27,6 +27,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     .eq('payrun_id', id)
     .is('revoked_at', null);
 
+  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  // passcode: caller may set one; blank → default '1234'; malformed → 400
+  let passcode = DEFAULT_REVIEW_PASSCODE;
+  if (body.passcode !== undefined && body.passcode !== null && body.passcode !== '') {
+    const norm = normalizePasscode(body.passcode);
+    if (!norm) return NextResponse.json({ error: 'passcode must be 4–12 letters/digits' }, { status: 400 });
+    passcode = norm;
+  }
+
   const token = newReviewToken();
   const expiresAt = new Date(Date.now() + REVIEW_LINK_TTL_DAYS * 86_400_000).toISOString();
   const { error } = await service.from('hr_payrun_review_links').insert({
@@ -34,6 +43,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     token_hash: hashReviewToken(token),
     created_by: auth.userId,
     expires_at: expiresAt,
+    passcode,
   });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
@@ -48,7 +58,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   });
 
   const url = `${request.nextUrl.origin}/review/${token}`;
-  return NextResponse.json({ data: { url, expires_at: expiresAt } }, { status: 201 });
+  return NextResponse.json({ data: { url, expires_at: expiresAt, passcode } }, { status: 201 });
 }
 
 // GET — status of the current active link (never the token itself; that is unrecoverable).
@@ -61,7 +71,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
   const { data: link } = await service
     .from('hr_payrun_review_links')
-    .select('created_at, expires_at, accessed_at, saved_at')
+    .select('created_at, expires_at, accessed_at, saved_at, passcode')
     .eq('payrun_id', id)
     .is('revoked_at', null)
     .order('created_at', { ascending: false })

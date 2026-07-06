@@ -6,13 +6,19 @@ import { loadReviewLink, buildPayrunReviewRows } from '@/lib/hr/review-link';
 // credential. Returns the payrun summary the accounting office needs to compute taxes —
 // intentionally the same information the old Payment file carried, name-level PII included,
 // bounded by the hashed-token check + expiry + revocation.
-export async function GET(_request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const service = createServiceClient();
 
   const loaded = await loadReviewLink(service, token);
   if (!loaded.ok) return NextResponse.json({ error: loaded.error }, { status: loaded.status });
   const { link, payrun } = loaded;
+
+  // passcode gate (second factor). Missing/wrong → 401 { locked } so the page shows the prompt.
+  const passcode = request.nextUrl.searchParams.get('passcode') ?? '';
+  if (passcode !== link.passcode) {
+    return NextResponse.json({ error: 'ต้องใส่รหัสให้ถูกต้อง', locked: true }, { status: 401 });
+  }
 
   if (!link.accessed_at) {
     await service.from('hr_payrun_review_links').update({ accessed_at: new Date().toISOString() }).eq('id', link.id);

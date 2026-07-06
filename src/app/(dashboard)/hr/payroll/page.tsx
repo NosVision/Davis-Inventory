@@ -254,10 +254,11 @@ export default function HrPayrollPage() {
   }, [detail, t, loadPayruns, openPayrun]);
 
   // accountant review link — mint (revokes any previous), show once, copy, revoke
-  const [reviewLink, setReviewLink] = useState<{ url: string; expires_at: string } | null>(null);
-  const [reviewStatus, setReviewStatus] = useState<{ created_at: string; accessed_at: string | null; saved_at: string | null } | null>(null);
+  const [reviewLink, setReviewLink] = useState<{ url: string; expires_at: string; passcode: string } | null>(null);
+  const [reviewStatus, setReviewStatus] = useState<{ created_at: string; accessed_at: string | null; saved_at: string | null; passcode?: string } | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [minting, setMinting] = useState(false);
+  const [reviewPasscode, setReviewPasscode] = useState('1234');
 
   const openReviewLink = useCallback(async () => {
     if (!detail) return;
@@ -268,17 +269,22 @@ export default function HrPayrollPage() {
       const json = await res.json().catch(() => ({}));
       if (res.ok) setReviewStatus(json.data ?? null);
     } catch { /* status chip stays empty */ }
+    setReviewPasscode('1234');
   }, [detail]);
 
   const mintReviewLink = useCallback(async () => {
     if (!detail) return;
     setMinting(true);
     try {
-      const res = await fetch(`/api/hr/payruns/${detail.payrun.id}/review-link`, { method: 'POST' });
+      const res = await fetch(`/api/hr/payruns/${detail.payrun.id}/review-link`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ passcode: reviewPasscode.trim() || undefined }),
+      });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(typeof json.error === 'string' ? json.error : undefined);
-      setReviewLink(json.data as { url: string; expires_at: string });
-      setReviewStatus({ created_at: new Date().toISOString(), accessed_at: null, saved_at: null });
+      setReviewLink(json.data as { url: string; expires_at: string; passcode: string });
+      setReviewStatus({ created_at: new Date().toISOString(), accessed_at: null, saved_at: null, passcode: json.data?.passcode });
     } catch (e) {
       toast({ type: 'error', title: t('actionFailed'), message: e instanceof Error ? e.message : undefined });
     } finally {
@@ -593,29 +599,78 @@ export default function HrPayrollPage() {
             </div>
           )}
           {reviewLink ? (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <input readOnly value={reviewLink.url} className="control w-full text-xs" onFocus={(e) => e.target.select()} />
-                <Button
-                  size="sm"
-                  onClick={async () => {
-                    try {
-                      await navigator.clipboard.writeText(reviewLink.url);
-                      toast({ type: 'success', title: t('reviewLinkCopied') });
-                    } catch {
-                      toast({ type: 'error', title: t('actionFailed') });
-                    }
-                  }}
-                >
-                  {t('copy')}
-                </Button>
-              </div>
-              <p className="text-[11px] text-amber-600 dark:text-amber-400">{t('reviewLinkOnce', { date: new Date(reviewLink.expires_at).toLocaleDateString() })}</p>
-            </div>
+            (() => {
+              const shareText = t('reviewLinkShareMsg', { url: reviewLink.url, code: reviewLink.passcode });
+              const lineUrl = `https://line.me/R/msg/text/?${encodeURIComponent(shareText)}`;
+              return (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <input readOnly value={reviewLink.url} className="control w-full text-xs" onFocus={(e) => e.target.select()} />
+                    <Button
+                      size="sm"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(reviewLink.url);
+                          toast({ type: 'success', title: t('reviewLinkCopied') });
+                        } catch {
+                          toast({ type: 'error', title: t('actionFailed') });
+                        }
+                      }}
+                    >
+                      {t('copy')}
+                    </Button>
+                  </div>
+                  {/* passcode display */}
+                  <div className="flex items-center justify-between gap-2 rounded-lg bg-indigo-50 px-3 py-2 dark:bg-indigo-900/20">
+                    <span className="text-xs text-gray-600 dark:text-gray-300">{t('reviewLinkPasscode')}</span>
+                    <span className="font-mono text-base font-bold tracking-widest text-indigo-700 dark:text-indigo-300">{reviewLink.passcode}</span>
+                  </div>
+                  {/* copy both + share to LINE */}
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(shareText);
+                          toast({ type: 'success', title: t('reviewLinkCopiedBoth') });
+                        } catch {
+                          toast({ type: 'error', title: t('actionFailed') });
+                        }
+                      }}
+                    >
+                      {t('reviewLinkCopyBoth')}
+                    </Button>
+                    <a
+                      href={lineUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-[#06C755] px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+                    >
+                      <Send className="h-3.5 w-3.5" /> {t('reviewLinkShareLine')}
+                    </a>
+                  </div>
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400">{t('reviewLinkOnce', { date: new Date(reviewLink.expires_at).toLocaleDateString() })}</p>
+                </div>
+              );
+            })()
           ) : (
-            <Button onClick={mintReviewLink} isLoading={minting} icon={<Send className="h-4 w-4" />}>
-              {reviewStatus ? t('reviewLinkRegen') : t('reviewLinkCreate')}
-            </Button>
+            <div className="space-y-3">
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-300">
+                {t('reviewLinkPasscodeSet')}
+                <input
+                  value={reviewPasscode}
+                  onChange={(e) => setReviewPasscode(e.target.value)}
+                  maxLength={12}
+                  className="control mt-1 w-32 font-mono tracking-widest"
+                  placeholder="1234"
+                />
+              </label>
+              <Button onClick={mintReviewLink} isLoading={minting} icon={<Send className="h-4 w-4" />}>
+                {reviewStatus ? t('reviewLinkRegen') : t('reviewLinkCreate')}
+              </Button>
+            </div>
           )}
           <ModalFooter>
             {reviewStatus && (

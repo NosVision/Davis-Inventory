@@ -23,6 +23,14 @@ export interface ReviewLinkRow {
   revoked_at: string | null;
   accessed_at: string | null;
   saved_at: string | null;
+  passcode: string;
+}
+
+export const DEFAULT_REVIEW_PASSCODE = '1234';
+/** normalize a passcode input; valid = 4–12 chars, digits/letters only */
+export function normalizePasscode(raw: unknown): string | null {
+  const s = String(raw ?? '').trim();
+  return /^[a-zA-Z0-9]{4,12}$/.test(s) ? s : null;
 }
 
 export interface ReviewPayrun {
@@ -47,7 +55,7 @@ export async function loadReviewLink(service: SupabaseClient, rawToken: string):
   }
   const { data: link, error } = await service
     .from('hr_payrun_review_links')
-    .select('id, payrun_id, created_by, created_at, expires_at, revoked_at, accessed_at, saved_at')
+    .select('id, payrun_id, created_by, created_at, expires_at, revoked_at, accessed_at, saved_at, passcode')
     .eq('token_hash', hashReviewToken(rawToken))
     .maybeSingle();
   if (error) return { ok: false, status: 500, error: 'Failed to check link' };

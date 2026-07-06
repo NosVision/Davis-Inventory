@@ -27,20 +27,32 @@ const anon = (path, init) => fetch(`${BASE}${path}`, { redirect: 'manual', ...in
     const sMint = await req(staff, 'POST', `/api/hr/payruns/${payrunId}/review-link`, {});
     check('staff mint FORBIDDEN', sMint.status === 401 || sMint.status === 403, sMint.status);
 
-    // HR mints
-    const mint = await req(hr, 'POST', `/api/hr/payruns/${payrunId}/review-link`, {});
-    check('mint 201 + url', mint.status === 201 && typeof mint.json?.data?.url === 'string', mint.status);
+    // bad passcode format 400
+    const badPc = await req(hr, 'POST', `/api/hr/payruns/${payrunId}/review-link`, { passcode: 'a' });
+    check('bad passcode format 400', badPc.status === 400, badPc.status);
+
+    // HR mints (custom passcode)
+    const mint = await req(hr, 'POST', `/api/hr/payruns/${payrunId}/review-link`, { passcode: '9911' });
+    check('mint 201 + url + passcode', mint.status === 201 && typeof mint.json?.data?.url === 'string' && mint.json?.data?.passcode === '9911', mint.status);
     const url = mint.json.data.url;
     const token = url.split('/review/')[1];
+    const PC = '9911';
     check('token in url', !!token && token.length >= 20, token?.length);
 
     // token hashed at rest (raw token never stored)
-    const { data: linkRow } = await svc.from('hr_payrun_review_links').select('token_hash').eq('payrun_id', payrunId).is('revoked_at', null).maybeSingle();
+    const { data: linkRow } = await svc.from('hr_payrun_review_links').select('token_hash, passcode').eq('payrun_id', payrunId).is('revoked_at', null).maybeSingle();
     check('DB stores hash, not raw token', !!linkRow && linkRow.token_hash !== token && linkRow.token_hash.length === 64, linkRow?.token_hash?.slice(0, 8));
 
-    // anonymous GET (no cookies!)
-    const g = await anon(`/api/hr/payrun-review/${token}`);
-    check('anon GET 200', g.status === 200, g.status);
+    // passcode gate: GET without passcode → 401 locked
+    const noPc = await anon(`/api/hr/payrun-review/${token}`);
+    check('GET without passcode 401 locked', noPc.status === 401 && (await noPc.json())?.locked === true, noPc.status);
+    // wrong passcode → 401
+    const wrongPc = await anon(`/api/hr/payrun-review/${token}?passcode=0000`);
+    check('wrong passcode 401', wrongPc.status === 401, wrongPc.status);
+
+    // anonymous GET with passcode (no cookies!)
+    const g = await anon(`/api/hr/payrun-review/${token}?passcode=${PC}`);
+    check('anon GET 200 (with passcode)', g.status === 200, g.status);
     const gj = await g.json();
     const rows = gj?.data?.rows ?? [];
     const staffRow = rows.find((r) => r.name && r.payslip_id);
@@ -48,17 +60,24 @@ const anon = (path, init) => fetch(`${BASE}${path}`, { redirect: 'manual', ...in
     check('anon page route also public', (await anon(`/review/${token}`)).status === 200, 'page');
 
     // bad token 401
-    const bad = await anon('/api/hr/payrun-review/AAAAAAAAAAAAAAAAAAAAAAAA');
+    const bad = await anon('/api/hr/payrun-review/AAAAAAAAAAAAAAAAAAAAAAAA?passcode=9911');
     check('bad token 401', bad.status === 401, bad.status);
 
-    // anonymous PUT taxes on the staff slip
+    // PUT without passcode → 401
     const { data: slips } = await svc.from('hr_payslips').select('id, user_id, gross_satang, tax_satang, total_deduction_satang').eq('payrun_id', payrunId);
     const slip = (slips ?? []).find((s) => s.user_id === staffId);
     const OFFICIAL = 155_387; // ฿1,553.87 — a real accountant figure
+    const putNoPc = await anon(`/api/hr/payrun-review/${token}/taxes`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entries: [{ payslip_id: slip.id, tax_satang: OFFICIAL }] }),
+    });
+    check('PUT without passcode 401', putNoPc.status === 401, putNoPc.status);
+
+    // anonymous PUT taxes on the staff slip (with passcode)
     const put = await anon(`/api/hr/payrun-review/${token}/taxes`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ entries: [{ payslip_id: slip.id, tax_satang: OFFICIAL, note: 'จากสำนักงานบัญชี' }] }),
+      body: JSON.stringify({ passcode: PC, entries: [{ payslip_id: slip.id, tax_satang: OFFICIAL, note: 'จากสำนักงานบัญชี' }] }),
     });
     check('anon PUT taxes 200', put.status === 200, put.status);
     const { data: after } = await svc.from('hr_payslips').select('tax_satang, net_satang, gross_satang, total_deduction_satang').eq('id', slip.id).maybeSingle();
@@ -72,7 +91,7 @@ const anon = (path, init) => fetch(`${BASE}${path}`, { redirect: 'manual', ...in
     if (foreign) {
       const cross = await anon(`/api/hr/payrun-review/${token}/taxes`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ entries: [{ payslip_id: foreign.id, tax_satang: 1 }] }),
+        body: JSON.stringify({ passcode: PC, entries: [{ payslip_id: foreign.id, tax_satang: 1 }] }),
       });
       check('cross-payrun slip 400', cross.status === 400, cross.status);
     } else {
@@ -83,8 +102,9 @@ const anon = (path, init) => fetch(`${BASE}${path}`, { redirect: 'manual', ...in
     const { data: notif } = await svc.from('notifications').select('id').eq('user_id', HR_ID()).eq('type', 'hr_tax_submitted');
     check('HR notified of submission', (notif ?? []).length >= 1, notif?.length);
 
-    // export xlsx
-    const exp = await anon(`/api/hr/payrun-review/${token}/export`);
+    // export xlsx (with passcode) + export without passcode 401
+    check('export without passcode 401', (await anon(`/api/hr/payrun-review/${token}/export`)).status === 401, 'noPc');
+    const exp = await anon(`/api/hr/payrun-review/${token}/export?passcode=${PC}`);
     const ctype = exp.headers.get('content-type') || '';
     const bytes = Buffer.from(await exp.arrayBuffer());
     check('export 200 xlsx', exp.status === 200 && ctype.includes('spreadsheetml'), `${exp.status} ${ctype}`);
@@ -95,15 +115,15 @@ const anon = (path, init) => fetch(`${BASE}${path}`, { redirect: 'manual', ...in
     check('finalize 200', fin.status === 200, fin.status);
     const putAfterFin = await anon(`/api/hr/payrun-review/${token}/taxes`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ entries: [{ payslip_id: slip.id, tax_satang: 1 }] }),
+      body: JSON.stringify({ passcode: PC, entries: [{ payslip_id: slip.id, tax_satang: 1 }] }),
     });
     check('PUT on finalized 409', putAfterFin.status === 409, putAfterFin.status);
-    check('GET on finalized still 200 (read-only)', (await anon(`/api/hr/payrun-review/${token}`)).status === 200, 'ro');
+    check('GET on finalized still 200 (read-only)', (await anon(`/api/hr/payrun-review/${token}?passcode=${PC}`)).status === 200, 'ro');
 
     // revoke → dead link
     const rev = await req(hr, 'DELETE', `/api/hr/payruns/${payrunId}/review-link`);
     check('revoke 200', rev.status === 200, rev.status);
-    const deadGet = await anon(`/api/hr/payrun-review/${token}`);
+    const deadGet = await anon(`/api/hr/payrun-review/${token}?passcode=${PC}`);
     check('revoked token 410', deadGet.status === 410, deadGet.status);
   } finally {
     if (payrunId) {
