@@ -44,6 +44,7 @@ const SUITES = [
   'review-link.cjs',   // accountant token link: anon GET/PUT, hash-at-rest, cross-payrun guard, xlsx export, finalized read-only, revoke
   'print-queue.cjs',   // paper slips: per-slip request + standing pref → HR queue → mark printed → pickup notifications; guards
   'payslip-announce.cjs', // ⑤ payday push: manual (default, 409 dup, resend) vs immediate-on-finalize; draft 409; staff 403
+  'document-requests.cjs', // ⑥ personal docs: request 50twi/salary/other → HR generate/attach/reject → employee opens; guards + notifications
 ];
 
 let failed = 0;

@@ -58,6 +58,7 @@ const NAV_TILES: { key: string; icon: LucideIcon; href?: string }[] = [
   { key: 'profileRequests', icon: UserCog, href: '/hr/profile-requests' },
   { key: 'offboarding', icon: UserMinus, href: '/hr/offboarding' },
   { key: 'payroll', icon: Wallet, href: '/hr/payroll' },
+  { key: 'documentRequests', icon: FileText, href: '/hr/document-requests' },
   { key: 'certificates', icon: FileText, href: '/hr/certificates' },
   { key: 'serviceCharge', icon: Coins, href: '/hr/service-charge' },
   { key: 'tipPool', icon: Coins, href: '/hr/tip-pool' },

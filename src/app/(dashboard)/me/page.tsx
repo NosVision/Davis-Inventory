@@ -18,6 +18,7 @@ import {
   UserCog,
   CalendarPlus,
   Timer,
+  FileText,
   type LucideIcon,
 } from 'lucide-react';
 import { PageHeader } from '@/components/ui';
@@ -38,6 +39,7 @@ const TILES: Tile[] = [
   { key: 'swaps', icon: Repeat, href: '/me/swaps', color: 'violet' },
   { key: 'claims', icon: Receipt, href: '/me/claims', color: 'emerald' },
   { key: 'payslips', icon: Wallet, href: '/me/payslips', color: 'emerald' },
+  { key: 'documents', icon: FileText, href: '/me/documents', color: 'sky' },
   { key: 'evaluations', icon: Star, href: '/me/evaluations', color: 'amber' },
   { key: 'evaluationResults', icon: Award, href: '/me/evaluation-results', color: 'violet' },
   { key: 'warnings', icon: AlertTriangle, href: '/me/warnings', color: 'rose' },
@@ -66,6 +68,7 @@ const LABELS: Record<string, { th: string; en: string }> = {
   swaps: { th: 'สลับวันหยุด', en: 'Day-off swaps' },
   claims: { th: 'เบิกค่าใช้จ่าย', en: 'Claims' },
   payslips: { th: 'สลิปเงินเดือน', en: 'Payslips' },
+  documents: { th: 'เอกสาร/50ทวิ', en: 'Documents' },
   evaluations: { th: 'ประเมินเพื่อน', en: 'Peer review' },
   evaluationResults: { th: 'ผลประเมินของฉัน', en: 'My results' },
   warnings: { th: 'ใบเตือน', en: 'Warnings' },

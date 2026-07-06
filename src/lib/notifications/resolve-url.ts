@@ -102,6 +102,12 @@ export function resolveNotificationUrl(
     case 'hr_payslip_ready':
       return '/me/payslips';
 
+    // ศูนย์คำขอเอกสาร (HR คิว / พนักงานผลคำขอ)
+    case 'hr_doc_request':
+      return '/hr/document-requests';
+    case 'hr_doc_ready':
+      return '/me/documents';
+
     // โปรโมชั่น
     case 'promotion':
       return '/notifications';
