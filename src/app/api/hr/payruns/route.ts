@@ -331,6 +331,17 @@ export async function POST(request: NextRequest) {
     evalBonusByUser.set(uid, list);
   }
 
+  // Accounting-office tax overrides for this payrun — keyed by profile so a draft REGENERATE
+  // re-applies them (the whole point of storing them off the payslip row).
+  const { data: taxOvrRows, error: taxOvrErr } = await service
+    .from('hr_payslip_tax_overrides')
+    .select('profile_id, tax_satang')
+    .eq('payrun_id', payrunId);
+  if (taxOvrErr) return NextResponse.json({ error: 'Failed to load tax overrides' }, { status: 500 });
+  const taxOverrideByUser = new Map<string, number>(
+    ((taxOvrRows ?? []) as { profile_id: string; tax_satang: number }[]).map((r) => [r.profile_id, Number(r.tax_satang)])
+  );
+
   // Per-employee: assemble → compute → collect for insert.
   const assembled: { emp: EmployeeFull; slip: AssembledLine; claimIds: string[] }[] = [];
   for (const emp of employees) {
@@ -431,6 +442,7 @@ export async function POST(request: NextRequest) {
       scNetSatang: scNetByUser.get(uid) ?? 0,
       tipNetSatang: tipNetByUser.get(uid) ?? 0,
       lateTiers: policies.late_tiers,
+      taxOverrideSatang: taxOverrideByUser.get(uid) ?? null,
     };
     const slip = computePayslip(input);
     assembled.push({

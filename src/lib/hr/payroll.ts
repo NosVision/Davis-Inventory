@@ -204,6 +204,9 @@ export interface PayrollInput {
   scNetSatang: number; // net Service Charge for the period (P4.1); 0 for part-time
   tipNetSatang?: number; // net Tip pool for the period (P4.4, same mechanism as SC); 0/undefined = none
   lateTiers?: LateTiers; // owner-tunable late-fine table (hr_policy_settings); default = sheet-calibrated
+  /** The accounting office's OFFICIAL tax figure (hr_payslip_tax_overrides) — when present it
+   *  replaces whatever any tax_mode computes; the engine estimate is advisory only. */
+  taxOverrideSatang?: number | null;
 }
 
 export interface Payslip {
@@ -336,6 +339,11 @@ export function computePayslip(input: PayrollInput): Payslip {
     tax = Math.round((gross - scPart - tipPart) * 0.03);
   } else if (emp.tax_mode === 'progressive') {
     tax = progressiveMonthlyTaxSatang(baseSalary, sso, (emp.tax_allowances_baht ?? 0) + pvdAnnualBaht);
+  }
+  // Accounting-office override beats every mode — their number is the binding one (they hold
+  // YTD + allowance documents we don't).
+  if (input.taxOverrideSatang != null && input.taxOverrideSatang >= 0) {
+    tax = Math.round(input.taxOverrideSatang);
   }
 
   // ── Variable deductions (salary side only: leave / absent / late) ─────────

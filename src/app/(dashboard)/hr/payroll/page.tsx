@@ -382,6 +382,15 @@ export default function HrPayrollPage() {
         <Modal isOpen onClose={() => setSlip(null)} title={t('slipTitle')} size="lg">
           <div className="max-h-[70vh] overflow-y-auto">
             <PayslipView data={slip} />
+            {slip.payrun?.status === 'draft' && (
+              <TaxOverrideBox
+                slip={slip}
+                onSaved={async () => {
+                  await openSlip(slip.payslip.id);
+                  if (detail) await openPayrun(detail.payrun.id);
+                }}
+              />
+            )}
           </div>
           <ModalFooter>
             <Button variant="outline" onClick={() => doPrint(slip)} icon={<Printer className="h-4 w-4" />}>{t('print')}</Button>
@@ -409,6 +418,71 @@ export default function HrPayrollPage() {
       {/* print-only slip */}
       <div className="hidden print:block">
         {printSlip && <PayslipView data={printSlip} print />}
+      </div>
+    </div>
+  );
+}
+
+// HR fallback for the accounting office's official tax figure (primary path = review link).
+// Shown on draft payruns only; saving patches the slip immediately and survives regenerates.
+function TaxOverrideBox({ slip, onSaved }: { slip: PayslipDetailData; onSaved: () => Promise<void> }) {
+  const t = useTranslations('hr.payroll');
+  const [baht, setBaht] = useState<string>(() =>
+    slip.tax_override ? String(slip.tax_override.tax_satang / 100) : ''
+  );
+  const [note, setNote] = useState<string>(slip.tax_override?.note ?? '');
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    const n = Number(baht);
+    if (!Number.isFinite(n) || n < 0) {
+      toast({ type: 'error', title: t('taxOverrideInvalid') });
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/hr/payslips/${slip.payslip.id}/tax-override`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tax_satang: Math.round(n * 100), note: note.trim() || undefined }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof json.error === 'string' ? json.error : undefined);
+      toast({ type: 'success', title: t('taxOverrideSaved') });
+      await onSaved();
+    } catch (e) {
+      toast({ type: 'error', title: t('actionFailed'), message: e instanceof Error ? e.message : undefined });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/50 p-3 dark:border-amber-800 dark:bg-amber-900/10">
+      <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">{t('taxOverride')}</p>
+      <p className="mb-2 text-[11px] text-amber-600/80 dark:text-amber-400/80">
+        {slip.tax_override
+          ? t('taxOverrideActive', { via: slip.tax_override.set_via === 'link' ? t('viaLink') : 'HR' })
+          : t('taxOverrideHint')}
+      </p>
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="text-[11px] font-medium text-gray-600 dark:text-gray-300">
+          {t('taxOverrideAmount')}
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={baht}
+            onChange={(e) => setBaht(e.target.value)}
+            className="control mt-0.5 block w-36"
+            placeholder={(slip.payslip.tax_satang / 100).toFixed(2)}
+          />
+        </label>
+        <label className="min-w-40 flex-1 text-[11px] font-medium text-gray-600 dark:text-gray-300">
+          {t('taxOverrideNote')}
+          <input value={note} onChange={(e) => setNote(e.target.value)} className="control mt-0.5 block w-full" />
+        </label>
+        <Button size="sm" onClick={save} isLoading={saving}>{t('taxOverrideSave')}</Button>
       </div>
     </div>
   );

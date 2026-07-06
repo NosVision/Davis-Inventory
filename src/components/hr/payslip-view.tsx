@@ -27,10 +27,13 @@ export interface PayslipDetailData {
     period_year: number;
     period_month: number;
     pay_date: string | null;
+    status?: string;
     company?: { name: string | null; address: string | null } | null;
   } | null;
   earnings: PayslipLine[];
   deductions: PayslipLine[];
+  /** official figure from the accounting office (null = engine estimate in effect) */
+  tax_override?: { tax_satang: number; note: string | null; set_via: string; updated_at: string } | null;
 }
 
 // Localized line-type labels; a standard type (salary/ot/sso/tax/…) is translated, while a

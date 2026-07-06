@@ -40,6 +40,7 @@ const SUITES = [
   'attendance-index.cjs', // bulk work-index endpoint: score matches pure lib exactly, scope-filtered, invalid range 400, staff 403
   'companies.cjs',     // company payroll knobs: GET exposes, money edits need reason + audited, validations, staff 403
   'policy-settings.cjs', // group-wide policy knobs: PUT probation 30 → onboarding computes start+30, reset → 119; guards + audit
+  'tax-override.cjs',  // accounting-office tax: PUT patches slip+line+totals, survives regenerate, 0 clears line, finalized 409, audit
 ];
 
 let failed = 0;
