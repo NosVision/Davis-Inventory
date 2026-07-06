@@ -40,6 +40,7 @@ export type NotificationType =
   | 'hr_identity_claim'       // พนักงานยืนยันตัวตน รอ HR ตรวจ (for HR)
   | 'hr_identity_result'      // ผลการตรวจยืนยันตัวตน (for the employee)
   | 'hr_tax_submitted'        // สนง.บัญชีบันทึกภาษีผ่านลิงก์แล้ว (for HR)
+  | 'hr_review_confirmed'     // สนง.บัญชียืนยันตรวจครบทั้งงวดแล้ว (for HR)
   | 'hr_paper_request'        // พนักงานขอสลิปกระดาษ (for HR)
   | 'hr_paper_ready'          // สลิปกระดาษพิมพ์แล้ว รอรับที่ HR (for the employee)
   | 'hr_payslip_ready'        // เงินเดือนออกแล้ว — สลิปพร้อมดู (for every employee in the run)
@@ -135,6 +136,7 @@ const TYPE_TO_PREF: Record<NotificationType, keyof NotificationPreferences> = {
   hr_identity_claim: 'notify_approval_request',
   hr_identity_result: 'notify_approval_request',
   hr_tax_submitted: 'notify_approval_request',
+  hr_review_confirmed: 'notify_approval_request',
   hr_paper_request: 'notify_approval_request',
   hr_paper_ready: 'notify_approval_request',
   hr_payslip_ready: 'notify_approval_request',

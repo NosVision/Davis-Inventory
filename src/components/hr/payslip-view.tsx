@@ -154,6 +154,22 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
         <span>{t('net')}</span>
         <span className="tabular-nums">{formatBaht(payslip.net_satang)} ฿</span>
       </div>
+
+      {/* money actually lands in TWO transfers: SC/tip mid-month (15th), salary at month end */}
+      {(() => {
+        const svSatang = earnings
+          .filter((l) => l.type === 'service_charge' || l.type === 'tip')
+          .reduce((s, l) => s + l.amount_satang, 0);
+        if (svSatang <= 0) return null;
+        return (
+          <p className={print ? 'text-[9px] text-gray-600' : 'rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700 dark:bg-blue-900/20 dark:text-blue-300'}>
+            {t('twoRounds', {
+              sv: formatBaht(svSatang),
+              salary: formatBaht(payslip.net_satang - svSatang),
+            })}
+          </p>
+        );
+      })()}
     </div>
   );
 }

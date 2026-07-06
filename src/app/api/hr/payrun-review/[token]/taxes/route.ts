@@ -71,7 +71,11 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     results.push({ payslip_id: applied.payslip.id, tax_satang: applied.payslip.tax_satang, net_satang: applied.payslip.net_satang });
   }
 
-  await service.from('hr_payrun_review_links').update({ saved_at: new Date().toISOString() }).eq('id', link.id);
+  // saving new figures invalidates any earlier "ตรวจครบแล้ว" — the accountant re-confirms after edits.
+  await service
+    .from('hr_payrun_review_links')
+    .update({ saved_at: new Date().toISOString(), confirmed_at: null })
+    .eq('id', link.id);
 
   try {
     const period = `${String(payrun.period_month).padStart(2, '0')}/${payrun.period_year}`;

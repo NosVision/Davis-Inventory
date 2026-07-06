@@ -23,6 +23,7 @@ export interface ReviewLinkRow {
   revoked_at: string | null;
   accessed_at: string | null;
   saved_at: string | null;
+  confirmed_at: string | null;
   passcode: string;
 }
 
@@ -55,7 +56,7 @@ export async function loadReviewLink(service: SupabaseClient, rawToken: string):
   }
   const { data: link, error } = await service
     .from('hr_payrun_review_links')
-    .select('id, payrun_id, created_by, created_at, expires_at, revoked_at, accessed_at, saved_at, passcode')
+    .select('id, payrun_id, created_by, created_at, expires_at, revoked_at, accessed_at, saved_at, confirmed_at, passcode')
     .eq('token_hash', hashReviewToken(rawToken))
     .maybeSingle();
   if (error) return { ok: false, status: 500, error: 'Failed to check link' };
@@ -91,6 +92,56 @@ export interface ReviewRow {
   tax_satang: number; // current effective tax (engine estimate or override)
   has_override: boolean;
   net_satang: number;
+  /** accumulated gross/tax this calendar year BEFORE this payrun (opening balance + Σ finalized slips) */
+  ytd_gross_satang: number;
+  ytd_tax_satang: number;
+}
+
+/** accumulated gross/tax this calendar year BEFORE the given payrun, per user:
+ *  hr_ytd_opening (pre-system months, keyed once) + Σ finalized payslips of the
+ *  same company & year in earlier months. The accountant holds the real YTD on
+ *  their side — this column lets them sanity-check the tax threshold at a glance. */
+async function ytdBeforePayrun(
+  service: SupabaseClient,
+  payrun: { company_id: string; period_year: number; period_month: number },
+  userIds: string[]
+): Promise<Map<string, { gross: number; tax: number }>> {
+  const ytd = new Map<string, { gross: number; tax: number }>();
+  const add = (uid: string, gross: number, tax: number) => {
+    const cur = ytd.get(uid) ?? { gross: 0, tax: 0 };
+    ytd.set(uid, { gross: cur.gross + gross, tax: cur.tax + tax });
+  };
+
+  const [openRes, runsRes] = await Promise.all([
+    service
+      .from('hr_ytd_opening')
+      .select('profile_id, gross_satang, tax_satang')
+      .eq('company_id', payrun.company_id)
+      .eq('year', payrun.period_year)
+      .in('profile_id', userIds),
+    service
+      .from('hr_payruns')
+      .select('id')
+      .eq('company_id', payrun.company_id)
+      .eq('period_year', payrun.period_year)
+      .lt('period_month', payrun.period_month)
+      .eq('status', 'finalized'),
+  ]);
+  for (const o of (openRes.data ?? []) as { profile_id: string; gross_satang: number; tax_satang: number }[]) {
+    add(o.profile_id, Number(o.gross_satang) || 0, Number(o.tax_satang) || 0);
+  }
+  const priorRunIds = ((runsRes.data ?? []) as { id: string }[]).map((r) => r.id);
+  if (priorRunIds.length > 0) {
+    const { data: priorSlips } = await service
+      .from('hr_payslips')
+      .select('user_id, gross_satang, tax_satang')
+      .in('payrun_id', priorRunIds)
+      .in('user_id', userIds);
+    for (const s of (priorSlips ?? []) as { user_id: string; gross_satang: number; tax_satang: number }[]) {
+      add(s.user_id, Number(s.gross_satang) || 0, Number(s.tax_satang) || 0);
+    }
+  }
+  return ytd;
 }
 
 /** Assemble the accountant-facing rows for a payrun — everything the Payment file showed. */
@@ -107,13 +158,22 @@ export async function buildPayrunReviewRows(service: SupabaseClient, payrunId: s
   const userIds = [...new Set(slipList.map((s) => s.user_id as string))];
   const empIds = [...new Set(slipList.map((s) => s.employee_id as string).filter(Boolean))];
 
-  const [earnRes, profRes, empRes, ovrRes] = await Promise.all([
+  const { data: payrunRow } = await service
+    .from('hr_payruns')
+    .select('company_id, period_year, period_month')
+    .eq('id', payrunId)
+    .maybeSingle();
+
+  const [earnRes, profRes, empRes, ovrRes, ytdByUser] = await Promise.all([
     service.from('hr_payslip_earnings').select('payslip_id, type, amount_satang').in('payslip_id', slipIds),
     service.from('profiles').select('id, username, display_name').in('id', userIds),
     empIds.length
       ? service.from('hr_employees').select('id, employee_code, full_name').in('id', empIds)
       : Promise.resolve({ data: [], error: null } as { data: { id: string; employee_code: string | null; full_name: string | null }[]; error: null }),
     service.from('hr_payslip_tax_overrides').select('profile_id').eq('payrun_id', payrunId),
+    payrunRow
+      ? ytdBeforePayrun(service, payrunRow as { company_id: string; period_year: number; period_month: number }, userIds)
+      : Promise.resolve(new Map<string, { gross: number; tax: number }>()),
   ]);
   if (earnRes.error) return null;
 
@@ -156,6 +216,8 @@ export async function buildPayrunReviewRows(service: SupabaseClient, payrunId: s
       tax_satang: tax,
       has_override: overridden.has(s.user_id as string),
       net_satang: Number(s.net_satang) || 0,
+      ytd_gross_satang: ytdByUser.get(s.user_id as string)?.gross ?? 0,
+      ytd_tax_satang: ytdByUser.get(s.user_id as string)?.tax ?? 0,
     };
   });
 

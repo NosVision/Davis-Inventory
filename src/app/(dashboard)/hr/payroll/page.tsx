@@ -255,7 +255,7 @@ export default function HrPayrollPage() {
 
   // accountant review link — mint (revokes any previous), show once, copy, revoke
   const [reviewLink, setReviewLink] = useState<{ url: string; expires_at: string; passcode: string } | null>(null);
-  const [reviewStatus, setReviewStatus] = useState<{ created_at: string; accessed_at: string | null; saved_at: string | null; passcode?: string } | null>(null);
+  const [reviewStatus, setReviewStatus] = useState<{ created_at: string; accessed_at: string | null; saved_at: string | null; confirmed_at?: string | null; passcode?: string } | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [minting, setMinting] = useState(false);
   const [reviewPasscode, setReviewPasscode] = useState('1234');
@@ -284,7 +284,7 @@ export default function HrPayrollPage() {
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(typeof json.error === 'string' ? json.error : undefined);
       setReviewLink(json.data as { url: string; expires_at: string; passcode: string });
-      setReviewStatus({ created_at: new Date().toISOString(), accessed_at: null, saved_at: null, passcode: json.data?.passcode });
+      setReviewStatus({ created_at: new Date().toISOString(), accessed_at: null, saved_at: null, confirmed_at: null, passcode: json.data?.passcode });
     } catch (e) {
       toast({ type: 'error', title: t('actionFailed'), message: e instanceof Error ? e.message : undefined });
     } finally {
@@ -596,6 +596,13 @@ export default function HrPayrollPage() {
           {reviewStatus && !reviewLink && (
             <div className="mb-3 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300">
               {t('reviewLinkExisting')} · {t('reviewLinkOpened')}: {reviewStatus.accessed_at ? new Date(reviewStatus.accessed_at).toLocaleString() : '—'} · {t('reviewLinkSaved')}: {reviewStatus.saved_at ? new Date(reviewStatus.saved_at).toLocaleString() : '—'}
+              {reviewStatus.confirmed_at ? (
+                <span className="ml-1 inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                  ✓ {t('reviewLinkConfirmed')}: {new Date(reviewStatus.confirmed_at).toLocaleString()}
+                </span>
+              ) : (
+                <span className="ml-1 text-gray-400">· {t('reviewLinkNotConfirmed')}</span>
+              )}
             </div>
           )}
           {reviewLink ? (

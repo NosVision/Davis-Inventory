@@ -71,7 +71,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
   const { data: link } = await service
     .from('hr_payrun_review_links')
-    .select('created_at, expires_at, accessed_at, saved_at, passcode')
+    .select('created_at, expires_at, accessed_at, saved_at, confirmed_at, passcode')
     .eq('payrun_id', id)
     .is('revoked_at', null)
     .order('created_at', { ascending: false })

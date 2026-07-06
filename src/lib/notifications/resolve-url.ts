@@ -88,8 +88,9 @@ export function resolveNotificationUrl(
     case 'hr_identity_result':
       return '/me';
 
-    // สนง.บัญชีบันทึกภาษีผ่านลิงก์
+    // สนง.บัญชีบันทึกภาษีผ่านลิงก์ / ยืนยันตรวจครบ
     case 'hr_tax_submitted':
+    case 'hr_review_confirmed':
       return '/hr/payroll';
 
     // สลิปกระดาษ (HR คิวปริ้น / พนักงานรอรับ)

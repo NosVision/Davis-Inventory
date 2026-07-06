@@ -39,7 +39,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         pay_date: payrun.pay_date,
         company: payrun.company,
       },
-      link: { expires_at: link.expires_at, saved_at: link.saved_at },
+      link: { expires_at: link.expires_at, saved_at: link.saved_at, confirmed_at: link.confirmed_at },
       rows,
     },
   });

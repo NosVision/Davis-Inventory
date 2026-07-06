@@ -57,7 +57,22 @@ const anon = (path, init) => fetch(`${BASE}${path}`, { redirect: 'manual', ...in
     const rows = gj?.data?.rows ?? [];
     const staffRow = rows.find((r) => r.name && r.payslip_id);
     check('rows include payslips + money fields', rows.length > 0 && 'gross_satang' in (staffRow ?? {}) && 'tax_satang' in (staffRow ?? {}), rows.length);
+    check('rows carry YTD fields (fresh run = 0)', 'ytd_gross_satang' in (staffRow ?? {}) && rows.every((r) => r.ytd_gross_satang === 0), staffRow?.ytd_gross_satang);
+    check('link starts unconfirmed', gj?.data?.link?.confirmed_at === null, gj?.data?.link?.confirmed_at);
     check('anon page route also public', (await anon(`/review/${token}`)).status === 200, 'page');
+
+    // YTD opening balance flows into the rows (keyed once at onboarding)
+    const OPENING = 12_345_600; // ฿123,456.00 accumulated pre-system
+    const { data: prForYtd } = await svc.from('hr_payruns').select('company_id, period_year').eq('id', payrunId).maybeSingle();
+    await svc.from('hr_ytd_opening').insert({
+      company_id: prForYtd.company_id, profile_id: staffId, year: prForYtd.period_year, gross_satang: OPENING, tax_satang: 50_000,
+    });
+    const gy = await (await anon(`/api/hr/payrun-review/${token}?passcode=${PC}`)).json();
+    const staffYtd = (gy?.data?.rows ?? []).find((r) => {
+      // staff slip row — match via slip lookup below (payslip ids are per-user)
+      return r.ytd_gross_satang === OPENING;
+    });
+    check('YTD opening reflected in a row', !!staffYtd && staffYtd.ytd_tax_satang === 50_000, staffYtd?.ytd_gross_satang);
 
     // bad token 401
     const bad = await anon('/api/hr/payrun-review/AAAAAAAAAAAAAAAAAAAAAAAA?passcode=9911');
@@ -102,6 +117,32 @@ const anon = (path, init) => fetch(`${BASE}${path}`, { redirect: 'manual', ...in
     const { data: notif } = await svc.from('notifications').select('id').eq('user_id', HR_ID()).eq('type', 'hr_tax_submitted');
     check('HR notified of submission', (notif ?? []).length >= 1, notif?.length);
 
+    // ── confirm "ตรวจครบแล้ว" ──
+    // without passcode → 401
+    const cNoPc = await anon(`/api/hr/payrun-review/${token}/confirm`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+    });
+    check('confirm without passcode 401', cNoPc.status === 401, cNoPc.status);
+    const cOk = await anon(`/api/hr/payrun-review/${token}/confirm`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passcode: PC }),
+    });
+    check('confirm 200 + timestamp', cOk.status === 200 && typeof (await cOk.json())?.data?.confirmed_at === 'string', cOk.status);
+    const gAfterC = await (await anon(`/api/hr/payrun-review/${token}?passcode=${PC}`)).json();
+    check('GET shows confirmed_at', typeof gAfterC?.data?.link?.confirmed_at === 'string', gAfterC?.data?.link?.confirmed_at);
+    // HR status endpoint sees it too
+    const hrStatus = await req(hr, 'GET', `/api/hr/payruns/${payrunId}/review-link`);
+    check('HR status shows confirmed_at', hrStatus.status === 200 && typeof hrStatus.json?.data?.confirmed_at === 'string', hrStatus.json?.data?.confirmed_at);
+    const { data: cNotif } = await svc.from('notifications').select('id').eq('user_id', HR_ID()).eq('type', 'hr_review_confirmed');
+    check('HR notified of confirmation', (cNotif ?? []).length >= 1, cNotif?.length);
+    // saving taxes again clears the confirmation (data changed → re-confirm)
+    const putAgain = await anon(`/api/hr/payrun-review/${token}/taxes`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ passcode: PC, entries: [{ payslip_id: slip.id, tax_satang: OFFICIAL }] }),
+    });
+    check('re-save taxes 200', putAgain.status === 200, putAgain.status);
+    const gAfterResave = await (await anon(`/api/hr/payrun-review/${token}?passcode=${PC}`)).json();
+    check('re-save clears confirmed_at', gAfterResave?.data?.link?.confirmed_at === null, gAfterResave?.data?.link?.confirmed_at);
+
     // export xlsx (with passcode) + export without passcode 401
     check('export without passcode 401', (await anon(`/api/hr/payrun-review/${token}/export`)).status === 401, 'noPc');
     const exp = await anon(`/api/hr/payrun-review/${token}/export?passcode=${PC}`);
@@ -127,6 +168,7 @@ const anon = (path, init) => fetch(`${BASE}${path}`, { redirect: 'manual', ...in
     check('revoked token 410', deadGet.status === 410, deadGet.status);
   } finally {
     if (payrunId) {
+      await svc.from('hr_ytd_opening').delete().eq('profile_id', staffId);
       await svc.from('hr_payrun_review_links').delete().eq('payrun_id', payrunId);
       await svc.from('hr_payslip_tax_overrides').delete().eq('payrun_id', payrunId);
       const { data: ps } = await svc.from('hr_payslips').select('id').eq('payrun_id', payrunId);
@@ -138,6 +180,7 @@ const anon = (path, init) => fetch(`${BASE}${path}`, { redirect: 'manual', ...in
       await svc.from('hr_payslips').delete().eq('payrun_id', payrunId);
       await svc.from('hr_payruns').delete().eq('id', payrunId);
       await svc.from('notifications').delete().eq('type', 'hr_tax_submitted');
+      await svc.from('notifications').delete().eq('type', 'hr_review_confirmed');
     }
   }
 

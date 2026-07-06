@@ -24,6 +24,8 @@ interface ReviewRow {
   tax_satang: number;
   has_override: boolean;
   net_satang: number;
+  ytd_gross_satang: number;
+  ytd_tax_satang: number;
 }
 interface ReviewData {
   payrun: {
@@ -36,7 +38,7 @@ interface ReviewData {
     pay_date: string | null;
     company: { name: string | null; address: string | null } | null;
   };
-  link: { expires_at: string; saved_at: string | null };
+  link: { expires_at: string; saved_at: string | null; confirmed_at: string | null };
   rows: ReviewRow[];
 }
 
@@ -52,6 +54,7 @@ export default function PayrunReviewPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedBanner, setSavedBanner] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   // passcode gate — the accountant enters the code HR shared before any data loads
   const [locked, setLocked] = useState(true);
   const [passcode, setPasscode] = useState('');
@@ -108,6 +111,25 @@ export default function PayrunReviewPage() {
       })
       .map((r) => ({ payslip_id: r.payslip_id, tax_satang: Math.round(Number(drafts[r.payslip_id]) * 100) }));
   }, [data, drafts]);
+
+  // "ตรวจครบแล้ว" — a status stamp back to HR; blocked while there are unsaved edits
+  const confirmAll = useCallback(async () => {
+    setConfirming(true);
+    try {
+      const res = await fetch(`/api/hr/payrun-review/${token}/confirm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ passcode }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof json.error === 'string' ? json.error : 'ยืนยันไม่สำเร็จ');
+      setData((d) => (d ? { ...d, link: { ...d.link, confirmed_at: json.data?.confirmed_at ?? new Date().toISOString() } } : d));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'ยืนยันไม่สำเร็จ');
+    } finally {
+      setConfirming(false);
+    }
+  }, [token, passcode]);
 
   const save = useCallback(async () => {
     if (changed.length === 0) return;
@@ -206,6 +228,11 @@ export default function PayrunReviewPage() {
             <p className="text-xs text-gray-500">
               งวด {period} · รอบ {payrun.cycle_start ?? '—'} ถึง {payrun.cycle_end ?? '—'} · จ่าย {payrun.pay_date ?? '—'}
               {readOnly && <span className="ml-2 rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-semibold text-gray-600">ปิดงวดแล้ว — ดูอย่างเดียว</span>}
+              {data.link.confirmed_at && (
+                <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                  ✓ ยืนยันตรวจครบแล้ว {new Date(data.link.confirmed_at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}
+                </span>
+              )}
             </p>
           </div>
           <a
@@ -249,7 +276,7 @@ export default function PayrunReviewPage() {
       {/* table */}
       <div className="mx-auto mt-2 max-w-5xl px-4">
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-          <table className="w-full min-w-[60rem] text-sm">
+          <table className="w-full min-w-[66rem] text-sm">
             <thead className="bg-gray-100 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500">
               <tr>
                 <th className="px-2 py-2">#</th>
@@ -261,6 +288,7 @@ export default function PayrunReviewPage() {
                 <th className="px-2 py-2 text-right">เบี้ย/อื่นๆ</th>
                 <th className="px-2 py-2 text-right">SC</th>
                 <th className="px-2 py-2 text-right">รวมรับ</th>
+                <th className="px-2 py-2 text-right" title="รายได้สะสมปีนี้ก่อนงวดนี้ (ยอดตั้งต้น + งวดที่ปิดแล้ว)">สะสมปีนี้</th>
                 <th className="px-2 py-2 text-right">หักอื่น</th>
                 <th className="px-2 py-2 text-right">สปส.</th>
                 <th className="px-2 py-2 text-right">ภาษีปัจจุบัน</th>
@@ -283,6 +311,7 @@ export default function PayrunReviewPage() {
                     <td className="px-2 py-1.5 text-right tabular-nums">{baht(r.allowance_satang)}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums">{baht(r.sc_satang)}</td>
                     <td className="px-2 py-1.5 text-right font-semibold tabular-nums">{baht(r.gross_satang)}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums text-gray-400">{r.ytd_gross_satang > 0 ? baht(r.ytd_gross_satang) : '—'}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums text-gray-500">{baht(r.deduction_satang)}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums text-gray-500">{baht(r.sso_satang)}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums">
@@ -312,6 +341,7 @@ export default function PayrunReviewPage() {
                 <td colSpan={8} className="px-2 py-2 text-right text-gray-500">รวมทั้งงวด</td>
                 <td className="px-2 py-2 text-right tabular-nums">{baht(totals.gross)}</td>
                 <td />
+                <td />
                 <td className="px-2 py-2 text-right tabular-nums">{baht(totals.sso)}</td>
                 <td className="px-2 py-2 text-right tabular-nums">{baht(totals.tax)}</td>
                 <td />
@@ -332,15 +362,33 @@ export default function PayrunReviewPage() {
             <p className="text-xs text-gray-500">
               {changed.length > 0 ? `แก้ไขภาษี ${changed.length} รายการ` : 'ยังไม่มีรายการแก้ไข'}
             </p>
-            <button
-              type="button"
-              onClick={save}
-              disabled={changed.length === 0 || saving}
-              className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700 disabled:opacity-40"
-            >
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              บันทึกส่งให้ HR
-            </button>
+            <div className="flex items-center gap-2">
+              {data.link.confirmed_at ? (
+                <span className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700">
+                  <CheckCircle2 className="h-4 w-4" /> ยืนยันตรวจครบแล้ว
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={confirmAll}
+                  disabled={confirming || changed.length > 0}
+                  title={changed.length > 0 ? 'บันทึกรายการแก้ไขก่อน แล้วจึงยืนยัน' : undefined}
+                  className="inline-flex items-center gap-2 rounded-xl border border-emerald-300 bg-white px-4 py-2.5 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50 disabled:opacity-40"
+                >
+                  {confirming ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                  ยืนยันตรวจครบแล้ว
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={save}
+                disabled={changed.length === 0 || saving}
+                className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-700 disabled:opacity-40"
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                บันทึกส่งให้ HR
+              </button>
+            </div>
           </div>
         </div>
       )}
