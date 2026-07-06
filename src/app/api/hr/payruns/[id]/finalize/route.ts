@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManagerForStore } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
+import { getHrPolicies } from '@/lib/hr/policy';
+import { announcePayrun } from '@/lib/hr/announce';
 
 // POST /api/hr/payruns/[id]/finalize — lock a draft payrun (§A: payrun locks after finalize;
 // editing requires reopen). HR only, atomic compare-and-set on status='draft' → 409 otherwise.
@@ -44,5 +46,18 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
     before: { status: 'draft' }, after: { status: 'finalized' }, reason: 'payrun finalized',
   });
 
-  return NextResponse.json({ data: { id, status: 'finalized' } });
+  // ⑤ immediate announce mode: push "เงินเดือนออกแล้ว" the moment the run locks (best-effort —
+  // a notification failure must never fail the finalize; manual mode = HR presses the button).
+  let announced = false;
+  try {
+    const policies = await getHrPolicies(service);
+    if (policies.payslip_announce_mode === 'immediate') {
+      const result = await announcePayrun(service, { payrunId: id, actorId: auth.userId });
+      announced = result.ok;
+    }
+  } catch (e) {
+    console.error('[finalize] announce failed:', e);
+  }
+
+  return NextResponse.json({ data: { id, status: 'finalized', announced } });
 }

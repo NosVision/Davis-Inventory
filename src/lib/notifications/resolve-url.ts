@@ -98,6 +98,10 @@ export function resolveNotificationUrl(
     case 'hr_paper_ready':
       return '/me/payslips';
 
+    // เงินเดือนออกแล้ว
+    case 'hr_payslip_ready':
+      return '/me/payslips';
+
     // โปรโมชั่น
     case 'promotion':
       return '/notifications';

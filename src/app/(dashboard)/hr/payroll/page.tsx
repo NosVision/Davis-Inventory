@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { Loader2, Wallet, Play, Lock, LockOpen, Printer, X, FileText, Settings2, Percent, GitCompareArrows, Users, Coins, Send } from 'lucide-react';
+import { Loader2, Wallet, Play, Lock, LockOpen, Printer, X, FileText, Settings2, Percent, GitCompareArrows, Users, Coins, Send, Megaphone } from 'lucide-react';
 import { Button, EmptyState, Modal, ModalFooter, PageHeader, KpiRow, StatTile, MoneyValue, StatusBadge, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { formatBaht } from '@/lib/pos/money';
@@ -24,6 +24,7 @@ interface PayrunRow {
   cycle_end: string;
   pay_date: string | null;
   status: 'draft' | 'finalized';
+  announced_at?: string | null;
 }
 interface PayslipSummary {
   id: string;
@@ -298,6 +299,29 @@ export default function HrPayrollPage() {
     }
   }, [detail, t]);
 
+  // ⑤ manual "ประกาศเงินเดือนออก" (resend needs a confirm — it blasts every phone again)
+  const announce = useCallback(async () => {
+    if (!detail) return;
+    const resend = !!detail.payrun.announced_at;
+    if (resend && !window.confirm(t('announceResendConfirm'))) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/hr/payruns/${detail.payrun.id}/announce`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resend }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof json.error === 'string' ? json.error : undefined);
+      toast({ type: 'success', title: t('announced', { n: json.data?.notified ?? 0 }) });
+      await openPayrun(detail.payrun.id);
+    } catch (e) {
+      toast({ type: 'error', title: t('actionFailed'), message: e instanceof Error ? e.message : undefined });
+    } finally {
+      setBusy(false);
+    }
+  }, [detail, t, openPayrun]);
+
   const openSlip = useCallback(async (id: string) => {
     try {
       const res = await fetch(`/api/hr/payslips/${id}`);
@@ -407,9 +431,20 @@ export default function HrPayrollPage() {
                       {t('sendToAccountant')}
                     </Button>
                     {isFinalized ? (
-                      <Button variant="outline" size="sm" icon={<LockOpen className="h-4 w-4" />} onClick={reopen} disabled={busy}>
-                        {t('reopen')}
-                      </Button>
+                      <>
+                        <Button
+                          variant={detail.payrun.announced_at ? 'ghost' : 'primary'}
+                          size="sm"
+                          icon={<Megaphone className="h-4 w-4" />}
+                          onClick={announce}
+                          disabled={busy}
+                        >
+                          {detail.payrun.announced_at ? t('announceAgain') : t('announce')}
+                        </Button>
+                        <Button variant="outline" size="sm" icon={<LockOpen className="h-4 w-4" />} onClick={reopen} disabled={busy}>
+                          {t('reopen')}
+                        </Button>
+                      </>
                     ) : (
                       <Button variant="danger" size="sm" icon={<Lock className="h-4 w-4" />} onClick={finalize} disabled={busy || detail.payslips.length === 0}>
                         {t('finalize')}

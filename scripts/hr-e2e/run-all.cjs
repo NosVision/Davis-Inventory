@@ -43,6 +43,7 @@ const SUITES = [
   'tax-override.cjs',  // accounting-office tax: PUT patches slip+line+totals, survives regenerate, 0 clears line, finalized 409, audit
   'review-link.cjs',   // accountant token link: anon GET/PUT, hash-at-rest, cross-payrun guard, xlsx export, finalized read-only, revoke
   'print-queue.cjs',   // paper slips: per-slip request + standing pref → HR queue → mark printed → pickup notifications; guards
+  'payslip-announce.cjs', // ⑤ payday push: manual (default, 409 dup, resend) vs immediate-on-finalize; draft 409; staff 403
 ];
 
 let failed = 0;

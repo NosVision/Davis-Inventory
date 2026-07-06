@@ -33,6 +33,8 @@ export interface HrPolicies {
   sc_leave_divisor: number; // a leave day docks allocated/THIS
   warning_carry_enabled: boolean; // 200% warning: carry the overflow into next month's SC
   work_index: WorkIndexPolicy;
+  /** ⑤ payslip-ready push: 'manual' = HR presses ประกาศ; 'immediate' = fire on finalize */
+  payslip_announce_mode: 'manual' | 'immediate';
 }
 
 export const POLICY_DEFAULTS: HrPolicies = {
@@ -59,6 +61,7 @@ export const POLICY_DEFAULTS: HrPolicies = {
     band_good: 75,
     band_fair: 60,
   },
+  payslip_announce_mode: 'manual', // เมย์คุมจังหวะเองช่วงเปลี่ยนผ่าน (owner-agreed default)
 };
 
 const num = (v: unknown, fallback: number, min: number, max: number): number => {
@@ -86,6 +89,8 @@ export function mergePolicies(rows: { key: string; value: unknown }[]): HrPolici
     probation_days: num(scalar('probation_days')?.days, d.probation_days, 0, 730),
     sc_leave_divisor: num(scalar('sc_leave_divisor')?.divisor, d.sc_leave_divisor, 1, 31),
     warning_carry_enabled: (scalar('warning_carry')?.enabled ?? d.warning_carry_enabled) === true,
+    payslip_announce_mode:
+      scalar('payslip_announce')?.mode === 'immediate' ? 'immediate' : d.payslip_announce_mode,
     work_index: {
       w_punctuality: num(wi.w_punctuality, d.work_index.w_punctuality, 0, 100),
       w_attendance: num(wi.w_attendance, d.work_index.w_attendance, 0, 100),

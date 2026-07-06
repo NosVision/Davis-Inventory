@@ -41,7 +41,8 @@ export type NotificationType =
   | 'hr_identity_result'      // ผลการตรวจยืนยันตัวตน (for the employee)
   | 'hr_tax_submitted'        // สนง.บัญชีบันทึกภาษีผ่านลิงก์แล้ว (for HR)
   | 'hr_paper_request'        // พนักงานขอสลิปกระดาษ (for HR)
-  | 'hr_paper_ready';         // สลิปกระดาษพิมพ์แล้ว รอรับที่ HR (for the employee)
+  | 'hr_paper_ready'          // สลิปกระดาษพิมพ์แล้ว รอรับที่ HR (for the employee)
+  | 'hr_payslip_ready';       // เงินเดือนออกแล้ว — สลิปพร้อมดู (for every employee in the run)
 
 export interface NotifyUserParams {
   userId: string;
@@ -134,6 +135,7 @@ const TYPE_TO_PREF: Record<NotificationType, keyof NotificationPreferences> = {
   hr_tax_submitted: 'notify_approval_request',
   hr_paper_request: 'notify_approval_request',
   hr_paper_ready: 'notify_approval_request',
+  hr_payslip_ready: 'notify_approval_request',
 };
 
 // Customer-facing notification types that respect store_settings toggles

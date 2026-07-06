@@ -15,7 +15,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
   const { data: payrun, error: prErr } = await service
     .from('hr_payruns')
-    .select('id, company_id, store_id, period_year, period_month, cycle_start, cycle_end, pay_date, status, finalized_at, note')
+    .select('id, company_id, store_id, period_year, period_month, cycle_start, cycle_end, pay_date, status, finalized_at, note, announced_at')
     .eq('id', id)
     .maybeSingle();
   if (prErr) return NextResponse.json({ error: 'Failed to load payrun' }, { status: 500 });
