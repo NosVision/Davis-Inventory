@@ -214,6 +214,19 @@ eq('sc leave: custom ÷26', sc.computeLeaveScDeduction(2_600_000, 1, 26).amount_
 const asCustom = as.computeAttendanceScore({ scheduledDays: 20, absentDays: 1, lateDays: 0, lateMinutes: 0, incompleteDays: 0, otMinutes: 0 }, { w_punctuality: 50, w_attendance: 35, w_completeness: 15, p_late_day: 12, p_late_30min: 5, p_late_cap: 30, p_absent_day: 50, p_incomplete_day: 10, band_excellent: 95, band_good: 75, band_fair: 60 });
 eq('score: custom absent penalty 50 → attendance 50, overall 83 good (band_excellent 95)', [asCustom.components.attendance, asCustom.overall, asCustom.band], [50, 83, 'good']);
 
+// ── 3% withholding basis = GROSS (accountant confirmed 2026-07-06; June sheet R29 San Oo Lwin:
+//    470.44 = 3% × Total 15,681.25 incl travel — NOT 3% × base 13,500 = 405) ──
+const slip3 = pr.computePayslip({
+  employee: { rate_satang: 1_350_000, pay_type: 'full_monthly', ot_eligible: false, ot_hour_divisor: 9, tax_mode: 'withholding_3pct', sso_enrolled: false },
+  company: { sso_rate: 0.05, sso_wage_ceiling_satang: 1_750_000, day_divisor: 30, ot1_multiplier: 1.5 },
+  timesheet: { worked_days: 30, pt_hours: 0, ot_minutes_eligible: 0, late_minutes_per_occurrence: [], unauthorized_absent_days: 0 },
+  leaves: [], allowances: [], recurringDeductions: [],
+  extraEarnings: [{ type: 'other', label: 'travel+ot', amount_satang: 218_125, ref: null }],
+  scNetSatang: 0,
+});
+eq('3%% on gross: 13,500 + 2,181.25 extras → tax ฿470.44', slip3.tax_satang, 47044);
+eq('3%% on gross: no SSO when not enrolled', slip3.sso_satang, 0);
+
 const fail = R.filter((r) => !r.pass);
 for (const r of R) if (!r.pass) console.log(`FAIL ${r.name}: got=${JSON.stringify(r.got)} want=${JSON.stringify(r.want)}`);
 console.log(`\nHR_MISC_ASSERT = ${R.length - fail.length}/${R.length} ${fail.length ? 'FAILED' : 'ALL PASS'}`);

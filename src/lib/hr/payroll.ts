@@ -322,10 +322,14 @@ export function computePayslip(input: PayrollInput): Payslip {
   }
   const pvdAnnualBaht = (pvd / 100) * 12;
 
-  // Tax: progressive PND1 | flat 3% withholding (on the labour base) | none.
+  // Tax: progressive PND1 (base salary only — the accountant confirmed 2026-07-06 that SC/OT
+  // never enter the progressive base) | flat 3% withholding | none.
+  // 3% basis = GROSS earnings, not base salary: the June-2026 sheet's SS 3% column is 3% of
+  // Total (San Oo Lwin: 470.44 = 3% × 15,681.25 incl travel/OT), and the accountant confirmed
+  // the same treatment for Thai staff who opted out of SSO (they remit 3% withholding instead).
   let tax = 0;
   if (emp.tax_mode === 'withholding_3pct') {
-    tax = Math.round(baseSalary * 0.03);
+    tax = Math.round(gross * 0.03);
   } else if (emp.tax_mode === 'progressive') {
     tax = progressiveMonthlyTaxSatang(baseSalary, sso, (emp.tax_allowances_baht ?? 0) + pvdAnnualBaht);
   }
