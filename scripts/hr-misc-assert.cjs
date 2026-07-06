@@ -224,8 +224,20 @@ const slip3 = pr.computePayslip({
   extraEarnings: [{ type: 'other', label: 'travel+ot', amount_satang: 218_125, ref: null }],
   scNetSatang: 0,
 });
-eq('3%% on gross: 13,500 + 2,181.25 extras → tax ฿470.44', slip3.tax_satang, 47044);
-eq('3%% on gross: no SSO when not enrolled', slip3.sso_satang, 0);
+eq('3%% on wage: 13,500 + 2,181.25 extras → tax ฿470.44', slip3.tax_satang, 47044);
+eq('3%% on wage: no SSO when not enrolled', slip3.sso_satang, 0);
+// SC/tip are customer money — EXCLUDED from the 3% base (Upper workbook: 360 = 3% × 12,000 while
+// total incl SC was 25,500). Same person + SC 13,500 → tax unchanged.
+const slip3sc = pr.computePayslip({
+  employee: { rate_satang: 1_350_000, pay_type: 'full_monthly', ot_eligible: false, ot_hour_divisor: 9, tax_mode: 'withholding_3pct', sso_enrolled: false },
+  company: { sso_rate: 0.05, sso_wage_ceiling_satang: 1_750_000, day_divisor: 30, ot1_multiplier: 1.5 },
+  timesheet: { worked_days: 30, pt_hours: 0, ot_minutes_eligible: 0, late_minutes_per_occurrence: [], unauthorized_absent_days: 0 },
+  leaves: [], allowances: [], recurringDeductions: [],
+  extraEarnings: [{ type: 'other', label: 'travel+ot', amount_satang: 218_125, ref: null }],
+  scNetSatang: 1_350_000,
+});
+eq('3%% excludes SC: tax still ฿470.44 with SC 13,500 on the slip', slip3sc.tax_satang, 47044);
+eq('3%% excludes SC: gross DOES include SC', slip3sc.gross_satang, 1_350_000 + 218_125 + 1_350_000);
 
 const fail = R.filter((r) => !r.pass);
 for (const r of R) if (!r.pass) console.log(`FAIL ${r.name}: got=${JSON.stringify(r.got)} want=${JSON.stringify(r.want)}`);

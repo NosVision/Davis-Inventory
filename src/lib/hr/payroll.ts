@@ -324,12 +324,16 @@ export function computePayslip(input: PayrollInput): Payslip {
 
   // Tax: progressive PND1 (base salary only — the accountant confirmed 2026-07-06 that SC/OT
   // never enter the progressive base) | flat 3% withholding | none.
-  // 3% basis = GROSS earnings, not base salary: the June-2026 sheet's SS 3% column is 3% of
-  // Total (San Oo Lwin: 470.44 = 3% × 15,681.25 incl travel/OT), and the accountant confirmed
-  // the same treatment for Thai staff who opted out of SSO (they remit 3% withholding instead).
+  // 3% basis = the EMPLOYER-PAID wage (salary + OT + allowances) — Service Charge and tips come
+  // from customers and are excluded. Evidence: the Upper 26.05–25.06 workbook's 10 WHT rows are
+  // all 3% × (salary+OT+travel) and NEVER 3% × total-incl-SC (e.g. 360 = 3% × 12,000 while total
+  // with SC was 25,500); Baccarat R29 (470.44 = 3% × 15,681.25, no SC in his total) reconciles
+  // with the same rule.
   let tax = 0;
   if (emp.tax_mode === 'withholding_3pct') {
-    tax = Math.round(gross * 0.03);
+    const scPart = !partTime && input.scNetSatang > 0 ? input.scNetSatang : 0;
+    const tipPart = (input.tipNetSatang ?? 0) > 0 ? (input.tipNetSatang as number) : 0;
+    tax = Math.round((gross - scPart - tipPart) * 0.03);
   } else if (emp.tax_mode === 'progressive') {
     tax = progressiveMonthlyTaxSatang(baseSalary, sso, (emp.tax_allowances_baht ?? 0) + pvdAnnualBaht);
   }
