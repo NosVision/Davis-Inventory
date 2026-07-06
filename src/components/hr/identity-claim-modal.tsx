@@ -9,7 +9,14 @@ import { Modal, ModalFooter, Button, toast } from '@/components/ui';
 // hr_employees record (and has no claim awaiting HR) is asked to pick their REAL full name from
 // the imported payroll roster. [ยืนยันทันที] opens a type-ahead over the unclaimed names;
 // [เอาไว้ทีหลัง] snoozes until the next day. Saving notifies HR to verify. Self-contained locale.
-interface Option { id: string; full_name_th: string; store_name: string | null }
+interface Option {
+  id: string;
+  full_name_th: string;
+  store_name: string | null;
+  requires_bank_verify?: boolean;
+  bank_name?: string | null;
+  bank_last4?: string | null;
+}
 
 const SNOOZE_KEY = 'hr-identity-snooze'; // Bangkok date string — re-prompt on the next day
 const DONE_KEY = 'hr-identity-done'; // '1' once linked/claimed — skip the status fetch entirely
@@ -21,14 +28,16 @@ function bkkToday(): string {
 export function IdentityClaimModal({ role }: { role: string }) {
   const isTh = useLocale() === 'th';
   const L = isTh
-    ? { title: 'กรุณาระบุชื่อจริงในระบบของคุณ', body: 'HR กำลังเชื่อมบัญชีผู้ใช้กับประวัติพนักงาน กรุณาเลือกชื่อ-นามสกุลจริงของคุณเพื่อยืนยันตัวตน', confirmNow: 'ยืนยันทันที', later: 'เอาไว้ทีหลัง', searchPh: 'พิมพ์ชื่อจริงของคุณ…', pick: 'เลือกชื่อของคุณ', submit: 'ยืนยัน', sent: 'ส่งให้ HR ตรวจสอบแล้ว', sentBody: 'เมื่อ HR อนุมัติ บัญชีของคุณจะถูกผูกกับประวัติพนักงานอัตโนมัติ', failed: 'ส่งไม่สำเร็จ ลองใหม่อีกครั้ง', taken: 'ชื่อนี้ถูกยืนยันไปแล้ว — เลือกใหม่', noResult: 'ไม่พบชื่อ ลองพิมพ์เพิ่ม หรือติดต่อ HR' }
-    : { title: 'Please identify your real name', body: 'HR is linking app accounts to employee records. Pick your real full name to confirm your identity.', confirmNow: 'Confirm now', later: 'Later', searchPh: 'Type your real name…', pick: 'Select your name', submit: 'Confirm', sent: 'Sent to HR for review', sentBody: 'Once HR approves, your account is linked to your employee record automatically.', failed: 'Failed — try again', taken: 'That name was just claimed — pick again', noResult: 'No match — type more, or contact HR' };
+    ? { title: 'กรุณาระบุชื่อจริงในระบบของคุณ', body: 'HR กำลังเชื่อมบัญชีผู้ใช้กับประวัติพนักงาน กรุณาเลือกชื่อ-นามสกุลจริงของคุณเพื่อยืนยันตัวตน', confirmNow: 'ยืนยันทันที', later: 'เอาไว้ทีหลัง', searchPh: 'พิมพ์ชื่อจริงของคุณ…', pick: 'เลือกชื่อของคุณ', submit: 'ยืนยัน', sent: 'ส่งให้ HR ตรวจสอบแล้ว', sentBody: 'เมื่อ HR อนุมัติ บัญชีของคุณจะถูกผูกกับประวัติพนักงานอัตโนมัติ', failed: 'ส่งไม่สำเร็จ ลองใหม่อีกครั้ง', taken: 'ชื่อนี้ถูกยืนยันไปแล้ว — เลือกใหม่', noResult: 'ไม่พบชื่อ ลองพิมพ์เพิ่ม หรือติดต่อ HR', bankLabel: 'ยืนยันเลขบัญชีเงินเดือนของคุณ', bankHintOf: (b: string | null, l4: string) => `บัญชี${b ? ` ${b}` : ''}ที่ลงท้าย •••• ${l4}`, bankPh: 'เลขบัญชีเต็ม (ตัวเลขล้วน)', bankMismatch: 'เลขบัญชีไม่ตรงกับข้อมูลในระบบ — ตรวจสอบสมุดบัญชีของคุณอีกครั้ง' }
+    : { title: 'Please identify your real name', body: 'HR is linking app accounts to employee records. Pick your real full name to confirm your identity.', confirmNow: 'Confirm now', later: 'Later', searchPh: 'Type your real name…', pick: 'Select your name', submit: 'Confirm', sent: 'Sent to HR for review', sentBody: 'Once HR approves, your account is linked to your employee record automatically.', failed: 'Failed — try again', taken: 'That name was just claimed — pick again', noResult: 'No match — type more, or contact HR', bankLabel: 'Confirm your payroll bank account', bankHintOf: (b: string | null, l4: string) => `The${b ? ` ${b}` : ''} account ending •••• ${l4}`, bankPh: 'Full account number (digits only)', bankMismatch: 'Account number does not match our records — check your bank book' };
 
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<'ask' | 'pick'>('ask');
   const [q, setQ] = useState('');
   const [options, setOptions] = useState<Option[]>([]);
   const [chosen, setChosen] = useState<Option | null>(null);
+  const [bankInput, setBankInput] = useState('');
+  const [bankErr, setBankErr] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -95,14 +104,26 @@ export function IdentityClaimModal({ role }: { role: string }) {
 
   const submit = async () => {
     if (!chosen) return;
+    if (chosen.requires_bank_verify && bankInput.replace(/\D/g, '').length < 4) {
+      setBankErr(L.bankMismatch);
+      return;
+    }
     setSubmitting(true);
+    setBankErr(null);
     try {
       const res = await fetch('/api/hr/ess/identity/claim', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identity_id: chosen.id }),
+        body: JSON.stringify({
+          identity_id: chosen.id,
+          ...(chosen.requires_bank_verify ? { bank_account_no: bankInput } : {}),
+        }),
       });
       const json = await res.json().catch(() => ({}));
+      if (res.status === 400 && json?.need_bank_verify) {
+        setBankErr(L.bankMismatch);
+        return;
+      }
       if (res.status === 409 && String(json?.error ?? '').includes('pick again')) {
         toast({ type: 'warning', title: L.taken });
         setChosen(null);
@@ -159,7 +180,7 @@ export function IdentityClaimModal({ role }: { role: string }) {
                   <button
                     key={o.id}
                     type="button"
-                    onClick={() => setChosen(o)}
+                    onClick={() => { setChosen(o); setBankInput(''); setBankErr(null); }}
                     aria-pressed={chosen?.id === o.id}
                     className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
                       chosen?.id === o.id
@@ -172,6 +193,24 @@ export function IdentityClaimModal({ role }: { role: string }) {
                   </button>
                 ))
               )}
+            </div>
+          )}
+          {chosen?.requires_bank_verify && (
+            <div className="mt-3 rounded-xl border border-indigo-200 bg-indigo-50/60 p-3 dark:border-indigo-800 dark:bg-indigo-900/20">
+              <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">{L.bankLabel}</p>
+              <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                {L.bankHintOf(chosen.bank_name ?? null, chosen.bank_last4 ?? '????')}
+              </p>
+              <input
+                inputMode="numeric"
+                autoComplete="off"
+                value={bankInput}
+                onChange={(e) => { setBankInput(e.target.value.replace(/[^\d-]/g, '')); setBankErr(null); }}
+                placeholder={L.bankPh}
+                className="control mt-2 w-full tracking-widest"
+                aria-label={L.bankLabel}
+              />
+              {bankErr && <p className="mt-1.5 text-xs text-red-500">{bankErr}</p>}
             </div>
           )}
           <ModalFooter>

@@ -54,11 +54,19 @@ const HR_ID = u('hr-test-hr').id;
     const found = (opt.json?.data ?? []).find((o) => o.full_name_th === FULLNAME);
     check('options: seeded name searchable', !!found, opt.json?.data?.length);
     check('options: no salary fields leaked', found && !('rate_satang' in found) && !('tax_mode' in found), found && Object.keys(found));
-    check('options: no bank fields leaked', found && !('bank_account_no' in found) && !('bank_name' in found), found && Object.keys(found));
+    check('options: full account NOT leaked, only last4 hint', found && !('bank_account_no' in found) && found.bank_last4 === '6789' && found.requires_bank_verify === true, found && Object.keys(found));
 
-    // claim
-    const cl = await req(me, 'POST', '/api/hr/ess/identity/claim', { identity_id: identId });
-    check('claim 201', cl.status === 201, `${cl.status} ${(cl.text || '').slice(0, 120)}`);
+    // bank second factor: no number → 400, wrong number → 400 (audited, name NOT claimed)
+    const clNoBank = await req(me, 'POST', '/api/hr/ess/identity/claim', { identity_id: identId });
+    check('claim without bank verify 400', clNoBank.status === 400 && clNoBank.json?.need_bank_verify === true, clNoBank.status);
+    const clWrong = await req(me, 'POST', '/api/hr/ess/identity/claim', { identity_id: identId, bank_account_no: '9999999999' });
+    check('claim with wrong account 400', clWrong.status === 400 && clWrong.json?.need_bank_verify === true, clWrong.status);
+    const { data: stillFree } = await svc.from('hr_pending_identities').select('status').eq('id', identId).maybeSingle();
+    check('failed verify does NOT claim the name', stillFree?.status === 'unclaimed', stillFree?.status);
+
+    // claim (correct account; dashes/spaces tolerated)
+    const cl = await req(me, 'POST', '/api/hr/ess/identity/claim', { identity_id: identId, bank_account_no: '012-345-6789' });
+    check('claim 201 (correct account)', cl.status === 201, `${cl.status} ${(cl.text || '').slice(0, 120)}`);
 
     // double claim → 409 ; someone else claiming the taken name → 409
     const cl2 = await req(me, 'POST', '/api/hr/ess/identity/claim', { identity_id: identId });

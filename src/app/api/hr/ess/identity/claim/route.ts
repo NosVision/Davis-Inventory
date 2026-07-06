@@ -27,6 +27,39 @@ export async function POST(request: NextRequest) {
   if (emp) return NextResponse.json({ error: 'You are already linked as an employee' }, { status: 409 });
   if (open) return NextResponse.json({ error: 'You already have a claim awaiting review' }, { status: 409 });
 
+  // Second factor (owner 2026-07-07): a row that carries a payroll bank account demands the FULL
+  // account number back (the UI guides with bank + last 4). Only the real person knows their own
+  // account; failures are audited and the name is NOT claimed. Rows without an account (some
+  // kitchen staff are paid cash) skip this — HR review stays the final gate either way.
+  const { data: target } = await service
+    .from('hr_pending_identities')
+    .select('id, status, bank_account_no')
+    .eq('id', identityId)
+    .maybeSingle();
+  if (!target) return NextResponse.json({ error: 'Name already claimed — pick again' }, { status: 409 });
+  if (target.status !== 'unclaimed') {
+    return NextResponse.json({ error: 'Name already claimed — pick again' }, { status: 409 });
+  }
+  const expected = String(target.bank_account_no ?? '').replace(/\D/g, '');
+  if (expected.length >= 4) {
+    const given = String(body.bank_account_no ?? '').replace(/\D/g, '');
+    if (!given) {
+      return NextResponse.json({ error: 'กรุณายืนยันเลขบัญชีธนาคารของคุณ', need_bank_verify: true }, { status: 400 });
+    }
+    if (given !== expected) {
+      await logHrAudit(service, {
+        actorId: user.id,
+        action: 'update',
+        table: 'hr_pending_identities',
+        recordId: identityId,
+        before: null,
+        after: { bank_verify: 'failed' },
+        reason: 'Identity claim blocked — bank account number mismatch',
+      });
+      return NextResponse.json({ error: 'เลขบัญชีไม่ตรงกับข้อมูลในระบบ — ตรวจสอบสมุดบัญชีของคุณอีกครั้ง', need_bank_verify: true }, { status: 400 });
+    }
+  }
+
   // CAS unclaimed → claimed (the partial-unique one_open_claim index backstops a race on claimed_by).
   const { data: updated, error } = await service
     .from('hr_pending_identities')
