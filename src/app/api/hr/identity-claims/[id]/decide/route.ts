@@ -110,6 +110,7 @@ export async function POST(
     .insert({
       profile_id: claimant,
       company_id: ident.company_id,
+      full_name: ident.full_name_th, // formal payroll name (slips/accountant review print this)
       position_id: positionId,
       rate_satang: ident.rate_satang ?? 0,
       pay_type: ident.pay_type ?? 'full_monthly',

@@ -39,7 +39,9 @@ export type NotificationType =
   | 'hr_swap_result'          // ผลอนุมัติสลับวันหยุด (for the two employees)
   | 'hr_identity_claim'       // พนักงานยืนยันตัวตน รอ HR ตรวจ (for HR)
   | 'hr_identity_result'      // ผลการตรวจยืนยันตัวตน (for the employee)
-  | 'hr_tax_submitted';       // สนง.บัญชีบันทึกภาษีผ่านลิงก์แล้ว (for HR)
+  | 'hr_tax_submitted'        // สนง.บัญชีบันทึกภาษีผ่านลิงก์แล้ว (for HR)
+  | 'hr_paper_request'        // พนักงานขอสลิปกระดาษ (for HR)
+  | 'hr_paper_ready';         // สลิปกระดาษพิมพ์แล้ว รอรับที่ HR (for the employee)
 
 export interface NotifyUserParams {
   userId: string;
@@ -130,6 +132,8 @@ const TYPE_TO_PREF: Record<NotificationType, keyof NotificationPreferences> = {
   hr_identity_claim: 'notify_approval_request',
   hr_identity_result: 'notify_approval_request',
   hr_tax_submitted: 'notify_approval_request',
+  hr_paper_request: 'notify_approval_request',
+  hr_paper_ready: 'notify_approval_request',
 };
 
 // Customer-facing notification types that respect store_settings toggles

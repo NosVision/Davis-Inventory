@@ -103,14 +103,15 @@ export async function buildPayrunReviewRows(service: SupabaseClient, payrunId: s
     service.from('hr_payslip_earnings').select('payslip_id, type, amount_satang').in('payslip_id', slipIds),
     service.from('profiles').select('id, username, display_name').in('id', userIds),
     empIds.length
-      ? service.from('hr_employees').select('id, employee_code, display_name').in('id', empIds)
-      : Promise.resolve({ data: [], error: null } as { data: { id: string; employee_code: string | null; display_name: string | null }[]; error: null }),
+      ? service.from('hr_employees').select('id, employee_code, full_name').in('id', empIds)
+      : Promise.resolve({ data: [], error: null } as { data: { id: string; employee_code: string | null; full_name: string | null }[]; error: null }),
     service.from('hr_payslip_tax_overrides').select('profile_id').eq('payrun_id', payrunId),
   ]);
   if (earnRes.error) return null;
 
   const profById = new Map((profRes.data ?? []).map((p) => [p.id as string, p]));
-  const empById = new Map(((empRes.data ?? []) as { id: string; employee_code: string | null; display_name: string | null }[]).map((e) => [e.id, e]));
+  if ('error' in empRes && empRes.error) return null;
+  const empById = new Map(((empRes.data ?? []) as { id: string; employee_code: string | null; full_name: string | null }[]).map((e) => [e.id, e]));
   const overridden = new Set(((ovrRes.data ?? []) as { profile_id: string }[]).map((o) => o.profile_id));
 
   const earnBySlip = new Map<string, { type: string; amount_satang: number }[]>();
@@ -133,7 +134,7 @@ export async function buildPayrunReviewRows(service: SupabaseClient, payrunId: s
     const tax = Number(s.tax_satang) || 0;
     return {
       payslip_id: s.id as string,
-      name: emp?.display_name || prof?.display_name || prof?.username || '—',
+      name: emp?.full_name || prof?.display_name || prof?.username || '—',
       employee_code: emp?.employee_code ?? null,
       pay_type: s.pay_type as string,
       tax_mode: s.tax_mode as string,

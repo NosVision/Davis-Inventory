@@ -38,15 +38,15 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     service.from('hr_payruns').select('id, company_id, period_year, period_month, cycle_start, cycle_end, pay_date, status, company:hr_companies(name, address)').eq('id', slip.payrun_id).maybeSingle(),
     service.from('profiles').select('username, display_name').eq('id', slip.user_id).maybeSingle(),
     service.from('hr_payslip_tax_overrides').select('tax_satang, note, set_via, updated_at').eq('payrun_id', slip.payrun_id).eq('profile_id', slip.user_id).maybeSingle(),
-    // slip-form print header fields (§ dot-matrix form): code / real name / bank account
-    service.from('hr_employees').select('employee_code, display_name, bank_account_no').eq('id', (slip.employee_id as string) ?? '00000000-0000-0000-0000-000000000000').maybeSingle(),
+    // slip-form print header fields (§ dot-matrix form): code / formal name / bank account
+    service.from('hr_employees').select('employee_code, full_name, bank_account_no').eq('id', (slip.employee_id as string) ?? '00000000-0000-0000-0000-000000000000').maybeSingle(),
   ]);
   if (earnRes.error || dedRes.error) {
     return NextResponse.json({ error: 'Failed to load payslip lines' }, { status: 500 });
   }
 
-  const emp = empRes.data as { employee_code: string | null; display_name: string | null; bank_account_no: string | null } | null;
-  const employeeName = emp?.display_name || profRes.data?.display_name || profRes.data?.username || '—';
+  const emp = empRes.data as { employee_code: string | null; full_name: string | null; bank_account_no: string | null } | null;
+  const employeeName = emp?.full_name || profRes.data?.display_name || profRes.data?.username || '—';
   const nickname = profRes.data?.display_name && profRes.data.display_name !== employeeName ? profRes.data.display_name : null;
   return NextResponse.json({
     data: {

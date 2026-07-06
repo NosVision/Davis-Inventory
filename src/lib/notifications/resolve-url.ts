@@ -92,6 +92,12 @@ export function resolveNotificationUrl(
     case 'hr_tax_submitted':
       return '/hr/payroll';
 
+    // สลิปกระดาษ (HR คิวปริ้น / พนักงานรอรับ)
+    case 'hr_paper_request':
+      return '/hr/payroll';
+    case 'hr_paper_ready':
+      return '/me/payslips';
+
     // โปรโมชั่น
     case 'promotion':
       return '/notifications';

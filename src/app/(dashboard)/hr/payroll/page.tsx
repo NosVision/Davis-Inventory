@@ -44,6 +44,14 @@ interface PayrunDetail {
 
 const PRINT_CSS = `@media print { @page { size: 9in 5.5in; margin: 0.3in; } }`;
 
+interface PrintQueueRow {
+  payslip_id: string;
+  name: string;
+  source: 'standing' | 'request';
+  status: 'requested' | 'printed' | 'cancelled';
+  printed_at: string | null;
+}
+
 // dummy slip for the alignment test print — X/9 placeholders land where real data will
 const CALIBRATE_DATA: PayslipDetailData = {
   payslip: {
@@ -121,12 +129,58 @@ export default function HrPayrollPage() {
       const res = await fetch(`/api/hr/payruns/${id}`);
       const json = await res.json();
       setDetail((json.data ?? null) as PayrunDetail | null);
+      // ④ paper print queue (standing prefs + per-slip requests)
+      try {
+        const qRes = await fetch(`/api/hr/payruns/${id}/print-queue`);
+        const qJson = await qRes.json().catch(() => ({}));
+        setPrintQueue(qRes.ok ? ((qJson.data ?? []) as PrintQueueRow[]) : []);
+        setQueueSelected(new Set());
+      } catch {
+        setPrintQueue([]);
+      }
     } catch {
       toast({ type: 'error', title: t('loadFailed') });
     } finally {
       setBusy(false);
     }
   }, [t]);
+
+  // ④ print queue state + batch print
+  const [printQueue, setPrintQueue] = useState<PrintQueueRow[]>([]);
+  const [queueSelected, setQueueSelected] = useState<Set<string>>(new Set());
+  const [printBatch, setPrintBatch] = useState<PayslipDetailData[]>([]);
+  const [queueBusy, setQueueBusy] = useState(false);
+
+  const printSelected = useCallback(async () => {
+    if (!detail || queueSelected.size === 0) return;
+    setQueueBusy(true);
+    try {
+      const details = await Promise.all(
+        [...queueSelected].map(async (id) => {
+          const res = await fetch(`/api/hr/payslips/${id}`);
+          const json = await res.json();
+          if (!res.ok) throw new Error();
+          return json.data as PayslipDetailData;
+        })
+      );
+      setPrintSlip(null);
+      setPrintBatch(details);
+      setTimeout(() => window.print(), 80);
+      // mark printed AFTER the dialog returns (print() blocks in most browsers)
+      const res = await fetch(`/api/hr/payruns/${detail.payrun.id}/print-queue`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payslip_ids: [...queueSelected] }),
+      });
+      if (!res.ok) throw new Error();
+      toast({ type: 'success', title: t('queuePrinted', { n: queueSelected.size }) });
+      await openPayrun(detail.payrun.id);
+    } catch {
+      toast({ type: 'error', title: t('actionFailed') });
+    } finally {
+      setQueueBusy(false);
+    }
+  }, [detail, queueSelected, t, openPayrun]);
 
   const generate = useCallback(async () => {
     if (!companyId || !month) return;
@@ -433,6 +487,59 @@ export default function HrPayrollPage() {
                       </tfoot>
                     </table>
                   </div>
+
+                  {/* ④ paper print queue: standing prefs + per-slip requests */}
+                  {printQueue.length > 0 && (
+                    <div className="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-800 dark:text-gray-100">
+                          <Printer className="h-4 w-4 text-indigo-500" /> {t('printQueue')} ({printQueue.filter((q) => q.status !== 'printed').length})
+                        </h3>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setQueueSelected(new Set(printQueue.filter((q) => q.status !== 'printed').map((q) => q.payslip_id)))}
+                          >
+                            {t('queueSelectAll')}
+                          </Button>
+                          <Button size="sm" disabled={queueSelected.size === 0 || queueBusy} isLoading={queueBusy} icon={<Printer className="h-4 w-4" />} onClick={printSelected}>
+                            {t('queuePrintSelected', { n: queueSelected.size })}
+                          </Button>
+                        </div>
+                      </div>
+                      <ul className="divide-y divide-gray-100 dark:divide-gray-700">
+                        {printQueue.map((q) => (
+                          <li key={q.payslip_id} className="flex items-center justify-between gap-2 py-1.5 text-sm">
+                            <label className="flex min-w-0 items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={queueSelected.has(q.payslip_id)}
+                                disabled={q.status === 'printed'}
+                                onChange={(e) =>
+                                  setQueueSelected((prev) => {
+                                    const next = new Set(prev);
+                                    if (e.target.checked) next.add(q.payslip_id);
+                                    else next.delete(q.payslip_id);
+                                    return next;
+                                  })
+                                }
+                              />
+                              <span className="truncate text-gray-800 dark:text-gray-100">{q.name}</span>
+                              <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500 dark:bg-gray-700 dark:text-gray-300">
+                                {q.source === 'standing' ? t('queueStanding') : t('queueRequest')}
+                              </span>
+                            </label>
+                            {q.status === 'printed' ? (
+                              <StatusBadge tone="good" label={t('queuePrintedBadge')} />
+                            ) : (
+                              <StatusBadge tone="warn" label={t('queueWaiting')} />
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   </div>
                 )}
               </div>
@@ -524,7 +631,14 @@ export default function HrPayrollPage() {
 
       {/* print-only slip — fixed-position 9×5.5" security-form layout */}
       <div className="hidden print:block">
-        {printSlip && <PayslipFormPrint data={printSlip} calibrate={printSlip.payslip.id === 'calibrate'} />}
+        {printSlip && printBatch.length === 0 && (
+          <PayslipFormPrint data={printSlip} calibrate={printSlip.payslip.id === 'calibrate'} />
+        )}
+        {printBatch.map((d) => (
+          <div key={d.payslip.id} style={{ pageBreakAfter: 'always' }}>
+            <PayslipFormPrint data={d} />
+          </div>
+        ))}
       </div>
     </div>
   );

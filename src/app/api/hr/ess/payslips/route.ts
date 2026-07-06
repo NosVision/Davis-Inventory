@@ -31,6 +31,13 @@ export async function GET() {
     .eq('status', 'finalized');
   if (runErr) return NextResponse.json({ error: 'Failed to load payslips' }, { status: 500 });
 
+  // paper-slip request status per slip + the caller's standing preference (④ print queue)
+  const [reqRes, empRes] = await Promise.all([
+    service.from('hr_payslip_print_requests').select('payslip_id, status').in('payslip_id', slips.map((s) => s.id)),
+    service.from('hr_employees').select('paper_slip_standing').eq('profile_id', user.id).maybeSingle(),
+  ]);
+  const reqBySlip = new Map(((reqRes.data ?? []) as { payslip_id: string; status: string }[]).map((r) => [r.payslip_id, r.status]));
+
   const runById = new Map((runRows ?? []).map((r) => [r.id, r]));
   const out = slips
     .filter((s) => runById.has(s.payrun_id))
@@ -45,9 +52,10 @@ export async function GET() {
         period_year: r.period_year,
         period_month: r.period_month,
         pay_date: r.pay_date,
+        paper_status: reqBySlip.get(s.id as string) ?? null,
       };
     })
     .sort((a, b) => b.period_year - a.period_year || b.period_month - a.period_month);
 
-  return NextResponse.json({ data: out });
+  return NextResponse.json({ data: out, paper_slip_standing: empRes.data?.paper_slip_standing ?? false });
 }
