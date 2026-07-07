@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Plus, ArrowLeftRight, History, Printer, IdCard } from 'lucide-react';
+import { Plus, ArrowLeftRight, History, Printer, IdCard, Archive } from 'lucide-react';
 import { Button, Select, Badge, PageHeader, StatusBadge, type StatusTone, toast } from '@/components/ui';
 import { DataTable, type Column } from '@/components/data/data-table';
 import { createClient } from '@/lib/supabase/client';
 import { EmployeeFormModal } from './_components/employee-form-modal';
 import { TransferModal } from './_components/transfer-modal';
 import { EmployeeHistoryModal } from './_components/employee-history-modal';
+import { EmployeePayHistoryModal } from './_components/employee-pay-history-modal';
 
 interface Ref {
   id: string;
@@ -70,6 +71,7 @@ export default function EmployeesPage() {
   const [transfer, setTransfer] = useState<{ id: string; companyId: string | null; companyName: string | null } | null>(null);
   // salary/position history modal
   const [historyFor, setHistoryFor] = useState<{ id: string; name: string } | null>(null);
+  const [payHistoryFor, setPayHistoryFor] = useState<{ id: string; name: string } | null>(null);
   const [printing, setPrinting] = useState(false);
   const [profilePrintId, setProfilePrintId] = useState<string | null>(null);
 
@@ -282,6 +284,18 @@ export default function EmployeesPage() {
             </button>
             <button
               type="button"
+              title={t('payHistory.action')}
+              aria-label={t('payHistory.action')}
+              onClick={(ev) => {
+                ev.stopPropagation();
+                setPayHistoryFor({ id: e.id, name: e.profile?.display_name || e.employee_code || '—' });
+              }}
+              className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-amber-600 dark:hover:bg-gray-700 dark:hover:text-amber-400"
+            >
+              <Archive className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
               title={t('transfer.action')}
               aria-label={t('transfer.action')}
               onClick={(ev) => {
@@ -387,6 +401,12 @@ export default function EmployeesPage() {
           setTransfer(null);
           fetchEmployees();
         }}
+      />
+
+      <EmployeePayHistoryModal
+        employeeId={payHistoryFor?.id ?? null}
+        employeeName={payHistoryFor?.name ?? ''}
+        onClose={() => setPayHistoryFor(null)}
       />
 
       <EmployeeHistoryModal

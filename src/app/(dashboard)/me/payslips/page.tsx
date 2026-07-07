@@ -1,11 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocale, useTranslations } from 'next-intl';
 import { Loader2, Wallet, Printer, X, FileText } from 'lucide-react';
 import { Button, EmptyState, Modal, ModalFooter, PageHeader, DataList, DataCard, MoneyValue, StatusBadge, ViewToggle, useViewMode, toast } from '@/components/ui';
 import { PayslipView, type PayslipDetailData } from '@/components/hr/payslip-view';
 import { PayslipFormPrint } from '@/components/hr/payslip-form-print';
+import { ImportedPayslipView, periodLabel, type ImportedSlip } from '@/components/hr/imported-payslip-view';
 
 interface MyPayslip {
   id: string;
@@ -21,23 +22,32 @@ const PRINT_CSS = `@media print { @page { size: 9in 5.5in; margin: 0.3in; } }`;
 
 export default function MyPayslipsPage() {
   const t = useTranslations('hr.payslip');
+  const isTh = useLocale() === 'th';
   const [rows, setRows] = useState<MyPayslip[]>([]);
+  const [imported, setImported] = useState<ImportedSlip[]>([]);
   const [standing, setStanding] = useState(false);
   const [standingBusy, setStandingBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [slip, setSlip] = useState<PayslipDetailData | null>(null);
+  const [importedSlip, setImportedSlip] = useState<ImportedSlip | null>(null);
   const [printSlip, setPrintSlip] = useState<PayslipDetailData | null>(null);
   const [paperBusy, setPaperBusy] = useState<string | null>(null);
   const [view, setView] = useViewMode('me-payslips');
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch('/api/hr/ess/payslips');
+      const [res, impRes] = await Promise.all([
+        fetch('/api/hr/ess/payslips'),
+        fetch('/api/hr/ess/imported-payslips'),
+      ]);
       const json = await res.json();
       setRows((json.data ?? []) as MyPayslip[]);
       setStanding(Boolean(json.paper_slip_standing));
+      const impJson = await impRes.json().catch(() => ({}));
+      setImported((impJson.data ?? []) as ImportedSlip[]);
     } catch {
       setRows([]);
+      setImported([]);
     } finally {
       setLoading(false);
     }
@@ -100,6 +110,16 @@ export default function MyPayslipsPage() {
   const paperBadge = (s: string | null) =>
     s === 'printed' ? <StatusBadge tone="good" label={t('paperPrinted')} /> : s === 'requested' ? <StatusBadge tone="warn" label={t('paperPending')} /> : null;
 
+  // Merge live (engine) + imported (legacy archive) slips into one timeline, newest first.
+  type Merged =
+    | { kind: 'live'; key: string; year: number; month: number; row: MyPayslip }
+    | { kind: 'imported'; key: string; year: number; month: number; row: ImportedSlip };
+  const merged = useMemo<Merged[]>(() => {
+    const live: Merged[] = rows.map((r) => ({ kind: 'live', key: `l-${r.id}`, year: r.period_year ?? 0, month: r.period_month ?? 0, row: r }));
+    const arch: Merged[] = imported.map((r) => ({ kind: 'imported', key: `i-${r.id}`, year: r.period_year, month: r.period_month, row: r }));
+    return [...live, ...arch].sort((a, b) => b.year - a.year || b.month - a.month);
+  }, [rows, imported]);
+
   return (
     <div className="mx-auto max-w-lg space-y-4 p-4">
       <style>{PRINT_CSS}</style>
@@ -129,32 +149,43 @@ export default function MyPayslipsPage() {
 
         {loading ? (
           <div className="flex justify-center py-10 text-gray-400"><Loader2 className="h-5 w-5 animate-spin" /></div>
-        ) : rows.length === 0 ? (
+        ) : merged.length === 0 ? (
           <EmptyState icon={Wallet} title={t('noPayslips')} />
         ) : (
           <DataList compact={view === 'compact'}>
-            {rows.map((r) => (
-              <DataCard
-                key={r.id}
-                onClick={() => open(r.id)}
-                title={`${r.period_month ? String(r.period_month).padStart(2, '0') : '—'}/${r.period_year ?? '—'}`}
-                subtitle={r.pay_date ? `${t('payDate')} ${r.pay_date}` : undefined}
-                status={paperBadge(r.paper_status)}
-                value={<MoneyValue satang={r.net_satang} emphasis="strong" tone="good" />}
-                actions={
-                  !r.paper_status && !standing ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={paperBusy === r.id}
-                      onClick={(e) => { e.stopPropagation(); requestPaper(r.id); }}
-                    >
-                      {t('paperRequest')}
-                    </Button>
-                  ) : undefined
-                }
-              />
-            ))}
+            {merged.map((m) =>
+              m.kind === 'live' ? (
+                <DataCard
+                  key={m.key}
+                  onClick={() => open(m.row.id)}
+                  title={`${m.row.period_month ? String(m.row.period_month).padStart(2, '0') : '—'}/${m.row.period_year ?? '—'}`}
+                  subtitle={m.row.pay_date ? `${t('payDate')} ${m.row.pay_date}` : undefined}
+                  status={paperBadge(m.row.paper_status)}
+                  value={<MoneyValue satang={m.row.net_satang} emphasis="strong" tone="good" />}
+                  actions={
+                    !m.row.paper_status && !standing ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={paperBusy === m.row.id}
+                        onClick={(e) => { e.stopPropagation(); requestPaper(m.row.id); }}
+                      >
+                        {t('paperRequest')}
+                      </Button>
+                    ) : undefined
+                  }
+                />
+              ) : (
+                <DataCard
+                  key={m.key}
+                  onClick={() => setImportedSlip(m.row)}
+                  title={periodLabel(m.year, m.month, isTh)}
+                  subtitle={isTh ? 'ข้อมูลนำเข้า (ย้อนหลัง)' : 'Imported (historical)'}
+                  status={<StatusBadge tone="neutral" label={isTh ? 'นำเข้า' : 'Archive'} />}
+                  value={<MoneyValue satang={m.row.net_satang ?? 0} emphasis="strong" tone="good" />}
+                />
+              ),
+            )}
           </DataList>
         )}
       </div>
@@ -167,6 +198,17 @@ export default function MyPayslipsPage() {
           <ModalFooter>
             <Button variant="outline" onClick={() => doPrint(slip)} icon={<Printer className="h-4 w-4" />}>{t('print')}</Button>
             <Button variant="ghost" onClick={() => setSlip(null)} icon={<X className="h-4 w-4" />}>{t('close')}</Button>
+          </ModalFooter>
+        </Modal>
+      )}
+
+      {importedSlip && (
+        <Modal isOpen onClose={() => setImportedSlip(null)} title={t('title')} size="lg">
+          <div className="max-h-[70vh] overflow-y-auto">
+            <ImportedPayslipView data={importedSlip} />
+          </div>
+          <ModalFooter>
+            <Button variant="ghost" onClick={() => setImportedSlip(null)} icon={<X className="h-4 w-4" />}>{t('close')}</Button>
           </ModalFooter>
         </Modal>
       )}

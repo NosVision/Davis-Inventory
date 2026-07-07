@@ -2634,6 +2634,7 @@
       "leave": "การลา",
       "warnings": "ใบเตือน",
       "payroll": "เงินเดือน",
+      "importedPayslips": "สลิปย้อนหลัง (นำเข้า)",
       "serviceCharge": "เซอร์วิสชาร์จ",
       "tipPool": "กองทุนทิป",
       "evaluation": "ประเมินผล",
@@ -3881,6 +3882,9 @@
       },
       "history": {
         "action": "ประวัติการปรับ"
+      },
+      "payHistory": {
+        "action": "ประวัติเงินเดือน (นำเข้า)"
       },
       "register": {
         "action": "พิมพ์ทะเบียน",
