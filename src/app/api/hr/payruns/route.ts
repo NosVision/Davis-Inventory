@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
   // Company config for the engine.
   const { data: company, error: companyErr } = await service
     .from('hr_companies')
-    .select('id, sso_rate, sso_wage_ceiling_satang, day_divisor, ot_multipliers')
+    .select('id, sso_rate, sso_wage_ceiling_satang, day_divisor, ot_multipliers, wht_rate')
     .eq('id', companyId)
     .maybeSingle();
   if (companyErr) return NextResponse.json({ error: 'Failed to load company' }, { status: 500 });
@@ -124,6 +124,7 @@ export async function POST(request: NextRequest) {
     sso_wage_ceiling_satang: Number(company.sso_wage_ceiling_satang) || 1_750_000,
     day_divisor: Number(company.day_divisor) || 30,
     ot1_multiplier: Number((company.ot_multipliers as { ot1?: number } | null)?.ot1) || 1.5,
+    wht_rate: Number(company.wht_rate) || 0.03,
   };
   // Group-wide policy knobs (late tiers etc.) — defaults equal the historical constants.
   const policies = await getHrPolicies(service);

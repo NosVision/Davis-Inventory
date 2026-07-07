@@ -124,6 +124,7 @@ export interface PayrollCompany {
   sso_wage_ceiling_satang: number; // 1_750_000 → cap 87_500 satang
   day_divisor: number; // 30
   ot1_multiplier: number; // 1.5 (standard work-day OT)
+  wht_rate: number; // 0.03 — flat withholding rate for tax_mode = 'withholding_3pct'
 }
 
 /** Pre-aggregated timesheet numbers for the pay period (from time-engine sumDays). */
@@ -326,7 +327,7 @@ export function computePayslip(input: PayrollInput): Payslip {
   const pvdAnnualBaht = (pvd / 100) * 12;
 
   // Tax: progressive PND1 (base salary only — the accountant confirmed 2026-07-06 that SC/OT
-  // never enter the progressive base) | flat 3% withholding | none.
+  // never enter the progressive base) | flat withholding at company.wht_rate (default 3%) | none.
   // 3% basis = the EMPLOYER-PAID wage (salary + OT + allowances) — Service Charge and tips come
   // from customers and are excluded. Evidence: the Upper 26.05–25.06 workbook's 10 WHT rows are
   // all 3% × (salary+OT+travel) and NEVER 3% × total-incl-SC (e.g. 360 = 3% × 12,000 while total
@@ -336,7 +337,7 @@ export function computePayslip(input: PayrollInput): Payslip {
   if (emp.tax_mode === 'withholding_3pct') {
     const scPart = !partTime && input.scNetSatang > 0 ? input.scNetSatang : 0;
     const tipPart = (input.tipNetSatang ?? 0) > 0 ? (input.tipNetSatang as number) : 0;
-    tax = Math.round((gross - scPart - tipPart) * 0.03);
+    tax = Math.round((gross - scPart - tipPart) * (company.wht_rate ?? 0.03));
   } else if (emp.tax_mode === 'progressive') {
     tax = progressiveMonthlyTaxSatang(baseSalary, sso, (emp.tax_allowances_baht ?? 0) + pvdAnnualBaht);
   }

@@ -15,7 +15,7 @@ export async function GET() {
   const service = createServiceClient();
   const { data, error } = await service
     .from(TABLE)
-    .select('id, name, address, tax_id, payslip_paper, sso_rate, sso_wage_ceiling_satang, day_divisor, ot_multipliers, active, created_at')
+    .select('id, name, address, tax_id, payslip_paper, sso_rate, sso_wage_ceiling_satang, day_divisor, ot_multipliers, wht_rate, active, created_at')
     .order('name', { ascending: true });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
