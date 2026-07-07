@@ -3,9 +3,11 @@
 import { useState, useMemo } from 'react';
 import { BookOpen, Filter, ChevronUp } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth-store';
-import type { UserRole } from '@/types/roles';
-import { ROLE_LABELS } from '@/types/roles';
-import { manualSections, ROLE_COLOR_CLASSES, type ManualSectionId } from './manual-data';
+import type { Permission, UserRole } from '@/types/roles';
+import { ROLE_LABELS, ROLE_PERMISSIONS } from '@/types/roles';
+import { hasPermission } from '@/lib/auth/permissions';
+import type { AuthUser } from '@/lib/auth/permissions';
+import { manualSections, ROLE_COLOR_CLASSES, type ManualSection, type ManualSectionId } from './manual-data';
 import { useTranslations } from 'next-intl';
 
 import { SectionIntro } from './sections/section-intro';
@@ -27,6 +29,19 @@ import { SectionSettings } from './sections/section-settings';
 import { SectionPrint } from './sections/section-print';
 import { SectionCommission } from './sections/section-commission';
 import { SectionProfile, SectionTheme, SectionSummary } from './sections/section-extras';
+import { SectionHrOverview } from './sections/section-hr-overview';
+import { SectionHrEmployees } from './sections/section-hr-employees';
+import { SectionHrOrg } from './sections/section-hr-org';
+import { SectionHrTime } from './sections/section-hr-time';
+import { SectionHrLeave } from './sections/section-hr-leave';
+import { SectionHrDiscipline } from './sections/section-hr-discipline';
+import { SectionHrPayroll } from './sections/section-hr-payroll';
+import { SectionHrDocuments } from './sections/section-hr-documents';
+import { SectionHrExtraPay } from './sections/section-hr-extra-pay';
+import { SectionHrEvaluation } from './sections/section-hr-evaluation';
+import { SectionHrAssetsComms } from './sections/section-hr-assets-comms';
+import { SectionHrAudit } from './sections/section-hr-audit';
+import { SectionHrEss } from './sections/section-hr-ess';
 
 const sectionComponents: Record<ManualSectionId, () => React.JSX.Element> = {
   intro: SectionIntro,
@@ -51,16 +66,47 @@ const sectionComponents: Record<ManualSectionId, () => React.JSX.Element> = {
   theme: SectionTheme,
   summary: SectionSummary,
   images: () => <></>,
+  hrOverview: SectionHrOverview,
+  hrEmployees: SectionHrEmployees,
+  hrOrg: SectionHrOrg,
+  hrTime: SectionHrTime,
+  hrLeave: SectionHrLeave,
+  hrDiscipline: SectionHrDiscipline,
+  hrPayroll: SectionHrPayroll,
+  hrDocuments: SectionHrDocuments,
+  hrExtraPay: SectionHrExtraPay,
+  hrEvaluation: SectionHrEvaluation,
+  hrAssetsComms: SectionHrAssetsComms,
+  hrAudit: SectionHrAudit,
+  hrEss: SectionHrEss,
 };
 
 // Roles available in the dashboard (customer is LIFF-only)
 const STAFF_ROLES: UserRole[] = ['owner', 'manager', 'bar', 'staff', 'accountant', 'hq'];
 
-function isSectionVisible(sectionRoles: 'all' | UserRole[], userRole: UserRole): boolean {
-  if (sectionRoles === 'all') return true;
+function roleHasPermission(role: UserRole, permission: Permission): boolean {
+  const rolePerms = ROLE_PERMISSIONS[role];
+  return (rolePerms as string[]).includes('*') || (rolePerms as Permission[]).includes(permission);
+}
+
+function isSectionVisible(
+  section: ManualSection,
+  role: UserRole,
+  realUser: AuthUser | null,
+  isPreview: boolean,
+): boolean {
+  if (section.roles === 'all') return true;
   // Owner can see all role-specific sections
-  if (userRole === 'owner') return true;
-  return sectionRoles.includes(userRole);
+  if (role === 'owner') return true;
+  if (section.roles.includes(role)) return true;
+  // Permission-gated sections (e.g. HR = can_manage_hr): in role-preview mode judge
+  // by the previewed role's baseline permissions; otherwise by the real user's
+  // effective permissions (role baseline + personal grants).
+  if (section.permission) {
+    if (isPreview) return roleHasPermission(role, section.permission);
+    if (realUser) return hasPermission(realUser, section.permission);
+  }
+  return false;
 }
 
 export function UserManual() {
@@ -71,10 +117,11 @@ export function UserManual() {
   const [showFilter, setShowFilter] = useState(false);
 
   const effectiveRole = filterRole === 'auto' ? userRole : filterRole;
+  const isPreview = filterRole !== 'auto';
 
   const visibleSections = useMemo(
-    () => manualSections.filter((s) => isSectionVisible(s.roles, effectiveRole)),
-    [effectiveRole],
+    () => manualSections.filter((s) => isSectionVisible(s, effectiveRole, user ?? null, isPreview)),
+    [effectiveRole, user, isPreview],
   );
 
   // Renumber sections sequentially per filtered view so the labels read 1,2,3…

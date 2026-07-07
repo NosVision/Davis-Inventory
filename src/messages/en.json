@@ -1030,12 +1030,39 @@
       "themeTitle": "Dark Mode / Light Mode",
       "themeDesc": "Toggle dark/light mode",
       "summaryTitle": "Menu Summary by Role",
-      "summaryDesc": "Menu access table by role"
+      "summaryDesc": "Menu access table by role",
+      "hrOverviewTitle": "HR — Overview & Dashboard",
+      "hrOverviewDesc": "HR module access, permissions, all menus, and the Today dashboard",
+      "hrEmployeesTitle": "HR — Employees & Identity Claims",
+      "hrEmployeesDesc": "Employee registry, add/edit/transfer, and identity verification",
+      "hrOrgTitle": "HR — Org Structure & Rules",
+      "hrOrgDesc": "Positions, departments, org chart, companies, pay rules, and policy settings",
+      "hrTimeTitle": "HR — Attendance & Scheduling",
+      "hrTimeDesc": "Attendance, check-in locations, shift schedule, and timesheet",
+      "hrLeaveTitle": "HR — Leave & Time Requests",
+      "hrLeaveDesc": "Leave approvals, leave types, OT/time-fix requests, and day-off swaps",
+      "hrDisciplineTitle": "HR — Warnings, Claims & Offboarding",
+      "hrDisciplineDesc": "Warning letters, expense claims, profile change requests, and offboarding",
+      "hrPayrollTitle": "HR — Payroll",
+      "hrPayrollDesc": "Pay runs, calculation, tax, social security, payslips, and bank files",
+      "hrDocumentsTitle": "HR — Documents & Certificates",
+      "hrDocumentsDesc": "Document/50 tawi requests and certificate issuing",
+      "hrExtraPayTitle": "HR — Service Charge & Tips",
+      "hrExtraPayDesc": "Service-charge and tip pools: allocate, deduct, and finalize",
+      "hrEvaluationTitle": "HR — Evaluation",
+      "hrEvaluationDesc": "Evaluation periods, criteria, assessors, results, and payouts",
+      "hrAssetsCommsTitle": "HR — Assets, Policies & Announcements",
+      "hrAssetsCommsDesc": "Asset registry, company policies, and employee announcements",
+      "hrAuditTitle": "HR — Audit & Reports",
+      "hrAuditDesc": "Audit log and all HR reports",
+      "hrEssTitle": "HR — Employee Self-Service (Me)",
+      "hrEssDesc": "Pages employees use themselves (/me) and how data flows into HR menus"
     },
     "tocGroups": {
       "systemOverview": "System Overview",
       "roleMenus": "Menus by Role",
-      "mainFeatures": "Main Features"
+      "mainFeatures": "Main Features",
+      "hr": "HR System"
     }
   },
   "dataTable": {

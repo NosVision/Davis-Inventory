@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { UserRole } from '@/types/roles';
 import { ROLE_COLOR_CLASSES } from './manual-data';
+import { MANUAL_IMAGES } from './manual-images';
 
 export function RoleTag({ role, label }: { role: UserRole; label?: string }) {
   const c = ROLE_COLOR_CLASSES[role];
@@ -146,6 +147,28 @@ export function ImgPlaceholder({ name, desc, icon }: { name: string; desc: strin
       </code>
       <div className="text-xs text-gray-500 dark:text-gray-400">{desc}</div>
     </div>
+  );
+}
+
+/**
+ * Manual screenshot: renders the uploaded image when its URL is registered in
+ * MANUAL_IMAGES (manual-images.ts), otherwise falls back to a dashed
+ * placeholder box showing the expected file name.
+ */
+export function ManualImg({ name, desc, icon = '🖼️' }: { name: string; desc: string; icon?: string }) {
+  const url = MANUAL_IMAGES[name];
+  if (!url) return <ImgPlaceholder name={name} desc={desc} icon={icon} />;
+  return (
+    <figure className="my-4">
+      {/* eslint-disable-next-line @next/next/no-img-element -- external storage URL, unoptimized by design */}
+      <img
+        src={url}
+        alt={desc}
+        loading="lazy"
+        className="w-full rounded-xl border border-gray-200 dark:border-gray-700"
+      />
+      <figcaption className="mt-1.5 text-center text-xs text-gray-500 dark:text-gray-400">{desc}</figcaption>
+    </figure>
   );
 }
 
