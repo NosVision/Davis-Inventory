@@ -35,6 +35,9 @@ export interface HrPolicies {
   work_index: WorkIndexPolicy;
   /** ⑤ payslip-ready push: 'manual' = HR presses ประกาศ; 'immediate' = fire on finalize */
   payslip_announce_mode: 'manual' | 'immediate';
+  /** Mid-period hire/leave proration basis for full_monthly staff:
+   *  'calendar' = employed calendar days ÷30; 'scheduled' = scheduled work days in the window. */
+  prorate_basis: 'calendar' | 'scheduled';
 }
 
 export const POLICY_DEFAULTS: HrPolicies = {
@@ -62,6 +65,7 @@ export const POLICY_DEFAULTS: HrPolicies = {
     band_fair: 60,
   },
   payslip_announce_mode: 'manual', // เมย์คุมจังหวะเองช่วงเปลี่ยนผ่าน (owner-agreed default)
+  prorate_basis: 'calendar', // owner-chosen 2026-07-07: employed calendar days ÷30
 };
 
 const num = (v: unknown, fallback: number, min: number, max: number): number => {
@@ -91,6 +95,8 @@ export function mergePolicies(rows: { key: string; value: unknown }[]): HrPolici
     warning_carry_enabled: (scalar('warning_carry')?.enabled ?? d.warning_carry_enabled) === true,
     payslip_announce_mode:
       scalar('payslip_announce')?.mode === 'immediate' ? 'immediate' : d.payslip_announce_mode,
+    prorate_basis:
+      scalar('prorate_basis')?.mode === 'scheduled' ? 'scheduled' : d.prorate_basis,
     work_index: {
       w_punctuality: num(wi.w_punctuality, d.work_index.w_punctuality, 0, 100),
       w_attendance: num(wi.w_attendance, d.work_index.w_attendance, 0, 100),

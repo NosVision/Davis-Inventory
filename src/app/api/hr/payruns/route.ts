@@ -56,6 +56,8 @@ interface EmployeeFull {
   pvd_enrolled: boolean | null;
   pvd_employee_rate: number | null;
   status: string | null;
+  start_date: string | null;
+  end_date: string | null;
 }
 interface TaxAllowanceRow {
   employee_id: string;
@@ -133,12 +135,17 @@ export async function POST(request: NextRequest) {
   const { data: empRows, error: empErr } = await service
     .from('hr_employees')
     .select(
-      'id, profile_id, rate_satang, pay_type, work_hours_per_day, ot_eligible, ot_hour_divisor, tax_mode, sso_enrolled, pvd_enrolled, pvd_employee_rate, status'
+      'id, profile_id, rate_satang, pay_type, work_hours_per_day, ot_eligible, ot_hour_divisor, tax_mode, sso_enrolled, pvd_enrolled, pvd_employee_rate, status, start_date, end_date'
     )
     .eq('company_id', companyId)
-    .not('status', 'in', '(resigned,terminated)');
+    // Active/probation staff, PLUS anyone who left on/after the cycle start so a mid-period
+    // leaver still gets their final (prorated) pay. Long-ago leavers and future hires are
+    // dropped by the employed-window filter below.
+    .or(`status.in.(active,probation),end_date.gte.${start}`);
   if (empErr) return NextResponse.json({ error: 'Failed to load employees' }, { status: 500 });
-  let employees = (empRows ?? []) as EmployeeFull[];
+  let employees = ((empRows ?? []) as EmployeeFull[]).filter(
+    (e) => (!e.start_date || e.start_date <= end) && (!e.end_date || e.end_date >= start)
+  );
 
   if (storeId) {
     const { data: members, error: memErr } = await service
@@ -343,6 +350,20 @@ export async function POST(request: NextRequest) {
     ((taxOvrRows ?? []) as { profile_id: string; tax_satang: number }[]).map((r) => [r.profile_id, Number(r.tax_satang)])
   );
 
+  // HR-entered one-time bonuses for this payrun — keyed by profile so a draft REGENERATE
+  // re-applies them (stored off the payslip row, same pattern as tax overrides).
+  const { data: bonusRows, error: bonusErr } = await service
+    .from('hr_payslip_bonuses')
+    .select('profile_id, amount_satang, label')
+    .eq('payrun_id', payrunId);
+  if (bonusErr) return NextResponse.json({ error: 'Failed to load bonuses' }, { status: 500 });
+  const bonusByUser = new Map<string, { amount_satang: number; label: string | null }[]>();
+  for (const b of (bonusRows ?? []) as { profile_id: string; amount_satang: number; label: string | null }[]) {
+    const list = bonusByUser.get(b.profile_id) ?? [];
+    list.push({ amount_satang: b.amount_satang, label: b.label });
+    bonusByUser.set(b.profile_id, list);
+  }
+
   // Per-employee: assemble → compute → collect for insert.
   const assembled: { emp: EmployeeFull; slip: AssembledLine; claimIds: string[] }[] = [];
   for (const emp of employees) {
@@ -365,6 +386,25 @@ export async function POST(request: NextRequest) {
       return applyOverride(derived, overrideByCell.get(`${uid}|${date}`));
     });
 
+    // Employed window inside the cycle → mid-period hire/leave proration for full_monthly.
+    const empStart = emp.start_date && emp.start_date > start ? emp.start_date : start;
+    const empEnd = emp.end_date && emp.end_date < end ? emp.end_date : end;
+    const isPartialPeriod =
+      (!!emp.start_date && emp.start_date > start) || (!!emp.end_date && emp.end_date < end);
+    const inWindow = (d: string) => d >= empStart && d <= empEnd;
+    // prorate_days: null when employed the whole cycle (→ full base, unchanged). Otherwise the
+    // employed-day count by the configured basis. 'scheduled' treats no-schedule days as work
+    // days and only drops explicit day-offs/holidays (matches the leave-docking convention).
+    let prorateDays: number | null = null;
+    if (isPartialPeriod) {
+      prorateDays =
+        policies.prorate_basis === 'scheduled'
+          ? dates.filter(
+              (d) => inWindow(d) && !holidaySet.has(d) && schedByCell.get(`${uid}|${d}`)?.is_day_off !== true
+            ).length
+          : dateRange(empStart, empEnd).length; // calendar days employed
+    }
+
     const workedDays = days.filter((d) => d.first_in).length;
     const ptHours = days.reduce((s, d) => s + (d.worked_min ?? 0), 0) / 60;
     const otMinutes = days.reduce((s, d) => s + d.ot_min, 0);
@@ -384,7 +424,7 @@ export async function POST(request: NextRequest) {
       // future day off). Previously this counted every calendar day → over-docked a leave that
       // spanned a day off (e.g. 7 days docked instead of 6).
       const daysInCycle = enumerateDates(from, to).filter(
-        (d) => !holidaySet.has(d) && schedByCell.get(`${uid}|${d}`)?.is_day_off !== true
+        (d) => inWindow(d) && !holidaySet.has(d) && schedByCell.get(`${uid}|${d}`)?.is_day_off !== true
       ).length;
       return {
         leave_id: lv.id,
@@ -394,8 +434,11 @@ export async function POST(request: NextRequest) {
       };
     });
 
-    // Unauthorized absence = absent timesheet days NOT covered by an approved leave.
-    const unauthorizedAbsentDays = days.filter((d) => d.absent && !leaveCovered.has(d.business_date)).length;
+    // Unauthorized absence = absent timesheet days NOT covered by an approved leave, and only
+    // within the employed window (days before hire / after leave never count as absent).
+    const unauthorizedAbsentDays = days.filter(
+      (d) => d.absent && !leaveCovered.has(d.business_date) && inWindow(d.business_date)
+    ).length;
 
     const recurring = recurringByEmp.get(emp.id) ?? [];
     const allowances = recurring
@@ -413,6 +456,9 @@ export async function POST(request: NextRequest) {
       })),
       ...evalBonusList.map((b) => ({
         type: 'eval_bonus' as const, label: 'eval_bonus', amount_satang: b.amount_satang, ref: b.id,
+      })),
+      ...(bonusByUser.get(uid) ?? []).map((b) => ({
+        type: 'bonus' as const, label: b.label || 'bonus', amount_satang: b.amount_satang, ref: null,
       })),
     ];
 
@@ -435,6 +481,7 @@ export async function POST(request: NextRequest) {
         ot_minutes_eligible: otMinutes,
         late_minutes_per_occurrence: lateOccurrences,
         unauthorized_absent_days: unauthorizedAbsentDays,
+        prorate_days: prorateDays,
       },
       leaves: engineLeaves,
       allowances,

@@ -38,6 +38,8 @@ export interface PayslipDetailData {
   deductions: PayslipLine[];
   /** official figure from the accounting office (null = engine estimate in effect) */
   tax_override?: { tax_satang: number; note: string | null; set_via: string; updated_at: string } | null;
+  /** HR one-time bonus for this payrun (null = none) */
+  bonus?: { amount_satang: number; label: string | null } | null;
 }
 
 // Localized line-type labels; a standard type (salary/ot/sso/tax/…) is translated, while a

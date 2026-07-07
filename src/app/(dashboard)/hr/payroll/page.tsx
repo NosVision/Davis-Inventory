@@ -212,6 +212,30 @@ export default function HrPayrollPage() {
     }
   }, [companyId, month, t, loadPayruns, openPayrun]);
 
+  // Recompute the currently-open payrun for its OWN period (used after saving a bonus, which the
+  // engine must fold into gross → 3% tax → net; the payrun row id is stable across regenerate).
+  const regenerateCurrent = useCallback(async () => {
+    if (!detail) return;
+    const { company_id, period_year, period_month } = detail.payrun;
+    try {
+      const res = await fetch('/api/hr/payruns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company_id, period_year, period_month }),
+      });
+      if (res.status === 409) { toast({ type: 'error', title: t('finalizedLocked') }); return; }
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        toast({ type: 'error', title: t('generateFailed'), message: j?.error });
+        return;
+      }
+      await loadPayruns();
+      await openPayrun(detail.payrun.id);
+    } catch {
+      toast({ type: 'error', title: t('generateFailed') });
+    }
+  }, [detail, loadPayruns, openPayrun, t]);
+
   const finalize = useCallback(async () => {
     if (!detail) return;
     if (!window.confirm(t('finalizeConfirm'))) return;
@@ -694,13 +718,22 @@ export default function HrPayrollPage() {
           <div className="max-h-[70vh] overflow-y-auto">
             <PayslipView data={slip} />
             {slip.payrun?.status === 'draft' && (
-              <TaxOverrideBox
-                slip={slip}
-                onSaved={async () => {
-                  await openSlip(slip.payslip.id);
-                  if (detail) await openPayrun(detail.payrun.id);
-                }}
-              />
+              <>
+                <BonusBox
+                  slip={slip}
+                  onSaved={async () => {
+                    setSlip(null);
+                    await regenerateCurrent();
+                  }}
+                />
+                <TaxOverrideBox
+                  slip={slip}
+                  onSaved={async () => {
+                    await openSlip(slip.payslip.id);
+                    if (detail) await openPayrun(detail.payrun.id);
+                  }}
+                />
+              </>
             )}
           </div>
           <ModalFooter>
@@ -736,6 +769,65 @@ export default function HrPayrollPage() {
             <PayslipFormPrint data={d} />
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// HR one-time bonus for one employee on this payrun. Draft only; saving upserts the durable
+// bonus row then regenerates so the engine folds it into gross → 3% tax → net correctly.
+function BonusBox({ slip, onSaved }: { slip: PayslipDetailData; onSaved: () => Promise<void> }) {
+  const t = useTranslations('hr.payroll');
+  const [baht, setBaht] = useState<string>(() => (slip.bonus ? String(slip.bonus.amount_satang / 100) : ''));
+  const [label, setLabel] = useState<string>(slip.bonus?.label ?? '');
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    const n = Number(baht || '0');
+    if (!Number.isFinite(n) || n < 0) {
+      toast({ type: 'error', title: t('bonusInvalid') });
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/hr/payslips/${slip.payslip.id}/bonus`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount_satang: Math.round(n * 100), label: label.trim() || undefined }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof json.error === 'string' ? json.error : undefined);
+      toast({ type: 'success', title: t('bonusSaved') });
+      await onSaved();
+    } catch (e) {
+      toast({ type: 'error', title: t('actionFailed'), message: e instanceof Error ? e.message : undefined });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 dark:border-emerald-800 dark:bg-emerald-900/10">
+      <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">{t('bonus')}</p>
+      <p className="mb-2 text-[11px] text-emerald-600/80 dark:text-emerald-400/80">{t('bonusHint')}</p>
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="text-[11px] font-medium text-gray-600 dark:text-gray-300">
+          {t('bonusAmount')}
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={baht}
+            onChange={(e) => setBaht(e.target.value)}
+            className="control mt-0.5 block w-36"
+            placeholder="0.00"
+          />
+        </label>
+        <label className="min-w-40 flex-1 text-[11px] font-medium text-gray-600 dark:text-gray-300">
+          {t('bonusLabel')}
+          <input value={label} onChange={(e) => setLabel(e.target.value)} className="control mt-0.5 block w-full" />
+        </label>
+        <Button size="sm" onClick={save} isLoading={saving}>{t('bonusSave')}</Button>
       </div>
     </div>
   );

@@ -32,7 +32,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
-  const [earnRes, dedRes, payrunRes, profRes, ovrRes, empRes] = await Promise.all([
+  const [earnRes, dedRes, payrunRes, profRes, ovrRes, empRes, bonusRes] = await Promise.all([
     service.from('hr_payslip_earnings').select('type, label, amount_satang, ref, sort').eq('payslip_id', id).order('sort'),
     service.from('hr_payslip_deductions').select('type, label, amount_satang, reason, ref, sort').eq('payslip_id', id).order('sort'),
     service.from('hr_payruns').select('id, company_id, period_year, period_month, cycle_start, cycle_end, pay_date, status, company:hr_companies(name, address)').eq('id', slip.payrun_id).maybeSingle(),
@@ -40,6 +40,8 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     service.from('hr_payslip_tax_overrides').select('tax_satang, note, set_via, updated_at').eq('payrun_id', slip.payrun_id).eq('profile_id', slip.user_id).maybeSingle(),
     // slip-form print header fields (§ dot-matrix form): code / formal name / bank account
     service.from('hr_employees').select('employee_code, full_name, bank_account_no').eq('id', (slip.employee_id as string) ?? '00000000-0000-0000-0000-000000000000').maybeSingle(),
+    // HR one-time bonus for this (payrun, profile) — pre-fills the bonus box
+    service.from('hr_payslip_bonuses').select('amount_satang, label').eq('payrun_id', slip.payrun_id).eq('profile_id', slip.user_id).maybeSingle(),
   ]);
   if (earnRes.error || dedRes.error) {
     return NextResponse.json({ error: 'Failed to load payslip lines' }, { status: 500 });
@@ -62,6 +64,8 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       deductions: dedRes.data ?? [],
       // official figure from the accounting office (null = engine estimate is in effect)
       tax_override: ovrRes.data ?? null,
+      // HR one-time bonus for this payrun (null = none)
+      bonus: bonusRes.data ?? null,
     },
   });
 }

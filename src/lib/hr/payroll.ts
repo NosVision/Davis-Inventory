@@ -134,6 +134,10 @@ export interface PayrollTimesheet {
   ot_minutes_eligible: number; // OT minutes, already gated on ot_eligible upstream
   late_minutes_per_occurrence: number[]; // one entry per late day (its late_min)
   unauthorized_absent_days: number; // absent days NOT covered by an approved leave
+  /** Mid-period hire/leave proration for full_monthly ONLY. null = employed the whole cycle →
+   *  full base salary (default, byte-identical to before). A number = base is
+   *  dailyRate × prorate_days (the caller counts employed days by the configured basis). */
+  prorate_days?: number | null;
 }
 
 /** One classified approved leave overlapping the period (from classifyLeaveEffect). */
@@ -152,6 +156,7 @@ export type EarningType =
   | 'tip'
   | 'commission'
   | 'eval_bonus'
+  | 'bonus'
   | 'claim';
 export type DeductionType =
   | 'sso'
@@ -242,7 +247,11 @@ function computeBaseSalary(emp: PayrollEmployee, ts: PayrollTimesheet, dayDiviso
       return Math.round(dailyRate(emp.rate_satang, dayDivisor) * ts.worked_days);
     case 'full_monthly':
     default:
-      // Full base shown in full; absence/leave days are separate deduction lines (§H).
+      // Mid-period hire/leave → prorate the base by employed days (caller sets prorate_days).
+      // Employed the whole cycle → full base; absence/leave days are separate deduction lines (§H).
+      if (ts.prorate_days != null) {
+        return Math.round(dailyRate(emp.rate_satang, dayDivisor) * ts.prorate_days);
+      }
       return emp.rate_satang;
   }
 }
