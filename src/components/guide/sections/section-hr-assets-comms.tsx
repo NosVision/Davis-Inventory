@@ -68,7 +68,7 @@ export function SectionHrAssetsComms() {
           การกดที่แถวใดแถวหนึ่งในตารางจะเปิดหน้าต่างแก้ไขทรัพย์สินชิ้นนั้น ถ้ายังไม่มีทรัพย์สินเลย ตารางจะขึ้นข้อความ <strong>ยังไม่มีทรัพย์สิน</strong>
         </p>
 
-        <CardSubtitle>ความหมายของป้ายสถานะ (badge) แต่ละค่า</CardSubtitle>
+        <CardSubtitle>ความหมายของป้ายสถานะ แต่ละค่า</CardSubtitle>
         <ul className="mb-3 ml-5 list-disc space-y-1.5 text-sm text-gray-600 dark:text-gray-300">
           <li><strong>ในสต๊อก</strong> &mdash; ทรัพย์สินยังอยู่ในคลัง ยังไม่ได้จ่ายให้ใคร (ไม่มีผู้ถือครอง)</li>
           <li><strong>จ่ายแล้ว</strong> &mdash; จ่ายให้พนักงานถือครองแล้ว (ต้องมีผู้ถือครองเสมอ)</li>

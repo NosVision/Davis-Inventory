@@ -155,7 +155,7 @@ export function SectionHrEvaluation() {
             </ul>
           </li>
           <li>ปุ่มถังขยะท้ายแต่ละแถว = <strong>ลบ</strong> คู่การมอบหมายนั้น</li>
-          <li>ด้านล่างมีช่องเลือก <strong>ผู้ประเมิน</strong> และ <strong>ผู้ถูกประเมิน</strong> (dropdown รายชื่อพนักงาน) และปุ่ม <strong>เพิ่ม</strong> เพื่อสร้างคู่ใหม่</li>
+          <li>ด้านล่างมีช่องเลือก <strong>ผู้ประเมิน</strong> และ <strong>ผู้ถูกประเมิน</strong> (เลือกจากรายชื่อพนักงาน) และปุ่ม <strong>เพิ่ม</strong> เพื่อสร้างคู่ใหม่</li>
           <li>ถ้ายังไม่มีคู่ใด ๆ จะแสดง &quot;ยังไม่มีการมอบหมาย&quot;</li>
         </ul>
         <ManualImg name="hr-evaluation-02-assignments.png" desc="ส่วนมอบหมายผู้ประเมิน แสดงคู่ผู้ประเมินและช่องเลือกเพิ่มคู่ใหม่" />

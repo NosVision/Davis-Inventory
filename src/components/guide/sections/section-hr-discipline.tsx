@@ -344,7 +344,7 @@ export function SectionHrDiscipline() {
 
         <CardSubtitle>2. ตัวกรองสถานะ (ช่อง &ldquo;สถานะ&rdquo;)</CardSubtitle>
         <p className="mb-3 text-sm text-gray-600 dark:text-gray-300">
-          เป็นเมนูแบบเลื่อนลง (dropdown) สำหรับเลือกดูคำขอตามสถานะ ค่าเริ่มต้นเมื่อเปิดหน้าคือ <strong>&ldquo;รอดำเนินการ&rdquo;</strong> เพื่อให้เห็นงานที่ต้องทำก่อน ตัวเลือกทั้งหมดมี:
+          เป็นเมนูแบบเลื่อนลง สำหรับเลือกดูคำขอตามสถานะ ค่าเริ่มต้นเมื่อเปิดหน้าคือ <strong>&ldquo;รอดำเนินการ&rdquo;</strong> เพื่อให้เห็นงานที่ต้องทำก่อน ตัวเลือกทั้งหมดมี:
         </p>
         <ul className="mb-3 ml-5 list-disc space-y-1.5 text-sm text-gray-600 dark:text-gray-300">
           <li><strong>รอดำเนินการ</strong> — คำขอที่ยังไม่ได้ตัดสินใจ (งานที่รอ HR จัดการ)</li>
@@ -360,7 +360,7 @@ export function SectionHrDiscipline() {
           <li><strong>ชื่อพนักงานผู้ขอ</strong> (แสดงเป็นหัวข้อการ์ด)</li>
           <li><strong>ประเภทข้อมูลที่ขอแก้</strong> ใต้ชื่อ เป็นได้ 2 ค่า: <strong>&ldquo;บัญชีธนาคาร&rdquo;</strong> หรือ <strong>&ldquo;ผู้ติดต่อฉุกเฉิน&rdquo;</strong></li>
           <li>
-            <strong>ป้ายสถานะ (badge)</strong> มุมการ์ด บอกสถานะปัจจุบันด้วยสีต่างกัน:
+            <strong>ป้ายสถานะ</strong> มุมการ์ด บอกสถานะปัจจุบันด้วยสีต่างกัน:
             <ul className="ml-4 mt-1 list-disc space-y-1">
               <li><strong>รอดำเนินการ</strong> (สีเหลือง/เตือน)</li>
               <li><strong>อนุมัติแล้ว</strong> (สีเขียว)</li>

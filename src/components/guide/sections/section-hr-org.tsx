@@ -14,7 +14,7 @@ export function SectionHrOrg() {
         <p className="mb-3 text-sm text-gray-600 dark:text-gray-300">
           หน้า “ตำแหน่ง &amp; แผนก” ใช้จัดการข้อมูลอ้างอิงพื้นฐานขององค์กร 2 อย่าง คือ <strong>ตำแหน่งงาน</strong> (เช่น
           ผู้จัดการร้าน, พนักงานเสิร์ฟ) และ <strong>แผนก</strong> (เช่น ครัว, บริการ) ข้อมูลที่สร้างจากหน้านี้จะไปปรากฏเป็นตัวเลือกใน
-          dropdown ตอนเพิ่ม/แก้ไขข้อมูลพนักงานที่หน้า “พนักงาน” และใช้เป็นตัวกรองรายชื่อพนักงาน
+          เมนูเลื่อนลงตอนเพิ่ม/แก้ไขข้อมูลพนักงานที่หน้า “พนักงาน” และใช้เป็นตัวกรองรายชื่อพนักงาน
         </p>
         <p className="mb-3 text-sm text-gray-600 dark:text-gray-300">
           หน้านี้ทำได้ 3 อย่าง: เพิ่มรายการใหม่, แก้ไขชื่อ (และลำดับสำหรับตำแหน่ง), และเปิด/ปิดการใช้งานรายการ รายการที่ “ปิดใช้งาน”
@@ -38,7 +38,7 @@ export function SectionHrOrg() {
           <strong>แท็บ 2 แท็บ</strong> สลับดูข้อมูลคนละชุด:
         </p>
         <ul className="mb-3 ml-5 list-disc space-y-1.5 text-sm text-gray-600 dark:text-gray-300">
-          <li><strong>ตำแหน่ง</strong> — รายการตำแหน่งงานทั้งหมด (มีช่อง “ลำดับ” เพิ่มเข้ามา ใช้จัดลำดับการแสดงผลใน dropdown — เลขน้อยขึ้นก่อน)</li>
+          <li><strong>ตำแหน่ง</strong> — รายการตำแหน่งงานทั้งหมด (มีช่อง “ลำดับ” เพิ่มเข้ามา ใช้จัดลำดับการแสดงผลในเมนูเลื่อนลง — เลขน้อยขึ้นก่อน)</li>
           <li><strong>แผนก</strong> — รายการแผนกทั้งหมด (มีเฉพาะชื่อ ไม่มีลำดับ)</li>
         </ul>
         <p className="mb-2 text-sm text-gray-600 dark:text-gray-300">
@@ -56,7 +56,7 @@ export function SectionHrOrg() {
           <li><strong>ชื่อ</strong> ของตำแหน่ง/แผนก</li>
           <li><strong>เลขลำดับ</strong> (เฉพาะแท็บตำแหน่ง — ตัวเลขสีเทาเล็กๆ ท้ายชื่อ)</li>
           <li><strong>ป้ายสถานะ</strong>: <strong>ใช้งาน</strong> (สีเขียว) = ยังเปิดให้เลือกในฟอร์มพนักงาน / <strong>ปิดใช้งาน</strong> (สีเทา) = ซ่อนจากตัวเลือกแล้ว</li>
-          <li><strong>ไอคอนดินสอ (แก้ไข)</strong> — กดเพื่อแก้ไขชื่อ/ลำดับแบบ inline ในแถวนั้น</li>
+          <li><strong>ไอคอนดินสอ (แก้ไข)</strong> — กดเพื่อแก้ไขชื่อ/ลำดับได้ในแถวนั้นทันที</li>
           <li>ปุ่ม <strong>ปิดใช้งาน</strong> (เมื่อรายการยังใช้งานอยู่) หรือปุ่ม <strong>เปิดใช้งาน</strong> (เมื่อรายการถูกปิดอยู่) — กดสลับสถานะได้ทันที ไม่มีหน้าต่างยืนยัน</li>
         </ul>
         <p className="mb-3 text-sm text-gray-600 dark:text-gray-300">
@@ -80,7 +80,7 @@ export function SectionHrOrg() {
         <Step num={4} title="ยืนยันผล">
           <p>
             ระบบขึ้นข้อความ “เพิ่มแล้ว” และรายการใหม่ปรากฏในลิสต์ทันที สถานะเริ่มต้นเป็น “ใช้งาน” — จากนั้นตำแหน่งนี้จะเลือกได้ทันทีใน
-            dropdown “ตำแหน่ง” ของฟอร์มพนักงานที่หน้า <code className="rounded bg-gray-100 px-1 py-0.5 dark:bg-gray-700">/hr/employees</code>
+            เมนูเลื่อนลง “ตำแหน่ง” ของฟอร์มพนักงานที่หน้า <code className="rounded bg-gray-100 px-1 py-0.5 dark:bg-gray-700">/hr/employees</code>
           </p>
         </Step>
         <p className="mb-3 text-sm text-gray-600 dark:text-gray-300">
@@ -113,7 +113,7 @@ export function SectionHrOrg() {
           </thead>
           <tbody>
             <tr><Td><code className="text-xs">/hr</code></Td><Td>บุคคล (HR)</Td><Td>เมนูหลัก — ทางเข้าหน้านี้</Td></tr>
-            <tr><Td><code className="text-xs">/hr/employees</code></Td><Td>พนักงาน</Td><Td>ตำแหน่ง/แผนกที่ “ใช้งาน” จากหน้านี้ ไปเป็นตัวเลือกใน dropdown ของฟอร์มเพิ่ม/แก้ไขพนักงาน และใช้เป็นตัวกรองรายชื่อพนักงาน</Td></tr>
+            <tr><Td><code className="text-xs">/hr/employees</code></Td><Td>พนักงาน</Td><Td>ตำแหน่ง/แผนกที่ “ใช้งาน” จากหน้านี้ ไปเป็นตัวเลือกในเมนูเลื่อนลงของฟอร์มเพิ่ม/แก้ไขพนักงาน และใช้เป็นตัวกรองรายชื่อพนักงาน</Td></tr>
             <tr><Td><code className="text-xs">/hr/org-chart</code></Td><Td>ผังองค์กร</Td><Td>ผังสายบังคับบัญชาของพนักงาน ซึ่งแสดงชื่อตำแหน่งของแต่ละคน</Td></tr>
             <tr><Td><code className="text-xs">/hr/audit</code></Td><Td>บันทึกการตรวจสอบ</Td><Td>ทุกการเปลี่ยนแปลงจากหน้านี้ถูกบันทึกไว้ตรวจสอบย้อนหลัง</Td></tr>
           </tbody>
