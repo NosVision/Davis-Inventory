@@ -49,7 +49,8 @@ export type NotificationType =
   | 'hr_leave_request'        // พนักงานยื่นขอลา รอ HR อนุมัติ (for HR)
   | 'hr_leave_result'         // ผลอนุมัติ/ปฏิเสธการลา (for the employee)
   | 'hr_attendance_review'    // ลงเวลานอกพื้นที่/น่าสงสัย รอ HR ตรวจสอบ (for HR)
-  | 'hr_attendance_result';   // ผลตรวจสอบการลงเวลา / รอตรวจสอบ (for the employee)
+  | 'hr_attendance_result'    // ผลตรวจสอบการลงเวลา / รอตรวจสอบ (for the employee)
+  | 'hr_attendance_reminder'; // เตือน "ยังไม่เช็คอิน/ลืมเช็คเอาท์" เมื่อเลยเวลากะ (for the employee)
 
 export interface NotifyUserParams {
   userId: string;
@@ -150,6 +151,7 @@ const TYPE_TO_PREF: Record<NotificationType, keyof NotificationPreferences> = {
   hr_leave_result: 'notify_approval_request',
   hr_attendance_review: 'notify_approval_request',
   hr_attendance_result: 'notify_approval_request',
+  hr_attendance_reminder: 'notify_approval_request',
 };
 
 // Customer-facing notification types that respect store_settings toggles

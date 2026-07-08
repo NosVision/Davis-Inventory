@@ -7,6 +7,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server';
 const NOTIF_TILE: Record<string, string> = {
   hr_leave_result: 'leaves',
   hr_attendance_result: 'checkin',
+  hr_attendance_reminder: 'checkin',
   hr_payslip_ready: 'payslips',
   hr_paper_ready: 'payslips',
   hr_doc_ready: 'documents',
