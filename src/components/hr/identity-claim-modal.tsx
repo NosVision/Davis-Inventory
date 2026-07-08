@@ -167,7 +167,7 @@ export function IdentityClaimModal({ role }: { role: string }) {
               value={q}
               onChange={(e) => { setQ(e.target.value); setChosen(null); }}
               placeholder={L.searchPh}
-              className="control w-full pl-9"
+              className="control control-icon w-full"
               aria-label={L.searchPh}
             />
           </div>

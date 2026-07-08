@@ -48,6 +48,12 @@
   border-color: var(--ds-accent);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--ds-accent) 25%, transparent);
 }
+/* Leading-icon inputs: reserve room for an absolutely-positioned icon (left-3, h-4). A Tailwind
+   `pl-9` cannot do this — Tailwind v4 utilities live in a cascade layer, and this unlayered
+   `.control` shorthand always wins, so the icon would overlap the placeholder. */
+.control-icon {
+  padding-left: 2.25rem;
+}
 
 /* Safe area insets for PWA */
 .safe-area-inset-bottom {
