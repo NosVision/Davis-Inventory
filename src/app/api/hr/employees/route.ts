@@ -304,6 +304,34 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // When this onboarding was prefilled from an imported (unclaimed) roster row, consume it so the
+  // same person cannot also self-claim that name later, and follow their historical payslips over
+  // to the new employee record — mirrors the identity-claim approve flow.
+  const pendingIdentityId = typeof body.pending_identity_id === 'string' ? body.pending_identity_id : '';
+  if (pendingIdentityId) {
+    const { data: flipped } = await service
+      .from('hr_pending_identities')
+      .update({
+        status: 'linked',
+        reviewed_by: auth.userId,
+        reviewed_at: new Date().toISOString(),
+        linked_employee_id: emp.id,
+        review_note: 'Linked via add-employee prefill',
+      })
+      .eq('id', pendingIdentityId)
+      .eq('status', 'unclaimed')
+      .select('id');
+    if (flipped?.length) {
+      const { error: histErr } = await service
+        .from('hr_imported_payslips')
+        .update({ employee_id: emp.id })
+        .eq('pending_identity_id', pendingIdentityId);
+      if (histErr) warnings.push('Historical payslips were not back-linked — link them manually');
+    } else {
+      warnings.push('Imported identity was already taken — check for a duplicate record');
+    }
+  }
+
   await logHrAudit(service, {
     actorId: auth.userId,
     action: 'create',

@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
+import { Search, Loader2 } from 'lucide-react';
 import { Modal, Input, Select, Button, Textarea, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { createClient } from '@/lib/supabase/client';
@@ -28,6 +29,26 @@ interface EmployeeFormModalProps {
 interface RefOpt {
   id: string;
   name: string;
+}
+
+// A matched row from the imported roster (hr_pending_identities) used to prefill onboarding.
+interface ImportRow {
+  id: string;
+  full_name_th: string;
+  full_name_en: string | null;
+  employee_code: string | null;
+  company_id: string | null;
+  store_id: string | null;
+  store_name: string | null;
+  position_text: string | null;
+  rate_satang: number | null;
+  pay_type: string | null;
+  start_date: string | null;
+  sso_enrolled: boolean | null;
+  tax_mode: string | null;
+  bank_name: string | null;
+  bank_account_no: string | null;
+  sheet_ref: string | null;
 }
 
 interface FormState {
@@ -150,6 +171,7 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
   const t = useTranslations('hr.employees.form');
   const tp = useTranslations('hr.employees');
   const tc = useTranslations('common');
+  const isTh = useLocale() === 'th';
 
   const isCreate = employeeId === null;
 
@@ -177,6 +199,14 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
   const [linkProfileId, setLinkProfileId] = useState('');
   const [linkSearch, setLinkSearch] = useState('');
   const [linkables, setLinkables] = useState<{ id: string; username: string | null; display_name: string | null; role: string }[]>([]);
+
+  // "Prefill from imported roster" (create mode): search hr_pending_identities (imported people
+  // with no login yet) by name or bank account and copy their payroll seed into the form.
+  const [importSearch, setImportSearch] = useState('');
+  const [importResults, setImportResults] = useState<ImportRow[]>([]);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importPickedId, setImportPickedId] = useState<string | null>(null);
+  const [importPickedLabel, setImportPickedLabel] = useState<string | null>(null);
 
   // dropdown option data
   const [companies, setCompanies] = useState<RefOpt[]>([]);
@@ -224,6 +254,62 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
     })();
   }, [isOpen, employeeId]);
 
+  // Debounced search of the imported roster (create + new-account mode only).
+  useEffect(() => {
+    if (!isOpen || employeeId !== null || linkMode) return;
+    const q = importSearch.trim();
+    if (q.length < 2) {
+      setImportResults([]);
+      setImportLoading(false);
+      return;
+    }
+    let alive = true;
+    setImportLoading(true);
+    const handle = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/hr/pending-identities?q=${encodeURIComponent(q)}`);
+        const json = await res.json().catch(() => ({}));
+        if (alive) setImportResults(res.ok ? ((json.data ?? []) as ImportRow[]) : []);
+      } catch {
+        if (alive) setImportResults([]);
+      } finally {
+        if (alive) setImportLoading(false);
+      }
+    }, 300);
+    return () => {
+      alive = false;
+      clearTimeout(handle);
+    };
+  }, [importSearch, isOpen, employeeId, linkMode]);
+
+  // Copy an imported roster row's payroll seed into the form. Username + password are still the
+  // HR user's to set (a login is being created); position is matched to the picklist by name.
+  function applyImported(row: ImportRow) {
+    const posId = row.position_text
+      ? positions.find((p) => p.name.trim().toLowerCase() === row.position_text!.trim().toLowerCase())?.id ?? ''
+      : '';
+    setForm((f) => ({
+      ...f,
+      display_name: row.full_name_th || f.display_name,
+      employee_code: row.employee_code ?? f.employee_code,
+      company_id: row.company_id ?? '',
+      position_id: posId,
+      pay_type: row.pay_type ?? f.pay_type,
+      rate_baht: row.rate_satang != null ? String(row.rate_satang / 100) : f.rate_baht,
+      start_date: row.start_date ?? f.start_date,
+      sso_enrolled: row.sso_enrolled ?? f.sso_enrolled,
+      tax_mode: row.tax_mode ?? f.tax_mode,
+      bank_name: row.bank_name ?? '',
+      bank_account_no: row.bank_account_no ?? '',
+      bank_account_name: row.full_name_th ?? '',
+      storeIds: row.store_id ? [row.store_id] : f.storeIds,
+    }));
+    setImportPickedId(row.id);
+    setImportPickedLabel(`${row.full_name_th}${row.sheet_ref ? ` · ${row.sheet_ref}` : ''}`);
+    setImportSearch('');
+    setImportResults([]);
+  }
+
   // Reset / prefill whenever the modal opens or the target employee changes.
   useEffect(() => {
     if (!isOpen) return;
@@ -235,6 +321,10 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
     setLinkMode(false);
     setLinkProfileId('');
     setLinkSearch('');
+    setImportSearch('');
+    setImportResults([]);
+    setImportPickedId(null);
+    setImportPickedLabel(null);
     setAvatarUrl(null);
     setAvatarBusy(false);
     if (employeeId === null) {
@@ -470,7 +560,12 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
       body = {
         ...(linkMode
           ? { link_profile_id: linkProfileId }
-          : { username: form.username.trim().toLowerCase(), role: form.role, password: form.password }),
+          : {
+              username: form.username.trim().toLowerCase(),
+              role: form.role,
+              password: form.password,
+              ...(importPickedId ? { pending_identity_id: importPickedId } : {}),
+            }),
         storeIds: form.storeIds,
         company_id: form.company_id || null,
         rate_satang: rateSatang,
@@ -640,6 +735,80 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
                 </>
               ) : (
                 <>
+                  {/* Prefill from imported roster — for people whose data was imported but who
+                      have no login yet. Searches by name or bank account. */}
+                  <div className="rounded-lg border border-dashed border-indigo-300 bg-indigo-50/40 p-3 dark:border-indigo-800 dark:bg-indigo-900/10 sm:col-span-2">
+                    <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-indigo-700 dark:text-indigo-300">
+                      <Search className="h-3.5 w-3.5" />
+                      {isTh ? 'เติมจากข้อมูลนำเข้า (ชื่อ / เลขบัญชี)' : 'Prefill from imported roster (name / bank a/c)'}
+                    </div>
+                    {importPickedLabel ? (
+                      <div className="flex items-center justify-between gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs dark:border-emerald-700/60 dark:bg-emerald-900/15">
+                        <span className="min-w-0 truncate text-gray-700 dark:text-gray-200">
+                          {isTh ? 'เติมจาก: ' : 'Filled from: '}
+                          <strong>{importPickedLabel}</strong>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setImportPickedId(null);
+                            setImportPickedLabel(null);
+                          }}
+                          className="shrink-0 rounded-md px-2 py-1 font-medium text-gray-500 hover:bg-white hover:text-gray-700 dark:hover:bg-gray-800"
+                        >
+                          {isTh ? 'ยกเลิก' : 'Clear'}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={importSearch}
+                          onChange={(e) => setImportSearch(e.target.value)}
+                          placeholder={isTh ? 'พิมพ์ชื่อหรือเลขบัญชี…' : 'Type a name or bank account…'}
+                          autoComplete="off"
+                          className="control w-full"
+                        />
+                        {importSearch.trim().length >= 2 && (
+                          <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                            {importLoading ? (
+                              <div className="flex items-center gap-2 px-3 py-2 text-xs text-gray-400">
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                {tc('loading')}
+                              </div>
+                            ) : importResults.length === 0 ? (
+                              <div className="px-3 py-2 text-xs text-gray-400">
+                                {isTh ? 'ไม่พบข้อมูลที่ยังไม่ถูกผูก' : 'No unclaimed matches'}
+                              </div>
+                            ) : (
+                              importResults.map((r) => (
+                                <button
+                                  key={r.id}
+                                  type="button"
+                                  onClick={() => applyImported(r)}
+                                  className="flex w-full flex-col items-start gap-0.5 border-b border-gray-100 px-3 py-2 text-left last:border-0 hover:bg-indigo-50 dark:border-gray-700 dark:hover:bg-indigo-900/20"
+                                >
+                                  <span className="text-sm font-medium text-gray-800 dark:text-gray-100">{r.full_name_th}</span>
+                                  <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                                    {[
+                                      r.store_name,
+                                      r.position_text,
+                                      r.bank_name && r.bank_account_no
+                                        ? `${r.bank_name} ****${r.bank_account_no.slice(-4)}`
+                                        : null,
+                                      r.sheet_ref,
+                                    ]
+                                      .filter(Boolean)
+                                      .join(' · ')}
+                                  </span>
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                   <Input
                     label={t('username')}
                     value={form.username}
