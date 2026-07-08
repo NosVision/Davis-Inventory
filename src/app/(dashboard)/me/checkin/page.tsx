@@ -25,6 +25,28 @@ const TYPE_KEY: Record<AttendanceType, TypeKey> = {
   break_end: 'breakEnd',
 };
 
+// Semantic colour per punch type, reflecting its weight: clock-in = green (start of day),
+// clock-out = red (the one you must not miss), break-start = amber (pause), break-end = blue
+// (back to work). Selected = solid fill; idle = a tint so each action is still recognisable.
+const TYPE_TONE: Record<AttendanceType, { selected: string; idle: string }> = {
+  in: {
+    selected: 'border-emerald-600 bg-emerald-600 text-white shadow-sm dark:border-emerald-500 dark:bg-emerald-500',
+    idle: 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900/60 dark:bg-emerald-900/20 dark:text-emerald-300 dark:hover:bg-emerald-900/40',
+  },
+  out: {
+    selected: 'border-red-600 bg-red-600 text-white shadow-sm dark:border-red-500 dark:bg-red-500',
+    idle: 'border-red-300 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-900/60 dark:bg-red-900/20 dark:text-red-300 dark:hover:bg-red-900/40',
+  },
+  break_start: {
+    selected: 'border-amber-500 bg-amber-500 text-white shadow-sm dark:border-amber-500 dark:bg-amber-500',
+    idle: 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-300 dark:hover:bg-amber-900/40',
+  },
+  break_end: {
+    selected: 'border-blue-600 bg-blue-600 text-white shadow-sm dark:border-blue-500 dark:bg-blue-500',
+    idle: 'border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-900/60 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/40',
+  },
+};
+
 interface Coords {
   lat: number;
   lng: number;
@@ -280,11 +302,9 @@ export default function CheckinPage() {
               onClick={() => setType(opt.value)}
               aria-pressed={selected}
               className={cn(
-                'rounded-xl border px-3 py-3 text-sm font-medium transition-colors',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500',
-                selected
-                  ? 'border-indigo-600 bg-indigo-600 text-white shadow-sm dark:border-indigo-500 dark:bg-indigo-500'
-                  : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'
+                'rounded-xl border px-3 py-3 text-sm font-semibold transition-colors',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1',
+                selected ? TYPE_TONE[opt.value].selected : TYPE_TONE[opt.value].idle
               )}
             >
               {t(opt.key)}
