@@ -7,6 +7,7 @@ import type { Permission } from '@/types/roles';
 import { DashboardLayoutClient } from './layout-client';
 import { PasswordChangeBanner } from '@/components/layout/password-change-banner';
 import { IdentityClaimModal } from '@/components/hr/identity-claim-modal';
+import { PolicyGate } from '@/components/hr/policy-gate';
 
 export default async function DashboardLayout({
   children,
@@ -95,6 +96,7 @@ export default async function DashboardLayout({
     >
       {profile.must_change_password && <PasswordChangeBanner />}
       <IdentityClaimModal role={profile.role as string} />
+      <PolicyGate role={profile.role as string} />
       {children}
     </DashboardLayoutClient>
   );
