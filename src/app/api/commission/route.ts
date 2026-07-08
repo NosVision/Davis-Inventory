@@ -54,11 +54,10 @@ export async function POST(req: NextRequest) {
   // block duplicate bills within the same store.
   const receiptNo: string | null = receipt_no?.trim() || null;
 
-  // Rounding mode for the net payout — 'up' (ceil) by default, 'down'
-  // (floor) when explicitly chosen. Anything else falls back to 'up'.
-  const roundMode: 'up' | 'down' = body.rounding === 'down' ? 'down' : 'up';
-  const applyRounding = (n: number) =>
-    roundMode === 'down' ? Math.floor(n) : Math.ceil(n);
+  // Net payout is ALWAYS rounded to a whole baht, half-up automatically — no user
+  // choice (owner ask 2026-07-09): .49 rounds down, .50 rounds up. We still record
+  // which way each entry actually landed in `rounding`, for reporting only.
+  const roundHalfUp = (n: number) => Math.round(n);
 
   // Duplicate guard (fast path, per store). Reject early with a friendly
   // message if this invoice number already exists on an active
@@ -86,6 +85,7 @@ export async function POST(req: NextRequest) {
   let commission_amount: number | null = null;
   let tax_amount: number | null = null;
   let net_amount: number;
+  let rawNet = 0; // the pre-rounding net, kept to record the direction actually applied
 
   if (type === 'ae_commission') {
     if (!ae_id) return NextResponse.json({ error: 'กรุณาเลือก AE' }, { status: 400 });
@@ -95,15 +95,18 @@ export async function POST(req: NextRequest) {
     const tRate = tax_rate ?? 0.03;
     commission_amount = Math.round(subtotal_amount * rate * 100) / 100;
     tax_amount = Math.round(commission_amount * tRate * 100) / 100;
-    // Round the net payout to a whole baht per the chosen mode (default
-    // ceil). This is the amount actually paid to the AE.
-    net_amount = applyRounding(commission_amount - tax_amount);
+    // Net actually paid to the AE, rounded to a whole baht (half-up).
+    rawNet = commission_amount - tax_amount;
+    net_amount = roundHalfUp(rawNet);
   } else {
     // bottle_commission
     const count = bottle_count ?? 1;
     const rate = bottle_rate ?? 500;
-    net_amount = applyRounding(count * rate);
+    rawNet = count * rate;
+    net_amount = roundHalfUp(rawNet);
   }
+  // Direction half-up rounding actually landed on this entry (record only).
+  const roundingApplied: 'up' | 'down' = net_amount >= rawNet ? 'up' : 'down';
 
   const { data, error } = await supabase
     .from('commission_entries')
@@ -122,7 +125,7 @@ export async function POST(req: NextRequest) {
       commission_amount,
       tax_amount,
       net_amount,
-      rounding: roundMode,
+      rounding: roundingApplied,
       bottle_count: type === 'bottle_commission' ? (bottle_count ?? 1) : null,
       bottle_rate: type === 'bottle_commission' ? (bottle_rate ?? 500) : null,
       bottle_product_id: type === 'bottle_commission' ? (bottle_product_id || null) : null,
