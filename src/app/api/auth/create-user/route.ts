@@ -1,28 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/server';
+import { requireUserAdmin, ASSIGNABLE_ROLES, ELEVATED_ROLES } from '@/lib/auth/user-admin';
 
 export async function POST(request: NextRequest) {
-  const supabase = await createClient();
-
-  // Verify the current user is an owner
-  const {
-    data: { user: authUser },
-  } = await supabase.auth.getUser();
-
-  if (!authUser) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const { data: callerProfile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', authUser.id)
-    .single();
-
-  if (!callerProfile || callerProfile.role !== 'owner') {
-    return NextResponse.json({ error: 'Only owners can create users' }, { status: 403 });
-  }
+  // Owner + HR may create users; only an owner may mint elevated-role accounts.
+  const admin = await requireUserAdmin();
+  if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: admin.status });
 
   const { username, password, role, displayName, storeId, storeIds } = (await request.json()) as {
     username: string;
@@ -35,6 +18,12 @@ export async function POST(request: NextRequest) {
 
   if (!username || !password || !role) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+  }
+  if (!(ASSIGNABLE_ROLES as readonly string[]).includes(role)) {
+    return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
+  }
+  if (!admin.isOwner && (ELEVATED_ROLES as readonly string[]).includes(role)) {
+    return NextResponse.json({ error: 'Only an owner can create this role' }, { status: 403 });
   }
 
   const serviceClient = createServiceClient();
@@ -67,7 +56,7 @@ export async function POST(request: NextRequest) {
       role,
       display_name: displayName,
       active: true,
-      created_by: authUser.id,
+      created_by: admin.userId,
     })
     .eq('id', authData.user.id);
 

@@ -192,15 +192,21 @@ export default function UsersPage() {
   };
 
   const toggleUserActive = async (userId: string, currentActive: boolean) => {
-    const supabase = createClient();
-    const { error } = await supabase
-      .from('profiles')
-      .update({ active: !currentActive })
-      .eq('id', userId);
-
-    if (!error) {
+    try {
+      const res = await fetch(`/api/users/${userId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active: !currentActive }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast({ type: 'error', title: t('error'), message: json.error });
+        return;
+      }
       toast({ type: 'success', title: currentActive ? t('deactivated') : t('activated') });
       loadUsers();
+    } catch {
+      toast({ type: 'error', title: t('networkError') });
     }
   };
 
@@ -221,26 +227,13 @@ export default function UsersPage() {
     if (!storeEditUser) return;
     setSavingStores(true);
     try {
-      const supabase = createClient();
-      const current = new Set(storeEditUser.stores?.map((s) => s.store_id) ?? []);
-      const next = new Set(editStoreIds);
-      const toAdd = editStoreIds.filter((id) => !current.has(id));
-      const toRemove = [...current].filter((id) => !next.has(id));
-
-      if (toAdd.length > 0) {
-        const { error } = await supabase
-          .from('user_stores')
-          .insert(toAdd.map((sid) => ({ user_id: storeEditUser.id, store_id: sid })));
-        if (error) throw new Error(error.message);
-      }
-      if (toRemove.length > 0) {
-        const { error } = await supabase
-          .from('user_stores')
-          .delete()
-          .eq('user_id', storeEditUser.id)
-          .in('store_id', toRemove);
-        if (error) throw new Error(error.message);
-      }
+      const res = await fetch(`/api/users/${storeEditUser.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storeIds: editStoreIds }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || '');
       toast({ type: 'success', title: 'อัปเดตสาขาเรียบร้อย' });
       setStoreEditUser(null);
       loadUsers();
@@ -275,9 +268,11 @@ export default function UsersPage() {
   });
 
   const FILTERABLE_ROLES: UserRole[] = ['owner', 'accountant', 'manager', 'bar', 'technician', 'staff', 'hq', 'hr'];
-  // User administration (create / reset / permissions / activate) stays owner-only — HR gets a
-  // read-only view with the linked-account indicator + filters.
+  // Owner + HR may administer users; only the OWNER gets the elevated bits — the permissions
+  // editor and creating/inviting elevated-role accounts (accountant/manager/hq/hr).
   const isOwner = currentUser?.role === 'owner';
+  // HR (non-owner) may only administer non-elevated accounts; owner/accountant/hq stay owner-only.
+  const canAdminTarget = (u: UserProfile) => isOwner || !['owner', 'accountant', 'hq'].includes(u.role);
 
   return (
     <div className="space-y-6">
@@ -289,18 +284,16 @@ export default function UsersPage() {
             {t('subtitle')}
           </p>
         </div>
-        {isOwner && (
-          <div className="flex flex-wrap items-center gap-2">
-            <Link href="/users/invitations">
-              <Button variant="outline" icon={<Mail className="h-4 w-4" />}>
-                จัดการลิงก์เชิญ
-              </Button>
-            </Link>
-            <Button icon={<Plus className="h-4 w-4" />} onClick={() => setShowCreateModal(true)}>
-              {t('addUser')}
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href="/users/invitations">
+            <Button variant="outline" icon={<Mail className="h-4 w-4" />}>
+              จัดการลิงก์เชิญ
             </Button>
-          </div>
-        )}
+          </Link>
+          <Button icon={<Plus className="h-4 w-4" />} onClick={() => setShowCreateModal(true)}>
+            {t('addUser')}
+          </Button>
+        </div>
       </div>
 
       {/* Search + Filters */}
@@ -428,8 +421,8 @@ export default function UsersPage() {
                   </div>
                 </div>
 
-                {/* Actions — owner-only (user administration APIs are owner-gated) */}
-                {isOwner && u.id !== currentUser?.id && !u.username.startsWith('printer-') && (
+                {/* Actions — owner + HR (user administration APIs allow both) */}
+                {u.id !== currentUser?.id && !u.username.startsWith('printer-') && canAdminTarget(u) && (
                   <div className="flex items-center gap-1">
                     {u.role !== 'owner' && u.role !== 'customer' && (
                       <button
@@ -440,7 +433,7 @@ export default function UsersPage() {
                         <Store className="h-4 w-4" />
                       </button>
                     )}
-                    {u.role !== 'owner' && u.role !== 'customer' && (
+                    {isOwner && u.role !== 'owner' && u.role !== 'customer' && (
                       <Link
                         href={`/users/${u.id}/permissions`}
                         className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-orange-50 hover:text-orange-600 dark:hover:bg-orange-900/20 dark:hover:text-orange-400"
@@ -517,10 +510,15 @@ export default function UsersPage() {
               { value: 'staff', label: t('roleStaff') },
               { value: 'bar', label: t('roleBar') },
               { value: 'technician', label: t('roleTechnician') },
-              { value: 'manager', label: t('roleManager') },
-              { value: 'accountant', label: t('roleAccountant') },
-              { value: 'hq', label: t('roleHQ') },
-              { value: 'hr', label: t('roleHR') },
+              // Elevated roles are owner-only — HR cannot mint them.
+              ...(isOwner
+                ? [
+                    { value: 'manager', label: t('roleManager') },
+                    { value: 'accountant', label: t('roleAccountant') },
+                    { value: 'hq', label: t('roleHQ') },
+                    { value: 'hr', label: t('roleHR') },
+                  ]
+                : []),
             ]}
           />
           <div>
