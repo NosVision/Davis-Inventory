@@ -6,6 +6,7 @@ import { MapPin, RefreshCw, Camera, Loader2, AlertTriangle, Check } from 'lucide
 import { Button, PageHeader, StatusBadge, DataList, DataCard, ViewToggle, useViewMode, Modal, ModalFooter, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { toBangkokISO, formatTimeBangkok } from '@/lib/utils/date';
+import { TileNotices } from '../_components/tile-notices';
 
 type AttendanceType = 'in' | 'out' | 'break_start' | 'break_end';
 
@@ -320,6 +321,8 @@ export default function CheckinPage() {
         subtitle={t('subtitle')}
         actions={<ViewToggle value={view} onChange={setView} />}
       />
+
+      <TileNotices tile="checkin" />
 
       {/* Type selector */}
       <div className="grid grid-cols-2 gap-2">

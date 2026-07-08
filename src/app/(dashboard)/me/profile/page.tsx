@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { Loader2, UserCircle, Landmark, Phone, Send, Inbox, Wallet, CalendarClock } from 'lucide-react';
 import { Button, Modal, ModalFooter, PageHeader, ViewToggle, useViewMode, DataList, DataCard, StatusBadge, useConfirm, toast } from '@/components/ui';
+import { TileNotices } from '../_components/tile-notices';
 
 type Status = 'pending' | 'approved' | 'rejected' | 'cancelled';
 type FieldKey = 'bank_account' | 'emergency_contact';
@@ -309,6 +310,8 @@ export default function MyProfilePage() {
   return (
     <div className="mx-auto max-w-lg space-y-4 p-4">
       <PageHeader title={t('title')} subtitle={t('subtitle')} actions={<ViewToggle value={view} onChange={setView} />} />
+
+      <TileNotices tile="profile" />
 
       {loading ? (
         <div className="flex items-center justify-center py-12 text-gray-400">

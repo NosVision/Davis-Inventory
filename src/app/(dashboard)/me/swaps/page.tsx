@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2, ArrowLeftRight, Send } from 'lucide-react';
 import { Button, PageHeader, ViewToggle, useViewMode, StatusBadge, DataList, DataCard, toast } from '@/components/ui';
+import { TileNotices } from '../_components/tile-notices';
 
 interface Coworker {
   user_id: string;
@@ -133,6 +134,8 @@ export default function MySwapsPage() {
         subtitle={t('mySubtitle')}
         actions={<ViewToggle value={view} onChange={setView} />}
       />
+
+      <TileNotices tile="swaps" />
 
       {/* File form */}
       <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">

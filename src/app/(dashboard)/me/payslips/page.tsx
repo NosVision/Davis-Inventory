@@ -7,6 +7,7 @@ import { Button, EmptyState, Modal, ModalFooter, PageHeader, DataList, DataCard,
 import { PayslipView, type PayslipDetailData } from '@/components/hr/payslip-view';
 import { PayslipFormPrint } from '@/components/hr/payslip-form-print';
 import { ImportedPayslipView, periodLabel, type ImportedSlip } from '@/components/hr/imported-payslip-view';
+import { TileNotices } from '../_components/tile-notices';
 
 interface MyPayslip {
   id: string;
@@ -130,6 +131,8 @@ export default function MyPayslipsPage() {
           className="mb-3"
           actions={<ViewToggle value={view} onChange={setView} />}
         />
+
+        <TileNotices tile="payslips" />
 
         {/* ④ standing paper preference */}
         <label className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800">

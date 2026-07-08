@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2, CalendarOff, Send } from 'lucide-react';
+import { TileNotices } from '../_components/tile-notices';
 import {
   Button,
   toast,
@@ -194,6 +195,8 @@ export default function MyLeavesPage() {
         subtitle={t('mySubtitle')}
         actions={<ViewToggle value={view} onChange={setView} />}
       />
+
+      <TileNotices tile="leaves" />
 
       {/* File form */}
       <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">

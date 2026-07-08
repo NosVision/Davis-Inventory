@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useLocale } from 'next-intl';
 import { Loader2, FileText, Plus, Download, X } from 'lucide-react';
 import { Button, Modal, ModalFooter, PageHeader, StatusBadge, toast } from '@/components/ui';
+import { TileNotices } from '../_components/tile-notices';
 
 // ⑥ พนักงานขอเอกสารส่วนตัว (50 ทวิ / หนังสือรับรองเงินเดือน / สำเนาสลิป / อื่นๆ) แล้วเปิด/ดาวน์โหลด
 // เมื่อ HR ทำเสร็จ — ระบบ generate เอง หรือ HR แนบไฟล์จากสำนักงานบัญชี
@@ -89,6 +90,8 @@ export default function MyDocumentsPage() {
   return (
     <div className="mx-auto max-w-lg space-y-4 p-4">
       <PageHeader title={L.title} subtitle={L.subtitle} actions={<Button size="sm" icon={<Plus className="h-4 w-4" />} onClick={() => setFormOpen(true)}>{L.request}</Button>} />
+
+      <TileNotices tile="documents" />
 
       {loading ? (
         <div className="flex justify-center py-10 text-gray-400"><Loader2 className="h-5 w-5 animate-spin" /></div>
