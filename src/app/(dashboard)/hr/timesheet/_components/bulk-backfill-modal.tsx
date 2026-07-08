@@ -1,121 +1,300 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocale } from 'next-intl';
+import { Loader2, Grid3x3, Rows3, X } from 'lucide-react';
 import { Modal, ModalFooter, Button, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 
 type Status = 'normal' | 'absent' | 'leave' | 'late' | 'dayoff';
+type Brush = Status | 'ot' | 'clear';
+interface Cell { status: Status | 'clear'; late: number; ot: number }
+interface Employee { user_id: string; name: string }
+interface DetailTarget { user_id: string; name: string; date: string }
 
-// Bulk backfill a whole branch's timesheet for a date range (owner ask 2026-07-08) — for periods
-// with no punch data. Self-contained bilingual labels. Writes via POST /api/hr/timesheet/bulk-backfill.
+const STATUSES: Status[] = ['normal', 'absent', 'leave', 'late', 'dayoff'];
+
+function rangeDates(from: string, to: string): string[] {
+  const out: string[] = [];
+  let cur = new Date(`${from}T00:00:00Z`).getTime();
+  const end = new Date(`${to}T00:00:00Z`).getTime();
+  let guard = 0;
+  while (cur <= end && guard < 80) { out.push(new Date(cur).toISOString().slice(0, 10)); cur += 86_400_000; guard++; }
+  return out;
+}
+
+// Bulk timesheet grid (owner ask 2026-07-08): employees × days as coloured rounded blocks. Fill fast
+// with a brush (whole grid / row via the name / column via the date), or click any block to open a
+// detail panel and set exact status + late + OT for that person-day. Each cell → an
+// hr_timesheet_overrides row, so the derived timesheet (and pay) recomputes.
 export function BulkBackfillModal({
   isOpen, storeId, storeName, defaultFrom, defaultTo, onClose, onDone,
 }: {
-  isOpen: boolean;
-  storeId: string;
-  storeName: string;
-  defaultFrom: string;
-  defaultTo: string;
-  onClose: () => void;
-  onDone: () => void;
+  isOpen: boolean; storeId: string; storeName: string; defaultFrom: string; defaultTo: string;
+  onClose: () => void; onDone: () => void;
 }) {
   const isTh = useLocale() === 'th';
   const L = isTh
-    ? { title: 'ลงเวลาย้อนหลัง (ทั้งสาขา)', desc: (s: string) => `ลงให้พนักงานทุกคนในสาขา “${s}” ตามช่วงวันที่และสถานะที่เลือก`, status: 'สถานะ', from: 'ตั้งแต่วันที่', to: 'ถึงวันที่', lateMin: 'มาสาย (นาที)', overwrite: 'เขียนทับข้อมูลเดิม', overwriteHint: 'ปกติจะเติมเฉพาะวันที่ยังไม่มีข้อมูล', submit: 'ลงเวลาย้อนหลัง', cancel: 'ยกเลิก', done: (w: number, s: number) => `ลงเวลาแล้ว: ${w} รายการ${s ? ` (ข้าม ${s} ที่มีข้อมูลอยู่แล้ว)` : ''}`, none: 'ไม่มีรายการที่ต้องลง (มีข้อมูลครบแล้ว)', fail: 'ลงเวลาไม่สำเร็จ', s_normal: 'ทำงานปกติ', s_absent: 'ขาดงาน', s_leave: 'ลา', s_late: 'มาสาย', s_dayoff: 'วันหยุด' }
-    : { title: 'Bulk backfill (whole branch)', desc: (s: string) => `Applies to every employee in “${s}” for the selected range & status.`, status: 'Status', from: 'From', to: 'To', lateMin: 'Late (minutes)', overwrite: 'Overwrite existing', overwriteHint: 'By default only empty days are filled', submit: 'Backfill', cancel: 'Cancel', done: (w: number, s: number) => `Done: ${w} entries${s ? ` (skipped ${s} existing)` : ''}`, none: 'Nothing to fill (all days already have data)', fail: 'Backfill failed', s_normal: 'Worked (normal)', s_absent: 'Absent', s_leave: 'Leave', s_late: 'Late', s_dayoff: 'Day off' };
+    ? { title: 'ลงเวลาย้อนหลัง (ตารางทั้งสาขา)', desc: (s: string) => `สาขา “${s}” — เลือกสถานะแล้วเติมทั้งหมด/ทั้งแถว/ทั้งคอลัมน์ หรือคลิกช่องเพื่อดู–แก้รายวัน`,
+        brush: 'สถานะที่จะระบาย', lateMin: 'สาย (นาที)', otMin: 'OT (นาที)', fillAll: 'เติมทั้งหมด', legend: 'สีสถานะ', blocks: 'บล็อก', compact: 'ตาราง',
+        rowHint: 'คลิกชื่อ = เติมทั้งแถว', colHint: 'คลิกวันที่ = เติมทั้งคอลัมน์', cellHint: 'คลิกเพื่อดู/แก้รายวัน',
+        detail: 'รายละเอียดวัน', empty: 'ว่าง (ไม่ระบุ)', apply: 'ตกลง', close: 'ปิด',
+        save: 'บันทึก', cancel: 'ยกเลิก', saved: (w: number, c: number) => `บันทึกแล้ว: ${w} รายการ${c ? ` (ล้าง ${c})` : ''}`, none: 'ยังไม่ได้ระบุอะไร', fail: 'บันทึกไม่สำเร็จ', loadFail: 'โหลดไม่สำเร็จ', noEmp: 'ไม่มีพนักงานในสาขานี้', emp: 'พนักงาน',
+        s: { normal: 'ปกติ', absent: 'ขาด', leave: 'ลา', late: 'มาสาย', dayoff: 'วันหยุด', ot: 'OT', clear: 'ล้าง' } as Record<Brush, string>, wd: ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'] }
+    : { title: 'Bulk backfill (branch grid)', desc: (s: string) => `“${s}” — fill all/row/column with a status, or click a cell to view & edit the day`,
+        brush: 'Status to paint', lateMin: 'Late (min)', otMin: 'OT (min)', fillAll: 'Fill all', legend: 'Legend', blocks: 'Blocks', compact: 'Compact',
+        rowHint: 'Click name = fill row', colHint: 'Click date = fill column', cellHint: 'Click to view/edit day',
+        detail: 'Day detail', empty: 'Empty', apply: 'OK', close: 'Close',
+        save: 'Save', cancel: 'Cancel', saved: (w: number, c: number) => `Saved: ${w}${c ? ` (cleared ${c})` : ''}`, none: 'Nothing set', fail: 'Save failed', loadFail: 'Load failed', noEmp: 'No staff in this store', emp: 'Employee',
+        s: { normal: 'Normal', absent: 'Absent', leave: 'Leave', late: 'Late', dayoff: 'Day off', ot: 'OT', clear: 'Clear' } as Record<Brush, string>, wd: ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'] };
 
-  const STATUS_OPTS: { value: Status; label: string; tone: string }[] = [
-    { value: 'normal', label: L.s_normal, tone: 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-900/20 dark:text-emerald-300' },
-    { value: 'absent', label: L.s_absent, tone: 'border-red-300 bg-red-50 text-red-700 dark:border-red-900/60 dark:bg-red-900/20 dark:text-red-300' },
-    { value: 'leave', label: L.s_leave, tone: 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-900/60 dark:bg-blue-900/20 dark:text-blue-300' },
-    { value: 'late', label: L.s_late, tone: 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-300' },
-    { value: 'dayoff', label: L.s_dayoff, tone: 'border-gray-300 bg-gray-50 text-gray-600 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300' },
-  ];
+  const STYLE: Record<Status, { block: string; glyph: string; dot: string }> = {
+    normal: { block: 'bg-emerald-400/90 text-white ring-emerald-500', glyph: isTh ? 'ป' : 'N', dot: 'bg-emerald-400' },
+    absent: { block: 'bg-red-400/90 text-white ring-red-500', glyph: isTh ? 'ข' : 'A', dot: 'bg-red-400' },
+    leave: { block: 'bg-blue-400/90 text-white ring-blue-500', glyph: isTh ? 'ล' : 'L', dot: 'bg-blue-400' },
+    late: { block: 'bg-amber-400/90 text-white ring-amber-500', glyph: isTh ? 'ส' : 'T', dot: 'bg-amber-400' },
+    dayoff: { block: 'bg-gray-300 text-gray-600 ring-gray-400 dark:bg-gray-600 dark:text-gray-200', glyph: isTh ? 'ห' : 'O', dot: 'bg-gray-400' },
+  };
+  const BRUSH_TONE: Record<Brush, string> = {
+    normal: 'border-emerald-400 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200',
+    absent: 'border-red-400 bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-200',
+    leave: 'border-blue-400 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-200',
+    late: 'border-amber-400 bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-200',
+    dayoff: 'border-gray-400 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200',
+    ot: 'border-violet-400 bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-200',
+    clear: 'border-gray-300 bg-white text-gray-500 dark:bg-gray-800 dark:text-gray-400',
+  };
 
-  const [status, setStatus] = useState<Status>('normal');
-  const [from, setFrom] = useState(defaultFrom);
-  const [to, setTo] = useState(defaultTo);
-  const [lateMin, setLateMin] = useState(30);
-  const [overwrite, setOverwrite] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const dates = useMemo(() => rangeDates(defaultFrom, defaultTo), [defaultFrom, defaultTo]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [grid, setGrid] = useState<Map<string, Cell>>(new Map());
+  const [brush, setBrush] = useState<Brush>('normal');
+  const [lateVal, setLateVal] = useState(30);
+  const [otVal, setOtVal] = useState(120);
+  const [view, setView] = useState<'blocks' | 'compact'>('blocks');
+  const [detail, setDetail] = useState<DetailTarget | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const submit = async () => {
-    setBusy(true);
+  const load = useCallback(async () => {
+    setLoading(true); setDetail(null);
+    try {
+      const res = await fetch(`/api/hr/timesheet/bulk-backfill?store_id=${storeId}&from=${defaultFrom}&to=${defaultTo}`);
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || L.loadFail);
+      setEmployees((json.data?.employees ?? []) as Employee[]);
+      const m = new Map<string, Cell>();
+      const seed = (json.data?.cells ?? {}) as Record<string, { status: Status; late: number; ot: number }>;
+      for (const [k, v] of Object.entries(seed)) m.set(k, { status: v.status, late: v.late, ot: v.ot });
+      setGrid(m);
+    } catch (e) {
+      toast({ type: 'error', title: e instanceof Error ? e.message : L.loadFail });
+    } finally { setLoading(false); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeId, defaultFrom, defaultTo]);
+
+  useEffect(() => { if (isOpen && storeId) load(); }, [isOpen, storeId, load]);
+
+  const brushCell = useCallback((cur: Cell | undefined): Cell | null => {
+    switch (brush) {
+      case 'clear': return null;
+      case 'normal': return { status: 'normal', late: 0, ot: cur?.ot ?? 0 };
+      case 'absent': return { status: 'absent', late: 0, ot: 0 };
+      case 'leave': return { status: 'leave', late: 0, ot: cur?.ot ?? 0 };
+      case 'dayoff': return { status: 'dayoff', late: 0, ot: 0 };
+      case 'late': return { status: 'late', late: lateVal, ot: cur?.ot ?? 0 };
+      case 'ot': return { status: cur && cur.status !== 'clear' ? cur.status : 'normal', late: cur?.late ?? 0, ot: otVal };
+    }
+  }, [brush, lateVal, otVal]);
+
+  const fillKeys = useCallback((keys: string[]) => {
+    setGrid((prev) => {
+      const next = new Map(prev);
+      for (const k of keys) { const c = brushCell(next.get(k)); if (c) next.set(k, c); else next.delete(k); }
+      return next;
+    });
+  }, [brushCell]);
+
+  const setCell = useCallback((key: string, cell: Cell | null) => {
+    setGrid((prev) => { const next = new Map(prev); if (cell) next.set(key, cell); else next.delete(key); return next; });
+  }, []);
+
+  const cellKeys = useMemo(() => employees.flatMap((e) => dates.map((d) => `${e.user_id}|${d}`)), [employees, dates]);
+
+  const save = async () => {
+    const cells: Record<string, unknown>[] = [];
+    for (const [k, v] of grid) {
+      const [user_id, business_date] = k.split('|');
+      if (v.status === 'clear') cells.push({ user_id, business_date, status: 'clear' });
+      else cells.push({ user_id, business_date, status: v.status, late_min: v.late || undefined, ot_min: v.ot || undefined });
+    }
+    if (cells.length === 0) { toast({ type: 'warning', title: L.none }); return; }
+    setSaving(true);
     try {
       const res = await fetch('/api/hr/timesheet/bulk-backfill', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ store_id: storeId, date_from: from, date_to: to, status, late_min: lateMin, overwrite }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ store_id: storeId, cells }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json?.error || L.fail);
-      const written = (json.data?.written as number) ?? 0;
-      const skipped = (json.data?.skipped as number) ?? 0;
-      toast({ type: written ? 'success' : 'warning', title: written ? L.done(written, skipped) : L.none });
+      toast({ type: 'success', title: L.saved(json.data?.written ?? 0, json.data?.cleared ?? 0) });
       onDone();
     } catch (e) {
       toast({ type: 'error', title: e instanceof Error ? e.message : L.fail });
-    } finally {
-      setBusy(false);
-    }
+    } finally { setSaving(false); }
   };
 
+  const BRUSHES: Brush[] = ['normal', 'absent', 'leave', 'late', 'dayoff', 'ot', 'clear'];
+  const detailKey = detail ? `${detail.user_id}|${detail.date}` : '';
+  const detailCell = detail ? grid.get(detailKey) : undefined;
+  const detailStatus = detailCell && detailCell.status !== 'clear' ? detailCell.status : null;
+
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={L.title} size="md">
+    <Modal isOpen={isOpen} onClose={onClose} title={L.title} size="full">
       <p className="text-sm text-gray-500 dark:text-gray-400">{L.desc(storeName)}</p>
 
-      <div className="mt-4 space-y-4">
-        <div>
-          <p className="mb-1.5 text-xs font-semibold text-gray-600 dark:text-gray-300">{L.status}</p>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {STATUS_OPTS.map((o) => (
-              <button
-                key={o.value}
-                type="button"
-                onClick={() => setStatus(o.value)}
-                aria-pressed={status === o.value}
-                className={cn(
-                  'rounded-lg border px-3 py-2 text-sm font-semibold transition-colors',
-                  status === o.value ? o.tone : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400'
-                )}
-              >
-                {o.label}
-              </button>
-            ))}
+      {/* Controls */}
+      <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
+        <div className="flex flex-wrap items-end gap-2">
+          <div>
+            <p className="mb-1 text-xs font-semibold text-gray-600 dark:text-gray-300">{L.brush}</p>
+            <div className="flex flex-wrap gap-1.5">
+              {BRUSHES.map((b) => (
+                <button key={b} type="button" onClick={() => setBrush(b)} aria-pressed={brush === b}
+                  className={cn('rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors',
+                    brush === b ? BRUSH_TONE[b] : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400')}>
+                  {L.s[b]}
+                </button>
+              ))}
+            </div>
           </div>
+          <label className="flex flex-col text-[11px] font-medium text-gray-500 dark:text-gray-400">{L.lateMin}
+            <input type="number" min={0} value={lateVal} onChange={(e) => setLateVal(Math.max(0, Number(e.target.value) || 0))} className="control mt-0.5 w-20" />
+          </label>
+          <label className="flex flex-col text-[11px] font-medium text-gray-500 dark:text-gray-400">{L.otMin}
+            <input type="number" min={0} value={otVal} onChange={(e) => setOtVal(Math.max(0, Number(e.target.value) || 0))} className="control mt-0.5 w-20" />
+          </label>
+          <Button size="sm" variant="outline" onClick={() => fillKeys(cellKeys)} disabled={loading || employees.length === 0}>
+            {L.fillAll} · {L.s[brush]}
+          </Button>
         </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
-            {L.from}
-            <input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} className="control mt-1" />
-          </label>
-          <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
-            {L.to}
-            <input type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} className="control mt-1" />
-          </label>
+        {/* View toggle */}
+        <div className="inline-flex items-center gap-0.5 rounded-lg bg-gray-100 p-0.5 dark:bg-gray-800">
+          {([['blocks', Grid3x3], ['compact', Rows3]] as const).map(([v, Icon]) => (
+            <button key={v} type="button" onClick={() => setView(v)}
+              className={cn('inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors',
+                view === v ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-700 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400')}>
+              <Icon className="h-3.5 w-3.5" />{v === 'blocks' ? L.blocks : L.compact}
+            </button>
+          ))}
         </div>
-
-        {status === 'late' && (
-          <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
-            {L.lateMin}
-            <input type="number" min={0} value={lateMin} onChange={(e) => setLateMin(Math.max(0, Number(e.target.value) || 0))} className="control mt-1 w-32" />
-          </label>
-        )}
-
-        <label className="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
-          <input type="checkbox" checked={overwrite} onChange={(e) => setOverwrite(e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800" />
-          <span>
-            {L.overwrite}
-            <span className="block text-xs text-gray-400">{L.overwriteHint}</span>
-          </span>
-        </label>
       </div>
 
+      {/* Legend */}
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-500 dark:text-gray-400">
+        <span className="font-semibold">{L.legend}:</span>
+        {STATUSES.map((s) => (
+          <span key={s} className="inline-flex items-center gap-1"><i className={cn('h-2.5 w-2.5 rounded-sm', STYLE[s].dot)} />{L.s[s]}</span>
+        ))}
+        <span className="inline-flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-sm bg-violet-400" />OT</span>
+      </div>
+
+      {/* Grid */}
+      {loading ? (
+        <div className="flex items-center justify-center py-16 text-gray-400"><Loader2 className="h-6 w-6 animate-spin" /></div>
+      ) : employees.length === 0 ? (
+        <p className="py-12 text-center text-sm text-gray-400">{L.noEmp}</p>
+      ) : (
+        <div className="mt-3 max-h-[54vh] overflow-auto rounded-xl border border-gray-200 dark:border-gray-700">
+          <table className="border-separate border-spacing-0 text-xs">
+            <thead className="sticky top-0 z-10">
+              <tr>
+                <th className="sticky left-0 z-20 min-w-[8.5rem] border-b border-r border-gray-200 bg-gray-50 px-2 py-1.5 text-left font-semibold text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">{L.emp}</th>
+                {dates.map((d) => {
+                  const wd = new Date(`${d}T00:00:00`).getDay();
+                  const [, mm, dd] = d.split('-');
+                  const weekend = wd === 0 || wd === 6;
+                  return (
+                    <th key={d} onClick={() => fillKeys(employees.map((e) => `${e.user_id}|${d}`))} title={L.colHint}
+                      className={cn('cursor-pointer border-b border-gray-200 px-0.5 py-1 text-center font-medium hover:bg-indigo-50 dark:border-gray-700 dark:hover:bg-indigo-900/20',
+                        weekend ? 'bg-gray-100 text-rose-400 dark:bg-gray-800/80' : 'bg-gray-50 text-gray-500 dark:bg-gray-800')}>
+                      <div className="tabular-nums">{Number(dd)}</div>
+                      <div className="text-[9px] opacity-70">{L.wd[wd]}</div>
+                    </th>
+                  );
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {employees.map((e) => (
+                <tr key={e.user_id}>
+                  <td onClick={() => fillKeys(dates.map((d) => `${e.user_id}|${d}`))} title={L.rowHint}
+                    className="sticky left-0 z-[5] min-w-[8.5rem] max-w-[8.5rem] cursor-pointer truncate border-b border-r border-gray-200 bg-white px-2 py-1 font-medium text-gray-800 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-indigo-900/20">
+                    {e.name}
+                  </td>
+                  {dates.map((d) => {
+                    const key = `${e.user_id}|${d}`;
+                    const c = grid.get(key);
+                    const st = c && c.status !== 'clear' ? c.status : null;
+                    const sel = detailKey === key;
+                    return (
+                      <td key={d} className="border-b border-gray-100 p-0.5 text-center dark:border-gray-700/60">
+                        <button type="button" onClick={() => setDetail({ user_id: e.user_id, name: e.name, date: d })}
+                          title={st ? `${L.s[st]}${c && c.late ? ` · ${L.lateMin} ${c.late}` : ''}${c && c.ot ? ` · OT ${c.ot}` : ''}` : L.cellHint}
+                          className={cn('relative mx-auto flex h-7 w-7 items-center justify-center rounded-lg text-[11px] font-bold ring-1 transition-transform hover:scale-110',
+                            view === 'compact' && 'h-5 w-5 rounded-md text-[9px]',
+                            st ? STYLE[st].block : 'bg-gray-50 text-transparent ring-gray-200 hover:bg-gray-100 dark:bg-gray-800 dark:ring-gray-700',
+                            sel && 'ring-2 ring-indigo-500 ring-offset-1 dark:ring-offset-gray-900')}>
+                          {view === 'blocks' ? (st ? STYLE[st].glyph : '·') : ''}
+                          {c && c.ot > 0 && <i className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-violet-500 ring-1 ring-white dark:ring-gray-900" />}
+                        </button>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Per-day detail editor */}
+      {detail && (
+        <div className="mt-3 rounded-xl border border-indigo-200 bg-indigo-50/50 p-3 dark:border-indigo-800 dark:bg-indigo-900/15">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">{L.detail} — {detail.name} · {(() => { const [, mm, dd] = detail.date.split('-'); return `${Number(dd)}/${Number(mm)}`; })()}</span>
+            <button type="button" onClick={() => setDetail(null)} className="rounded p-1 text-gray-400 hover:bg-white hover:text-gray-600 dark:hover:bg-gray-800"><X className="h-4 w-4" /></button>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {STATUSES.map((s) => (
+              <button key={s} type="button"
+                onClick={() => setCell(detailKey, { status: s, late: s === 'late' ? (detailCell?.late || lateVal) : 0, ot: detailCell?.ot ?? 0 })}
+                className={cn('rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors',
+                  detailStatus === s ? BRUSH_TONE[s] : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400')}>
+                {L.s[s]}
+              </button>
+            ))}
+            <button type="button" onClick={() => setCell(detailKey, null)}
+              className="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800">{L.s.clear}</button>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-3">
+            <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">{L.lateMin}
+              <input type="number" min={0} value={detailCell?.late ?? 0}
+                onChange={(ev) => { const late = Math.max(0, Number(ev.target.value) || 0); const base = detailStatus ?? 'normal'; setCell(detailKey, { status: late > 0 && base === 'normal' ? 'late' : base, late, ot: detailCell?.ot ?? 0 }); }}
+                className="control w-20" />
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">{L.otMin}
+              <input type="number" min={0} value={detailCell?.ot ?? 0}
+                onChange={(ev) => { const ot = Math.max(0, Number(ev.target.value) || 0); setCell(detailKey, { status: detailStatus ?? 'normal', late: detailCell?.late ?? 0, ot }); }}
+                className="control w-20" />
+            </label>
+          </div>
+        </div>
+      )}
+
       <ModalFooter>
-        <Button variant="ghost" onClick={onClose} disabled={busy}>{L.cancel}</Button>
-        <Button onClick={submit} isLoading={busy} disabled={busy || !storeId}>{L.submit}</Button>
+        <Button variant="ghost" onClick={onClose} disabled={saving}>{L.cancel}</Button>
+        <Button onClick={save} isLoading={saving} disabled={saving || loading}>{L.save}</Button>
       </ModalFooter>
     </Modal>
   );
