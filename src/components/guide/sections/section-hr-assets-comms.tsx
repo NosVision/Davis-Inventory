@@ -230,7 +230,7 @@ export function SectionHrAssetsComms() {
         <ul className="mb-3 ml-5 list-disc space-y-1.5 text-sm text-gray-600 dark:text-gray-300">
           <li><strong>หัวข้อ</strong> (จำเป็นต้องกรอก) &mdash; ตัวอย่างข้อความช่วย: &quot;หัวข้อนโยบาย&quot;</li>
           <li><strong>หมวด</strong> &mdash; ตัวอย่างข้อความช่วย: &quot;เช่น การเข้างาน, วินัย&quot;</li>
-          <li><strong>เนื้อหา</strong> &mdash; ช่องข้อความขนาดใหญ่สำหรับใส่รายละเอียดนโยบาย</li>
+          <li><strong>เนื้อหา</strong> &mdash; ช่องข้อความขนาดใหญ่สำหรับใส่รายละเอียดนโยบาย รองรับการจัดรูปแบบ <strong>Markdown</strong> (หัวข้อ <code className="rounded bg-gray-100 px-1 py-0.5 text-xs dark:bg-gray-700"># หัวข้อ</code>, ตาราง <code className="rounded bg-gray-100 px-1 py-0.5 text-xs dark:bg-gray-700">| ... |</code>, รายการ <code className="rounded bg-gray-100 px-1 py-0.5 text-xs dark:bg-gray-700">- ข้อ</code>, ตัวหนา <code className="rounded bg-gray-100 px-1 py-0.5 text-xs dark:bg-gray-700">**เน้น**</code>) — ฝั่งพนักงานจะแสดงผลเป็นเอกสารจัดรูปแบบสวยงาม อ่านง่ายทั้งจอเล็กและจอใหญ่</li>
           <li>(เฉพาะตอนแก้ไข) ช่องติ๊ก <strong>ใช้งาน</strong> &mdash; เปิด/ปิดการใช้งานนโยบาย</li>
           <li>(เฉพาะตอนแก้ไข) ช่องติ๊ก <strong>ออกเวอร์ชันใหม่ (ต้องรับทราบใหม่)</strong> &mdash; สั่งให้ระบบเลื่อนเลขเวอร์ชันขึ้น ทำให้พนักงานทุกคนต้องกลับมากดรับทราบใหม่อีกครั้ง</li>
           <li>ปุ่มด้านล่าง: <strong>ยกเลิก</strong> และ <strong>บันทึก</strong></li>
