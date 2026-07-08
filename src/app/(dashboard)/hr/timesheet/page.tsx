@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Loader2 } from 'lucide-react';
-import { PageHeader, SectionHeading, toast } from '@/components/ui';
+import { Loader2, CalendarPlus } from 'lucide-react';
+import { PageHeader, SectionHeading, Button, toast } from '@/components/ui';
 import { openBusinessDateBangkok } from '@/lib/utils/date';
+import { BulkBackfillModal } from './_components/bulk-backfill-modal';
 import {
   DayTable,
   SummaryChips,
@@ -50,6 +51,7 @@ export default function HrTimesheetPage() {
   const [scoreConfig, setScoreConfig] = useState<ScoreConfig | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
 
   // manageable stores → default to first
   useEffect(() => {
@@ -133,6 +135,12 @@ export default function HrTimesheetPage() {
                 className="control mt-1"
               />
             </label>
+            <div className="flex items-end">
+              <Button variant="outline" onClick={() => setBulkOpen(true)} disabled={!storeId}>
+                <CalendarPlus className="h-4 w-4" />
+                {t('bulkBackfill')}
+              </Button>
+            </div>
           </>
         }
       />
@@ -183,6 +191,19 @@ export default function HrTimesheetPage() {
         onClose={() => setEditTarget(null)}
         onSaved={() => {
           setEditTarget(null);
+          load();
+        }}
+      />
+
+      <BulkBackfillModal
+        isOpen={bulkOpen}
+        storeId={storeId}
+        storeName={stores.find((s) => s.id === storeId)?.store_name ?? ''}
+        defaultFrom={from}
+        defaultTo={to}
+        onClose={() => setBulkOpen(false)}
+        onDone={() => {
+          setBulkOpen(false);
           load();
         }}
       />
