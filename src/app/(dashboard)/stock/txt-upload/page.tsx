@@ -44,7 +44,7 @@ interface ParsedItem {
 }
 
 interface ClassifiedItem extends ParsedItem {
-  status: 'matched' | 'new' | 'zero_qty';
+  status: 'matched' | 'new' | 'zero_qty' | 'excluded';
   existing_name?: string;
   existing_active?: boolean;
 }
@@ -56,11 +56,49 @@ interface ProcessSummary {
   zero_qty: number;
   deactivated: number;
   reactivated: number;
+  excluded?: number;
+}
+
+// Classify parsed rows against existing products + excluded categories.
+// Excluded categories win first — those items are dropped from counting
+// entirely and never auto-added, regardless of qty / existing.
+function buildClassified(
+  items: ParsedItem[],
+  productMap: Map<string, { product_name: string; active: boolean }>,
+  excludedCategories: Set<string>
+): ClassifiedItem[] {
+  return items.map((item) => {
+    if (item.category && excludedCategories.has(item.category)) {
+      return { ...item, status: 'excluded' as const };
+    }
+    const existing = productMap.get(item.product_code);
+    if (item.quantity === 0) {
+      return {
+        ...item,
+        status: 'zero_qty' as const,
+        existing_name: existing?.product_name,
+        existing_active: existing?.active,
+      };
+    }
+    if (existing) {
+      return {
+        ...item,
+        status: 'matched' as const,
+        existing_name: existing.product_name,
+        existing_active: existing.active,
+      };
+    }
+    return { ...item, status: 'new' as const };
+  });
 }
 
 type PageStep = 'upload' | 'preview' | 'result';
 
 // ── TXT Parser ──
+
+// Date line like "8 กรกฎาคม 2569 10:39" (report footer)
+const DATE_LINE_RE =
+  /^\d+\s+(มกราคม|กุมภาพันธ์|มีนาคม|เมษายน|พฤษภาคม|มิถุนายน|กรกฎาคม|สิงหาคม|กันยายน|ตุลาคม|พฤศจิกายน|ธันวาคม)/;
 
 function parseTxtContent(content: string): ParsedItem[] {
   const lines = content.split('\n').filter((line) => line.trim());
@@ -77,15 +115,37 @@ function parseTxtContent(content: string): ParsedItem[] {
       continue;
     }
 
-    // Tab-separated columns
     const parts = line.split('\t');
-    if (parts.length < 3) continue;
-
     const firstCol = parts[0].trim();
     if (!firstCol) continue;
-
-    // Skip header / subtotal / total / footer lines
     const lower = firstCol.toLowerCase();
+
+    // Quantity column (3rd) — strip thousands separators before parsing.
+    const rawQty = (parts[2] || '').trim().replace(/,/g, '');
+    const qty = parseFloat(rawQty);
+    const nonEmptyCols = parts.filter((p) => p.trim()).length;
+
+    // Bare section header (NOT "MAT-" prefixed) — e.g. "Dried Raw
+    // Materials", "Vegetable", "Seafood", "Fresh Product", "Meat".
+    // These sit on their own single-column line with no numeric qty.
+    // Recognising them fixes category assignment for fresh materials
+    // (previously they inherited the last MAT- category, "Influencers").
+    // Guard: single meaningful column, no digits (skips the address line),
+    // not a known structural line (report title / branch / stock date).
+    if (
+      nonEmptyCols <= 1 &&
+      isNaN(qty) &&
+      !/\d/.test(firstCol) &&
+      !DATE_LINE_RE.test(trimmed) &&
+      !['รหัส', 'สินค้า', 'ยอดขาย', 'total', 'stock date', 'branch', 'รายงาน'].some(
+        (w) => lower.includes(w)
+      )
+    ) {
+      currentCategory = firstCol;
+      continue;
+    }
+
+    // Skip header / subtotal / total / footer lines (data rows only below).
     if (
       lower.includes('รหัส') ||
       lower.includes('สินค้า') ||
@@ -96,25 +156,18 @@ function parseTxtContent(content: string): ParsedItem[] {
       lower.includes('stock date') ||
       lower.includes('branch') ||
       lower.includes('รายงาน') ||
-      /^\d+\s+(มกราคม|กุมภาพันธ์|มีนาคม|เมษายน|พฤษภาคม|มิถุนายน|กรกฎาคม|สิงหาคม|กันยายน|ตุลาคม|พฤศจิกายน|ธันวาคม)/.test(trimmed)
+      DATE_LINE_RE.test(trimmed)
     ) {
       continue;
     }
 
-    // Parse quantity — strip commas (thousands separator) before parsing
-    const rawQty = (parts[2] || '').trim().replace(/,/g, '');
-    const qty = parseFloat(rawQty);
-    if (isNaN(qty)) continue; // not a data line
-
-    const code = firstCol;
-    const name = (parts[1] || '').trim();
-    const unit = (parts[3] || '').trim();
+    if (parts.length < 3 || isNaN(qty)) continue; // not a data line
 
     items.push({
-      product_code: code,
-      product_name: name,
+      product_code: firstCol,
+      product_name: (parts[1] || '').trim(),
       quantity: qty,
-      unit,
+      unit: (parts[3] || '').trim(),
       category: currentCategory,
     });
   }
@@ -158,7 +211,7 @@ async function readTxtFile(file: File): Promise<string> {
 // ── Grouped Preview Component ──
 
 interface GroupConfig {
-  key: 'new' | 'matched' | 'zero_qty';
+  key: 'new' | 'matched' | 'zero_qty' | 'excluded';
   label: string;
   icon: typeof Plus;
   badgeVariant: 'info' | 'success' | 'default';
@@ -223,12 +276,29 @@ const GROUP_CONFIGS: GroupConfig[] = [
     textColor: 'text-gray-400 dark:text-gray-500',
     qtyColor: 'text-gray-300 dark:text-gray-600',
   },
+  {
+    key: 'excluded',
+    label: 'excluded',
+    icon: XCircle,
+    badgeVariant: 'default',
+    badgeLabel: 'excluded',
+    ringColor: 'ring-amber-200 dark:ring-amber-800',
+    headerBg: 'bg-amber-50 dark:bg-amber-900/20',
+    headerText: 'text-amber-700 dark:text-amber-400',
+    countBg: 'bg-amber-100 dark:bg-amber-900/40',
+    countText: 'text-amber-700 dark:text-amber-300',
+    itemBg: 'bg-amber-50/40 dark:bg-amber-900/10',
+    itemRing: 'ring-amber-100 dark:ring-amber-900/30',
+    textColor: 'text-gray-500 dark:text-gray-400',
+    qtyColor: 'text-gray-400 dark:text-gray-500',
+  },
 ];
 
 const GROUP_LABEL_MAP: Record<string, string> = {
   new: 'txtUpload.newProducts',
   matched: 'txtUpload.matchedSystem',
   zeroQty: 'txtUpload.zeroQty',
+  excluded: 'txtUpload.excludedCategory',
 };
 
 const GROUP_BADGE_MAP: Record<string, string> = {
@@ -241,13 +311,14 @@ function GroupedPreview({
   previewStats,
 }: {
   classifiedItems: ClassifiedItem[];
-  previewStats: { matched: number; new: number; zero: number };
+  previewStats: { matched: number; new: number; zero: number; excluded: number };
 }) {
   const t = useTranslations('stock');
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
     new: false,
     matched: false,
     zero_qty: false,
+    excluded: false,
   });
 
   const toggleGroup = (key: string) => {
@@ -257,6 +328,7 @@ function GroupedPreview({
   const getCount = (key: string) => {
     if (key === 'new') return previewStats.new;
     if (key === 'matched') return previewStats.matched;
+    if (key === 'excluded') return previewStats.excluded;
     return previewStats.zero;
   };
 
@@ -456,6 +528,13 @@ export default function TxtUploadPage() {
   const [classifiedItems, setClassifiedItems] = useState<ClassifiedItem[]>([]);
   const [parseErrors, setParseErrors] = useState<string[]>([]);
 
+  // Excluded categories (per store) — items in these are dropped from the
+  // count entirely. Cache the product lookup so toggling a category can
+  // re-classify without re-fetching products.
+  const [excludedCategories, setExcludedCategories] = useState<Set<string>>(new Set());
+  const [togglingCategory, setTogglingCategory] = useState<string | null>(null);
+  const productLookupRef = useRef<Map<string, { product_name: string; active: boolean }>>(new Map());
+
   // Options
   const [includeZeroQty, setIncludeZeroQty] = useState(false);
   const [autoCompareAfterSave, setAutoCompareAfterSave] = useState(true);
@@ -492,54 +571,34 @@ export default function TxtUploadPage() {
       setLoading(true);
       try {
         const supabase = createClient();
-        const { data: existingProducts, error } = await supabase
-          .from('products')
-          .select('product_code, product_name, active')
-          .eq('store_id', currentStoreId);
+        const [{ data: existingProducts, error }, { data: exCats }] = await Promise.all([
+          supabase
+            .from('products')
+            .select('product_code, product_name, active')
+            .eq('store_id', currentStoreId),
+          supabase
+            .from('stock_excluded_categories')
+            .select('category')
+            .eq('store_id', currentStoreId),
+        ]);
 
         if (error) throw error;
 
-        // Build lookup map
-        const productMap = new Map<
-          string,
-          { product_name: string; active: boolean }
-        >();
+        // Build + cache the product lookup so category toggles can
+        // re-classify without another round-trip.
+        const productMap = new Map<string, { product_name: string; active: boolean }>();
         (existingProducts || []).forEach((p) => {
           productMap.set(p.product_code, {
             product_name: p.product_name,
             active: p.active,
           });
         });
+        productLookupRef.current = productMap;
 
-        // Classify each item
-        const classified: ClassifiedItem[] = items.map((item) => {
-          const existing = productMap.get(item.product_code);
+        const excluded = new Set<string>((exCats || []).map((r: { category: string }) => r.category));
+        setExcludedCategories(excluded);
 
-          if (item.quantity === 0) {
-            return {
-              ...item,
-              status: 'zero_qty' as const,
-              existing_name: existing?.product_name,
-              existing_active: existing?.active,
-            };
-          }
-
-          if (existing) {
-            return {
-              ...item,
-              status: 'matched' as const,
-              existing_name: existing.product_name,
-              existing_active: existing.active,
-            };
-          }
-
-          return {
-            ...item,
-            status: 'new' as const,
-          };
-        });
-
-        setClassifiedItems(classified);
+        setClassifiedItems(buildClassified(items, productMap, excluded));
         setStep('preview');
       } catch (error) {
         console.error('Error classifying items:', error);
@@ -835,8 +894,61 @@ export default function TxtUploadPage() {
     const zeroCount = classifiedItems.filter(
       (i) => i.status === 'zero_qty'
     ).length;
-    return { matched: matchedCount, new: newCount, zero: zeroCount };
+    const excludedCount = classifiedItems.filter(
+      (i) => i.status === 'excluded'
+    ).length;
+    return { matched: matchedCount, new: newCount, zero: zeroCount, excluded: excludedCount };
   }, [classifiedItems]);
+
+  // ── Distinct categories present in the uploaded file (+ item counts) ──
+  const fileCategories = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const it of parsedItems) {
+      const c = (it.category || '').trim();
+      if (!c) continue;
+      m.set(c, (m.get(c) || 0) + 1);
+    }
+    return Array.from(m.entries())
+      .map(([category, count]) => ({ category, count }))
+      .sort((a, b) => a.category.localeCompare(b.category));
+  }, [parsedItems]);
+
+  // ── Toggle a category's "not counted" flag (writes the per-store setting
+  // and re-classifies the current preview) ──
+  const toggleCategoryExclusion = useCallback(
+    async (category: string, exclude: boolean) => {
+      if (!currentStoreId) return;
+      setTogglingCategory(category);
+      try {
+        const supabase = createClient();
+        if (exclude) {
+          const { error } = await supabase
+            .from('stock_excluded_categories')
+            .insert({ store_id: currentStoreId, category, created_by: user?.id ?? null });
+          if (error && error.code !== '23505') throw error;
+        } else {
+          const { error } = await supabase
+            .from('stock_excluded_categories')
+            .delete()
+            .eq('store_id', currentStoreId)
+            .eq('category', category);
+          if (error) throw error;
+        }
+
+        const next = new Set(excludedCategories);
+        if (exclude) next.add(category);
+        else next.delete(category);
+        setExcludedCategories(next);
+        setClassifiedItems(buildClassified(parsedItems, productLookupRef.current, next));
+      } catch (err) {
+        console.error('Error toggling excluded category:', err);
+        toast({ type: 'error', title: t('txtUpload.errorTitle') });
+      } finally {
+        setTogglingCategory(null);
+      }
+    },
+    [currentStoreId, excludedCategories, parsedItems, user?.id, t]
+  );
 
   // ── Render: Upload Step ──
   const renderUploadStep = () => (
@@ -1031,7 +1143,7 @@ export default function TxtUploadPage() {
       )}
 
       {/* Summary Stats */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className={cn('grid gap-2', previewStats.excluded > 0 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3')}>
         <div className="rounded-xl bg-emerald-50 px-3 py-3 text-center dark:bg-emerald-900/20">
           <p className="text-lg font-bold text-emerald-700 dark:text-emerald-400">
             {previewStats.matched}
@@ -1056,7 +1168,68 @@ export default function TxtUploadPage() {
             {t('txtUpload.zeroQty')}
           </p>
         </div>
+        {previewStats.excluded > 0 && (
+          <div className="rounded-xl bg-amber-50 px-3 py-3 text-center dark:bg-amber-900/20">
+            <p className="text-lg font-bold text-amber-700 dark:text-amber-400">
+              {previewStats.excluded}
+            </p>
+            <p className="text-[10px] text-amber-600 dark:text-amber-500">
+              {t('txtUpload.excludedCategory')}
+            </p>
+          </div>
+        )}
       </div>
+
+      {/* Category exclusion — pick which categories in this file should NOT
+          be counted. Excluded categories are dropped on save (no product
+          add, no count) and the choice persists per store. */}
+      {fileCategories.length > 0 && (
+        <div className="space-y-3 rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+          <div>
+            <p className="text-sm font-medium text-gray-900 dark:text-white">
+              {t('txtUpload.categoryCountTitle')}
+            </p>
+            <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+              {t('txtUpload.categoryCountHint')}
+            </p>
+          </div>
+          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+            {fileCategories.map(({ category, count }) => {
+              const isExcluded = excludedCategories.has(category);
+              const busy = togglingCategory === category;
+              return (
+                <label
+                  key={category}
+                  className={cn(
+                    'flex cursor-pointer items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm transition-colors',
+                    isExcluded
+                      ? 'border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-900/20'
+                      : 'border-gray-200 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-700/40'
+                  )}
+                >
+                  <span className="min-w-0 flex-1 truncate">
+                    <span className={cn('font-medium', isExcluded ? 'text-amber-700 dark:text-amber-400' : 'text-gray-800 dark:text-gray-200')}>
+                      {category}
+                    </span>
+                    <span className="ml-1.5 text-xs text-gray-400">({count})</span>
+                  </span>
+                  {busy ? (
+                    <Loader2 className="h-4 w-4 shrink-0 animate-spin text-amber-500" />
+                  ) : (
+                    <input
+                      type="checkbox"
+                      checked={isExcluded}
+                      onChange={(e) => toggleCategoryExclusion(category, e.target.checked)}
+                      className="h-4 w-4 shrink-0 rounded border-gray-300 text-amber-600 focus:ring-amber-500 dark:border-gray-600 dark:bg-gray-700"
+                      title={t('txtUpload.excludeCategoryTooltip')}
+                    />
+                  )}
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Options */}
       <div className="space-y-3 rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
@@ -1215,6 +1388,17 @@ export default function TxtUploadPage() {
         text: 'text-amber-700 dark:text-amber-400',
         subText: 'text-amber-600 dark:text-amber-500',
       },
+      ...(summary.excluded && summary.excluded > 0
+        ? [
+            {
+              label: t('txtUpload.excludedCategory'),
+              value: summary.excluded,
+              bg: 'bg-amber-50 dark:bg-amber-900/20',
+              text: 'text-amber-700 dark:text-amber-400',
+              subText: 'text-amber-600 dark:text-amber-500',
+            },
+          ]
+        : []),
     ];
 
     return (

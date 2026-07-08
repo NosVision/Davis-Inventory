@@ -32,6 +32,7 @@ import {
   Package,
   RefreshCw,
   Upload,
+  EyeOff,
 } from 'lucide-react';
 import { ImportCSVModal } from './import-csv-modal';
 
@@ -93,6 +94,13 @@ export default function ProductsPage() {
   // Import modal
   const [showImportModal, setShowImportModal] = useState(false);
 
+  // Excluded-categories modal (categories NOT counted for this store)
+  const [showExcludedModal, setShowExcludedModal] = useState(false);
+  const [excludedCategories, setExcludedCategories] = useState<Set<string>>(new Set());
+  const [excludedLoading, setExcludedLoading] = useState(false);
+  const [newExcludedInput, setNewExcludedInput] = useState('');
+  const [excludedBusy, setExcludedBusy] = useState<string | null>(null);
+
   // Permission helpers
   const canEdit = user
     ? ['owner', 'accountant', 'manager'].includes(user.role)
@@ -142,6 +150,77 @@ export default function ProductsPage() {
     });
     return Array.from(cats).sort();
   }, [products]);
+
+  // ---------------------------------------------------------------------------
+  // Excluded categories (not counted for this store)
+  // ---------------------------------------------------------------------------
+
+  const fetchExcluded = useCallback(async () => {
+    if (!currentStoreId) return;
+    setExcludedLoading(true);
+    try {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from('stock_excluded_categories')
+        .select('category')
+        .eq('store_id', currentStoreId);
+      setExcludedCategories(new Set((data || []).map((r: { category: string }) => r.category)));
+    } finally {
+      setExcludedLoading(false);
+    }
+  }, [currentStoreId]);
+
+  useEffect(() => {
+    if (showExcludedModal) fetchExcluded();
+  }, [showExcludedModal, fetchExcluded]);
+
+  // Categories offered in the modal: those on existing products PLUS any
+  // already-excluded category that has no product yet (e.g. a fresh
+  // category excluded from the upload preview before any product exists).
+  const excludedModalCategories = useMemo(() => {
+    const s = new Set<string>(categories);
+    excludedCategories.forEach((c) => s.add(c));
+    return Array.from(s).sort();
+  }, [categories, excludedCategories]);
+
+  async function toggleExcluded(category: string, exclude: boolean) {
+    if (!currentStoreId) return;
+    setExcludedBusy(category);
+    try {
+      const supabase = createClient();
+      if (exclude) {
+        const { error } = await supabase
+          .from('stock_excluded_categories')
+          .insert({ store_id: currentStoreId, category, created_by: user?.id ?? null });
+        if (error && error.code !== '23505') throw error;
+      } else {
+        const { error } = await supabase
+          .from('stock_excluded_categories')
+          .delete()
+          .eq('store_id', currentStoreId)
+          .eq('category', category);
+        if (error) throw error;
+      }
+      setExcludedCategories((prev) => {
+        const next = new Set(prev);
+        if (exclude) next.add(category);
+        else next.delete(category);
+        return next;
+      });
+    } catch (error) {
+      console.error('Error toggling excluded category:', error);
+      toast({ type: 'error', title: t('products.errorTitle') });
+    } finally {
+      setExcludedBusy(null);
+    }
+  }
+
+  async function addExcludedCategory() {
+    const c = newExcludedInput.trim();
+    if (!c) return;
+    await toggleExcluded(c, true);
+    setNewExcludedInput('');
+  }
 
   const categoryOptions = useMemo(
     () => [
@@ -529,6 +608,14 @@ export default function ProductsPage() {
           </Button>
           {canEdit && (
             <>
+              <Button
+                variant="outline"
+                size="sm"
+                icon={<EyeOff className="h-4 w-4" />}
+                onClick={() => setShowExcludedModal(true)}
+              >
+                {t('products.excludedCategoriesBtn')}
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -1013,6 +1100,90 @@ export default function ProductsPage() {
         onClose={() => setShowImportModal(false)}
         onImported={fetchProducts}
       />
+
+      {/* ---- Excluded Categories Modal ---- */}
+      <Modal
+        isOpen={showExcludedModal}
+        onClose={() => setShowExcludedModal(false)}
+        title={t('products.excludedCategoriesTitle')}
+        size="md"
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            {t('products.excludedCategoriesDesc')}
+          </p>
+
+          {/* Add a category not yet in the list (e.g. before first upload) */}
+          <div className="flex gap-2">
+            <Input
+              placeholder={t('products.excludedAddPlaceholder')}
+              value={newExcludedInput}
+              onChange={(e) => setNewExcludedInput(e.target.value)}
+            />
+            <Button
+              size="sm"
+              onClick={addExcludedCategory}
+              disabled={!newExcludedInput.trim() || excludedBusy === newExcludedInput.trim()}
+            >
+              {t('products.add')}
+            </Button>
+          </div>
+
+          {excludedLoading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+            </div>
+          ) : excludedModalCategories.length === 0 ? (
+            <p className="py-6 text-center text-sm text-gray-400">
+              {t('products.noCategoriesYet')}
+            </p>
+          ) : (
+            <div className="max-h-72 divide-y divide-gray-100 overflow-y-auto rounded-lg ring-1 ring-gray-200 dark:divide-gray-700 dark:ring-gray-700">
+              {excludedModalCategories.map((cat) => {
+                const isExcluded = excludedCategories.has(cat);
+                const busy = excludedBusy === cat;
+                return (
+                  <label
+                    key={cat}
+                    className="flex cursor-pointer items-center justify-between gap-2 px-3 py-2.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                  >
+                    <span
+                      className={cn(
+                        'min-w-0 flex-1 truncate',
+                        isExcluded
+                          ? 'font-medium text-amber-700 dark:text-amber-400'
+                          : 'text-gray-800 dark:text-gray-200'
+                      )}
+                    >
+                      {cat}
+                      {isExcluded && (
+                        <Badge variant="warning" size="sm" className="ml-2">
+                          {t('products.notCounted')}
+                        </Badge>
+                      )}
+                    </span>
+                    {busy ? (
+                      <Loader2 className="h-4 w-4 shrink-0 animate-spin text-amber-500" />
+                    ) : (
+                      <input
+                        type="checkbox"
+                        checked={isExcluded}
+                        onChange={(e) => toggleExcluded(cat, e.target.checked)}
+                        className="h-4 w-4 shrink-0 rounded border-gray-300 text-amber-600 focus:ring-amber-500 dark:border-gray-600 dark:bg-gray-700"
+                      />
+                    )}
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        <ModalFooter>
+          <Button variant="outline" onClick={() => setShowExcludedModal(false)}>
+            {t('products.close')}
+          </Button>
+        </ModalFooter>
+      </Modal>
     </div>
   );
 }

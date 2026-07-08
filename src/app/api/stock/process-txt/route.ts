@@ -68,12 +68,30 @@ export async function POST(request: NextRequest) {
       productMap.set(p.product_code, p);
     });
 
+    // ── Step 1b: Categories excluded from stock counting for this store ──
+    // Items in these categories are dropped entirely: not auto-added to
+    // products, not deactivated/reactivated, and not saved as count rows.
+    const { data: exCats } = await supabase
+      .from('stock_excluded_categories')
+      .select('category')
+      .eq('store_id', store_id);
+    const excludedSet = new Set(
+      (exCats || []).map((r: { category: string }) => r.category)
+    );
+
+    const excludedCount = excludedSet.size
+      ? items.filter((it) => it.category && excludedSet.has(it.category)).length
+      : 0;
+    const workItems = excludedSet.size
+      ? items.filter((it) => !(it.category && excludedSet.has(it.category)))
+      : items;
+
     // ── Step 2: Classify each item ──
     const matched: TxtItem[] = [];
     const newItems: TxtItem[] = [];
     const zeroQty: TxtItem[] = [];
 
-    for (const item of items) {
+    for (const item of workItems) {
       const existing = productMap.get(item.product_code);
 
       if (item.quantity === 0) {
@@ -106,7 +124,22 @@ export async function POST(request: NextRequest) {
     }> = [];
 
     if (newItems.length > 0) {
-      const newProductRows = newItems.map((item) => ({
+      // Collapse duplicate rows for the same product_code before insert.
+      // The POS export lists some products (notably newly-added fresh
+      // materials, all with qty 0) more than once. Inserting the raw list
+      // would repeat (store_id, product_code) pairs and violate the
+      // products_store_id_product_code_key unique constraint, which
+      // previously aborted the entire upload. Keep the highest-qty row per
+      // code so `active` reflects stock if any occurrence has some.
+      const newByCode = new Map<string, TxtItem>();
+      for (const item of newItems) {
+        const prev = newByCode.get(item.product_code);
+        if (!prev || item.quantity > prev.quantity) {
+          newByCode.set(item.product_code, item);
+        }
+      }
+
+      const newProductRows = Array.from(newByCode.values()).map((item) => ({
         store_id,
         product_code: item.product_code,
         product_name: item.product_name,
@@ -115,9 +148,16 @@ export async function POST(request: NextRequest) {
         active: item.quantity > 0,
       }));
 
+      // upsert + ignoreDuplicates (INSERT ... ON CONFLICT DO NOTHING) so a
+      // code that already exists (e.g. added by a concurrent upload) is
+      // skipped instead of failing the batch. .select() returns only the
+      // rows actually inserted.
       const { data: insertedProducts, error: insertError } = await supabase
         .from('products')
-        .insert(newProductRows)
+        .upsert(newProductRows, {
+          onConflict: 'store_id,product_code',
+          ignoreDuplicates: true,
+        })
         .select('id, product_code, product_name, active');
 
       if (insertError) {
@@ -248,8 +288,9 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Step 6: Save to ocr_logs + ocr_items ──
-    // Determine which items to save
-    const itemsToSave = items.filter(
+    // Determine which items to save (excluded-category items already
+    // filtered out of workItems above, so they never become count rows).
+    const itemsToSave = workItems.filter(
       (item) => item.quantity > 0 || include_zero_qty
     );
 
@@ -281,7 +322,7 @@ export async function POST(request: NextRequest) {
       .insert({
         store_id,
         upload_date,
-        count_items: items.length,
+        count_items: workItems.length,
         processed_items: itemsToSave.length,
         status: itemsToSave.length > 0 ? 'completed' : 'no_items',
         upload_method: 'txt',
@@ -333,6 +374,7 @@ export async function POST(request: NextRequest) {
         zero_qty: zeroQty.length,
         deactivated: deactivatedCount,
         reactivated: reactivatedCount,
+        excluded: excludedCount,
       },
     });
   } catch (error) {
