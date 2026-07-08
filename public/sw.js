@@ -1,4 +1,4 @@
-const CACHE_NAME = 'davismanage-v1';
+const CACHE_NAME = 'davismanage-v2';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
