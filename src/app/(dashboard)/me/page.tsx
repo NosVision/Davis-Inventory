@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { useLocale } from 'next-intl';
 import {
   Clock,
@@ -24,6 +25,7 @@ import {
 import { PageHeader } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { RequiredPolicyBanner } from './_components/required-policy-banner';
+import { MeSummary } from './_components/me-summary';
 
 // Staff ESS home (P5.3) — the personal hub that makes every /me/* self-service surface reachable
 // in one place (these pages were previously only reachable by URL). Self-contained locale strings,
@@ -83,25 +85,54 @@ export default function MeHomePage() {
   const title = isTh ? 'ของฉัน' : 'My workspace';
   const subtitle = isTh ? 'บริการพนักงาน — เวลา ลางาน สลิป และประเมินผล' : 'Employee self-service — time, leave, payslips, and reviews';
 
+  // Per-tile "new activity" counts (unread notifications + must-act items).
+  const [badges, setBadges] = useState<Record<string, number>>({});
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/hr/ess/badges');
+        if (!res.ok) return;
+        const json = await res.json();
+        if (alive) setBadges((json.badges ?? {}) as Record<string, number>);
+      } catch {
+        /* badges are best-effort — never block the hub */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   return (
     <div className="mx-auto max-w-4xl space-y-4 p-4">
       <PageHeader title={title} subtitle={subtitle} />
 
       <RequiredPolicyBanner />
 
+      <MeSummary />
+
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        {TILES.map(({ key, icon: Icon, href, color }) => (
-          <Link
-            key={key}
-            href={href}
-            className="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-4 transition-colors hover:border-teal-300 hover:bg-teal-50/40 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-teal-700 dark:hover:bg-teal-900/10"
-          >
-            <div className={cn('flex h-10 w-10 items-center justify-center rounded-lg', COLOR[color])}>
-              <Icon className="h-5 w-5" />
-            </div>
-            <span className="text-sm font-medium text-gray-900 dark:text-white">{isTh ? LABELS[key].th : LABELS[key].en}</span>
-          </Link>
-        ))}
+        {TILES.map(({ key, icon: Icon, href, color }) => {
+          const count = badges[key] ?? 0;
+          return (
+            <Link
+              key={key}
+              href={href}
+              className="relative flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-4 transition-colors hover:border-teal-300 hover:bg-teal-50/40 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-teal-700 dark:hover:bg-teal-900/10"
+            >
+              {count > 0 && (
+                <span className="absolute right-2 top-2 inline-flex min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[11px] font-bold leading-none text-white shadow-sm">
+                  {count > 99 ? '99+' : count}
+                </span>
+              )}
+              <div className={cn('flex h-10 w-10 items-center justify-center rounded-lg', COLOR[color])}>
+                <Icon className="h-5 w-5" />
+              </div>
+              <span className="text-sm font-medium text-gray-900 dark:text-white">{isTh ? LABELS[key].th : LABELS[key].en}</span>
+            </Link>
+          );
+        })}
       </div>
     </div>
   );
