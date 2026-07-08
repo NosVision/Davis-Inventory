@@ -14,6 +14,7 @@ import {
   startOfTodayBangkokISO,
 } from '@/lib/utils/date';
 import { Card, CardHeader, toast } from '@/components/ui';
+import { CommandCenter, type HrDaily } from './_components/command-center';
 import {
   Store,
   Wine,
@@ -678,6 +679,10 @@ export default function OverviewPage() {
   });
   const [activities, setActivities] = useState<AuditLogEntry[]>([]);
   const [storeStatuses, setStoreStatuses] = useState<StoreStatus[]>([]);
+  // Command-center extras (owner): HR "who's in today" + tasks needing attention.
+  const [hrDaily, setHrDaily] = useState<HrDaily | null>(null);
+  const [hrLoaded, setHrLoaded] = useState(false);
+  const [tasksCount, setTasksCount] = useState<number | null>(null);
   // Per-store-card expansion state (owner view). Collapsed by default — users
   // see a lightweight header + badges and click to reveal full metric breakdown.
   const [expandedStores, setExpandedStores] = useState<Set<string>>(new Set());
@@ -1052,6 +1057,37 @@ export default function OverviewPage() {
     fetchData();
   }, [fetchData]);
 
+  // Command-center extras — best-effort, non-blocking. HR daily needs
+  // HR access (owner passes); a non-200 just hides the "team today" widget.
+  useEffect(() => {
+    if (!isOwner) { setHrLoaded(false); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const [hrRes, tkRes] = await Promise.all([
+          fetch('/api/hr/dashboard/daily'),
+          fetch('/api/tasks/my-count'),
+        ]);
+        if (cancelled) return;
+        if (hrRes.ok) {
+          const j = await hrRes.json();
+          setHrDaily(j.data ?? null);
+          setHrLoaded(true);
+        } else {
+          setHrDaily(null);
+          setHrLoaded(false);
+        }
+        if (tkRes.ok) {
+          const j = await tkRes.json();
+          setTasksCount(typeof j.count === 'number' ? j.count : null);
+        }
+      } catch {
+        if (!cancelled) setHrLoaded(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isOwner]);
+
 
 
   // -----------------------------------------------------------------------
@@ -1096,9 +1132,20 @@ export default function OverviewPage() {
 
 
 
-      {/* ---- Per-Store Status (Owner only) ---- */}
-      {/* ---- Per-store comparison chart (owner only) ---- */}
+      {/* ---- Command Center (owner) — today-first summary ---- */}
       {isOwner && storeStatuses.length > 0 && (
+        <CommandCenter
+          stores={storeStatuses}
+          expiringDeposits={data.expiringDeposits}
+          commissionThisMonth={data.commissionThisMonth}
+          hrDaily={hrDaily}
+          hrLoaded={hrLoaded}
+          tasksCount={tasksCount}
+        />
+      )}
+
+      {/* ---- Legacy per-store comparison — superseded by the branch matrix above ---- */}
+      {false && (
         <Card padding="none">
           <CardHeader
             title={t('compareHeading')}
