@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { PageHeader } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
+import { RequiredPolicyBanner } from './_components/required-policy-banner';
 
 // Staff ESS home (P5.3) — the personal hub that makes every /me/* self-service surface reachable
 // in one place (these pages were previously only reachable by URL). Self-contained locale strings,
@@ -85,6 +86,8 @@ export default function MeHomePage() {
   return (
     <div className="mx-auto max-w-4xl space-y-4 p-4">
       <PageHeader title={title} subtitle={subtitle} />
+
+      <RequiredPolicyBanner />
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         {TILES.map(({ key, icon: Icon, href, color }) => (

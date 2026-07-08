@@ -21,7 +21,7 @@ export async function GET() {
       .order('title'),
     service
       .from('hr_policy_acknowledgements')
-      .select('policy_id,policy_version')
+      .select('policy_id,policy_version,acked_at')
       .eq('user_id', user.id),
   ]);
 
@@ -33,10 +33,10 @@ export async function GET() {
   }
 
   const acks = acksRes.data ?? [];
-  const data = (policiesRes.data ?? []).map((p) => ({
-    ...p,
-    acked: acks.some((a) => a.policy_id === p.id && a.policy_version === p.version),
-  }));
+  const data = (policiesRes.data ?? []).map((p) => {
+    const ack = acks.find((a) => a.policy_id === p.id && a.policy_version === p.version);
+    return { ...p, acked: !!ack, acked_at: ack?.acked_at ?? null };
+  });
 
   return NextResponse.json({ data });
 }
