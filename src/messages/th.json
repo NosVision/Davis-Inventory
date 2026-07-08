@@ -1030,12 +1030,39 @@
       "themeTitle": "Dark Mode / Light Mode",
       "themeDesc": "สลับโหมดมืด/สว่าง",
       "summaryTitle": "สรุปเมนูทั้งหมดตาม Role",
-      "summaryDesc": "ตารางสรุปการเข้าถึงเมนู"
+      "summaryDesc": "ตารางสรุปการเข้าถึงเมนู",
+      "hrOverviewTitle": "HR — ภาพรวม & แดชบอร์ด",
+      "hrOverviewDesc": "การเข้าใช้งานโมดูล HR สิทธิ์ เมนูทั้งหมด และแดชบอร์ดวันนี้",
+      "hrEmployeesTitle": "HR — พนักงาน & ยืนยันตัวตน",
+      "hrEmployeesDesc": "ทะเบียนพนักงาน เพิ่ม/แก้ไข/ย้ายสาขา และการยืนยันตัวตนพนักงาน",
+      "hrOrgTitle": "HR — โครงสร้างองค์กร & กติกา",
+      "hrOrgDesc": "ตำแหน่ง แผนก ผังองค์กร บริษัท กติกาเงินเดือน และนโยบายระบบ",
+      "hrTimeTitle": "HR — ลงเวลา & ตารางงาน",
+      "hrTimeDesc": "ลงเวลา จุดเช็คอิน ตารางกะ และบันทึกเวลา (Timesheet)",
+      "hrLeaveTitle": "HR — การลา & คำขอเวลา",
+      "hrLeaveDesc": "อนุมัติการลา ประเภทการลา คำขอ OT/แก้เวลา และสลับวันหยุด",
+      "hrDisciplineTitle": "HR — ใบเตือน เบิกจ่าย & พ้นสภาพ",
+      "hrDisciplineDesc": "ใบเตือน เบิกค่าใช้จ่าย คำขอแก้ไขข้อมูล และการพ้นสภาพพนักงาน",
+      "hrPayrollTitle": "HR — เงินเดือน",
+      "hrPayrollDesc": "งวดจ่ายเงินเดือน คำนวณ ภาษี ประกันสังคม สลิป และไฟล์ธนาคาร",
+      "hrDocumentsTitle": "HR — เอกสาร & หนังสือรับรอง",
+      "hrDocumentsDesc": "คำขอเอกสาร/50ทวิ และการออกหนังสือรับรอง",
+      "hrExtraPayTitle": "HR — เซอร์วิสชาร์จ & ทิป",
+      "hrExtraPayDesc": "กองเซอร์วิสชาร์จและกองทุนทิป จัดสรร หักรายการ และปิดกอง",
+      "hrEvaluationTitle": "HR — ประเมินผล",
+      "hrEvaluationDesc": "รอบประเมิน เกณฑ์ ผู้ประเมิน ผลคะแนน และการจ่ายตามผล",
+      "hrAssetsCommsTitle": "HR — ทรัพย์สิน นโยบาย & ประกาศ",
+      "hrAssetsCommsDesc": "ทะเบียนทรัพย์สิน นโยบายบริษัท และประกาศถึงพนักงาน",
+      "hrAuditTitle": "HR — ตรวจสอบ & รายงาน",
+      "hrAuditDesc": "บันทึกการตรวจสอบ (Audit log) และรายงาน HR ทั้งหมด",
+      "hrEssTitle": "HR — ฝั่งพนักงาน (ของฉัน)",
+      "hrEssDesc": "หน้าที่พนักงานใช้เอง (/me) และข้อมูลไหลเข้าเมนู HR อย่างไร"
     },
     "tocGroups": {
       "systemOverview": "ภาพรวมระบบ",
       "roleMenus": "เมนูตาม Role",
-      "mainFeatures": "ฟีเจอร์หลัก"
+      "mainFeatures": "ฟีเจอร์หลัก",
+      "hr": "ระบบ HR (บุคคล)"
     }
   },
   "dataTable": {

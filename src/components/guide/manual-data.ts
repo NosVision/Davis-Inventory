@@ -1,4 +1,4 @@
-import type { UserRole } from '@/types/roles';
+import type { UserRole, Permission } from '@/types/roles';
 
 export type ManualSectionId =
   | 'intro'
@@ -22,7 +22,20 @@ export type ManualSectionId =
   | 'profile'
   | 'theme'
   | 'summary'
-  | 'images';
+  | 'images'
+  | 'hrOverview'
+  | 'hrEmployees'
+  | 'hrOrg'
+  | 'hrTime'
+  | 'hrLeave'
+  | 'hrDiscipline'
+  | 'hrPayroll'
+  | 'hrDocuments'
+  | 'hrExtraPay'
+  | 'hrEvaluation'
+  | 'hrAssetsComms'
+  | 'hrAudit'
+  | 'hrEss';
 
 export interface ManualSection {
   id: ManualSectionId;
@@ -33,6 +46,8 @@ export interface ManualSection {
   iconBg: string;
   /** 'all' = shown to every role, otherwise only shown if user role is in the list */
   roles: 'all' | UserRole[];
+  /** Also show the section to any user granted this permission (mirrors module registry gating) */
+  permission?: Permission;
   tocGroupKey?: string;
 }
 
@@ -219,6 +234,150 @@ export const manualSections: ManualSection[] = [
     iconBg: 'bg-amber-500',
     roles: ['owner', 'accountant', 'manager'],
     tocGroupKey: 'tocGroups.mainFeatures',
+  },
+  // ── HR System (owner / can_manage_hr) ──
+  {
+    id: 'hrOverview',
+    number: 19,
+    titleKey: 'sections.hrOverviewTitle',
+    descKey: 'sections.hrOverviewDesc',
+    icon: '🧑‍💼',
+    iconBg: 'bg-teal-500',
+    roles: ['owner'],
+    permission: 'can_manage_hr',
+    tocGroupKey: 'tocGroups.hr',
+  },
+  {
+    id: 'hrEmployees',
+    number: 20,
+    titleKey: 'sections.hrEmployeesTitle',
+    descKey: 'sections.hrEmployeesDesc',
+    icon: '👥',
+    iconBg: 'bg-teal-500',
+    roles: ['owner'],
+    permission: 'can_manage_hr',
+    tocGroupKey: 'tocGroups.hr',
+  },
+  {
+    id: 'hrOrg',
+    number: 21,
+    titleKey: 'sections.hrOrgTitle',
+    descKey: 'sections.hrOrgDesc',
+    icon: '🏢',
+    iconBg: 'bg-cyan-500',
+    roles: ['owner'],
+    permission: 'can_manage_hr',
+    tocGroupKey: 'tocGroups.hr',
+  },
+  {
+    id: 'hrTime',
+    number: 22,
+    titleKey: 'sections.hrTimeTitle',
+    descKey: 'sections.hrTimeDesc',
+    icon: '⏰',
+    iconBg: 'bg-sky-500',
+    roles: ['owner'],
+    permission: 'can_manage_hr',
+    tocGroupKey: 'tocGroups.hr',
+  },
+  {
+    id: 'hrLeave',
+    number: 23,
+    titleKey: 'sections.hrLeaveTitle',
+    descKey: 'sections.hrLeaveDesc',
+    icon: '🌴',
+    iconBg: 'bg-emerald-500',
+    roles: ['owner'],
+    permission: 'can_manage_hr',
+    tocGroupKey: 'tocGroups.hr',
+  },
+  {
+    id: 'hrDiscipline',
+    number: 24,
+    titleKey: 'sections.hrDisciplineTitle',
+    descKey: 'sections.hrDisciplineDesc',
+    icon: '⚠️',
+    iconBg: 'bg-amber-500',
+    roles: ['owner'],
+    permission: 'can_manage_hr',
+    tocGroupKey: 'tocGroups.hr',
+  },
+  {
+    id: 'hrPayroll',
+    number: 25,
+    titleKey: 'sections.hrPayrollTitle',
+    descKey: 'sections.hrPayrollDesc',
+    icon: '💰',
+    iconBg: 'bg-green-600',
+    roles: ['owner'],
+    permission: 'can_manage_hr',
+    tocGroupKey: 'tocGroups.hr',
+  },
+  {
+    id: 'hrDocuments',
+    number: 26,
+    titleKey: 'sections.hrDocumentsTitle',
+    descKey: 'sections.hrDocumentsDesc',
+    icon: '📄',
+    iconBg: 'bg-indigo-500',
+    roles: ['owner'],
+    permission: 'can_manage_hr',
+    tocGroupKey: 'tocGroups.hr',
+  },
+  {
+    id: 'hrExtraPay',
+    number: 27,
+    titleKey: 'sections.hrExtraPayTitle',
+    descKey: 'sections.hrExtraPayDesc',
+    icon: '🪙',
+    iconBg: 'bg-yellow-500',
+    roles: ['owner'],
+    permission: 'can_manage_hr',
+    tocGroupKey: 'tocGroups.hr',
+  },
+  {
+    id: 'hrEvaluation',
+    number: 28,
+    titleKey: 'sections.hrEvaluationTitle',
+    descKey: 'sections.hrEvaluationDesc',
+    icon: '⭐',
+    iconBg: 'bg-orange-500',
+    roles: ['owner'],
+    permission: 'can_manage_hr',
+    tocGroupKey: 'tocGroups.hr',
+  },
+  {
+    id: 'hrAssetsComms',
+    number: 29,
+    titleKey: 'sections.hrAssetsCommsTitle',
+    descKey: 'sections.hrAssetsCommsDesc',
+    icon: '📦',
+    iconBg: 'bg-violet-500',
+    roles: ['owner'],
+    permission: 'can_manage_hr',
+    tocGroupKey: 'tocGroups.hr',
+  },
+  {
+    id: 'hrAudit',
+    number: 30,
+    titleKey: 'sections.hrAuditTitle',
+    descKey: 'sections.hrAuditDesc',
+    icon: '🛡️',
+    iconBg: 'bg-gray-500',
+    roles: ['owner'],
+    permission: 'can_manage_hr',
+    tocGroupKey: 'tocGroups.hr',
+  },
+  {
+    id: 'hrEss',
+    number: 31,
+    titleKey: 'sections.hrEssTitle',
+    descKey: 'sections.hrEssDesc',
+    icon: '👤',
+    iconBg: 'bg-teal-600',
+    roles: ['owner'],
+    permission: 'can_manage_hr',
+    tocGroupKey: 'tocGroups.hr',
   },
   {
     id: 'profile',
