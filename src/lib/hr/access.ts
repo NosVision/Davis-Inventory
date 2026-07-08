@@ -13,5 +13,5 @@
  * server routes without casts.
  */
 export function canManageHr(user: { role: string; permissions: readonly string[] }): boolean {
-  return user.role === 'owner' || user.permissions.includes('can_manage_hr');
+  return user.role === 'owner' || user.role === 'hr' || user.permissions.includes('can_manage_hr');
 }

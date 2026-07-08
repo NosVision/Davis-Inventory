@@ -1,4 +1,4 @@
-export type UserRole = 'owner' | 'accountant' | 'manager' | 'bar' | 'technician' | 'staff' | 'customer' | 'hq';
+export type UserRole = 'owner' | 'accountant' | 'manager' | 'bar' | 'technician' | 'staff' | 'customer' | 'hq' | 'hr';
 
 export type Permission =
   | 'can_count_stock'
@@ -50,6 +50,18 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[] | ['*']> = {
   staff: ['can_manage_deposit', 'can_request_repair'],
   customer: ['can_view_own_deposits', 'can_request_withdrawal'],
   hq: ['can_transfer', 'can_view_reports'],
+  // HR = ฝ่ายบุคคล: ทุกหน้ายกเว้นฝากเหล้า + นับสต๊อก (จึงไม่มี can_*_deposit / can_*_stock)
+  hr: [
+    'can_manage_hr',
+    'can_view_reports',
+    'can_manage_users',
+    'can_manage_settings',
+    'can_manage_commission',
+    'can_transfer',
+    'can_borrow',
+    'can_request_repair',
+    'can_manage_repair',
+  ],
 };
 
 export const ROLE_LABELS: Record<UserRole, string> = {
@@ -61,6 +73,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   staff: 'พนักงาน',
   customer: 'ลูกค้า',
   hq: 'พนักงานคลังกลาง',
+  hr: 'ฝ่ายบุคคล',
 };
 
 /** Translation keys for role labels — use with useTranslations() */
@@ -73,6 +86,7 @@ export const ROLE_LABEL_KEYS: Record<UserRole, string> = {
   staff: 'roles.staff',
   customer: 'roles.customer',
   hq: 'roles.hq',
+  hr: 'roles.hr',
 };
 
 export const ROLE_HOME_ROUTES: Record<UserRole, string> = {
@@ -84,4 +98,5 @@ export const ROLE_HOME_ROUTES: Record<UserRole, string> = {
   staff: '/chat',
   customer: '/customer',
   hq: '/hq-warehouse',
+  hr: '/hr',
 };

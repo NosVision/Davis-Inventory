@@ -20,8 +20,9 @@ export default async function HrLayout({ children }: { children: React.ReactNode
   ]);
 
   const isOwner = profile?.role === 'owner';
+  const isHr = profile?.role === 'hr';
   const hasHrGrant = (perms ?? []).some((p) => p.permission === 'can_manage_hr');
-  if (!isOwner && !hasHrGrant) redirect('/');
+  if (!isOwner && !isHr && !hasHrGrant) redirect('/');
 
   return <>{children}</>;
 }

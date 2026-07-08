@@ -16,10 +16,10 @@ import {
 
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 // Valid employee roles for onboarding (never 'owner'/'customer').
-const ALLOWED_NEW_ROLES = ['staff', 'bar', 'manager', 'accountant', 'hq', 'technician'];
+const ALLOWED_NEW_ROLES = ['staff', 'bar', 'manager', 'accountant', 'hq', 'technician', 'hr'];
 // Powerful/app-wide roles — only an OWNER caller may mint these (accountant is a
-// wildcard '*' role = owner-equivalent; manager/hq carry cross-cutting access).
-const ELEVATED_ROLES = ['accountant', 'manager', 'hq'];
+// wildcard '*' role = owner-equivalent; manager/hq/hr carry cross-cutting access).
+const ELEVATED_ROLES = ['accountant', 'manager', 'hq', 'hr'];
 const SEARCH_CAP = 500;
 
 const LIST_SELECT =

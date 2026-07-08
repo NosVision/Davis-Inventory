@@ -14,6 +14,7 @@ export function RoleTag({ role, label }: { role: UserRole; label?: string }) {
     accountant: 'Accountant',
     hq: 'HQ',
     customer: 'Customer',
+    hr: 'HR',
   };
   return (
     <span

@@ -28,6 +28,8 @@ const PUBLIC_ROUTES = [
   '/api/hr/payrun-review',       // token-gated payrun review API (hashed-token check inside)
 ];
 const CUSTOMER_ROUTES = ['/customer'];
+// The 'hr' role is denied these route trees (pages + their APIs).
+const HR_BLOCKED_ROUTES = ['/deposit', '/stock', '/api/stock'];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -98,6 +100,14 @@ export async function middleware(request: NextRequest) {
   // Customer can only access /customer routes
   if (role === 'customer' && !CUSTOMER_ROUTES.some((r) => pathname.startsWith(r))) {
     return NextResponse.redirect(new URL('/customer', request.url));
+  }
+
+  // HR role: no access to the deposit ("ฝากเหล้า") or stock-count ("นับสต๊อก") systems.
+  // The menu already hides them; this hard-blocks a direct URL / API hit.
+  if (role === 'hr' && HR_BLOCKED_ROUTES.some((r) => pathname.startsWith(r))) {
+    return pathname.startsWith('/api/')
+      ? NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      : NextResponse.redirect(new URL('/hr', request.url));
   }
 
   // Non-customer cannot access /customer routes

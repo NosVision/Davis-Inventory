@@ -116,7 +116,8 @@
     "technician": "Technician",
     "staff": "Staff",
     "customer": "Customer",
-    "hq": "HQ Warehouse Staff"
+    "hq": "HQ Warehouse Staff",
+    "hr": "HR"
   },
   "nav": {
     "darkMode": "Dark mode",
@@ -2626,6 +2627,7 @@
     "roleManager": "Store Manager",
     "roleAccountant": "Accountant",
     "roleHQ": "HQ Warehouse Staff",
+    "roleHR": "HR",
     "branch": "Branch",
     "selectBranch": "Select branch",
     "cancel": "Cancel",

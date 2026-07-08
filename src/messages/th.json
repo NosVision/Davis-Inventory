@@ -116,7 +116,8 @@
     "technician": "ช่าง",
     "staff": "พนักงาน",
     "customer": "ลูกค้า",
-    "hq": "พนักงานคลังกลาง"
+    "hq": "พนักงานคลังกลาง",
+    "hr": "ฝ่ายบุคคล"
   },
   "nav": {
     "darkMode": "โหมดมืด",
@@ -2627,6 +2628,7 @@
     "roleManager": "คนคุมร้าน (Manager)",
     "roleAccountant": "บัญชี (Accountant)",
     "roleHQ": "พนักงานคลังกลาง (HQ)",
+    "roleHR": "ฝ่ายบุคคล (HR)",
     "branch": "สาขา",
     "selectBranch": "เลือกสาขา",
     "cancel": "ยกเลิก",

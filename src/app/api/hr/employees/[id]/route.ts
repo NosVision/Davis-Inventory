@@ -142,6 +142,15 @@ export async function PUT(
     if (dnErr) console.error('hr employee update: display_name update failed', current.profile_id, dnErr.message);
   }
 
+  // Access follows employment status (owner 2026-07-08): the moment HR marks someone
+  // resigned/terminated, deactivate their login so they're locked out immediately (the dashboard
+  // layout redirects inactive profiles to /login). Re-activate if they return to active/probation.
+  if ('status' in fields) {
+    const shouldBeActive = !TERMINAL_STATUSES.includes(effectiveStatus);
+    const { error: actErr } = await service.from('profiles').update({ active: shouldBeActive }).eq('id', current.profile_id);
+    if (actErr) console.error('hr employee update: active toggle failed', current.profile_id, actErr.message);
+  }
+
   await logHrAudit(service, {
     actorId: auth.userId,
     action: 'update',

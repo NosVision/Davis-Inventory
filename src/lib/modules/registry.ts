@@ -332,8 +332,13 @@ export function getModulesForRole(role: UserRole): ModuleConfig[] {
  *
  * Owner (role มี '*' wildcard) เห็นทุกโมดูลอยู่แล้วผ่าน role check
  */
+// The 'hr' role reaches every module EXCEPT the deposit + stock-count systems (owner 2026-07-08).
+const HR_EXCLUDED_MODULES = new Set(['deposit', 'stock']);
+
 export function getAccessibleModules(user: AuthUser): ModuleConfig[] {
   return modules.filter((m) => {
+    // HR: all pages except deposit/stock (also hard-blocked in middleware).
+    if (user.role === 'hr') return !HR_EXCLUDED_MODULES.has(m.id);
     // 1) role-based access — พฤติกรรมเดิม
     if (m.roles.includes(user.role)) return true;
     // 2) individual permission unlock — ต้องประกาศ permission ไว้

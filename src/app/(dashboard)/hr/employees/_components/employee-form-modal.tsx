@@ -87,7 +87,7 @@ interface SensitiveSnapshot {
   tax_id: string | null;
 }
 
-const ROLE_OPTIONS = ['staff', 'bar', 'manager', 'technician', 'hq', 'accountant'] as const;
+const ROLE_OPTIONS = ['staff', 'bar', 'manager', 'technician', 'hq', 'accountant', 'hr'] as const;
 const DOC_SLOTS: DocumentType[] = ['id_card', 'signature', 'contract'];
 const TERMINAL_STATUSES = ['resigned', 'terminated'];
 
