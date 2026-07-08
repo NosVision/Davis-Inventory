@@ -11,6 +11,7 @@ import {
   BookOpen,
   UserCircle,
   Warehouse as WarehouseIcon,
+  LayoutGrid,
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { useAuthStore } from '@/stores/auth-store';
@@ -33,7 +34,7 @@ interface NavItem {
 
 // owner/manager/accountant/hq (จอเล็ก)
 const desktopRoleNavItems: NavItem[] = [
-  { labelKey: 'nav.warehouse', href: '/warehouse', icon: WarehouseIcon, color: 'indigo' },
+  { labelKey: 'nav.main', href: '/warehouse', icon: LayoutGrid, color: 'indigo' },
   { labelKey: 'nav.chat', href: '/chat', icon: MessageSquare, color: 'blue' },
   { labelKey: 'nav.overview', href: '/overview', icon: LayoutDashboard, color: 'violet' },
   { labelKey: 'nav.me', href: '/me', icon: UserCircle, color: 'teal' },

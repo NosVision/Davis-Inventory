@@ -43,18 +43,6 @@ export const modules: ModuleConfig[] = [
     groupKey: 'moduleGroups.main',
   },
   {
-    id: 'inbox',
-    nameKey: 'modules.inbox.name',
-    descriptionKey: 'modules.inbox.description',
-    icon: 'inbox',
-    color: 'fuchsia',
-    href: '/inbox',
-    // Approvals hub — owner + HQ (HQ = all approval surfaces, owner ask 2026-07-08).
-    roles: ['owner', 'hq'],
-    badge: 'pending_count',
-    groupKey: 'moduleGroups.main',
-  },
-  {
     id: 'chat',
     nameKey: 'modules.chat.name',
     descriptionKey: 'modules.chat.description',
@@ -88,7 +76,31 @@ export const modules: ModuleConfig[] = [
     groupKey: 'moduleGroups.main',
   },
 
-  // ─── คลังสินค้า (Inventory) ───
+  // ─── คลังสินค้า (Inventory) — คลังกลางบนสุด, ตามด้วยกล่องอนุมัติ, แล้วงานคลังรายสาขา ───
+  {
+    id: 'hq-warehouse',
+    nameKey: 'modules.hqWarehouse.name',
+    descriptionKey: 'modules.hqWarehouse.description',
+    icon: 'warehouse',
+    color: 'teal',
+    href: '/hq-warehouse',
+    roles: ['owner', 'hq'],
+    permission: 'can_transfer',
+    groupKey: 'moduleGroups.warehouse',
+  },
+  {
+    id: 'inbox',
+    nameKey: 'modules.inbox.name',
+    descriptionKey: 'modules.inbox.description',
+    icon: 'inbox',
+    color: 'fuchsia',
+    href: '/inbox',
+    // Approvals hub — owner + HQ (HQ = all approval surfaces, owner ask 2026-07-08).
+    // จัดกลุ่มไว้ที่ "คลังสินค้า" (owner ask 2026-07-08).
+    roles: ['owner', 'hq'],
+    badge: 'pending_count',
+    groupKey: 'moduleGroups.warehouse',
+  },
   {
     id: 'stock',
     nameKey: 'modules.stock.name',
@@ -134,19 +146,8 @@ export const modules: ModuleConfig[] = [
     permission: 'can_borrow',
     groupKey: 'moduleGroups.warehouse',
   },
-  {
-    id: 'hq-warehouse',
-    nameKey: 'modules.hqWarehouse.name',
-    descriptionKey: 'modules.hqWarehouse.description',
-    icon: 'warehouse',
-    color: 'teal',
-    href: '/hq-warehouse',
-    roles: ['owner', 'hq'],
-    permission: 'can_transfer',
-    groupKey: 'moduleGroups.warehouse',
-  },
 
-  // ─── คอมมิชชั่น (AE) ───
+  // ─── บัญชี (Accounting) — คอมมิชชั่น/AE ───
   {
     id: 'commission',
     nameKey: 'modules.commission.name',
@@ -157,7 +158,7 @@ export const modules: ModuleConfig[] = [
     // AE — owner, accountant, cashier.
     roles: ['owner', 'accountant', 'cashier'],
     permission: 'can_manage_commission',
-    groupKey: 'moduleGroups.warehouse',
+    groupKey: 'moduleGroups.accounting',
   },
 
   // ─── งานซ่อมบำรุง (ซ่อนเมนูชั่วคราว — โค้ด/หน้า/DB ยังอยู่ครบ; ลบคอมเมนต์เพื่อเปิดคืน) ───
