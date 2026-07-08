@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { formatThaiDate } from '@/lib/utils/format';
 import { Loader2, ShieldAlert } from 'lucide-react';
 import {
   Button,
@@ -89,7 +90,7 @@ function formatDateTime(value: string | null): string {
 function formatDate(value: string | null): string {
   if (!value) return '—';
   const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('th-TH');
+  return Number.isNaN(d.getTime()) ? '—' : formatThaiDate(d);
 }
 
 export default function MyWarningsPage() {

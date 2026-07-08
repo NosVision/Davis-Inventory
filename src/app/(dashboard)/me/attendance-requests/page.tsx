@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2, CalendarClock, Send } from 'lucide-react';
+import { formatThaiDate, formatThaiDateTime } from '@/lib/utils/format';
 import {
   Button,
   toast,
@@ -256,7 +257,7 @@ export default function MyAttendanceRequestsPage() {
               <option value="">{t('selectPunch')}</option>
               {punches.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {typeLabel(p.type)} · {new Date(p.ts).toLocaleString()}
+                  {typeLabel(p.type)} · {formatThaiDateTime(p.ts)}
                 </option>
               ))}
             </select>
@@ -319,7 +320,7 @@ export default function MyAttendanceRequestsPage() {
               <DataCard
                 key={r.id}
                 accent={STATUS_TONE[r.status]}
-                title={`${r.business_date} · ${kindLabel(r.kind)}`}
+                title={`${formatThaiDate(r.business_date)} · ${kindLabel(r.kind)}`}
                 status={
                   <>
                     <StatusBadge tone={STATUS_TONE[r.status]} label={statusLabel(r.status)} />

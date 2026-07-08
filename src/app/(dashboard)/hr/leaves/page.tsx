@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2, Inbox, FileText } from 'lucide-react';
 import { Button, Select, PageHeader, ViewToggle, useViewMode, DataList, DataCard, StatusBadge, SkeletonList, toast } from '@/components/ui';
+import { formatThaiDate } from '@/lib/utils/format';
 
 interface StoreOpt {
   id: string;
@@ -239,8 +240,8 @@ export default function HrLeavesPage() {
               }
               subtitle={
                 <>
-                  {r.from_date}
-                  {r.to_date !== r.from_date && ` → ${r.to_date}`}
+                  {formatThaiDate(r.from_date)}
+                  {r.to_date !== r.from_date && ` → ${formatThaiDate(r.to_date)}`}
                   {' · '}
                   {t('daysPreview', { days: r.days })}
                 </>

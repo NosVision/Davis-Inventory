@@ -15,6 +15,7 @@ import {
   useConfirm,
 } from '@/components/ui';
 import { todayBangkok } from '@/lib/utils/date';
+import { formatThaiDate } from '@/lib/utils/format';
 
 type Status = 'pending' | 'approved' | 'rejected' | 'cancelled';
 
@@ -309,8 +310,8 @@ export default function MyLeavesPage() {
                 }
               >
                 <span className="block">
-                  {r.from_date}
-                  {r.to_date !== r.from_date && ` → ${r.to_date}`}
+                  {formatThaiDate(r.from_date)}
+                  {r.to_date !== r.from_date && ` → ${formatThaiDate(r.to_date)}`}
                   {' · '}
                   {t('daysPreview', { days: r.days })}
                 </span>

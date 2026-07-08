@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2, Clock, Send } from 'lucide-react';
+import { formatThaiDate } from '@/lib/utils/format';
 import {
   Button,
   toast,
@@ -195,7 +196,7 @@ export default function MyOtRequestsPage() {
               <DataCard
                 key={r.id}
                 accent={STATUS_TONE[r.status]}
-                title={r.work_date}
+                title={formatThaiDate(r.work_date)}
                 status={<StatusBadge tone={STATUS_TONE[r.status]} label={statusLabel(r.status)} />}
                 actions={
                   r.status === 'pending' ? (

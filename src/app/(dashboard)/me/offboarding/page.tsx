@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { formatThaiDate } from '@/lib/utils/format';
 import { Loader2, DoorOpen } from 'lucide-react';
 import {
   Button,
@@ -73,7 +74,7 @@ const RESOLUTION_TONE: Record<Resolution, StatusTone> = {
 function formatDate(value: string | null): string {
   if (!value) return '—';
   const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString('th-TH');
+  return Number.isNaN(d.getTime()) ? value : formatThaiDate(d);
 }
 
 export default function MyOffboardingPage() {

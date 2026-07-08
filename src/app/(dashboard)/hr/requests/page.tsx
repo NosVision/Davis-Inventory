@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Inbox } from 'lucide-react';
 import { Button, Select, Tabs, PageHeader, DataList, DataCard, StatusBadge, SkeletonList, ViewToggle, useViewMode, toast } from '@/components/ui';
+import { formatThaiDate, formatThaiDateTime } from '@/lib/utils/format';
 
 interface StoreOpt {
   id: string;
@@ -250,7 +251,7 @@ export default function HrRequestsPage() {
               <DataCard
                 key={r.id}
                 accent={STATUS_TONE[r.status]}
-                title={`${r.requester_name} · ${r.work_date}`}
+                title={`${r.requester_name} · ${formatThaiDate(r.work_date)}`}
                 status={<StatusBadge tone={STATUS_TONE[r.status]} label={statusLabel(r.status)} />}
                 actions={renderDecideBar(r.id, r.status)}
               >
@@ -273,7 +274,7 @@ export default function HrRequestsPage() {
             <DataCard
               key={r.id}
               accent={STATUS_TONE[r.status]}
-              title={`${r.requester_name} · ${r.business_date} · ${kindLabel(r.kind)}`}
+              title={`${r.requester_name} · ${formatThaiDate(r.business_date)} · ${kindLabel(r.kind)}`}
               status={
                 <>
                   <StatusBadge tone={STATUS_TONE[r.status]} label={statusLabel(r.status)} />
@@ -290,7 +291,7 @@ export default function HrRequestsPage() {
               {r.proposed_ts && (
                 <p>
                   {r.proposed_type ? `${r.proposed_type} · ` : ''}
-                  {new Date(r.proposed_ts).toLocaleString()}
+                  {formatThaiDateTime(r.proposed_ts)}
                 </p>
               )}
               <p>{r.reason}</p>

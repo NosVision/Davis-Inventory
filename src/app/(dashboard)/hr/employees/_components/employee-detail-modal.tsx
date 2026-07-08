@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2 } from 'lucide-react';
 import { Modal, StatusBadge, type StatusTone } from '@/components/ui';
+import { formatThaiDate } from '@/lib/utils/format';
 
 // Read-only "everything about this employee" viewer (owner ask 2026-07-08): opened from the
 // person icon on each /hr/employees row. Shows the profile photo + real name / nickname and every
@@ -93,6 +94,7 @@ export function EmployeeDetailModal({ employee, onClose }: { employee: EmployeeD
   const stores = employee.stores.map((s) => s.store_name).join(', ') || '—';
 
   const val = (v: unknown): string => (v == null || v === '' ? '—' : String(v));
+  const valDate = (v: string | null): string => (v ? formatThaiDate(v) : '—');
   const yesNo = (v: boolean | null | undefined) => (v ? t('profile.yes') : t('profile.no'));
 
   return (
@@ -134,10 +136,10 @@ export function EmployeeDetailModal({ employee, onClose }: { employee: EmployeeD
 
           <Section title={t('profile.employment')}>
             <Field label={t('profile.status')} value={t(`status.${detail.status}`)} />
-            <Field label={t('profile.startDate')} value={val(detail.start_date)} />
-            <Field label={t('profile.probationEnd')} value={val(detail.probation_end)} />
-            <Field label={t('detail.birthDate')} value={val(detail.birth_date)} />
-            {detail.end_date && <Field label={t('detail.endDate')} value={val(detail.end_date)} />}
+            <Field label={t('profile.startDate')} value={valDate(detail.start_date)} />
+            <Field label={t('profile.probationEnd')} value={valDate(detail.probation_end)} />
+            <Field label={t('detail.birthDate')} value={valDate(detail.birth_date)} />
+            {detail.end_date && <Field label={t('detail.endDate')} value={valDate(detail.end_date)} />}
             {detail.end_reason && <Field label={t('detail.endReason')} value={val(detail.end_reason)} />}
           </Section>
 
