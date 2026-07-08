@@ -6,6 +6,7 @@ import { Button, Select, PageHeader, StatusBadge, FilterBar, FilterField, toast 
 import { DataTable, type Column } from '@/components/data/data-table';
 import { createClient } from '@/lib/supabase/client';
 import { openBusinessDateBangkok, formatTimeBangkok } from '@/lib/utils/date';
+import { AttendanceReviewModal, type ReviewRow } from './_components/review-modal';
 
 interface AttendanceRow extends Record<string, unknown> {
   id: string;
@@ -55,7 +56,7 @@ export default function AttendanceReportPage() {
   const [type, setType] = useState('');
   const [suspectOnly, setSuspectOnly] = useState(false);
   const [reviewOnly, setReviewOnly] = useState(false);
-  const [reviewing, setReviewing] = useState<string | null>(null);
+  const [reviewRow, setReviewRow] = useState<ReviewRow | null>(null);
 
   // store options (active branches) — same source as announcements/assets
   const [stores, setStores] = useState<StoreOption[]>([]);
@@ -105,26 +106,6 @@ export default function AttendanceReportPage() {
     fetchRows(0, false);
   }, [fetchRows]);
 
-  const review = useCallback(
-    async (id: string, decision: 'approved' | 'rejected') => {
-      setReviewing(id);
-      try {
-        const res = await fetch(`/api/hr/attendance/${id}/review`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ decision }),
-        });
-        if (!res.ok) throw new Error('review failed');
-        toast({ type: 'success', title: t('reviewSaved') });
-        fetchRows(0, false);
-      } catch {
-        toast({ type: 'error', title: t('reviewFailed') });
-      } finally {
-        setReviewing(null);
-      }
-    },
-    [t, fetchRows]
-  );
 
   const columns = useMemo<Column<AttendanceRow>[]>(
     () => [
@@ -196,14 +177,12 @@ export default function AttendanceReportPage() {
         render: (r) => {
           if (r.review_status === 'pending') {
             return (
-              <div className="flex items-center gap-1.5">
-                <Button size="sm" onClick={() => review(r.id, 'approved')} disabled={reviewing === r.id}>
-                  {t('approve')}
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => review(r.id, 'rejected')} disabled={reviewing === r.id}>
-                  {t('reject')}
-                </Button>
-              </div>
+              <Button size="sm" onClick={() => setReviewRow({
+                id: r.id, employee_name: r.employee_name, type: r.type, ts: r.ts,
+                distance_m: r.distance_m, is_vpn_suspect: r.is_vpn_suspect,
+              })}>
+                {t('colReview')}
+              </Button>
             );
           }
           if (r.review_status === 'approved') return <StatusBadge tone="good" label={t('reviewApproved')} />;
@@ -229,7 +208,7 @@ export default function AttendanceReportPage() {
           ),
       },
     ],
-    [t, review, reviewing]
+    [t]
   );
 
   const typeOptions = [
@@ -311,6 +290,12 @@ export default function AttendanceReportPage() {
           </Button>
         </div>
       )}
+
+      <AttendanceReviewModal
+        row={reviewRow}
+        onClose={() => setReviewRow(null)}
+        onDone={() => { setReviewRow(null); fetchRows(0, false); }}
+      />
     </div>
   );
 }

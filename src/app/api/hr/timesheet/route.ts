@@ -37,6 +37,7 @@ interface AttendanceRow {
   type: Punch['type'];
   ts: string;
   business_date: string;
+  review_status: string | null;
 }
 interface EmployeeRow {
   profile_id: string;
@@ -121,7 +122,7 @@ export async function GET(request: NextRequest) {
       .lte('work_date', to),
     service
       .from('hr_attendance')
-      .select('user_id, type, ts, business_date')
+      .select('user_id, type, ts, business_date, review_status')
       .eq('store_id', storeId) // scope to THIS store — a multi-store employee's punches
       .in('user_id', userIds) //  elsewhere must not leak into / inflate this timesheet
       .gte('business_date', from)
@@ -160,6 +161,8 @@ export async function GET(request: NextRequest) {
   const schedByCell = new Map(schedule.map((s) => [`${s.user_id}|${s.work_date}`, s]));
   const punchesByCell = new Map<string, Punch[]>();
   for (const a of attendance) {
+    // A punch HR rejected in geofence review is dismissed — it must not count toward hours/pay.
+    if (a.review_status === 'rejected') continue;
     const key = `${a.user_id}|${a.business_date}`;
     const list = punchesByCell.get(key) ?? [];
     list.push({ type: a.type, ts: a.ts });
