@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { HrBackButton } from './_components/hr-back-button';
 
 /**
  * Server-side guard for the whole /hr subtree (defense-in-depth on top of menu
@@ -24,5 +25,10 @@ export default async function HrLayout({ children }: { children: React.ReactNode
   const hasHrGrant = (perms ?? []).some((p) => p.permission === 'can_manage_hr');
   if (!isOwner && !isHr && !hasHrGrant) redirect('/');
 
-  return <>{children}</>;
+  return (
+    <>
+      <HrBackButton />
+      {children}
+    </>
+  );
 }
