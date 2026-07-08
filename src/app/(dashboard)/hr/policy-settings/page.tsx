@@ -14,8 +14,8 @@ type Effective = HrPolicies;
 export default function HrPolicySettingsPage() {
   const isTh = useLocale() === 'th';
   const L = isTh
-    ? { title: 'กติกา & นโยบาย', subtitle: 'กฎที่เคยฝังในโค้ด — แก้ที่นี่ มีผลทั้งเครือ ทุกการแก้ต้องใส่เหตุผลและถูกบันทึก', late: 'ค่าปรับมาสาย (ต่อครั้ง)', t1: 'นาทีที่ 1 ขึ้นไป (บาท)', t2from: 'ตั้งแต่นาทีที่', t2: 'ปรับ (บาท)', t3from: 'ตั้งแต่นาทีที่ (คิดต่อชั่วโมงเต็ม)', t3: 'ปรับต่อชั่วโมง (บาท)', probation: 'ทดลองงาน', probationDays: 'จำนวนวันทดลองงาน', sc: 'Service Charge', scDivisor: 'ตัวหารวันลา (ลา 1 วัน หัก SC = ยอดแบ่ง ÷ ค่านี้)', carry: 'ยกยอดใบเตือน 200% / หักประเมินที่เกิน ไปเดือนถัดไป', workIndex: 'ดัชนีการทำงาน', wP: 'น้ำหนัก: ตรงต่อเวลา', wA: 'น้ำหนัก: การมาทำงาน', wC: 'น้ำหนัก: ความครบถ้วน', pLate: 'หักต่อวันสาย', pLate30: 'หักต่อ 30 นาทีสาย', pLateCap: 'เพดานโทษนาทีสาย', pAbsent: 'หักต่อวันขาด', pInc: 'หักต่อวันลงเวลาไม่ครบ', bE: 'เกณฑ์ "ดีเยี่ยม" ≥', bG: 'เกณฑ์ "ดี" ≥', bF: 'เกณฑ์ "พอใช้" ≥', save: 'บันทึกหมวดนี้', saved: 'บันทึกแล้ว', failed: 'บันทึกไม่สำเร็จ', loadFailed: 'โหลดไม่สำเร็จ', reasonTitle: 'เหตุผลที่แก้ (บันทึกลง audit)', defaultWord: 'ค่าเดิม', on: 'เปิด', off: 'ปิด', announce: 'การประกาศเงินเดือนออก', announceManual: 'HR กดประกาศเอง', announceManualHint: 'ปิดงวดแล้วยังไม่แจ้งใคร — HR กดปุ่ม "ประกาศเงินเดือนออก" เมื่อพร้อม', announceImmediate: 'แจ้งทันทีที่ปิดงวด', announceImmediateHint: 'พนักงานทุกคนได้รับแจ้งเตือนอัตโนมัติตอนกดปิดงวด' }
-    : { title: 'Rules & policies', subtitle: 'Rules that used to live in code — edit here, applies group-wide; every change needs a reason and is audited', late: 'Late fine (per occurrence)', t1: 'From minute 1 (THB)', t2from: 'From minute', t2: 'Fine (THB)', t3from: 'From minute (per full hour)', t3: 'Fine per hour (THB)', probation: 'Probation', probationDays: 'Probation days', sc: 'Service Charge', scDivisor: 'Leave-day divisor (1 leave day docks SC = allocation ÷ this)', carry: 'Carry 200%-warning / eval overflow into next month', workIndex: 'Work index', wP: 'Weight: punctuality', wA: 'Weight: attendance', wC: 'Weight: completeness', pLate: 'Penalty per late day', pLate30: 'Penalty per 30 late min', pLateCap: 'Late-minutes penalty cap', pAbsent: 'Penalty per absent day', pInc: 'Penalty per incomplete day', bE: '"Excellent" band ≥', bG: '"Good" band ≥', bF: '"Fair" band ≥', save: 'Save section', saved: 'Saved', failed: 'Save failed', loadFailed: 'Load failed', reasonTitle: 'Reason (audited)', defaultWord: 'default', on: 'On', off: 'Off', announce: 'Payday announcement', announceManual: 'HR announces manually', announceManualHint: 'Finalize sends nothing — HR presses "Announce payday" when ready', announceImmediate: 'Notify on finalize', announceImmediateHint: 'Everyone is pushed automatically the moment the run locks' };
+    ? { title: 'กติกา & นโยบาย', subtitle: 'กฎที่เคยฝังในโค้ด — แก้ที่นี่ มีผลทั้งเครือ ทุกการแก้ต้องใส่เหตุผลและถูกบันทึก', late: 'ค่าปรับมาสาย (ต่อครั้ง)', t1: 'นาทีที่ 1 ขึ้นไป (บาท)', t2from: 'ตั้งแต่นาทีที่', t2: 'ปรับ (บาท)', t3from: 'ตั้งแต่นาทีที่ (คิดต่อชั่วโมงเต็ม)', t3: 'ปรับต่อชั่วโมง (บาท)', probation: 'ทดลองงาน', probationDays: 'จำนวนวันทดลองงาน', sc: 'Service Charge', scDivisor: 'ตัวหารวันลา (ลา 1 วัน หัก SC = ยอดแบ่ง ÷ ค่านี้)', carry: 'ยกยอดใบเตือน 200% / หักประเมินที่เกิน ไปเดือนถัดไป', workIndex: 'ดัชนีการทำงาน', wP: 'น้ำหนัก: ตรงต่อเวลา', wA: 'น้ำหนัก: การมาทำงาน', wC: 'น้ำหนัก: ความครบถ้วน', pLate: 'หักต่อวันสาย', pLate30: 'หักต่อ 30 นาทีสาย', pLateCap: 'เพดานโทษนาทีสาย', pAbsent: 'หักต่อวันขาด', pInc: 'หักต่อวันลงเวลาไม่ครบ', bE: 'เกณฑ์ "ดีเยี่ยม" ≥', bG: 'เกณฑ์ "ดี" ≥', bF: 'เกณฑ์ "พอใช้" ≥', save: 'บันทึกหมวดนี้', saved: 'บันทึกแล้ว', failed: 'บันทึกไม่สำเร็จ', loadFailed: 'โหลดไม่สำเร็จ', reasonTitle: 'เหตุผลที่แก้ (บันทึกลง audit)', defaultWord: 'ค่าเดิม', on: 'เปิด', off: 'ปิด', announce: 'การประกาศเงินเดือนออก', announceManual: 'HR กดประกาศเอง', announceManualHint: 'ปิดงวดแล้วยังไม่แจ้งใคร — HR กดปุ่ม "ประกาศเงินเดือนออก" เมื่อพร้อม', announceImmediate: 'แจ้งทันทีที่ปิดงวด', announceImmediateHint: 'พนักงานทุกคนได้รับแจ้งเตือนอัตโนมัติตอนกดปิดงวด', proBasis: 'วิธีนับวันเงินเดือนคนเข้า/ออกกลางงวด (prorate)', proCalendar: 'วันตามปฏิทินที่จ้าง', proCalendarHint: 'เงินที่ได้ = (เงินเดือน ÷ 30) × จำนวนวันที่เป็นพนักงานในงวด (นับทุกวันรวมวันหยุด)', proScheduled: 'วันทำงานตามกะ', proScheduledHint: 'นับเฉพาะวันที่ต้องมาทำงาน (ไม่รวมวันหยุด/นักขัตฤกษ์)' }
+    : { title: 'Rules & policies', subtitle: 'Rules that used to live in code — edit here, applies group-wide; every change needs a reason and is audited', late: 'Late fine (per occurrence)', t1: 'From minute 1 (THB)', t2from: 'From minute', t2: 'Fine (THB)', t3from: 'From minute (per full hour)', t3: 'Fine per hour (THB)', probation: 'Probation', probationDays: 'Probation days', sc: 'Service Charge', scDivisor: 'Leave-day divisor (1 leave day docks SC = allocation ÷ this)', carry: 'Carry 200%-warning / eval overflow into next month', workIndex: 'Work index', wP: 'Weight: punctuality', wA: 'Weight: attendance', wC: 'Weight: completeness', pLate: 'Penalty per late day', pLate30: 'Penalty per 30 late min', pLateCap: 'Late-minutes penalty cap', pAbsent: 'Penalty per absent day', pInc: 'Penalty per incomplete day', bE: '"Excellent" band ≥', bG: '"Good" band ≥', bF: '"Fair" band ≥', save: 'Save section', saved: 'Saved', failed: 'Save failed', loadFailed: 'Load failed', reasonTitle: 'Reason (audited)', defaultWord: 'default', on: 'On', off: 'Off', announce: 'Payday announcement', announceManual: 'HR announces manually', announceManualHint: 'Finalize sends nothing — HR presses "Announce payday" when ready', announceImmediate: 'Notify on finalize', announceImmediateHint: 'Everyone is pushed automatically the moment the run locks', proBasis: 'Mid-period hire/leave pay basis (prorate)', proCalendar: 'Employed calendar days', proCalendarHint: 'Pay = (salary ÷ 30) × days employed in the cycle (all days incl. days off)', proScheduled: 'Scheduled work days', proScheduledHint: 'Count only rostered work days (excludes days off / holidays)' };
 
   const { prompt, dialog } = usePromptDialog();
   const [eff, setEff] = useState<Effective | null>(null);
@@ -159,6 +159,30 @@ export default function HrPolicySettingsPage() {
           ))}
         </div>
         <Button size="sm" isLoading={saving === 'payslip_announce'} onClick={() => saveKey('payslip_announce', { mode: eff.payslip_announce_mode })}>{L.save}</Button>
+      </section>
+
+      {/* prorate basis (mid-period hire/leave) */}
+      <section className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+        <SectionHeading title={L.proBasis} extra={<Gauge className="h-4 w-4 text-teal-500" />} />
+        <div className="grid gap-2 sm:grid-cols-2">
+          {(['calendar', 'scheduled'] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => upd((d) => { d.prorate_basis = mode; })}
+              aria-pressed={eff.prorate_basis === mode}
+              className={`rounded-xl border p-3 text-left text-xs transition-colors ${eff.prorate_basis === mode ? 'border-indigo-400 bg-indigo-50 dark:border-indigo-500 dark:bg-indigo-900/20' : 'border-gray-200 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-700/40'}`}
+            >
+              <span className="block font-semibold text-gray-800 dark:text-gray-100">
+                {mode === 'calendar' ? L.proCalendar : L.proScheduled}
+              </span>
+              <span className="mt-0.5 block text-gray-500 dark:text-gray-400">
+                {mode === 'calendar' ? L.proCalendarHint : L.proScheduledHint}
+              </span>
+            </button>
+          ))}
+        </div>
+        <Button size="sm" isLoading={saving === 'prorate_basis'} onClick={() => saveKey('prorate_basis', { mode: eff.prorate_basis })}>{L.save}</Button>
       </section>
 
       {/* work index */}
