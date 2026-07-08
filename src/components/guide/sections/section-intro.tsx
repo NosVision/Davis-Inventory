@@ -4,9 +4,9 @@ export function SectionIntro() {
   return (
     <>
       <Card>
-        <CardTitle>StockManager คืออะไร?</CardTitle>
+        <CardTitle>DavisManage คืออะไร?</CardTitle>
         <p className="mb-3 text-sm text-gray-600 dark:text-gray-300">
-          StockManager เป็นระบบจัดการคลังสินค้าและฝากเหล้าครบวงจร สำหรับร้านอาหาร/บาร์ที่มีหลายสาขา รองรับการทำงานตั้งแต่:
+          DavisManage เป็นระบบจัดการคลังสินค้าและฝากเหล้าครบวงจร สำหรับร้านอาหาร/บาร์ที่มีหลายสาขา รองรับการทำงานตั้งแต่:
         </p>
         <ul className="mb-3 ml-5 list-disc space-y-1.5 text-sm text-gray-600 dark:text-gray-300">
           <li><strong>ฝาก/เบิกเหล้า</strong> — จัดการขวดเหล้าที่ลูกค้าฝากไว้ พร้อมวันหมดอายุ</li>
@@ -16,7 +16,7 @@ export function SectionIntro() {
           <li><strong>วิเคราะห์ประสิทธิภาพ</strong> — Dashboard วัดผลพนักงาน ลูกค้า สาขา</li>
           <li><strong>แจ้งเตือนอัตโนมัติ</strong> — ผ่าน LINE และ Web Push Notification</li>
         </ul>
-        <ImgPlaceholder icon="📷" name="img-01-system-overview.png" desc="ภาพรวมระบบ StockManager แสดง Dashboard หลัก" />
+        <ImgPlaceholder icon="📷" name="img-01-system-overview.png" desc="ภาพรวมระบบ DavisManage แสดง Dashboard หลัก" />
       </Card>
 
       <Card>

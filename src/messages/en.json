@@ -63,7 +63,7 @@
     "noResults": "No results found"
   },
   "meta": {
-    "title": "StockManager - Beverage Stock Management",
+    "title": "DavisManage - Beverage Stock Management",
     "description": "Beverage stock management and bottle storage system for restaurants and bars",
     "subtitle": "Beverage Stock Management"
   },
@@ -234,7 +234,7 @@
     },
     "guide": {
       "name": "Guide",
-      "description": "StockManager user guide"
+      "description": "DavisManage user guide"
     },
     "announcements": {
       "name": "Staff Announcements",
@@ -281,8 +281,8 @@
   },
   "pwa": {
     "installOnMobile": "Install app on mobile",
-    "androidInstallDesc": "Install StockManager on your home screen for notifications and easier access",
-    "iosInstallDesc": "Add StockManager to your home screen for quick access",
+    "androidInstallDesc": "Install DavisManage on your home screen for notifications and easier access",
+    "iosInstallDesc": "Add DavisManage to your home screen for quick access",
     "iosInstructions": "How to install on iPhone / iPad:",
     "iosStep1": "Tap the Share button at the bottom of Safari",
     "iosStep2": "Scroll down and tap \"Add to Home Screen\"",
@@ -1049,15 +1049,15 @@
   },
   "guide": {
     "title": "User Guide",
-    "subtitle": "How to use StockManager for {role}",
+    "subtitle": "How to use DavisManage for {role}",
     "allRoles": "All Roles",
     "allRolesOwner": "All Roles (Owner)",
-    "heroTitle": "StockManager",
+    "heroTitle": "DavisManage",
     "heroDesc": "User guide for warehouse management, bottle deposits, and internal communication",
     "toc": "Table of Contents",
     "backToToc": "Back to TOC",
     "sections": {
-      "introTitle": "Introduction to StockManager",
+      "introTitle": "Introduction to DavisManage",
       "introDesc": "System overview and key features",
       "rolesTitle": "User Roles",
       "rolesDesc": "Role descriptions and access permissions",
@@ -1805,14 +1805,14 @@
     "installDesc": "Install as an app on the computer and set it to auto-start",
     "installPwaStep": "Install as app on this computer",
     "installed": "Installed!",
-    "installedDesc": "StockManager has been installed as an app on this computer",
+    "installedDesc": "DavisManage has been installed as an app on this computer",
     "installing": "Installing...",
-    "installButton": "Install StockManager",
+    "installButton": "Install DavisManage",
     "installPopupHint": "Click the button above, then click \"Install\" in the popup",
     "cannotAutoInstall": "Cannot install automatically",
-    "manualInstallHint": "Please install manually: Click ⋮ menu at top right of Chrome → \"Install StockManager...\"",
+    "manualInstallHint": "Please install manually: Click ⋮ menu at top right of Chrome → \"Install DavisManage...\"",
     "autoStartStep": "Set auto-start on computer boot",
-    "autoStartDone": "Done! Test: Restart computer → StockManager should open automatically to Print Station",
+    "autoStartDone": "Done! Test: Restart computer → DavisManage should open automatically to Print Station",
     "notInstalledHint": "Haven't installed the app? Use Chrome to auto-open Print Station instead:",
     "copied": "Copied",
     "copyUrl": "Copy Print Station URL",

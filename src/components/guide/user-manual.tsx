@@ -310,8 +310,8 @@ export function UserManual() {
 
       {/* Footer */}
       <div className="border-t border-gray-200 pt-8 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
-        <p>StockManager User Manual · Version 1.0 · March 2026</p>
-        <p>© StockManager. All rights reserved.</p>
+        <p>DavisManage User Manual · Version 1.0 · March 2026</p>
+        <p>© DavisManage. All rights reserved.</p>
       </div>
     </div>
   );

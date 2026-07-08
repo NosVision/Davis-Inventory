@@ -155,7 +155,7 @@ export function Sidebar({ stores }: SidebarProps) {
         <Package className="h-7 w-7 shrink-0 text-blue-600 dark:text-blue-400" />
         {!collapsed && (
           <span className="text-lg font-bold text-gray-900 dark:text-white">
-            StockManager
+            DavisManage
           </span>
         )}
       </Link>

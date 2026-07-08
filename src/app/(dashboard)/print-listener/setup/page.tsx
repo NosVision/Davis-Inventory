@@ -375,7 +375,7 @@ export default function PrinterSetupPage() {
                       <li className="flex items-start gap-2">
                         <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-200 text-xs font-bold text-gray-600 dark:bg-gray-700 dark:text-gray-300">2</span>
                         <span>
-                          หา shortcut ของแอป <strong>StockManager</strong> ที่ Desktop → <strong>คลิกขวา → Copy</strong>
+                          หา shortcut ของแอป <strong>DavisManage</strong> ที่ Desktop → <strong>คลิกขวา → Copy</strong>
                         </span>
                       </li>
                       <li className="flex items-start gap-2">

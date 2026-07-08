@@ -19,13 +19,13 @@ const playpenSansThai = Playpen_Sans_Thai({
 });
 
 export const metadata: Metadata = {
-  title: 'StockManager - ระบบจัดการสต๊อกเครื่องดื่ม',
+  title: 'DavisManage - ระบบจัดการร้าน',
   description: 'ระบบจัดการสต๊อกเครื่องดื่มและฝากเหล้า สำหรับร้านอาหารและบาร์',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'StockManager',
+    title: 'DavisManage',
   },
 };
 

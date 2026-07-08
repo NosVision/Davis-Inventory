@@ -552,7 +552,7 @@ async function handleTextMessage(
     });
 
     const flex = openDepositSystemFlex({
-      store_name: storeInfo?.store_name || 'StockManager',
+      store_name: storeInfo?.store_name || 'DavisManage',
       active_deposit_count: deposits.length,
       deposits,
       entry_url: entryUrl,

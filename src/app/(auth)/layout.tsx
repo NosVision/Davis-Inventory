@@ -17,7 +17,7 @@ export default async function AuthLayout({
             <Package className="h-7 w-7" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-            StockManager
+            DavisManage
           </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">
             {t('meta.subtitle')}
@@ -31,7 +31,7 @@ export default async function AuthLayout({
 
         {/* Footer */}
         <p className="mt-6 text-center text-xs text-gray-400 dark:text-gray-500">
-          &copy; {new Date().getFullYear()} StockManager. {t('common.allRightsReserved')}.
+          &copy; {new Date().getFullYear()} DavisManage. {t('common.allRightsReserved')}.
         </p>
       </div>
     </div>

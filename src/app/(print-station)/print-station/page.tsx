@@ -161,7 +161,7 @@ export default function PrintStationPage() {
       'echo.',
       '',
       ':: Create shortcut via PowerShell (--kiosk-printing = พิมพ์อัตโนมัติไม่ต้องกด dialog)',
-      'powershell -NoProfile -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut(\'%SHORTCUT%\'); $s.TargetPath = \'%CHROME%\'; $s.Arguments = \'--app=%URL% --kiosk-printing\'; $s.WindowStyle = 1; $s.Description = \'Print Station - StockManager\'; $s.Save()"',
+      'powershell -NoProfile -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut(\'%SHORTCUT%\'); $s.TargetPath = \'%CHROME%\'; $s.Arguments = \'--app=%URL% --kiosk-printing\'; $s.WindowStyle = 1; $s.Description = \'Print Station - DavisManage\'; $s.Save()"',
       '',
       'if exist "%SHORTCUT%" (',
       '  echo.',
@@ -1004,7 +1004,7 @@ export default function PrintStationPage() {
 
         {/* ---- Footer ---- */}
         <p className="mt-6 text-center text-xs text-gray-400 dark:text-gray-500">
-          {t('title')} &middot; StockManager &middot; {t('footer')}
+          {t('title')} &middot; DavisManage &middot; {t('footer')}
         </p>
       </div>
     </>

@@ -1,11 +1,12 @@
 {
-  "name": "DavisManage - ระบบจัดการร้าน",
-  "short_name": "DavisManage",
-  "description": "ระบบจัดการสต๊อกเครื่องดื่มและฝากเหล้า สำหรับร้านอาหารและบาร์",
-  "start_url": "/",
+  "name": "ระบบรับฝากเหล้า - Alcohol Deposit",
+  "short_name": "รับฝากเหล้า",
+  "description": "ระบบรับฝากเหล้าสำหรับลูกค้า — ฝาก/เบิกขวดของคุณ",
+  "start_url": "/customer",
+  "scope": "/customer",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#4f46e5",
+  "background_color": "#64090C",
+  "theme_color": "#9C0512",
   "orientation": "portrait-primary",
   "lang": "th",
   "icons": [

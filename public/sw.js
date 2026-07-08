@@ -1,4 +1,4 @@
-const CACHE_NAME = 'stockmanager-v2';
+const CACHE_NAME = 'davismanage-v1';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
@@ -60,10 +60,10 @@ self.addEventListener('push', (event) => {
     data = event.data?.json() || {};
   } catch {
     // Fallback if JSON parse fails
-    data = { title: 'StockManager', body: event.data?.text() || 'มีข้อความใหม่' };
+    data = { title: 'DavisManage', body: event.data?.text() || 'มีข้อความใหม่' };
   }
 
-  const title = data.title || 'StockManager';
+  const title = data.title || 'DavisManage';
   const isChatMessage = data.data?.type === 'chat_message';
 
   const options = {

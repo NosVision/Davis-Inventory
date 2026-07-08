@@ -63,7 +63,7 @@
     "noResults": "ไม่พบผลลัพธ์"
   },
   "meta": {
-    "title": "StockManager - ระบบจัดการสต๊อกเครื่องดื่ม",
+    "title": "DavisManage - ระบบจัดการสต๊อกเครื่องดื่ม",
     "description": "ระบบจัดการสต๊อกเครื่องดื่มและฝากเหล้า สำหรับร้านอาหารและบาร์",
     "subtitle": "ระบบจัดการสต๊อกร้านเหล้า"
   },
@@ -234,7 +234,7 @@
     },
     "guide": {
       "name": "คู่มือ",
-      "description": "คู่มือการใช้งานระบบ StockManager"
+      "description": "คู่มือการใช้งานระบบ DavisManage"
     },
     "announcements": {
       "name": "ประกาศถึงพนักงาน",
@@ -281,8 +281,8 @@
   },
   "pwa": {
     "installOnMobile": "ติดตั้งแอปบนมือถือ",
-    "androidInstallDesc": "ติดตั้ง StockManager เป็นแอปบนหน้าจอหลัก เพื่อรับการแจ้งเตือน และใช้งานได้สะดวกยิ่งขึ้น",
-    "iosInstallDesc": "เพิ่ม StockManager ลงหน้าจอหลัก เพื่อเข้าถึงได้เร็วขึ้น",
+    "androidInstallDesc": "ติดตั้ง DavisManage เป็นแอปบนหน้าจอหลัก เพื่อรับการแจ้งเตือน และใช้งานได้สะดวกยิ่งขึ้น",
+    "iosInstallDesc": "เพิ่ม DavisManage ลงหน้าจอหลัก เพื่อเข้าถึงได้เร็วขึ้น",
     "iosInstructions": "วิธีติดตั้งบน iPhone / iPad:",
     "iosStep1": "กดปุ่ม แชร์ (Share) ด้านล่างของ Safari",
     "iosStep2": "เลื่อนลงแล้วกด \"เพิ่มไปยังหน้าจอโฮม\"",
@@ -1049,15 +1049,15 @@
   },
   "guide": {
     "title": "คู่มือการใช้งาน",
-    "subtitle": "วิธีใช้งานระบบ StockManager สำหรับ{role}",
+    "subtitle": "วิธีใช้งานระบบ DavisManage สำหรับ{role}",
     "allRoles": "ทุก Role",
     "allRolesOwner": "ทุก Role (Owner)",
-    "heroTitle": "StockManager",
+    "heroTitle": "DavisManage",
     "heroDesc": "คู่มือการใช้งานระบบจัดการคลังสินค้า ฝากเหล้า และสื่อสารภายในสำหรับพนักงาน",
     "toc": "สารบัญ",
     "backToToc": "กลับสารบัญ",
     "sections": {
-      "introTitle": "แนะนำระบบ StockManager",
+      "introTitle": "แนะนำระบบ DavisManage",
       "introDesc": "ภาพรวมระบบและความสามารถหลัก",
       "rolesTitle": "บทบาทผู้ใช้งาน (Roles)",
       "rolesDesc": "อธิบายบทบาทและสิทธิ์การเข้าถึง",
@@ -1805,14 +1805,14 @@
     "installDesc": "ติดตั้งเป็นแอปบนคอม แล้วตั้งให้เปิดอัตโนมัติเมื่อเปิดเครื่อง",
     "installPwaStep": "ติดตั้งเป็นแอปบนคอมพิวเตอร์",
     "installed": "ติดตั้งแล้ว!",
-    "installedDesc": "StockManager ถูกติดตั้งเป็นแอปบนเครื่องนี้แล้ว",
+    "installedDesc": "DavisManage ถูกติดตั้งเป็นแอปบนเครื่องนี้แล้ว",
     "installing": "กำลังติดตั้ง...",
-    "installButton": "ติดตั้ง StockManager",
+    "installButton": "ติดตั้ง DavisManage",
     "installPopupHint": "คลิกปุ่มด้านบน แล้วกด \"ติดตั้ง\" ในป๊อปอัพที่ขึ้นมา",
     "cannotAutoInstall": "ไม่สามารถติดตั้งอัตโนมัติได้",
-    "manualInstallHint": "กรุณาติดตั้งด้วยตนเอง: คลิก เมนู ⋮ ที่มุมขวาบนของ Chrome → \"ติดตั้ง StockManager...\"",
+    "manualInstallHint": "กรุณาติดตั้งด้วยตนเอง: คลิก เมนู ⋮ ที่มุมขวาบนของ Chrome → \"ติดตั้ง DavisManage...\"",
     "autoStartStep": "ตั้งค่าเปิดอัตโนมัติเมื่อเปิดคอม",
-    "autoStartDone": "เสร็จแล้ว! ทดสอบ: รีสตาร์ทคอม → แอป StockManager ควรเปิดขึ้นมาเองพร้อมหน้า Print Station",
+    "autoStartDone": "เสร็จแล้ว! ทดสอบ: รีสตาร์ทคอม → แอป DavisManage ควรเปิดขึ้นมาเองพร้อมหน้า Print Station",
     "notInstalledHint": "ยังไม่ได้ติดตั้งแอป? ใช้วิธีให้ Chrome เปิดหน้า Print Station อัตโนมัติแทน:",
     "copied": "คัดลอกแล้ว",
     "copyUrl": "คัดลอก URL Print Station",

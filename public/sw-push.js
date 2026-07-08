@@ -1,5 +1,5 @@
 /**
- * Service Worker Push Event Handler for StockManager PWA
+ * Service Worker Push Event Handler for DavisManage PWA
  *
  * This file handles push notification events independently.
  * It can be imported by the main service worker via importScripts('./sw-push.js')
@@ -15,12 +15,12 @@ self.addEventListener('push', function (event) {
   } catch (e) {
     // If JSON parsing fails, treat the data as plain text
     payload = {
-      title: 'StockManager',
+      title: 'DavisManage',
       body: event.data ? event.data.text() : '',
     };
   }
 
-  const title = payload.title || 'StockManager';
+  const title = payload.title || 'DavisManage';
 
   const options = {
     body: payload.body || '',
