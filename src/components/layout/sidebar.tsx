@@ -43,6 +43,7 @@ import { useAuthStore } from '@/stores/auth-store';
 import { getAccessibleModules } from '@/lib/modules/registry';
 import { useInboxCount } from '@/hooks/use-inbox-count';
 import { useMyTasksCount } from '@/hooks/use-my-tasks-count';
+import { useHrPendingCount } from '@/hooks/use-hr-pending-count';
 import { StoreSwitcher } from './store-switcher';
 import { LanguageSwitcher } from './language-switcher';
 import type { Store } from '@/types/database';
@@ -92,6 +93,8 @@ export function Sidebar({ stores }: SidebarProps) {
   // Live count of tasks assigned to me (pending response) + open-claim tasks
   // matching my role — drives the red badge on the "ห้องงาน" menu entry.
   const myTasksCount = useMyTasksCount();
+  // Live count of HR items awaiting action — drives the red badge on the "HR" menu entry.
+  const hrPendingCount = useHrPendingCount();
 
   // เห็นโมดูลตาม role + permission ส่วนตัวที่ได้รับเพิ่ม
   const modules = useMemo(
@@ -189,7 +192,9 @@ export function Sidebar({ stores }: SidebarProps) {
                     ? inboxCount
                     : mod.badge === 'my_tasks_count' && mod.id === 'tasks'
                       ? myTasksCount
-                      : 0;
+                      : mod.badge === 'hr_pending_count' && mod.id === 'hr'
+                        ? hrPendingCount
+                        : 0;
                 const showBadge = badgeCount > 0;
 
                 return (

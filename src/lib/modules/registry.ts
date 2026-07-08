@@ -10,7 +10,7 @@ export interface ModuleConfig {
   href: string;
   roles: UserRole[];
   permission?: Permission;
-  badge?: 'pending_count' | 'my_tasks_count';
+  badge?: 'pending_count' | 'my_tasks_count' | 'hr_pending_count';
   groupKey: string;
 }
 
@@ -198,6 +198,7 @@ export const modules: ModuleConfig[] = [
     href: '/hr',
     roles: ['owner'],
     permission: 'can_manage_hr',
+    badge: 'hr_pending_count',
     groupKey: 'moduleGroups.hr',
   },
 
