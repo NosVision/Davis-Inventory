@@ -171,13 +171,13 @@ export default function HrTimesheetPage() {
       {/* Secondary toolbar: search + view switcher */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="relative min-w-[12rem] flex-1 sm:max-w-xs">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={L.search}
-            className="control w-full pl-8"
+            className="control control-icon w-full"
           />
         </div>
         <div className="inline-flex items-center gap-0.5 rounded-lg bg-gray-100 p-0.5 dark:bg-gray-800">

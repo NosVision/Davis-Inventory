@@ -17,7 +17,6 @@ import {
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
-  Package,
   ShieldCheck,
   Warehouse,
   Shuffle,
@@ -152,7 +151,12 @@ export function Sidebar({ stores }: SidebarProps) {
           collapsed ? 'justify-center' : 'gap-3'
         )}
       >
-        <Package className="h-7 w-7 shrink-0 text-blue-600 dark:text-blue-400" />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/icons/icon-192.png"
+          alt="DavisManage"
+          className="h-8 w-8 shrink-0 rounded-md object-contain"
+        />
         {!collapsed && (
           <span className="text-lg font-bold text-gray-900 dark:text-white">
             DavisManage

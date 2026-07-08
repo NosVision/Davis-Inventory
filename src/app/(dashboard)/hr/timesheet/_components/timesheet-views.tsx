@@ -129,18 +129,22 @@ export function TimesheetBlockGrid({
                       <td key={date} className="border-b border-gray-100 p-0.5 text-center dark:border-gray-700/60">
                         <button
                           type="button"
-                          onClick={() => day && !isEmptyDay(day) && onPick(emp, day)}
-                          disabled={!day || isEmptyDay(day)}
-                          title={day ? `${STYLE[status === 'empty' ? 'normal' : status]?.label ?? ''}${(day.late_min ?? 0) > 0 ? ` · สาย ${day.late_min}` : ''}${(day.ot_min ?? 0) > 0 ? ` · OT ${toH(day.ot_min)}` : ''}` : ''}
-                          className={cn(
-                            'relative mx-auto flex h-7 w-7 items-center justify-center rounded-lg text-[11px] font-bold ring-1 transition-transform',
+                          onClick={() => day && onPick(emp, day)}
+                          disabled={!day}
+                          title={
                             status === 'empty'
-                              ? 'cursor-default bg-gray-50 text-transparent ring-gray-200 dark:bg-gray-800 dark:ring-gray-700'
-                              : cn(STYLE[status].block, 'hover:scale-110'),
+                              ? isTh ? 'คลิกเพื่อลงเวลา' : 'Click to log time'
+                              : `${STYLE[status].label}${(day?.late_min ?? 0) > 0 ? ` · สาย ${day?.late_min}` : ''}${(day?.ot_min ?? 0) > 0 ? ` · OT ${toH(day?.ot_min ?? 0)}` : ''}`
+                          }
+                          className={cn(
+                            'relative mx-auto flex h-7 w-7 items-center justify-center rounded-lg text-[11px] font-bold ring-1 transition-transform hover:scale-110',
+                            status === 'empty'
+                              ? 'cursor-pointer bg-gray-50 text-gray-300 ring-gray-200 hover:bg-indigo-50 hover:text-indigo-400 dark:bg-gray-800 dark:text-gray-600 dark:ring-gray-700 dark:hover:bg-indigo-900/20'
+                              : STYLE[status].block,
                             overridden && 'ring-2 ring-indigo-500 ring-offset-1 dark:ring-offset-gray-900'
                           )}
                         >
-                          {status === 'empty' ? '·' : STYLE[status].glyph}
+                          {status === 'empty' ? '+' : STYLE[status].glyph}
                           {hasOt && <i className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-violet-500 ring-1 ring-white dark:ring-gray-900" />}
                         </button>
                       </td>

@@ -41,9 +41,10 @@ export async function GET(
 
   const { data, error } = await service.storage
     .from(BUCKET)
-    // download: true -> Content-Disposition: attachment (self-XSS mitigation for a
-    // document with a spoofed MIME type).
-    .createSignedUrl(leave.cert_path as string, SIGNED_URL_TTL_SECONDS, { download: true });
+    // Serve inline so the certificate OPENS in a new tab rather than downloading (owner ask
+    // 2026-07-08). The signed URL lives on the Supabase storage origin — cross-origin from the
+    // app — so even a spoofed-MIME upload runs in that isolated origin, not the app session.
+    .createSignedUrl(leave.cert_path as string, SIGNED_URL_TTL_SECONDS);
   if (error || !data) {
     return NextResponse.json({ error: error?.message ?? 'Cannot sign url' }, { status: 404 });
   }
