@@ -651,6 +651,7 @@
         "title": "Team today",
         "link": "Open HR dashboard",
         "allBranches": "All branches",
+        "viewAll": "View all",
         "noAccess": "HR access required to view this",
         "noStaff": "No employees yet",
         "in": "In",

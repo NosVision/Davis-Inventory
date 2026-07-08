@@ -191,6 +191,9 @@ export function CommandCenter({
   const leaveLabel = (p: HrLeavePerson): string | null =>
     (locale.startsWith('th') ? p.leave_th : p.leave_en) || p.leave_th || p.leave_en || null;
 
+  // "View all" → the HR daily dashboard, pre-filtered to the selected branch (or all branches).
+  const hrHref = teamBranch === 'all' ? '/hr/dashboard' : `/hr/dashboard?store_id=${encodeURIComponent(teamBranch)}`;
+
   const queue = ([
     { key: 'expl', tone: 'crit', label: t('q.explanations'), sub: t('q.explanationsSub'), count: agg.explanations, href: '/stock/comparison', icon: AlertTriangle },
     { key: 'appr', tone: 'warn', label: t('q.approvals'), sub: t('q.approvalsSub'), count: agg.approvals, href: '/stock/approval', icon: FileWarning },
@@ -259,8 +262,8 @@ export function CommandCenter({
                 </div>
 
                 <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <PeopleCol tone="info" title={t('team.onLeaveTitle')} people={onLeaveList} empty={t('team.noneLeave')} chip={leaveLabel} />
-                  <PeopleCol tone="warn" title={t('team.notInTitle')} people={notInList} empty={t('team.noneNotIn')} />
+                  <PeopleCol tone="info" title={t('team.onLeaveTitle')} people={onLeaveList} empty={t('team.noneLeave')} chip={leaveLabel} href={hrHref} viewAllLabel={t('team.viewAll')} />
+                  <PeopleCol tone="warn" title={t('team.notInTitle')} people={notInList} empty={t('team.noneNotIn')} href={hrHref} viewAllLabel={t('team.viewAll')} />
                 </div>
               </>
             )}
@@ -384,15 +387,16 @@ function BranchTab({ active, onClick, label }: { active: boolean; onClick: () =>
   );
 }
 
-function PeopleCol({ tone, title, people, empty, chip }: {
-  tone: Sev; title: string; people: HrLeavePerson[]; empty: string; chip?: (p: HrLeavePerson) => string | null;
+function PeopleCol({ tone, title, people, empty, chip, href, viewAllLabel }: {
+  tone: Sev; title: string; people: HrLeavePerson[]; empty: string;
+  chip?: (p: HrLeavePerson) => string | null; href?: string; viewAllLabel?: string;
 }) {
   const c = TONE[tone];
   const shown = people.slice(0, 5);
   const rest = people.length - shown.length;
-  return (
-    <div className={cn('rounded-xl border bg-gray-50/60 p-3 dark:bg-gray-900/20',
-      tone === 'info' ? 'border-blue-200/70 dark:border-blue-900/50' : 'border-amber-200/70 dark:border-amber-900/50')}>
+  const clickable = Boolean(href) && people.length > 0;
+  const body = (
+    <>
       <div className="mb-2.5 flex items-center justify-between">
         <span className="inline-flex items-center gap-2 text-[0.82rem] font-bold text-gray-700 dark:text-gray-200">
           <i className={cn('h-2 w-2 rounded-full', c.bar)} />{title}
@@ -418,6 +422,19 @@ function PeopleCol({ tone, title, people, empty, chip }: {
           {rest > 0 && <span className="pt-0.5 text-xs text-gray-400">+ {rest}</span>}
         </div>
       )}
-    </div>
+      {clickable && viewAllLabel && (
+        <span className="mt-2.5 flex items-center gap-0.5 border-t border-gray-200/70 pt-2 text-xs font-semibold text-indigo-600 dark:border-gray-700/60 dark:text-indigo-400">
+          {viewAllLabel}<ChevronRight className="h-3.5 w-3.5" />
+        </span>
+      )}
+    </>
+  );
+  const cls = cn('rounded-xl border bg-gray-50/60 p-3 dark:bg-gray-900/20',
+    tone === 'info' ? 'border-blue-200/70 dark:border-blue-900/50' : 'border-amber-200/70 dark:border-amber-900/50',
+    clickable && 'group transition-colors hover:border-indigo-300 hover:bg-gray-100/80 dark:hover:border-indigo-700/60 dark:hover:bg-gray-900/40');
+  return clickable && href ? (
+    <Link href={href} className={cn('block', cls)}>{body}</Link>
+  ) : (
+    <div className={cls}>{body}</div>
   );
 }

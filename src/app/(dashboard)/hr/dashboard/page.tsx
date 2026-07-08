@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useLocale } from 'next-intl';
 import {
   Loader2,
@@ -108,8 +109,11 @@ export default function HrDailyDashboardPage() {
     people: L.people,
   };
 
-  const [date, setDate] = useState(() => todayBangkok());
-  const [storeId, setStoreId] = useState('');
+  // Deep-link entry: ?store_id / ?business_date pre-select the filter (e.g. from the overview
+  // command-center "view all" per branch). After mount the on-page controls take over.
+  const searchParams = useSearchParams();
+  const [date, setDate] = useState(() => searchParams.get('business_date') || todayBangkok());
+  const [storeId, setStoreId] = useState(() => searchParams.get('store_id') || '');
   const [stores, setStores] = useState<StoreOpt[]>([]);
   const [data, setData] = useState<Daily | null>(null);
   const [overview, setOverview] = useState<Overview | null>(null);
