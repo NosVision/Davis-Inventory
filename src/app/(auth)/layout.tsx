@@ -1,4 +1,3 @@
-import { Package } from 'lucide-react';
 import { getTranslations } from 'next-intl/server';
 
 export default async function AuthLayout({
@@ -13,9 +12,12 @@ export default async function AuthLayout({
       <div className="w-full max-w-md">
         {/* โลโก้ */}
         <div className="mb-8 flex flex-col items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-600 text-white">
-            <Package className="h-7 w-7" />
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/icons/icon-192.png"
+            alt="DavisManage"
+            className="h-20 w-20 rounded-2xl object-contain shadow-sm"
+          />
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
             DavisManage
           </h1>
