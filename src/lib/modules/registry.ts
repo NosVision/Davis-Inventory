@@ -14,6 +14,22 @@ export interface ModuleConfig {
   groupKey: string;
 }
 
+// Baseline modules every dashboard role can reach (owner ask 2026-07-08): the task hub, chat,
+// the personal self-service home, and the guide. `customer` is excluded (separate /customer portal).
+const ALL_STAFF: UserRole[] = [
+  'owner',
+  'accountant',
+  'manager',
+  'bar',
+  'staff',
+  'hq',
+  'technician',
+  'hr',
+  'cashier',
+  'housekeeping_staff',
+  'boh_staff',
+];
+
 export const modules: ModuleConfig[] = [
   // ─── หลัก ───
   {
@@ -23,7 +39,7 @@ export const modules: ModuleConfig[] = [
     icon: 'layout-dashboard',
     color: 'violet',
     href: '/overview',
-    roles: ['owner', 'accountant', 'manager', 'hq'],
+    roles: ['owner'],
     groupKey: 'moduleGroups.main',
   },
   {
@@ -33,7 +49,8 @@ export const modules: ModuleConfig[] = [
     icon: 'inbox',
     color: 'fuchsia',
     href: '/inbox',
-    roles: ['owner'],
+    // Approvals hub — owner + HQ (HQ = all approval surfaces, owner ask 2026-07-08).
+    roles: ['owner', 'hq'],
     badge: 'pending_count',
     groupKey: 'moduleGroups.main',
   },
@@ -44,7 +61,7 @@ export const modules: ModuleConfig[] = [
     icon: 'message-circle',
     color: 'blue',
     href: '/chat',
-    roles: ['owner', 'accountant', 'manager', 'bar', 'staff', 'hq'],
+    roles: ALL_STAFF,
     groupKey: 'moduleGroups.main',
   },
   {
@@ -55,24 +72,23 @@ export const modules: ModuleConfig[] = [
     icon: 'user-circle',
     color: 'teal',
     href: '/me',
-    roles: ['owner', 'accountant', 'manager', 'bar', 'staff', 'hq', 'technician'],
+    roles: ALL_STAFF,
     groupKey: 'moduleGroups.main',
   },
   {
-    // ห้องงาน (Task Management) — รวมงานทุกสายงาน + ยุบระบบแจ้งซ่อมเข้ามา
-    // การมองเห็นจริงคุมที่ membership/RLS ในหน้า เหมือน chat
+    // ห้องงาน (Task Management) — baseline ทุก role; การมองเห็นจริงคุมที่ membership/RLS ในหน้า
     id: 'tasks',
     nameKey: 'modules.tasks.name',
     descriptionKey: 'modules.tasks.description',
     icon: 'clipboard-list',
     color: 'indigo',
     href: '/tasks',
-    roles: ['owner', 'accountant', 'manager', 'bar', 'technician', 'staff', 'hq'],
+    roles: ALL_STAFF,
     badge: 'my_tasks_count',
     groupKey: 'moduleGroups.main',
   },
 
-  // ─── คลังสินค้า ───
+  // ─── คลังสินค้า (Inventory) ───
   {
     id: 'stock',
     nameKey: 'modules.stock.name',
@@ -80,7 +96,7 @@ export const modules: ModuleConfig[] = [
     icon: 'clipboard-check',
     color: 'indigo',
     href: '/stock',
-    roles: ['owner', 'accountant', 'manager', 'bar'],
+    roles: ['owner', 'bar', 'hq'],
     permission: 'can_count_stock',
     groupKey: 'moduleGroups.warehouse',
   },
@@ -91,7 +107,8 @@ export const modules: ModuleConfig[] = [
     icon: 'wine',
     color: 'emerald',
     href: '/deposit',
-    roles: ['owner', 'accountant', 'manager', 'bar', 'staff'],
+    // Alcohol Deposit — owner, manager (ฝาก/เบิกด้วย), bar + staff (คงเดิม), hq.
+    roles: ['owner', 'manager', 'bar', 'staff', 'hq'],
     permission: 'can_manage_deposit',
     groupKey: 'moduleGroups.warehouse',
   },
@@ -102,7 +119,7 @@ export const modules: ModuleConfig[] = [
     icon: 'arrow-left-right',
     color: 'blue',
     href: '/transfer',
-    roles: ['owner', 'accountant', 'manager', 'bar'],
+    roles: ['owner', 'bar', 'hq'],
     permission: 'can_transfer',
     groupKey: 'moduleGroups.warehouse',
   },
@@ -113,7 +130,7 @@ export const modules: ModuleConfig[] = [
     icon: 'shuffle',
     color: 'rose',
     href: '/borrow',
-    roles: ['owner', 'accountant', 'manager', 'bar'],
+    roles: ['owner', 'bar', 'hq'],
     permission: 'can_borrow',
     groupKey: 'moduleGroups.warehouse',
   },
@@ -129,7 +146,7 @@ export const modules: ModuleConfig[] = [
     groupKey: 'moduleGroups.warehouse',
   },
 
-  // ─── คอมมิชชั่น ───
+  // ─── คอมมิชชั่น (AE) ───
   {
     id: 'commission',
     nameKey: 'modules.commission.name',
@@ -137,7 +154,8 @@ export const modules: ModuleConfig[] = [
     icon: 'hand-coins',
     color: 'amber',
     href: '/commission',
-    roles: ['owner', 'accountant', 'manager'],
+    // AE — owner, accountant, cashier.
+    roles: ['owner', 'accountant', 'cashier'],
     permission: 'can_manage_commission',
     groupKey: 'moduleGroups.warehouse',
   },
@@ -188,7 +206,7 @@ export const modules: ModuleConfig[] = [
   },
   */
 
-  // ─── HR (บุคคล) — เห็นเฉพาะ owner + ผู้มีสิทธิ์ can_manage_hr ───
+  // ─── HR (บุคคล) — owner + hr (โมเดลใหม่: hr เห็นเฉพาะ HR + baseline) ───
   {
     id: 'hr',
     nameKey: 'modules.hr.name',
@@ -196,7 +214,7 @@ export const modules: ModuleConfig[] = [
     icon: 'user-cog',
     color: 'teal',
     href: '/hr',
-    roles: ['owner'],
+    roles: ['owner', 'hr'],
     permission: 'can_manage_hr',
     badge: 'hr_pending_count',
     groupKey: 'moduleGroups.hr',
@@ -210,7 +228,7 @@ export const modules: ModuleConfig[] = [
     icon: 'file-bar-chart',
     color: 'amber',
     href: '/reports',
-    roles: ['owner', 'accountant', 'manager'],
+    roles: ['owner'],
     permission: 'can_view_reports',
     groupKey: 'moduleGroups.reports',
   },
@@ -280,7 +298,7 @@ export const modules: ModuleConfig[] = [
     icon: 'book-open',
     color: 'sky',
     href: '/guide',
-    roles: ['owner', 'accountant', 'manager', 'bar', 'staff', 'hq'],
+    roles: ALL_STAFF,
     groupKey: 'moduleGroups.help',
   },
 
@@ -333,14 +351,9 @@ export function getModulesForRole(role: UserRole): ModuleConfig[] {
  *
  * Owner (role มี '*' wildcard) เห็นทุกโมดูลอยู่แล้วผ่าน role check
  */
-// The 'hr' role reaches every module EXCEPT the deposit + stock-count systems (owner 2026-07-08).
-const HR_EXCLUDED_MODULES = new Set(['deposit', 'stock']);
-
 export function getAccessibleModules(user: AuthUser): ModuleConfig[] {
   return modules.filter((m) => {
-    // HR: all pages except deposit/stock (also hard-blocked in middleware).
-    if (user.role === 'hr') return !HR_EXCLUDED_MODULES.has(m.id);
-    // 1) role-based access — พฤติกรรมเดิม
+    // 1) role-based access
     if (m.roles.includes(user.role)) return true;
     // 2) individual permission unlock — ต้องประกาศ permission ไว้
     if (m.permission && user.permissions.includes(m.permission)) return true;

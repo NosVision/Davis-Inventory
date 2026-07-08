@@ -113,11 +113,14 @@
     "accountant": "บัญชี",
     "manager": "คนคุมร้าน",
     "bar": "บาร์",
-    "technician": "ช่าง",
+    "technician": "ช่างซ่อมบำรุง",
     "staff": "พนักงาน",
     "customer": "ลูกค้า",
     "hq": "พนักงานคลังกลาง",
-    "hr": "ฝ่ายบุคคล"
+    "hr": "ฝ่ายบุคคล",
+    "cashier": "แคชเชียร์",
+    "housekeeping_staff": "แม่บ้าน",
+    "boh_staff": "พนักงานหลังร้าน (BOH)"
   },
   "nav": {
     "darkMode": "โหมดมืด",

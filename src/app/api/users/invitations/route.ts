@@ -3,9 +3,31 @@ import { createClient } from '@/lib/supabase/server';
 import { canManageHr } from '@/lib/hr/access';
 import crypto from 'crypto';
 
-type Role = 'owner' | 'accountant' | 'manager' | 'bar' | 'technician' | 'staff' | 'hq' | 'hr';
+type Role =
+  | 'owner'
+  | 'accountant'
+  | 'manager'
+  | 'bar'
+  | 'technician'
+  | 'staff'
+  | 'hq'
+  | 'hr'
+  | 'cashier'
+  | 'housekeeping_staff'
+  | 'boh_staff';
 
-const ALLOWED_ROLES: Role[] = ['accountant', 'manager', 'bar', 'technician', 'staff', 'hq', 'hr'];
+const ALLOWED_ROLES: Role[] = [
+  'accountant',
+  'manager',
+  'bar',
+  'technician',
+  'staff',
+  'hq',
+  'hr',
+  'cashier',
+  'housekeeping_staff',
+  'boh_staff',
+];
 
 async function requireAdminOrManager() {
   const supabase = await createClient();

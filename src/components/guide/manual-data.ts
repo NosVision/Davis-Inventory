@@ -455,4 +455,19 @@ export const ROLE_COLOR_CLASSES: Record<UserRole, { badge: string; badgeDark: st
     badgeDark: 'dark:bg-fuchsia-900 dark:text-fuchsia-300',
     tocNum: 'bg-fuchsia-500',
   },
+  cashier: {
+    badge: 'bg-orange-100 text-orange-700',
+    badgeDark: 'dark:bg-orange-900 dark:text-orange-300',
+    tocNum: 'bg-orange-500',
+  },
+  housekeeping_staff: {
+    badge: 'bg-lime-100 text-lime-700',
+    badgeDark: 'dark:bg-lime-900 dark:text-lime-300',
+    tocNum: 'bg-lime-500',
+  },
+  boh_staff: {
+    badge: 'bg-stone-100 text-stone-700',
+    badgeDark: 'dark:bg-stone-900 dark:text-stone-300',
+    tocNum: 'bg-stone-500',
+  },
 };

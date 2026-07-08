@@ -113,11 +113,14 @@
     "accountant": "Accountant",
     "manager": "Store Manager",
     "bar": "Bar",
-    "technician": "Technician",
+    "technician": "Maintenance",
     "staff": "Staff",
     "customer": "Customer",
     "hq": "HQ Warehouse Staff",
-    "hr": "HR"
+    "hr": "HR",
+    "cashier": "Cashier",
+    "housekeeping_staff": "House Keeping",
+    "boh_staff": "BOH Staff"
   },
   "nav": {
     "darkMode": "Dark mode",

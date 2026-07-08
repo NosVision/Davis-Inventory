@@ -267,7 +267,7 @@ export default function UsersPage() {
     return true;
   });
 
-  const FILTERABLE_ROLES: UserRole[] = ['owner', 'accountant', 'manager', 'bar', 'technician', 'staff', 'hq', 'hr'];
+  const FILTERABLE_ROLES: UserRole[] = ['owner', 'accountant', 'manager', 'bar', 'technician', 'staff', 'hq', 'hr', 'cashier', 'housekeeping_staff', 'boh_staff'];
   // Owner + HR may administer users; only the OWNER gets the elevated bits — the permissions
   // editor and creating/inviting elevated-role accounts (accountant/manager/hq/hr).
   const isOwner = currentUser?.role === 'owner';
@@ -509,7 +509,10 @@ export default function UsersPage() {
             options={[
               { value: 'staff', label: t('roleStaff') },
               { value: 'bar', label: t('roleBar') },
-              { value: 'technician', label: t('roleTechnician') },
+              { value: 'technician', label: ROLE_LABELS.technician },
+              { value: 'cashier', label: ROLE_LABELS.cashier },
+              { value: 'housekeeping_staff', label: ROLE_LABELS.housekeeping_staff },
+              { value: 'boh_staff', label: ROLE_LABELS.boh_staff },
               // Elevated roles are owner-only — HR cannot mint them.
               ...(isOwner
                 ? [
