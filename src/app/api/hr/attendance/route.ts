@@ -14,7 +14,9 @@ const SIGNED_URL_TTL_SECONDS = 120;
 const LIST_SELECT =
   'id, user_id, store_id, type, ts, business_date, distance_m, in_geofence, review_status, ' +
   'photo_url, ip, ip_country, is_vpn_suspect, device, ' +
-  'employee:profiles(username, display_name), store:stores(store_code, store_name)';
+  // hr_attendance now has TWO FKs to profiles (user_id + reviewed_by), so the embed must name the
+  // relationship explicitly or PostgREST 300/500s on the ambiguity.
+  'employee:profiles!hr_attendance_user_id_fkey(username, display_name), store:stores(store_code, store_name)';
 
 const ATTENDANCE_TYPES = ['in', 'out', 'break_start', 'break_end'];
 
