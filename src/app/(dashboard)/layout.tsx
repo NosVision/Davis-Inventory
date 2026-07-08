@@ -45,8 +45,8 @@ export default async function DashboardLayout({
 
   // ดึงข้อมูลร้านค้า
   let stores: Store[] = [];
-  if (profile.role === 'owner' || profile.role === 'accountant' || profile.role === 'hq') {
-    // เจ้าของร้านและบัญชี เห็นทุกสาขา
+  if (profile.role === 'owner' || profile.role === 'accountant' || profile.role === 'hq' || profile.role === 'hr') {
+    // เจ้าของ / บัญชี / คลังกลาง / ฝ่ายบุคคล เห็นทุกสาขา (hr เป็น role ข้ามสาขา ไม่ผูกกับ user_stores)
     const { data } = await supabase
       .from('stores')
       .select('*')

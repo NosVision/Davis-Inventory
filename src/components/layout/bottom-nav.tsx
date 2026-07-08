@@ -74,7 +74,7 @@ export function BottomNav() {
 
   if (!user) return null;
 
-  const desktopRoles = ['owner', 'accountant', 'manager', 'hq'];
+  const desktopRoles = ['owner', 'accountant', 'manager', 'hq', 'hr'];
   const navItems = desktopRoles.includes(user.role)
     ? desktopRoleNavItems
     : user.role === 'technician'
