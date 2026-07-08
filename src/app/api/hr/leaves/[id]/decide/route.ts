@@ -2,7 +2,30 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManager, requireStoreManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
+import { notifyUser } from '@/lib/notifications/service';
 import { enumerateDates, classifyLeaveEffect } from '@/lib/hr/leaves';
+
+// Tell the employee their leave was approved/rejected (best-effort — never fail the decision).
+async function notifyLeaveDecision(
+  row: { user_id: string; store_id: string | null; from_date: string; to_date: string },
+  decision: 'approved' | 'rejected',
+  note: string | null
+): Promise<void> {
+  try {
+    const range = row.from_date === row.to_date ? row.from_date : `${row.from_date} – ${row.to_date}`;
+    const ok = decision === 'approved';
+    await notifyUser({
+      userId: row.user_id,
+      storeId: row.store_id,
+      type: 'hr_leave_result',
+      title: ok ? 'คำขอลาได้รับอนุมัติ' : 'คำขอลาถูกปฏิเสธ',
+      body: `${ok ? 'อนุมัติ' : 'ไม่อนุมัติ'}การลา ${range}${note ? ` — ${note}` : ''}`,
+      data: { url: '/me/leaves' },
+    });
+  } catch (e) {
+    console.error('[leaves/decide] notify employee failed:', e);
+  }
+}
 
 const TABLE = 'hr_leaves';
 const OVERRIDE_TABLE = 'hr_timesheet_overrides';
@@ -85,6 +108,12 @@ export async function POST(
       reason: note ?? undefined,
     });
 
+    await notifyLeaveDecision(
+      { user_id: row.user_id as string, store_id: row.store_id as string | null, from_date: row.from_date as string, to_date: row.to_date as string },
+      'rejected',
+      note
+    );
+
     return NextResponse.json({ data: { id, status: 'rejected' } });
   }
 
@@ -114,6 +143,12 @@ export async function POST(
     after: { status: 'approved', decision_note: note },
     reason: note ?? undefined,
   });
+
+  await notifyLeaveDecision(
+    { user_id: row.user_id as string, store_id: row.store_id as string | null, from_date: row.from_date as string, to_date: row.to_date as string },
+    'approved',
+    note
+  );
 
   // --- Apply the §H leave effect. Everything below is best-effort: on failure we
   // collect a warning and still return 200, since the approval already committed. ---

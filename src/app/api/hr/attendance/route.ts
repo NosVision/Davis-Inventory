@@ -12,7 +12,7 @@ const SIGNED_URL_TTL_SECONDS = 120;
 // Embed employee (profiles) + branch (stores). Both FKs are unambiguous, so the
 // plain relationship embed resolves without needing the constraint name.
 const LIST_SELECT =
-  'id, user_id, store_id, type, ts, business_date, distance_m, in_geofence, ' +
+  'id, user_id, store_id, type, ts, business_date, distance_m, in_geofence, review_status, ' +
   'photo_url, ip, ip_country, is_vpn_suspect, device, ' +
   'employee:profiles(username, display_name), store:stores(store_code, store_name)';
 
@@ -27,6 +27,7 @@ interface AttendanceRow {
   business_date: string;
   distance_m: number | null;
   in_geofence: boolean | null;
+  review_status: string | null;
   photo_url: string | null;
   ip: string | null;
   ip_country: string | null;
@@ -56,14 +57,15 @@ export async function GET(request: NextRequest) {
   const userId = sp.get('user_id');
   const type = sp.get('type');
   const suspectOnly = sp.get('suspect') === 'true';
+  const reviewPending = sp.get('review') === 'pending';
   const limit = Math.min(Math.max(Number(sp.get('limit')) || 50, 1), 200);
   const offset = Math.max(Number(sp.get('offset')) || 0, 0);
 
   const service = createServiceClient();
-  let query = service
-    .from('hr_attendance')
-    .select(LIST_SELECT, { count: 'exact' })
-    .eq('business_date', businessDate);
+  let query = service.from('hr_attendance').select(LIST_SELECT, { count: 'exact' });
+  // The review queue spans all dates (HR clears the whole backlog); normal browsing is date-scoped.
+  if (reviewPending) query = query.eq('review_status', 'pending');
+  else query = query.eq('business_date', businessDate);
   if (storeId) query = query.eq('store_id', storeId);
   if (scope.storeIds) query = query.in('store_id', scope.storeIds); // scoped manager: their stores only
   if (userId) query = query.eq('user_id', userId);
@@ -105,6 +107,7 @@ export async function GET(request: NextRequest) {
     business_date: r.business_date,
     distance_m: r.distance_m,
     in_geofence: r.in_geofence,
+    review_status: r.review_status,
     is_vpn_suspect: r.is_vpn_suspect,
     ip_country: r.ip_country,
     employee_name: r.employee?.display_name || r.employee?.username || null,

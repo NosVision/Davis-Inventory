@@ -266,9 +266,10 @@ export default function CheckinPage() {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json?.error || t('failed'));
+      const pending = json.review_status === 'pending';
       toast({
-        type: 'success',
-        title: json.in_geofence === false ? t('successOut') : t('success'),
+        type: pending ? 'warning' : 'success',
+        title: pending ? t('successPending') : json.in_geofence === false ? t('successOut') : t('success'),
       });
       setPhoto(null);
       if (fileInputRef.current) fileInputRef.current.value = '';

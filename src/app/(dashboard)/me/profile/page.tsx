@@ -192,6 +192,14 @@ export default function MyProfilePage() {
     loadAll();
   }, [loadAll]);
 
+  // After the claim modal submits, re-read identity so the "ผูกชื่อ" button flips to the
+  // "รอ HR อนุมัติ" banner right away (no stale, re-clickable button in the same session).
+  useEffect(() => {
+    const onUpdated = () => { loadIdentity(); };
+    window.addEventListener('hr-identity-updated', onUpdated);
+    return () => window.removeEventListener('hr-identity-updated', onUpdated);
+  }, [loadIdentity]);
+
   const closeModal = useCallback(() => {
     setOpenField(null);
     setReason('');

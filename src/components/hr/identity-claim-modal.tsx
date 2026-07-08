@@ -133,6 +133,9 @@ export function IdentityClaimModal({ role }: { role: string }) {
       }
       if (!res.ok) throw new Error(json?.error);
       try { localStorage.setItem(DONE_KEY, '1'); } catch { /* ignore */ }
+      // Tell any open surface (e.g. /me/profile) to re-read status so its "ผูกชื่อ" button
+      // immediately flips to the "waiting for HR" banner instead of staying re-clickable.
+      try { window.dispatchEvent(new Event('hr-identity-updated')); } catch { /* ignore */ }
       toast({ type: 'success', title: L.sent, message: L.sentBody });
       setOpen(false);
     } catch {

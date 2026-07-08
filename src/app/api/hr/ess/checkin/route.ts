@@ -4,6 +4,16 @@ import { haversineMeters, isValidLat, isValidLng } from '@/lib/hr/geo';
 import { assessIp } from '@/lib/hr/ip-geo';
 import { getClientIp } from '@/lib/hr/request-ip';
 import { openBusinessDateBangkok } from '@/lib/utils/date';
+import { notifyHrManagers } from '@/lib/hr/notify';
+import { notifyUser } from '@/lib/notifications/service';
+
+// db type value → Thai label for notification bodies
+const TYPE_TH: Record<string, string> = {
+  in: 'เข้างาน',
+  out: 'ออกงาน',
+  break_start: 'เริ่มพัก',
+  break_end: 'เลิกพัก',
+};
 
 const BUCKET = 'hr-documents';
 const VALID_TYPES = ['in', 'out', 'break_start', 'break_end'] as const;
@@ -190,22 +200,32 @@ export async function POST(request: NextRequest) {
   const ts = new Date().toISOString();
   const device = (typeof body.device === 'string' ? body.device : '').slice(0, 300);
 
-  const { error: insertErr } = await service.from('hr_attendance').insert({
-    user_id: user.id,
-    store_id: storeId,
-    type,
-    ts,
-    business_date: openBusinessDateBangkok(),
-    gps_lat: gpsLat,
-    gps_lng: gpsLng,
-    distance_m: distanceM,
-    in_geofence: inGeofence,
-    photo_url: path,
-    ip,
-    ip_country: ipCountry,
-    is_vpn_suspect: isVpnSuspect,
-    device,
-  });
+  // Geofence enforcement (owner 2026-07-08): a punch OUTSIDE every assigned geofence, or one
+  // flagged VPN/GPS-spoof suspect, is not silently accepted — it's held for HR review. A punch
+  // that's inside (true) or undeterminable (null, no geofence configured) needs no review.
+  const reviewStatus: 'pending' | null = inGeofence === false || isVpnSuspect ? 'pending' : null;
+
+  const { data: inserted, error: insertErr } = await service
+    .from('hr_attendance')
+    .insert({
+      user_id: user.id,
+      store_id: storeId,
+      type,
+      ts,
+      business_date: openBusinessDateBangkok(),
+      gps_lat: gpsLat,
+      gps_lng: gpsLng,
+      distance_m: distanceM,
+      in_geofence: inGeofence,
+      review_status: reviewStatus,
+      photo_url: path,
+      ip,
+      ip_country: ipCountry,
+      is_vpn_suspect: isVpnSuspect,
+      device,
+    })
+    .select('id')
+    .single();
   if (insertErr) {
     // Remove the orphaned object the upload just created before failing.
     await service.storage
@@ -215,8 +235,47 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: insertErr.message }, { status: 500 });
   }
 
+  // Held for review → tell HR there's a punch to check, and reassure the employee it's pending
+  // (not rejected). Best-effort: a notification failure must never fail the punch.
+  if (reviewStatus === 'pending') {
+    try {
+      const { data: prof } = await service
+        .from('profiles')
+        .select('display_name, username')
+        .eq('id', user.id)
+        .maybeSingle();
+      const who = prof?.display_name || prof?.username || '—';
+      const label = TYPE_TH[type] ?? type;
+      const reason = isVpnSuspect
+        ? 'ตำแหน่ง/เครือข่ายน่าสงสัย'
+        : distanceM != null
+          ? `นอกพื้นที่ ~${distanceM} ม.`
+          : 'นอกพื้นที่';
+      await Promise.allSettled([
+        notifyHrManagers(service, {
+          storeId,
+          type: 'hr_attendance_review',
+          title: 'ลงเวลารอตรวจสอบ',
+          body: `${who} ${label} — ${reason}`,
+          data: { attendance_id: inserted.id, url: '/hr/attendance?review=pending' },
+          excludeUserId: user.id,
+        }),
+        notifyUser({
+          userId: user.id,
+          storeId,
+          type: 'hr_attendance_result',
+          title: 'ลงเวลาอยู่นอกพื้นที่ — รอ HR ตรวจสอบ',
+          body: `${label} ของคุณถูกบันทึกแล้ว แต่ ${reason} จึงส่งให้ HR ตรวจสอบก่อน`,
+          data: { url: '/me/checkin' },
+        }),
+      ]);
+    } catch (e) {
+      console.error('[ess/checkin] review notify failed:', e);
+    }
+  }
+
   return NextResponse.json(
-    { ok: true, in_geofence: inGeofence, distance_m: distanceM, store_id: storeId, ts },
+    { ok: true, in_geofence: inGeofence, distance_m: distanceM, store_id: storeId, review_status: reviewStatus, ts },
     { status: 201 }
   );
 }

@@ -16,6 +16,7 @@ interface AttendanceRow extends Record<string, unknown> {
   business_date: string;
   distance_m: number | null;
   in_geofence: boolean | null;
+  review_status: string | null;
   is_vpn_suspect: boolean;
   ip_country: string | null;
   employee_name: string | null;
@@ -53,6 +54,8 @@ export default function AttendanceReportPage() {
   const [storeId, setStoreId] = useState('');
   const [type, setType] = useState('');
   const [suspectOnly, setSuspectOnly] = useState(false);
+  const [reviewOnly, setReviewOnly] = useState(false);
+  const [reviewing, setReviewing] = useState<string | null>(null);
 
   // store options (active branches) — same source as announcements/assets
   const [stores, setStores] = useState<StoreOption[]>([]);
@@ -77,6 +80,7 @@ export default function AttendanceReportPage() {
       if (storeId) params.set('store_id', storeId);
       if (type) params.set('type', type);
       if (suspectOnly) params.set('suspect', 'true');
+      if (reviewOnly) params.set('review', 'pending');
       params.set('limit', String(PAGE_SIZE));
       params.set('offset', String(nextOffset));
       try {
@@ -93,13 +97,34 @@ export default function AttendanceReportPage() {
         setLoading(false);
       }
     },
-    [date, storeId, type, suspectOnly, t]
+    [date, storeId, type, suspectOnly, reviewOnly, t]
   );
 
   // Refetch from the top whenever a filter changes.
   useEffect(() => {
     fetchRows(0, false);
   }, [fetchRows]);
+
+  const review = useCallback(
+    async (id: string, decision: 'approved' | 'rejected') => {
+      setReviewing(id);
+      try {
+        const res = await fetch(`/api/hr/attendance/${id}/review`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ decision }),
+        });
+        if (!res.ok) throw new Error('review failed');
+        toast({ type: 'success', title: t('reviewSaved') });
+        fetchRows(0, false);
+      } catch {
+        toast({ type: 'error', title: t('reviewFailed') });
+      } finally {
+        setReviewing(null);
+      }
+    },
+    [t, fetchRows]
+  );
 
   const columns = useMemo<Column<AttendanceRow>[]>(
     () => [
@@ -166,6 +191,27 @@ export default function AttendanceReportPage() {
           ),
       },
       {
+        key: 'review',
+        header: t('colReview'),
+        render: (r) => {
+          if (r.review_status === 'pending') {
+            return (
+              <div className="flex items-center gap-1.5">
+                <Button size="sm" onClick={() => review(r.id, 'approved')} disabled={reviewing === r.id}>
+                  {t('approve')}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => review(r.id, 'rejected')} disabled={reviewing === r.id}>
+                  {t('reject')}
+                </Button>
+              </div>
+            );
+          }
+          if (r.review_status === 'approved') return <StatusBadge tone="good" label={t('reviewApproved')} />;
+          if (r.review_status === 'rejected') return <StatusBadge tone="critical" label={t('reviewRejected')} />;
+          return <span className="text-xs text-gray-400 dark:text-gray-500">—</span>;
+        },
+      },
+      {
         key: 'photo',
         header: t('colPhoto'),
         render: (r) =>
@@ -183,7 +229,7 @@ export default function AttendanceReportPage() {
           ),
       },
     ],
-    [t]
+    [t, review, reviewing]
   );
 
   const typeOptions = [
@@ -229,6 +275,15 @@ export default function AttendanceReportPage() {
             className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800"
           />
           {t('suspectOnly')}
+        </label>
+        <label className="flex items-center gap-2 pb-2 text-sm text-gray-700 dark:text-gray-300">
+          <input
+            type="checkbox"
+            checked={reviewOnly}
+            onChange={(e) => setReviewOnly(e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500 dark:border-gray-600 dark:bg-gray-800"
+          />
+          {t('reviewOnly')}
         </label>
       </FilterBar>
 

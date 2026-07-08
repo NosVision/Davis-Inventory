@@ -45,7 +45,11 @@ export type NotificationType =
   | 'hr_paper_ready'          // สลิปกระดาษพิมพ์แล้ว รอรับที่ HR (for the employee)
   | 'hr_payslip_ready'        // เงินเดือนออกแล้ว — สลิปพร้อมดู (for every employee in the run)
   | 'hr_doc_request'          // พนักงานขอเอกสาร (for HR)
-  | 'hr_doc_ready';           // เอกสารพร้อม/ผลคำขอ (for the employee)
+  | 'hr_doc_ready'            // เอกสารพร้อม/ผลคำขอ (for the employee)
+  | 'hr_leave_request'        // พนักงานยื่นขอลา รอ HR อนุมัติ (for HR)
+  | 'hr_leave_result'         // ผลอนุมัติ/ปฏิเสธการลา (for the employee)
+  | 'hr_attendance_review'    // ลงเวลานอกพื้นที่/น่าสงสัย รอ HR ตรวจสอบ (for HR)
+  | 'hr_attendance_result';   // ผลตรวจสอบการลงเวลา / รอตรวจสอบ (for the employee)
 
 export interface NotifyUserParams {
   userId: string;
@@ -142,6 +146,10 @@ const TYPE_TO_PREF: Record<NotificationType, keyof NotificationPreferences> = {
   hr_payslip_ready: 'notify_approval_request',
   hr_doc_request: 'notify_approval_request',
   hr_doc_ready: 'notify_approval_request',
+  hr_leave_request: 'notify_approval_request',
+  hr_leave_result: 'notify_approval_request',
+  hr_attendance_review: 'notify_approval_request',
+  hr_attendance_result: 'notify_approval_request',
 };
 
 // Customer-facing notification types that respect store_settings toggles

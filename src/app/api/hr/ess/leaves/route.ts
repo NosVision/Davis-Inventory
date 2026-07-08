@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { logHrAudit } from '@/lib/hr/audit';
+import { notifyHrManagers } from '@/lib/hr/notify';
 import { todayBangkok } from '@/lib/utils/date';
 import {
   isCalendarDate,
@@ -261,6 +262,27 @@ export async function POST(request: NextRequest) {
     after: data as unknown as Record<string, unknown>,
     reason: `Leave requested: ${leaveType.code}`,
   });
+
+  // Notify HR/managers that a leave request is waiting (best-effort — must never fail the request).
+  try {
+    const { data: prof } = await service
+      .from('profiles')
+      .select('display_name, username')
+      .eq('id', user.id)
+      .maybeSingle();
+    const who = prof?.display_name || prof?.username || '—';
+    const range = fromDate === toDate ? fromDate : `${fromDate} – ${toDate}`;
+    await notifyHrManagers(service, {
+      storeId,
+      type: 'hr_leave_request',
+      title: 'คำขอลา — รออนุมัติ',
+      body: `${who} ขอ${leaveType.name_th} ${range} (${days} วัน)`,
+      data: { leave_id: (data as unknown as { id: string }).id, url: '/hr/leaves' },
+      excludeUserId: user.id,
+    });
+  } catch (e) {
+    console.error('[ess/leaves] notify HR failed:', e);
+  }
 
   return NextResponse.json({ data }, { status: 201 });
 }
