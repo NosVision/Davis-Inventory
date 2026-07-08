@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { Modal, Input, Select, Button, Textarea, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { createClient } from '@/lib/supabase/client';
+import { CredentialShare } from './credential-share';
 import {
   PAY_TYPES,
   TAX_MODES,
@@ -32,6 +33,7 @@ interface RefOpt {
 interface FormState {
   // account (create only)
   username: string;
+  password: string;
   display_name: string;
   role: string;
   // employment
@@ -96,6 +98,7 @@ function isTerminalStatus(status: string): boolean {
 function defaultForm(): FormState {
   return {
     username: '',
+    password: '123456',
     display_name: '',
     role: 'staff',
     company_id: '',
@@ -266,6 +269,7 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
 
       setForm({
         username: profile.username ?? '',
+        password: '123456',
         display_name: profile.display_name ?? '',
         role: 'staff',
         company_id: (d.company_id as string) ?? '',
@@ -466,7 +470,7 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
       body = {
         ...(linkMode
           ? { link_profile_id: linkProfileId }
-          : { username: form.username.trim().toLowerCase(), role: form.role }),
+          : { username: form.username.trim().toLowerCase(), role: form.role, password: form.password }),
         storeIds: form.storeIds,
         company_id: form.company_id || null,
         rate_satang: rateSatang,
@@ -562,21 +566,13 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
     >
       {createdPassword !== null ? (
         <div className="space-y-4">
-          <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-4 dark:border-emerald-700 dark:bg-emerald-900/20">
-            <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">{t('tempPasswordTitle')}</p>
-            <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-400">{t('tempPasswordMsg')}</p>
-            <div className="mt-2 select-all rounded-md bg-white px-3 py-2 text-center font-mono text-lg font-bold tracking-wider text-gray-900 dark:bg-gray-900 dark:text-white">
-              {createdPassword || '—'}
-            </div>
-            {createdWarnings.length > 0 && (
-              <ul className="mt-3 list-disc space-y-0.5 pl-5 text-xs text-amber-600 dark:text-amber-400">
-                {createdWarnings.map((w, i) => (
-                  <li key={i}>{w}</li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <div className="flex justify-end">
+          <CredentialShare
+            username={form.username.trim().toLowerCase()}
+            password={createdPassword}
+            displayName={form.display_name.trim()}
+            warnings={createdWarnings}
+          />
+          <div className="flex justify-end border-t border-gray-100 pt-4 dark:border-gray-700">
             <Button type="button" onClick={onSaved}>
               {tc('close')}
             </Button>
@@ -649,6 +645,13 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
                     value={form.username}
                     onChange={(e) => update('username', e.target.value.toLowerCase())}
                     placeholder="jane.doe"
+                    autoComplete="off"
+                  />
+                  <Input
+                    label={t('password')}
+                    hint={t('passwordHint')}
+                    value={form.password}
+                    onChange={(e) => update('password', e.target.value)}
                     autoComplete="off"
                   />
                   <Input

@@ -249,7 +249,10 @@ export async function POST(request: NextRequest) {
 
   const service = createServiceClient();
   const email = `${username}@stockmanager.app`;
-  const tempPassword = `Hr${randomBytes(6).toString('hex')}!`;
+  // HR may supply the initial password (e.g. a simple default to hand over); otherwise a random
+  // one is minted. Either way must_change_password forces a reset on first login.
+  const providedPassword = typeof body.password === 'string' ? body.password : '';
+  const tempPassword = providedPassword.length >= 4 ? providedPassword : `Hr${randomBytes(6).toString('hex')}!`;
 
   const { data: authData, error: authErr } = await service.auth.admin.createUser({
     email,

@@ -3977,6 +3977,8 @@
         "createdOk": "Employee created",
         "linkedOk": "Existing account linked as employee",
         "createNewAccount": "Create new account",
+        "password": "Password",
+        "passwordHint": "Default 123456 — the employee changes it on first login",
         "linkExisting": "Link existing user",
         "linkUser": "Select existing user",
         "linkSearch": "Search users",
