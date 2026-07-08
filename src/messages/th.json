@@ -631,7 +631,7 @@
   "overview": {
     "title": "ภาพรวม",
     "cc": {
-      "todayHeading": "ต้องรู้วันนี้",
+      "todayHeading": "ภาพรวมวันนี้",
       "tiles": {
         "action": "ต้องดำเนินการ",
         "actionCap": "รายการรออนุมัติ/จัดการ",

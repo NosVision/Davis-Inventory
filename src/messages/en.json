@@ -631,7 +631,7 @@
   "overview": {
     "title": "Overview",
     "cc": {
-      "todayHeading": "Need to know today",
+      "todayHeading": "Today at a glance",
       "tiles": {
         "action": "Needs action",
         "actionCap": "Items to approve / handle",
