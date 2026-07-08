@@ -20,6 +20,7 @@ interface PaymentRecord {
   total_entries: number;
   total_amount: number;
   slip_photo_url: string | null;
+  slip_photo_urls: string[] | null;
   status: string;
   notes: string | null;
   paid_at: string;
@@ -169,12 +170,23 @@ export function CommissionPaymentHistory({ month: monthProp, refreshKey }: Commi
               <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency(detailModal.total_amount)}</p>
               {detailModal.notes && <p className="text-xs text-gray-500">{t('paymentHistory.notes')}: {detailModal.notes}</p>}
             </div>
-            {detailModal.slip_photo_url && (
-              <div>
-                <p className="mb-1 text-sm font-medium text-gray-700 dark:text-gray-300">{t('paymentHistory.transferSlip')}</p>
-                <img src={detailModal.slip_photo_url} alt="Slip" className="max-h-60 rounded-lg object-contain" />
-              </div>
-            )}
+            {(() => {
+              const slips = detailModal.slip_photo_urls ?? (detailModal.slip_photo_url ? [detailModal.slip_photo_url] : []);
+              if (slips.length === 0) return null;
+              return (
+                <div>
+                  <p className="mb-1 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {t('paymentHistory.transferSlip')}{slips.length > 1 ? ` (${slips.length})` : ''}
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {slips.map((url) => (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img key={url} src={url} alt="Slip" className="h-28 w-full rounded-lg object-cover ring-1 ring-gray-200 dark:ring-gray-700" />
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
             {detailModal.entries && detailModal.entries.length > 0 && (
               <div>
                 <p className="mb-1 text-sm font-medium text-gray-700 dark:text-gray-300">{t('paymentHistory.paidEntries')}</p>

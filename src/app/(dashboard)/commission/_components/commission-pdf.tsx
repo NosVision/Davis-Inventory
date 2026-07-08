@@ -117,6 +117,17 @@ const styles = StyleSheet.create({
     borderColor: '#e5e7eb',
   },
   rowAlt: { backgroundColor: '#f9fafb' },
+  // หมายเหตุต่อบิล — บรรทัดย่อยเต็มความกว้าง เยื้องให้ตรงกับคอลัมน์รายการ
+  noteRow: {
+    paddingTop: 1,
+    paddingBottom: 3,
+    paddingLeft: 60,
+    paddingRight: 3,
+    borderBottomWidth: 0.3,
+    borderColor: '#e5e7eb',
+    backgroundColor: '#fffdf2',
+  },
+  noteText: { fontSize: 7.5, color: '#6b7280' },
   totalRow: {
     flexDirection: 'row',
     paddingVertical: 4,
@@ -198,6 +209,7 @@ export interface CommissionPdfRow {
   subtotal: number;
   commission_amount: number;
   net_amount: number;
+  notes: string | null;    // แสดงเป็นบรรทัดย่อยใต้บิลเมื่อมี
 }
 
 export interface CommissionPdfAEGroup {
@@ -301,28 +313,32 @@ function ReportDocument({ data }: { data: CommissionReportData }) {
             </View>
 
             {g.rows.map((r, idx) => (
-              <View
-                key={`${g.ae_name}-${idx}`}
-                style={[styles.row, idx % 2 === 1 ? styles.rowAlt : {}]}
-                wrap={false}
-              >
-                <Text style={styles.cDate}>{fmtShortDate(r.bill_date)}</Text>
-                <Text style={styles.cReceipt}>{r.receipt_no || '-'}</Text>
-                <Text style={styles.cTable}>{r.table_no || '-'}</Text>
-                <Text style={styles.cBill}>
-                  {fmtMoney(r.subtotal * GROSS_MULTIPLIER)}
-                </Text>
-                <Text style={styles.cSubtotal}>{fmtMoney(r.subtotal)}</Text>
-                <Text style={styles.cCommission}>
-                  {fmtMoney(r.commission_amount)}
-                </Text>
-                <Text style={styles.cNet}>{fmtMoney(r.net_amount)}</Text>
-                <View style={styles.cCashier}>
-                  <View style={styles.signatureSlot} />
+              // Keep the bill row and its note together on one page.
+              <View key={`${g.ae_name}-${idx}`} wrap={false}>
+                <View style={[styles.row, idx % 2 === 1 ? styles.rowAlt : {}]}>
+                  <Text style={styles.cDate}>{fmtShortDate(r.bill_date)}</Text>
+                  <Text style={styles.cReceipt}>{r.receipt_no || '-'}</Text>
+                  <Text style={styles.cTable}>{r.table_no || '-'}</Text>
+                  <Text style={styles.cBill}>
+                    {fmtMoney(r.subtotal * GROSS_MULTIPLIER)}
+                  </Text>
+                  <Text style={styles.cSubtotal}>{fmtMoney(r.subtotal)}</Text>
+                  <Text style={styles.cCommission}>
+                    {fmtMoney(r.commission_amount)}
+                  </Text>
+                  <Text style={styles.cNet}>{fmtMoney(r.net_amount)}</Text>
+                  <View style={styles.cCashier}>
+                    <View style={styles.signatureSlot} />
+                  </View>
+                  <View style={styles.cManager}>
+                    <View style={styles.signatureSlot} />
+                  </View>
                 </View>
-                <View style={styles.cManager}>
-                  <View style={styles.signatureSlot} />
-                </View>
+                {r.notes ? (
+                  <View style={styles.noteRow}>
+                    <Text style={styles.noteText}>หมายเหตุ: {r.notes}</Text>
+                  </View>
+                ) : null}
               </View>
             ))}
 

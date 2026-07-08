@@ -5,7 +5,7 @@ import { Button, Card, CardHeader, CardContent, Badge, Modal, ModalFooter, toast
 import { useAppStore } from '@/stores/app-store';
 import { useAuthStore } from '@/stores/auth-store';
 import { CommissionExportButton } from './commission-export-button';
-import { Loader2, Banknote, Clock, Search, CheckCircle2, XCircle, Eye, Image, ChevronDown, ChevronRight, RotateCcw } from 'lucide-react';
+import { Loader2, Banknote, Clock, Search, CheckCircle2, XCircle, Eye, Image, ChevronDown, ChevronRight, RotateCcw, X } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/audit';
 import { useTranslations } from 'next-intl';
@@ -70,6 +70,9 @@ function EntryRow({ e, t, onCancel, onViewPhoto, selectable, selected, onToggleS
             </span>
           )}
         </div>
+        {e.notes && (
+          <p className="mt-0.5 truncate text-xs text-gray-400" title={e.notes}>{t('entryList.note')}: {e.notes}</p>
+        )}
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
         {/* Receipt photo viewer — same icon position as the history tab
@@ -146,6 +149,8 @@ interface PaymentRecord {
   total_entries: number;
   total_amount: number;
   slip_photo_url: string | null;
+  slip_photo_urls: string[] | null;
+  notes: string | null;
   status: string;
   paid_at: string;
   ae_profile?: { id: string; name: string; nickname: string | null };
@@ -168,9 +173,13 @@ export function CommissionPayment({ month: monthProp, refreshKey }: CommissionPa
   // Payment form state
   const [selectedType, setSelectedType] = useState<'ae' | 'bottle' | null>(null);
   const [selectedId, setSelectedId] = useState<string>('');
-  const [slipPhoto, setSlipPhoto] = useState<string | null>(null);
+  const [slipPhotos, setSlipPhotos] = useState<string[]>([]);
   const [payNotes, setPayNotes] = useState('');
   const [paying, setPaying] = useState(false);
+
+  // Adding more slips to an already-created payment (paying over several
+  // transfer rounds). Keyed by nothing — the open detail modal is the target.
+  const [addingSlip, setAddingSlip] = useState(false);
 
   // Detail modal
   const [detailModal, setDetailModal] = useState<PaymentRecord | null>(null);
@@ -320,7 +329,7 @@ export function CommissionPayment({ month: monthProp, refreshKey }: CommissionPa
         store_id: currentStoreId,
         type: selectedType === 'ae' ? 'ae_commission' : 'bottle_commission',
         month,
-        slip_photo_url: slipPhoto,
+        slip_photo_urls: slipPhotos,
         notes: payNotes,
       };
       if (selectedType === 'ae') payload.ae_id = selectedId;
@@ -344,7 +353,7 @@ export function CommissionPayment({ month: monthProp, refreshKey }: CommissionPa
           for (const id of pickedIds) next.delete(id);
           return next;
         });
-        setSelectedType(null); setSelectedId(''); setSlipPhoto(null); setPayNotes('');
+        setSelectedType(null); setSelectedId(''); setSlipPhotos([]); setPayNotes('');
         fetchData();
       } else {
         const err = await res.json();
@@ -415,6 +424,34 @@ export function CommissionPayment({ month: monthProp, refreshKey }: CommissionPa
       if (res.ok) setDetailModal(await res.json());
     } finally {
       setDetailLoading(false);
+    }
+  }
+
+  // Append a slip to an already-created payment (multi-round payout).
+  async function handleAddSlip(paymentId: string, url: string) {
+    setAddingSlip(true);
+    try {
+      const res = await fetch(`/api/commission/payment/${paymentId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'add_slips', slip_photo_urls: [url] }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        toast({ type: 'success', title: t('payment.slipAdded') });
+        setDetailModal((prev) =>
+          prev && prev.id === paymentId
+            ? { ...prev, slip_photo_urls: json.slip_photo_urls, slip_photo_url: json.slip_photo_urls?.[0] ?? prev.slip_photo_url }
+            : prev
+        );
+        logAudit({ store_id: currentStoreId, action_type: AUDIT_ACTIONS.COMMISSION_PAYMENT_CREATED, table_name: 'commission_payments', record_id: paymentId, new_value: { added_slip: url }, changed_by: user?.id });
+        fetchData();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast({ type: 'error', title: err.error || t('payment.error') });
+      }
+    } finally {
+      setAddingSlip(false);
     }
   }
 
@@ -682,14 +719,43 @@ export function CommissionPayment({ month: monthProp, refreshKey }: CommissionPa
                   {t('payment.payAmount')}: {formatCurrency(payAmount)}
                 </p>
               </div>
-              <PhotoUpload value={slipPhoto} onChange={setSlipPhoto} folder="commission-slips" label={t('payment.attachSlip')} placeholder={t('payment.attachSlipPlaceholder')} />
+              {/* Multiple transfer slips — a payout can be settled over
+                  several rounds, so allow attaching more than one. */}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">{t('payment.attachSlip')}</label>
+                {slipPhotos.length > 0 && (
+                  <div className="grid grid-cols-3 gap-2">
+                    {slipPhotos.map((url) => (
+                      <div key={url} className="relative overflow-hidden rounded-lg">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={url} alt="Slip" className="h-24 w-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => setSlipPhotos((prev) => prev.filter((u) => u !== url))}
+                          className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white hover:bg-red-500/80"
+                          aria-label={t('payment.removeSlip')}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <PhotoUpload
+                  value={null}
+                  onChange={(url) => { if (url) setSlipPhotos((prev) => (prev.includes(url) ? prev : [...prev, url])); }}
+                  folder="commission-slips"
+                  placeholder={slipPhotos.length > 0 ? t('payment.addAnotherSlip') : t('payment.attachSlipPlaceholder')}
+                  compact
+                />
+              </div>
               <Textarea label={t('payment.notes')} value={payNotes} onChange={(e) => setPayNotes(e.target.value)} rows={2} />
               <div className="flex gap-2">
                 <Button variant="primary" className="flex-1" onClick={handlePay} disabled={paying}>
                   {paying ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                   {t('payment.recordPay')}
                 </Button>
-                <Button variant="ghost" onClick={() => { setSelectedType(null); setSelectedId(''); setSlipPhoto(null); setPayNotes(''); }}>{t('payment.cancel')}</Button>
+                <Button variant="ghost" onClick={() => { setSelectedType(null); setSelectedId(''); setSlipPhotos([]); setPayNotes(''); }}>{t('payment.cancel')}</Button>
               </div>
             </CardContent>
           </Card>
@@ -788,13 +854,42 @@ export function CommissionPayment({ month: monthProp, refreshKey }: CommissionPa
               <p className="text-sm"><span className="text-gray-500">{t('payment.month')}:</span> {detailModal.month}</p>
               <p className="text-sm"><span className="text-gray-500">{t('payment.count')}:</span> {detailModal.total_entries} {t('payment.entries')}</p>
               <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency(detailModal.total_amount)}</p>
+              {detailModal.notes && <p className="text-xs text-gray-500">{t('payment.notes')}: {detailModal.notes}</p>}
             </div>
-            {detailModal.slip_photo_url && (
-              <div>
-                <p className="mb-1 text-sm font-medium text-gray-700 dark:text-gray-300">{t('payment.transferSlip')}</p>
-                <img src={detailModal.slip_photo_url} alt="Slip" className="max-h-60 rounded-lg object-contain" />
-              </div>
-            )}
+            {(() => {
+              const slips = detailModal.slip_photo_urls ?? (detailModal.slip_photo_url ? [detailModal.slip_photo_url] : []);
+              return (
+                <div>
+                  <p className="mb-1 text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {t('payment.transferSlip')}{slips.length > 1 ? ` (${slips.length})` : ''}
+                  </p>
+                  {slips.length > 0 ? (
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      {slips.map((url) => (
+                        <button key={url} type="button" onClick={() => setPhotoModal(url)} className="overflow-hidden rounded-lg ring-1 ring-gray-200 dark:ring-gray-700">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={url} alt="Slip" className="h-28 w-full object-cover" />
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-400">{t('payment.noSlip')}</p>
+                  )}
+                  {detailModal.status === 'paid' && (
+                    <div className="mt-2">
+                      <PhotoUpload
+                        value={null}
+                        onChange={(url) => { if (url) handleAddSlip(detailModal.id, url); }}
+                        folder="commission-slips"
+                        placeholder={t('payment.addAnotherSlip')}
+                        compact
+                        disabled={addingSlip}
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             {detailModal.entries && detailModal.entries.length > 0 && (
               <div>
                 <p className="mb-1 text-sm font-medium text-gray-700 dark:text-gray-300">{t('payment.paidEntries')}</p>

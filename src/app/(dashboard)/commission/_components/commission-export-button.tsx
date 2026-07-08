@@ -147,6 +147,7 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
             subtotal: Number(r.subtotal_amount) || 0,
             commission_amount: Number(r.commission_amount) || 0,
             net_amount: Number(r.net_amount) || 0,
+            notes: (r.notes as string | null) ?? null,
           };
         });
         const totals = rows.reduce(

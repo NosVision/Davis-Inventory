@@ -3,13 +3,14 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Tabs, Button, Modal } from '@/components/ui';
-import { Clock, History, Users, Plus } from 'lucide-react';
+import { Clock, History, Users, Plus, CalendarDays } from 'lucide-react';
 import { CommissionPayment } from './_components/commission-payment';
 import { CommissionHistory } from './_components/commission-history';
+import { CommissionDailySummary } from './_components/commission-daily-summary';
 import { AEManagement } from './_components/ae-management';
 import { CommissionEntryForm } from './_components/commission-entry-form';
 
-type CommissionTab = 'pending' | 'history' | 'ae';
+type CommissionTab = 'pending' | 'daily' | 'history' | 'ae';
 
 function getCurrentMonth() {
   const now = new Date();
@@ -25,6 +26,7 @@ export default function CommissionPage() {
 
   const tabs = [
     { id: 'pending', label: t('tabPending'), icon: <Clock className="h-4 w-4" /> },
+    { id: 'daily', label: t('tabDaily'), icon: <CalendarDays className="h-4 w-4" /> },
     { id: 'history', label: t('tabHistory'), icon: <History className="h-4 w-4" /> },
     { id: 'ae', label: t('tabAE'), icon: <Users className="h-4 w-4" /> },
   ];
@@ -59,6 +61,7 @@ export default function CommissionPage() {
       )}
 
       {activeTab === 'pending' && <CommissionPayment month={month} refreshKey={refreshKey} />}
+      {activeTab === 'daily' && <CommissionDailySummary month={month} refreshKey={refreshKey} />}
       {activeTab === 'history' && <CommissionHistory month={month} refreshKey={refreshKey} />}
       {activeTab === 'ae' && <AEManagement />}
 

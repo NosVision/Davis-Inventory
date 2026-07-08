@@ -100,6 +100,9 @@ function GroupItem({ groupId, group, isExpanded, onToggle, t, canDelete, onDelet
                         <span className="text-indigo-500/80 dark:text-indigo-300/80">{entry.bottle_product_name}</span>
                       )}
                     </div>
+                    {entry.notes && (
+                      <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">{t('entryList.note')}: {entry.notes}</p>
+                    )}
                     {isCancelled && entry.cancel_reason && (
                       <p className="mt-1 text-[11px] text-red-500 dark:text-red-400">{t('entryList.cancelReason')}: {entry.cancel_reason}</p>
                     )}
@@ -505,6 +508,7 @@ export function CommissionEntryList({ month: monthProp, refreshKey }: Commission
                           {isAE && entry.subtotal_amount && <span>{t('entryList.subtotal')} {formatCurrency(Number(entry.subtotal_amount))}</span>}
                           {!isAE && entry.bottle_count && <span>{entry.bottle_count} {t('entryList.bottles')}</span>}
                           {entry.bottle_product_name && <span className="text-indigo-500/80 dark:text-indigo-300/80">{entry.bottle_product_name}</span>}
+                          {entry.notes && <span className="max-w-[220px] truncate italic text-gray-400" title={entry.notes}>{t('entryList.note')}: {entry.notes}</span>}
                         </div>
                       </td>
                       <td className={cn(
@@ -575,6 +579,7 @@ export function CommissionEntryList({ month: monthProp, refreshKey }: Commission
                       {isAE && entry.subtotal_amount && <span>{t('entryList.subtotal')} {formatCurrency(Number(entry.subtotal_amount))}</span>}
                       {!isAE && entry.bottle_count && <span>{entry.bottle_count} {t('entryList.bottles')}</span>}
                     </div>
+                    {entry.notes && <p className="mt-0.5 truncate text-[11px] text-gray-400" title={entry.notes}>{t('entryList.note')}: {entry.notes}</p>}
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     {entry.receipt_photo_url && (

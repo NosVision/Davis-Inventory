@@ -109,6 +109,52 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // Aggregate per calendar day (bill_date) so the UI can show a daily
+  // breakdown inside the selected month — same active-only semantics as
+  // the monthly totals (cancelled rows are already filtered out above).
+  // Each day carries its own entries[] for drill-down.
+  const dailyMap = new Map<string, {
+    date: string;
+    ae_net: number;
+    ae_count: number;
+    bottle_net: number;
+    bottle_count: number;
+    total_net: number;
+    entry_count: number;
+    entries: typeof entries;
+  }>();
+
+  for (const entry of entries || []) {
+    const date = entry.bill_date as string;
+    const existing = dailyMap.get(date) ?? {
+      date,
+      ae_net: 0,
+      ae_count: 0,
+      bottle_net: 0,
+      bottle_count: 0,
+      total_net: 0,
+      entry_count: 0,
+      entries: [],
+    };
+    const net = Number(entry.net_amount) || 0;
+    if (entry.type === 'ae_commission') {
+      existing.ae_net += net;
+      existing.ae_count++;
+    } else {
+      existing.bottle_net += net;
+      existing.bottle_count++;
+    }
+    existing.total_net += net;
+    existing.entry_count++;
+    existing.entries.push(entry);
+    dailyMap.set(date, existing);
+  }
+
+  // Newest day first — matches how the rest of the module lists bills.
+  const daily = Array.from(dailyMap.values()).sort((a, b) =>
+    a.date < b.date ? 1 : a.date > b.date ? -1 : 0
+  );
+
   const aeSummary = Array.from(aeMap.values()).sort((a, b) => b.total_net - a.total_net);
   const bottleSummary = Array.from(bottleMap.values()).sort((a, b) => b.total_net - a.total_net);
 
@@ -125,6 +171,7 @@ export async function GET(req: NextRequest) {
     store_id: storeId,
     ae_summary: aeSummary,
     bottle_summary: bottleSummary,
+    daily,
     grand_total: grandTotal,
   });
 }

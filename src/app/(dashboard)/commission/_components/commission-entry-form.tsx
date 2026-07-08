@@ -39,6 +39,7 @@ export function CommissionEntryForm({ onSuccess }: CommissionEntryFormProps) {
   const [receiptPhoto, setReceiptPhoto] = useState<string | null>(null);
   const [tableNo, setTableNo] = useState('');
   const [notes, setNotes] = useState('');
+  const [rounding, setRounding] = useState<'up' | 'down'>('up');
   const [saving, setSaving] = useState(false);
 
   // AE fields
@@ -209,6 +210,12 @@ export function CommissionEntryForm({ onSuccess }: CommissionEntryFormProps) {
   const bRate = parseFloat(bottleRate) || 500;
   const netBottle = bCount * bRate;
 
+  // Round the net payout to a whole baht per the chosen mode (default
+  // ceil). Mirrors the server so what the user sees is what's saved.
+  const roundNet = (n: number) => (rounding === 'down' ? Math.floor(n) : Math.ceil(n));
+  const netAERounded = roundNet(netAE);
+  const netBottleRounded = roundNet(netBottle);
+
   async function handleQuickAddAE() {
     if (!quickAE.name.trim()) return;
     if (!currentStoreId) {
@@ -262,7 +269,7 @@ export function CommissionEntryForm({ onSuccess }: CommissionEntryFormProps) {
       const payload: Record<string, unknown> = {
         store_id: currentStoreId, type, bill_date: billDate,
         receipt_no: receiptNo, receipt_photo_url: receiptPhoto,
-        table_no: tableNo, notes,
+        table_no: tableNo, notes, rounding,
       };
       if (type === 'ae_commission') {
         payload.ae_id = selectedAE!.id;
@@ -478,7 +485,10 @@ export function CommissionEntryForm({ onSuccess }: CommissionEntryFormProps) {
                   <div className="flex justify-between text-gray-600 dark:text-gray-400"><span>{t('entryForm.subtotal')}</span><span>{formatCurrency(subtotal)}</span></div>
                   <div className="flex justify-between text-gray-600 dark:text-gray-400"><span>Cashback {commissionRate}%</span><span>{formatCurrency(commissionAmt)}</span></div>
                   <div className="flex justify-between text-gray-600 dark:text-gray-400"><span>{t('entryForm.deductTax', { rate: taxRate })}</span><span>-{formatCurrency(taxAmt)}</span></div>
-                  <div className="flex justify-between border-t border-gray-200 pt-1 font-semibold text-amber-600 dark:border-gray-700 dark:text-amber-400"><span>{t('entryForm.netAmount')}</span><span>{formatCurrency(netAE)}</span></div>
+                  {netAERounded !== netAE && (
+                    <div className="flex justify-between text-gray-400 dark:text-gray-500"><span>{t('entryForm.netBeforeRounding')}</span><span>{formatCurrency(netAE)}</span></div>
+                  )}
+                  <div className="flex justify-between border-t border-gray-200 pt-1 font-semibold text-amber-600 dark:border-gray-700 dark:text-amber-400"><span>{t('entryForm.netAmount')} ({t(rounding === 'down' ? 'entryForm.roundDown' : 'entryForm.roundUp')})</span><span>{formatCurrency(netAERounded)}</span></div>
                 </div>
               </div>
             )}
@@ -593,11 +603,37 @@ export function CommissionEntryForm({ onSuccess }: CommissionEntryFormProps) {
               />
             </div>
             <div className="rounded-lg bg-gray-50 p-3 dark:bg-gray-800/50">
-              <div className="flex justify-between text-sm font-semibold text-rose-600 dark:text-rose-400"><span>{t('entryForm.netAmount')}</span><span>{formatCurrency(netBottle)}</span></div>
+              {netBottleRounded !== netBottle && (
+                <div className="flex justify-between text-xs text-gray-400 dark:text-gray-500"><span>{t('entryForm.netBeforeRounding')}</span><span>{formatCurrency(netBottle)}</span></div>
+              )}
+              <div className="flex justify-between text-sm font-semibold text-rose-600 dark:text-rose-400"><span>{t('entryForm.netAmount')}</span><span>{formatCurrency(netBottleRounded)}</span></div>
             </div>
           </CardContent>
         </Card>
       )}
+
+      {/* Rounding — applies to the net payout of either type. Default up. */}
+      <Card>
+        <CardContent className="p-4">
+          <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">{t('entryForm.roundingLabel')}</label>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setRounding('up')}
+              className={cn('rounded-lg border-2 p-2.5 text-sm font-medium transition-colors', rounding === 'up' ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:border-emerald-400 dark:bg-emerald-900/20 dark:text-emerald-400' : 'border-gray-200 text-gray-600 hover:border-gray-300 dark:border-gray-600 dark:text-gray-400')}
+            >
+              {t('entryForm.roundUp')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setRounding('down')}
+              className={cn('rounded-lg border-2 p-2.5 text-sm font-medium transition-colors', rounding === 'down' ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:border-emerald-400 dark:bg-emerald-900/20 dark:text-emerald-400' : 'border-gray-200 text-gray-600 hover:border-gray-300 dark:border-gray-600 dark:text-gray-400')}
+            >
+              {t('entryForm.roundDown')}
+            </button>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card><CardContent className="p-4"><Textarea label={t('entryForm.notes')} value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder={t('entryForm.notesPlaceholder')} /></CardContent></Card>
 

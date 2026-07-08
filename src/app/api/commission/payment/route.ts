@@ -38,13 +38,14 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await req.json();
-  const { store_id, ae_id, staff_id, type, month, slip_photo_url, notes, entry_ids } = body as {
+  const { store_id, ae_id, staff_id, type, month, slip_photo_url, slip_photo_urls, notes, entry_ids } = body as {
     store_id: string;
     ae_id?: string;
     staff_id?: string;
     type: string;
     month: string;
     slip_photo_url?: string | null;
+    slip_photo_urls?: string[] | null;
     notes?: string | null;
     entry_ids?: string[];
   };
@@ -52,6 +53,13 @@ export async function POST(req: NextRequest) {
   if (!store_id || !type || !month) {
     return NextResponse.json({ error: 'store_id, type, month required' }, { status: 400 });
   }
+
+  // Accept multiple transfer slips (paying in several rounds). Fall back
+  // to the legacy single-slip field. slip_photo_url stays populated with
+  // the first slip so older read paths (PDF/detail) keep working.
+  const slipUrls: string[] = (
+    Array.isArray(slip_photo_urls) ? slip_photo_urls : slip_photo_url ? [slip_photo_url] : []
+  ).filter((u): u is string => typeof u === 'string' && u.trim().length > 0);
 
   let entriesQuery = supabase
     .from('commission_entries')
@@ -108,7 +116,8 @@ export async function POST(req: NextRequest) {
       month,
       total_entries: entries.length,
       total_amount: Math.round(totalAmount * 100) / 100,
-      slip_photo_url: slip_photo_url || null,
+      slip_photo_url: slipUrls[0] ?? null,
+      slip_photo_urls: slipUrls.length > 0 ? slipUrls : null,
       notes: notes?.trim() || null,
       status: 'paid',
       paid_by: user.id,

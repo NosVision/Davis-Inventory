@@ -37,6 +37,7 @@ export interface CommissionEntry {
   bottle_product_name: string | null;
   bottle_product_category: string | null;
   notes: string | null;
+  rounding: 'up' | 'down' | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -63,6 +64,7 @@ export interface CommissionPayment {
   total_entries: number;
   total_amount: number;
   slip_photo_url: string | null;
+  slip_photo_urls: string[] | null;
   notes: string | null;
   status: PaymentStatus;
   paid_by: string | null;
