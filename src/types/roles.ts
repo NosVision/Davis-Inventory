@@ -109,9 +109,9 @@ export const ROLE_HOME_ROUTES: Record<UserRole, string> = {
   accountant: '/commission',
   // manager no longer lands on store-overview (removed from their menu) — the shared Task hub
   manager: '/tasks',
-  bar: '/chat',
+  bar: '/me',
   technician: '/tasks',
-  staff: '/chat',
+  staff: '/me',
   customer: '/customer',
   hq: '/hq-warehouse',
   hr: '/hr',

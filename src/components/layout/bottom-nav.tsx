@@ -24,6 +24,7 @@ interface NavItem {
   href: string;
   icon: LucideIcon;
   color: string;
+  hideLabel?: boolean;
 }
 
 // โครงเมนูใหม่ (เจ้าของเคาะ 2026-07-05): แถบล่างนิ่ง 5 ปุ่ม ทุก role มี "ของฉัน" (ESS —
@@ -40,11 +41,12 @@ const desktopRoleNavItems: NavItem[] = [
 ];
 
 // staff — ฝาก/เบิกคือเมนูคลังเดียวที่ใช้ → ปุ่มตรง ไม่ต้องผ่าน hub
+// "ของฉัน" เป็นปุ่มกลาง (ปุ่มที่ 3) แบบไอคอนอย่างเดียว, สลับที่กับแชท (เจ้าของเคาะ 2026-07-08)
 const staffNavItems: NavItem[] = [
   { labelKey: 'nav.depositWithdraw', href: '/deposit', icon: Wine, color: 'emerald' },
   { labelKey: 'nav.tasks', href: '/tasks', icon: ClipboardList, color: 'indigo' },
+  { labelKey: 'nav.me', href: '/me', icon: UserCircle, color: 'teal', hideLabel: true },
   { labelKey: 'nav.chat', href: '/chat', icon: MessageSquare, color: 'blue' },
-  { labelKey: 'nav.me', href: '/me', icon: UserCircle, color: 'teal' },
   { labelKey: 'nav.guide', href: '/guide', icon: BookOpen, color: 'sky' },
 ];
 
@@ -57,11 +59,12 @@ const technicianNavItems: NavItem[] = [
 ];
 
 // bar — งานคลังทั้งชุด (นับสต๊อค/ฝากเบิก/โอน/ยืม) อยู่ในปุ่ม "คลัง" เดียว
+// "ของฉัน" เป็นปุ่มกลาง (ปุ่มที่ 3) แบบไอคอนอย่างเดียว, สลับที่กับแชท (เจ้าของเคาะ 2026-07-08)
 const barNavItems: NavItem[] = [
   { labelKey: 'nav.warehouse', href: '/warehouse', icon: WarehouseIcon, color: 'indigo' },
   { labelKey: 'nav.tasks', href: '/tasks', icon: ClipboardList, color: 'indigo' },
+  { labelKey: 'nav.me', href: '/me', icon: UserCircle, color: 'teal', hideLabel: true },
   { labelKey: 'nav.chat', href: '/chat', icon: MessageSquare, color: 'blue' },
-  { labelKey: 'nav.me', href: '/me', icon: UserCircle, color: 'teal' },
   { labelKey: 'nav.guide', href: '/guide', icon: BookOpen, color: 'sky' },
 ];
 
@@ -121,16 +124,18 @@ export function BottomNav() {
                   >
                     <Icon className="h-7 w-7 text-white" />
                   </span>
-                  <span
-                    className={cn(
-                      'text-[10px] font-semibold leading-tight',
-                      isActive
-                        ? colors.text
-                        : 'text-gray-500 dark:text-gray-400'
-                    )}
-                  >
-                    {label}
-                  </span>
+                  {!item.hideLabel && (
+                    <span
+                      className={cn(
+                        'text-[10px] font-semibold leading-tight',
+                        isActive
+                          ? colors.text
+                          : 'text-gray-500 dark:text-gray-400'
+                      )}
+                    >
+                      {label}
+                    </span>
+                  )}
                 </Link>
               </li>
             );
@@ -171,9 +176,11 @@ export function BottomNav() {
                     </span>
                   )}
                 </span>
-                <span className="text-[10px] font-medium leading-tight">
-                  {label}
-                </span>
+                {!item.hideLabel && (
+                  <span className="text-[10px] font-medium leading-tight">
+                    {label}
+                  </span>
+                )}
               </Link>
             </li>
           );
