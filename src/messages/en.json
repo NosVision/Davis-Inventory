@@ -2720,6 +2720,7 @@
     "comingSoon": "This section is under construction",
     "nav": {
       "employees": "Employees",
+      "users": "System users",
       "identityClaims": "Identity claims",
       "orgChart": "Org chart",
       "documentRequests": "Document requests",

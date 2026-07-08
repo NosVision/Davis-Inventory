@@ -43,6 +43,7 @@ import { PageHeader } from '@/components/ui';
 const NAV_TILES: { key: string; icon: LucideIcon; href?: string }[] = [
   { key: 'today', icon: LayoutDashboard, href: '/hr/dashboard' },
   { key: 'employees', icon: Users, href: '/hr/employees' },
+  { key: 'users', icon: UserCog, href: '/users' },
   { key: 'identityClaims', icon: UserCheck2, href: '/hr/identity-claims' },
   { key: 'org', icon: Briefcase, href: '/hr/org' },
   { key: 'orgChart', icon: Network, href: '/hr/org-chart' },

@@ -91,6 +91,8 @@ export default function UsersPage() {
   const [savingStores, setSavingStores] = useState(false);
   const [filterStoreId, setFilterStoreId] = useState<string>('all');
   const [filterRole, setFilterRole] = useState<string>('all');
+  const [filterLinked, setFilterLinked] = useState<'all' | 'linked' | 'unlinked'>('all');
+  const [linkedIds, setLinkedIds] = useState<Set<string>>(new Set());
   const [resetTarget, setResetTarget] = useState<UserProfile | null>(null);
   const [resetResult, setResetResult] = useState<{ username: string; password: string } | null>(null);
   const [isResetting, setIsResetting] = useState(false);
@@ -106,13 +108,19 @@ export default function UsersPage() {
   const loadUsers = useCallback(async () => {
     setIsLoading(true);
     const supabase = createClient();
-    const { data } = await supabase
-      .from('profiles')
-      .select('*, stores:user_stores(store_id, store:stores(store_name))')
-      .neq('role', 'customer')
-      .order('created_at', { ascending: false });
+    const [{ data }, { data: emps }] = await Promise.all([
+      supabase
+        .from('profiles')
+        .select('*, stores:user_stores(store_id, store:stores(store_name))')
+        .neq('role', 'customer')
+        .order('created_at', { ascending: false }),
+      // Which profiles are linked to a real employee record — readable by owner/HR (this
+      // page's audience) through hr_employees RLS. Drives the "ผูกบัญชีแล้ว" indicator + filter.
+      supabase.from('hr_employees').select('profile_id'),
+    ]);
 
     if (data) setUsers(data as unknown as UserProfile[]);
+    setLinkedIds(new Set((emps ?? []).map((e: { profile_id: string }) => e.profile_id as string)));
     setIsLoading(false);
   }, []);
 
@@ -260,10 +268,16 @@ export default function UsersPage() {
       const storeIds = u.stores?.map((s) => s.store_id) || [];
       if (!storeIds.includes(filterStoreId)) return false;
     }
+    const linked = linkedIds.has(u.id);
+    if (filterLinked === 'linked' && !linked) return false;
+    if (filterLinked === 'unlinked' && linked) return false;
     return true;
   });
 
   const FILTERABLE_ROLES: UserRole[] = ['owner', 'accountant', 'manager', 'bar', 'technician', 'staff', 'hq', 'hr'];
+  // User administration (create / reset / permissions / activate) stays owner-only — HR gets a
+  // read-only view with the linked-account indicator + filters.
+  const isOwner = currentUser?.role === 'owner';
 
   return (
     <div className="space-y-6">
@@ -275,16 +289,18 @@ export default function UsersPage() {
             {t('subtitle')}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Link href="/users/invitations">
-            <Button variant="outline" icon={<Mail className="h-4 w-4" />}>
-              จัดการลิงก์เชิญ
+        {isOwner && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href="/users/invitations">
+              <Button variant="outline" icon={<Mail className="h-4 w-4" />}>
+                จัดการลิงก์เชิญ
+              </Button>
+            </Link>
+            <Button icon={<Plus className="h-4 w-4" />} onClick={() => setShowCreateModal(true)}>
+              {t('addUser')}
             </Button>
-          </Link>
-          <Button icon={<Plus className="h-4 w-4" />} onClick={() => setShowCreateModal(true)}>
-            {t('addUser')}
-          </Button>
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Search + Filters */}
@@ -323,12 +339,22 @@ export default function UsersPage() {
             </option>
           ))}
         </select>
-        {(filterStoreId !== 'all' || filterRole !== 'all') && (
+        <select
+          value={filterLinked}
+          onChange={(e) => setFilterLinked(e.target.value as 'all' | 'linked' | 'unlinked')}
+          className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+        >
+          <option value="all">ทั้งหมด</option>
+          <option value="linked">ผูกบัญชีแล้ว</option>
+          <option value="unlinked">ยังไม่ผูกบัญชี</option>
+        </select>
+        {(filterStoreId !== 'all' || filterRole !== 'all' || filterLinked !== 'all') && (
           <button
             type="button"
             onClick={() => {
               setFilterStoreId('all');
               setFilterRole('all');
+              setFilterLinked('all');
             }}
             className="rounded-lg border border-transparent px-3 py-2 text-xs text-indigo-600 transition-colors hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-900/20"
           >
@@ -367,6 +393,16 @@ export default function UsersPage() {
                         {ROLE_LABELS[u.role] || u.role}
                       </Badge>
                       {!u.active && <Badge variant="danger">{t('disabled')}</Badge>}
+                      {linkedIds.has(u.id) ? (
+                        <Badge variant="success">
+                          <span className="inline-flex items-center gap-1">
+                            <UserCheck className="h-3 w-3" />
+                            ผูกบัญชีแล้ว
+                          </span>
+                        </Badge>
+                      ) : (
+                        <Badge variant="default">ยังไม่ผูกบัญชี</Badge>
+                      )}
                     </div>
                     <div
                       className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-gray-500 dark:text-gray-400"
@@ -392,8 +428,8 @@ export default function UsersPage() {
                   </div>
                 </div>
 
-                {/* Actions */}
-                {u.id !== currentUser?.id && !u.username.startsWith('printer-') && (
+                {/* Actions — owner-only (user administration APIs are owner-gated) */}
+                {isOwner && u.id !== currentUser?.id && !u.username.startsWith('printer-') && (
                   <div className="flex items-center gap-1">
                     {u.role !== 'owner' && u.role !== 'customer' && (
                       <button

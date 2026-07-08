@@ -2721,6 +2721,7 @@
     "comingSoon": "ส่วนนี้กำลังพัฒนา",
     "nav": {
       "employees": "พนักงาน",
+      "users": "ผู้ใช้ในระบบ",
       "identityClaims": "ยืนยันตัวตนพนักงาน",
       "orgChart": "ผังองค์กร",
       "documentRequests": "คำขอเอกสาร/50ทวิ",
