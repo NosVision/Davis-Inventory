@@ -1,19 +1,18 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { useTranslations } from 'next-intl';
-import { Loader2, CalendarPlus } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocale, useTranslations } from 'next-intl';
+import { Loader2, CalendarPlus, LayoutGrid, List, Table, Search } from 'lucide-react';
 import { PageHeader, SectionHeading, Button, toast } from '@/components/ui';
 import { openBusinessDateBangkok } from '@/lib/utils/date';
+import { cn } from '@/lib/utils/cn';
 import { BulkBackfillModal } from './_components/bulk-backfill-modal';
+import { DayTable, SummaryChips, isEmptyDay } from '@/components/hr/timesheet-parts';
 import {
-  DayTable,
-  SummaryChips,
-  addDaysStr,
-  isEmptyDay,
-  type DaySummary,
-  type TimesheetTotals,
-} from '@/components/hr/timesheet-parts';
+  TimesheetBlockGrid,
+  TimesheetSummaryTable,
+  type TimesheetEmployee,
+} from './_components/timesheet-views';
 import { TimesheetEditModal, type EditTarget } from './_components/timesheet-edit-modal';
 import { AttendanceScoreCard } from '@/components/hr/attendance-score-card';
 import type { ScoreConfig } from '@/lib/hr/attendance-score';
@@ -23,14 +22,9 @@ interface StoreOpt {
   store_code: string;
   store_name: string;
 }
-interface Employee {
-  user_id: string;
-  name: string;
-  work_hours_per_day: number;
-  ot_eligible: boolean;
-  days: DaySummary[];
-  totals: TimesheetTotals;
-}
+type Employee = TimesheetEmployee;
+
+type ViewMode = 'blocks' | 'full' | 'summary';
 
 const MAX_RANGE_DAYS = 62;
 
@@ -40,18 +34,35 @@ function dayDiff(from: string, to: string): number {
   return Math.round((b - a) / 86_400_000);
 }
 
+// The active payroll month runs 26th → 25th (§ pay cycle). Given today, return that window so the
+// timesheet defaults to the cycle HR is actually working on rather than a rolling 7-day slice.
+function payCycleRange(today: string): { from: string; to: string } {
+  const [y, m, d] = today.split('-').map(Number);
+  const startMs = d >= 26 ? Date.UTC(y, m - 1, 26) : Date.UTC(y, m - 2, 26);
+  const endMs = d >= 26 ? Date.UTC(y, m, 25) : Date.UTC(y, m - 1, 25);
+  return { from: new Date(startMs).toISOString().slice(0, 10), to: new Date(endMs).toISOString().slice(0, 10) };
+}
+
 export default function HrTimesheetPage() {
   const t = useTranslations('hr.timesheet');
+  const isTh = useLocale() === 'th';
+  const L = isTh
+    ? { blocks: 'บล็อก', full: 'แบบเต็ม', summary: 'สรุป', search: 'ค้นหาชื่อ/พนักงาน', noMatch: 'ไม่พบพนักงานที่ค้นหา' }
+    : { blocks: 'Blocks', full: 'Full', summary: 'Summary', search: 'Search name', noMatch: 'No matching employee' };
+
+  const initialRange = useMemo(() => payCycleRange(openBusinessDateBangkok()), []);
 
   const [stores, setStores] = useState<StoreOpt[]>([]);
   const [storeId, setStoreId] = useState('');
-  const [to, setTo] = useState<string>(() => openBusinessDateBangkok());
-  const [from, setFrom] = useState<string>(() => addDaysStr(openBusinessDateBangkok(), -6));
+  const [from, setFrom] = useState<string>(initialRange.from);
+  const [to, setTo] = useState<string>(initialRange.to);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [scoreConfig, setScoreConfig] = useState<ScoreConfig | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [view, setView] = useState<ViewMode>('blocks');
+  const [search, setSearch] = useState('');
 
   // manageable stores → default to first
   useEffect(() => {
@@ -96,6 +107,18 @@ export default function HrTimesheetPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return employees;
+    return employees.filter((e) => e.name.toLowerCase().includes(q));
+  }, [employees, search]);
+
+  const views: { key: ViewMode; label: string; icon: typeof LayoutGrid }[] = [
+    { key: 'blocks', label: L.blocks, icon: LayoutGrid },
+    { key: 'full', label: L.full, icon: List },
+    { key: 'summary', label: L.summary, icon: Table },
+  ];
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-4">
@@ -145,6 +168,39 @@ export default function HrTimesheetPage() {
         }
       />
 
+      {/* Secondary toolbar: search + view switcher */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="relative min-w-[12rem] flex-1 sm:max-w-xs">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={L.search}
+            className="control w-full pl-8"
+          />
+        </div>
+        <div className="inline-flex items-center gap-0.5 rounded-lg bg-gray-100 p-0.5 dark:bg-gray-800">
+          {views.map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setView(key)}
+              aria-pressed={view === key}
+              className={cn(
+                'inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors',
+                view === key
+                  ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-700 dark:text-indigo-300'
+                  : 'text-gray-500 dark:text-gray-400'
+              )}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {loading ? (
         <div className="flex items-center justify-center py-10 text-gray-400">
           <Loader2 className="h-5 w-5 animate-spin" />
@@ -157,9 +213,26 @@ export default function HrTimesheetPage() {
         <p className="rounded-xl border border-dashed border-gray-300 px-4 py-10 text-center text-sm text-gray-400 dark:border-gray-700">
           {t('noEmployees')}
         </p>
+      ) : filtered.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-gray-300 px-4 py-10 text-center text-sm text-gray-400 dark:border-gray-700">
+          {L.noMatch}
+        </p>
+      ) : view === 'blocks' ? (
+        <TimesheetBlockGrid
+          employees={filtered}
+          onPick={(emp, day) => setEditTarget({ userId: emp.user_id, name: emp.name, day })}
+        />
+      ) : view === 'summary' ? (
+        <TimesheetSummaryTable
+          employees={filtered}
+          onPick={(emp) => {
+            setSearch(emp.name);
+            setView('full');
+          }}
+        />
       ) : (
         <div className="space-y-6">
-          {employees.map((emp) => {
+          {filtered.map((emp) => {
             const hasData = emp.days.some((d) => !isEmptyDay(d));
             return (
               <section key={emp.user_id} className="space-y-2">
@@ -169,9 +242,7 @@ export default function HrTimesheetPage() {
                 {hasData ? (
                   <DayTable
                     days={emp.days}
-                    onEditDay={(day) =>
-                      setEditTarget({ userId: emp.user_id, name: emp.name, day })
-                    }
+                    onEditDay={(day) => setEditTarget({ userId: emp.user_id, name: emp.name, day })}
                   />
                 ) : (
                   <p className="rounded-xl border border-dashed border-gray-200 px-4 py-6 text-center text-sm text-gray-400 dark:border-gray-700">
