@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocale } from 'next-intl';
-import { Loader2, Grid3x3, Rows3, X } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
 import { Modal, ModalFooter, Button, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 
@@ -36,13 +36,13 @@ export function BulkBackfillModal({
   const isTh = useLocale() === 'th';
   const L = isTh
     ? { title: 'ลงเวลาย้อนหลัง (ตารางทั้งสาขา)', desc: (s: string) => `สาขา “${s}” — เลือกสถานะแล้วเติมทั้งหมด/ทั้งแถว/ทั้งคอลัมน์ หรือคลิกช่องเพื่อดู–แก้รายวัน`,
-        brush: 'สถานะที่จะระบาย', lateMin: 'สาย (นาที)', otMin: 'OT (นาที)', fillAll: 'เติมทั้งหมด', legend: 'สีสถานะ', blocks: 'บล็อก', compact: 'ตาราง',
+        brush: 'สถานะที่จะระบาย', lateMin: 'สาย (นาที)', otMin: 'OT (นาที)', fillAll: 'เติมทั้งหมด', legend: 'สีสถานะ',
         rowHint: 'คลิกชื่อ = เติมทั้งแถว', colHint: 'คลิกวันที่ = เติมทั้งคอลัมน์', cellHint: 'คลิกเพื่อดู/แก้รายวัน',
         detail: 'รายละเอียดวัน', empty: 'ว่าง (ไม่ระบุ)', apply: 'ตกลง', close: 'ปิด',
         save: 'บันทึก', cancel: 'ยกเลิก', saved: (w: number, c: number) => `บันทึกแล้ว: ${w} รายการ${c ? ` (ล้าง ${c})` : ''}`, none: 'ยังไม่ได้ระบุอะไร', fail: 'บันทึกไม่สำเร็จ', loadFail: 'โหลดไม่สำเร็จ', noEmp: 'ไม่มีพนักงานในสาขานี้', emp: 'พนักงาน',
         s: { normal: 'ปกติ', absent: 'ขาด', leave: 'ลา', late: 'มาสาย', dayoff: 'วันหยุด', ot: 'OT', clear: 'ล้าง' } as Record<Brush, string>, wd: ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'] }
     : { title: 'Bulk backfill (branch grid)', desc: (s: string) => `“${s}” — fill all/row/column with a status, or click a cell to view & edit the day`,
-        brush: 'Status to paint', lateMin: 'Late (min)', otMin: 'OT (min)', fillAll: 'Fill all', legend: 'Legend', blocks: 'Blocks', compact: 'Compact',
+        brush: 'Status to paint', lateMin: 'Late (min)', otMin: 'OT (min)', fillAll: 'Fill all', legend: 'Legend',
         rowHint: 'Click name = fill row', colHint: 'Click date = fill column', cellHint: 'Click to view/edit day',
         detail: 'Day detail', empty: 'Empty', apply: 'OK', close: 'Close',
         save: 'Save', cancel: 'Cancel', saved: (w: number, c: number) => `Saved: ${w}${c ? ` (cleared ${c})` : ''}`, none: 'Nothing set', fail: 'Save failed', loadFail: 'Load failed', noEmp: 'No staff in this store', emp: 'Employee',
@@ -71,7 +71,6 @@ export function BulkBackfillModal({
   const [brush, setBrush] = useState<Brush>('normal');
   const [lateVal, setLateVal] = useState(30);
   const [otVal, setOtVal] = useState(120);
-  const [view, setView] = useState<'blocks' | 'compact'>('blocks');
   const [detail, setDetail] = useState<DetailTarget | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -154,40 +153,28 @@ export function BulkBackfillModal({
       <p className="text-sm text-gray-500 dark:text-gray-400">{L.desc(storeName)}</p>
 
       {/* Controls */}
-      <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-wrap items-end gap-2">
-          <div>
-            <p className="mb-1 text-xs font-semibold text-gray-600 dark:text-gray-300">{L.brush}</p>
-            <div className="flex flex-wrap gap-1.5">
-              {BRUSHES.map((b) => (
-                <button key={b} type="button" onClick={() => setBrush(b)} aria-pressed={brush === b}
-                  className={cn('rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors',
-                    brush === b ? BRUSH_TONE[b] : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400')}>
-                  {L.s[b]}
-                </button>
-              ))}
-            </div>
+      <div className="mt-3 flex flex-wrap items-end gap-2">
+        <div>
+          <p className="mb-1 text-xs font-semibold text-gray-600 dark:text-gray-300">{L.brush}</p>
+          <div className="flex flex-wrap gap-1.5">
+            {BRUSHES.map((b) => (
+              <button key={b} type="button" onClick={() => setBrush(b)} aria-pressed={brush === b}
+                className={cn('rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors',
+                  brush === b ? BRUSH_TONE[b] : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400')}>
+                {L.s[b]}
+              </button>
+            ))}
           </div>
-          <label className="flex flex-col text-[11px] font-medium text-gray-500 dark:text-gray-400">{L.lateMin}
-            <input type="number" min={0} value={lateVal} onChange={(e) => setLateVal(Math.max(0, Number(e.target.value) || 0))} className="control mt-0.5 w-20" />
-          </label>
-          <label className="flex flex-col text-[11px] font-medium text-gray-500 dark:text-gray-400">{L.otMin}
-            <input type="number" min={0} value={otVal} onChange={(e) => setOtVal(Math.max(0, Number(e.target.value) || 0))} className="control mt-0.5 w-20" />
-          </label>
-          <Button size="sm" variant="outline" onClick={() => fillKeys(cellKeys)} disabled={loading || employees.length === 0}>
-            {L.fillAll} · {L.s[brush]}
-          </Button>
         </div>
-        {/* View toggle */}
-        <div className="inline-flex items-center gap-0.5 rounded-lg bg-gray-100 p-0.5 dark:bg-gray-800">
-          {([['blocks', Grid3x3], ['compact', Rows3]] as const).map(([v, Icon]) => (
-            <button key={v} type="button" onClick={() => setView(v)}
-              className={cn('inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors',
-                view === v ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-700 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400')}>
-              <Icon className="h-3.5 w-3.5" />{v === 'blocks' ? L.blocks : L.compact}
-            </button>
-          ))}
-        </div>
+        <label className="flex flex-col text-[11px] font-medium text-gray-500 dark:text-gray-400">{L.lateMin}
+          <input type="number" min={0} value={lateVal} onChange={(e) => setLateVal(Math.max(0, Number(e.target.value) || 0))} className="control mt-0.5 w-20" />
+        </label>
+        <label className="flex flex-col text-[11px] font-medium text-gray-500 dark:text-gray-400">{L.otMin}
+          <input type="number" min={0} value={otVal} onChange={(e) => setOtVal(Math.max(0, Number(e.target.value) || 0))} className="control mt-0.5 w-20" />
+        </label>
+        <Button size="sm" variant="outline" onClick={() => fillKeys(cellKeys)} disabled={loading || employees.length === 0}>
+          {L.fillAll} · {L.s[brush]}
+        </Button>
       </div>
 
       {/* Legend */}
@@ -242,10 +229,9 @@ export function BulkBackfillModal({
                         <button type="button" onClick={() => setDetail({ user_id: e.user_id, name: e.name, date: d })}
                           title={st ? `${L.s[st]}${c && c.late ? ` · ${L.lateMin} ${c.late}` : ''}${c && c.ot ? ` · OT ${c.ot}` : ''}` : L.cellHint}
                           className={cn('relative mx-auto flex h-7 w-7 items-center justify-center rounded-lg text-[11px] font-bold ring-1 transition-transform hover:scale-110',
-                            view === 'compact' && 'h-5 w-5 rounded-md text-[9px]',
                             st ? STYLE[st].block : 'bg-gray-50 text-transparent ring-gray-200 hover:bg-gray-100 dark:bg-gray-800 dark:ring-gray-700',
                             sel && 'ring-2 ring-indigo-500 ring-offset-1 dark:ring-offset-gray-900')}>
-                          {view === 'blocks' ? (st ? STYLE[st].glyph : '·') : ''}
+                          {st ? STYLE[st].glyph : '·'}
                           {c && c.ot > 0 && <i className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-violet-500 ring-1 ring-white dark:ring-gray-900" />}
                         </button>
                       </td>
