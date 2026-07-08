@@ -44,13 +44,26 @@ interface SchedRow {
 }
 
 export async function GET(request: NextRequest) {
-  if (request.headers.get('authorization') !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const service = createServiceClient();
+
+  // Auth: accept the Vercel CRON_SECRET (if set) OR a secret managed entirely on the Supabase side
+  // (public.cron_secrets) — so this can be scheduled via pg_cron WITHOUT editing any Vercel env var.
+  const header = request.headers.get('authorization') ?? '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : '';
+  if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  let authorized = !!process.env.CRON_SECRET && token === process.env.CRON_SECRET;
+  if (!authorized) {
+    const { data: sec } = await service
+      .from('cron_secrets')
+      .select('secret')
+      .eq('name', 'attendance_reminder')
+      .maybeSingle();
+    authorized = !!sec?.secret && token === (sec.secret as string);
   }
+  if (!authorized) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const businessDate = openBusinessDateBangkok();
   const now = Date.now();
-  const service = createServiceClient();
 
   // Work days scheduled for today (with a shift).
   const { data: sched, error: schedErr } = await service
