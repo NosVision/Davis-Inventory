@@ -2660,6 +2660,7 @@
       "leave": "Leave",
       "warnings": "Warnings",
       "payroll": "Payroll",
+      "importedPayslips": "Imported payslips",
       "serviceCharge": "Service Charge",
       "tipPool": "Tip pool",
       "evaluation": "Evaluation",
@@ -3914,6 +3915,9 @@
       },
       "history": {
         "action": "Change history"
+      },
+      "payHistory": {
+        "action": "Pay history (imported)"
       },
       "register": {
         "action": "Print register",

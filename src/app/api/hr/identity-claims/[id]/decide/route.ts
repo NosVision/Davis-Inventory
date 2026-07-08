@@ -134,8 +134,17 @@ export async function POST(
     return NextResponse.json({ error: empErr.message }, { status: 500 });
   }
 
-  // Venue membership (only when missing).
+  // Back-link the legacy imported payslips (hr_imported_payslips) that were matched
+  // to this pending identity, so the person's historical pay follows them into their
+  // employee record. Non-fatal: a failure here must not block onboarding.
   const warnings: string[] = [];
+  const { error: histErr } = await service
+    .from('hr_imported_payslips')
+    .update({ employee_id: emp.id })
+    .eq('pending_identity_id', id);
+  if (histErr) warnings.push('Historical payslips were not back-linked — link them manually');
+
+  // Venue membership (only when missing).
   if (ident.store_id) {
     const { data: have } = await service
       .from('user_stores')

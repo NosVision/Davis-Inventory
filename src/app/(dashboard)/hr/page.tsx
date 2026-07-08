@@ -30,6 +30,7 @@ import {
   Network,
   Building2,
   SlidersHorizontal,
+  Archive,
   type LucideIcon,
 } from 'lucide-react';
 import { PageHeader } from '@/components/ui';
@@ -58,6 +59,7 @@ const NAV_TILES: { key: string; icon: LucideIcon; href?: string }[] = [
   { key: 'profileRequests', icon: UserCog, href: '/hr/profile-requests' },
   { key: 'offboarding', icon: UserMinus, href: '/hr/offboarding' },
   { key: 'payroll', icon: Wallet, href: '/hr/payroll' },
+  { key: 'importedPayslips', icon: Archive, href: '/hr/imported-payslips' },
   { key: 'documentRequests', icon: FileText, href: '/hr/document-requests' },
   { key: 'certificates', icon: FileText, href: '/hr/certificates' },
   { key: 'serviceCharge', icon: Coins, href: '/hr/service-charge' },
