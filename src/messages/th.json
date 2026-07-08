@@ -4041,6 +4041,27 @@
         "no": "ไม่",
         "done": "สร้าง PDF แล้ว",
         "fail": "สร้าง PDF ไม่สำเร็จ"
+      },
+      "detail": {
+        "action": "ดูข้อมูลพนักงาน",
+        "title": "ข้อมูลพนักงาน",
+        "realName": "ชื่อจริง",
+        "supervisor": "หัวหน้างาน",
+        "branch": "สาขา",
+        "birthDate": "วันเกิด",
+        "workHours": "ชั่วโมงทำงาน/วัน",
+        "breakHours": "ชั่วโมงพัก",
+        "otEligible": "มีสิทธิ์ OT",
+        "bank": "บัญชีธนาคาร",
+        "bankName": "ธนาคาร",
+        "bankAccountNo": "เลขบัญชี",
+        "bankAccountName": "ชื่อบัญชี",
+        "emergencyContact": "ผู้ติดต่อฉุกเฉิน",
+        "notes": "หมายเหตุ",
+        "endDate": "วันสิ้นสุด",
+        "endReason": "เหตุผลสิ้นสุด",
+        "other": "อื่นๆ",
+        "loadFailed": "โหลดข้อมูลไม่สำเร็จ"
       }
     }
   },

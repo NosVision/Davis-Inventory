@@ -4040,6 +4040,27 @@
         "no": "No",
         "done": "PDF created",
         "fail": "PDF failed"
+      },
+      "detail": {
+        "action": "View employee",
+        "title": "Employee details",
+        "realName": "Full name",
+        "supervisor": "Supervisor",
+        "branch": "Branch",
+        "birthDate": "Birth date",
+        "workHours": "Work hours/day",
+        "breakHours": "Break hours",
+        "otEligible": "OT eligible",
+        "bank": "Bank account",
+        "bankName": "Bank",
+        "bankAccountNo": "Account no.",
+        "bankAccountName": "Account name",
+        "emergencyContact": "Emergency contact",
+        "notes": "Notes",
+        "endDate": "End date",
+        "endReason": "End reason",
+        "other": "Other",
+        "loadFailed": "Failed to load"
       }
     }
   },
