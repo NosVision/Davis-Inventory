@@ -1,9 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useTranslations } from 'next-intl';
-import { MapPin, RefreshCw, Camera, Loader2 } from 'lucide-react';
-import { Button, PageHeader, StatusBadge, DataList, DataCard, ViewToggle, useViewMode, toast } from '@/components/ui';
+import { useLocale, useTranslations } from 'next-intl';
+import { MapPin, RefreshCw, Camera, Loader2, AlertTriangle, Check } from 'lucide-react';
+import { Button, PageHeader, StatusBadge, DataList, DataCard, ViewToggle, useViewMode, Modal, ModalFooter, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { toBangkokISO, formatTimeBangkok } from '@/lib/utils/date';
 
@@ -67,8 +67,10 @@ const isDev = process.env.NODE_ENV === 'development';
 
 export default function CheckinPage() {
   const t = useTranslations('hr.checkin');
+  const isTh = useLocale() === 'th';
 
   const [type, setType] = useState<AttendanceType>('in');
+  const [noGpsOpen, setNoGpsOpen] = useState(false);
   const [coords, setCoords] = useState<Coords | null>(null);
   const [locStatus, setLocStatus] = useState<LocStatus>('idle');
   const [photo, setPhoto] = useState<string | null>(null);
@@ -82,6 +84,9 @@ export default function CheckinPage() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Punch types already recorded today — those buttons are disabled so a type can't be double-tapped.
+  const usedTypes = new Set(rows.map((r) => r.type));
 
   // --- Location ---
   const getLocation = useCallback(() => {
@@ -123,6 +128,15 @@ export default function CheckinPage() {
     getLocation();
     fetchToday();
   }, [getLocation, fetchToday]);
+
+  // If the selected punch type has already been recorded today, move to the next unused type.
+  useEffect(() => {
+    if (usedTypes.has(type)) {
+      const next = TYPE_OPTIONS.find((o) => !usedTypes.has(o.value));
+      if (next) setType(next.value);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows]);
 
   // --- Camera lifecycle ---
   const stopCamera = useCallback(() => {
@@ -242,15 +256,10 @@ export default function CheckinPage() {
   );
 
   // --- Submit ---
-  const submit = useCallback(async () => {
-    if (!coords) {
-      toast({ type: 'warning', title: t('needLocation') });
-      return;
-    }
-    if (!photo) {
-      toast({ type: 'warning', title: t('needPhoto') });
-      return;
-    }
+  // Post the punch. GPS is sent only when we have it; a punch with no coords is accepted server-side
+  // but held for HR review, and the toast tells the employee it went to HR.
+  const doSubmit = useCallback(async () => {
+    if (!photo) return;
     setSubmitting(true);
     try {
       const res = await fetch('/api/hr/ess/checkin', {
@@ -258,8 +267,7 @@ export default function CheckinPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type,
-          gps_lat: coords.lat,
-          gps_lng: coords.lng,
+          ...(coords ? { gps_lat: coords.lat, gps_lng: coords.lng } : {}),
           photo,
           device: typeof navigator !== 'undefined' ? navigator.userAgent : '',
         }),
@@ -269,7 +277,15 @@ export default function CheckinPage() {
       const pending = json.review_status === 'pending';
       toast({
         type: pending ? 'warning' : 'success',
-        title: pending ? t('successPending') : json.in_geofence === false ? t('successOut') : t('success'),
+        title: !coords
+          ? isTh
+            ? 'บันทึกแล้ว — ส่งให้ HR ตรวจสอบ (ไม่มีตำแหน่ง GPS)'
+            : 'Saved — sent to HR for review (no GPS)'
+          : pending
+            ? t('successPending')
+            : json.in_geofence === false
+              ? t('successOut')
+              : t('success'),
       });
       setPhoto(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -279,9 +295,22 @@ export default function CheckinPage() {
     } finally {
       setSubmitting(false);
     }
-  }, [coords, photo, type, t, fetchToday]);
+  }, [coords, photo, type, t, isTh, fetchToday]);
 
-  const canSubmit = coords !== null && photo !== null && !submitting;
+  const submit = useCallback(() => {
+    if (!photo) {
+      toast({ type: 'warning', title: t('needPhoto') });
+      return;
+    }
+    // No GPS → confirm first and warn that HR must review + the employee must explain it.
+    if (!coords) {
+      setNoGpsOpen(true);
+      return;
+    }
+    void doSubmit();
+  }, [photo, coords, doSubmit, t]);
+
+  const canSubmit = photo !== null && !submitting && !usedTypes.has(type);
 
   return (
     <div className="mx-auto max-w-md space-y-5 p-4">
@@ -296,19 +325,26 @@ export default function CheckinPage() {
       <div className="grid grid-cols-2 gap-2">
         {TYPE_OPTIONS.map((opt) => {
           const selected = type === opt.value;
+          const used = usedTypes.has(opt.value);
           return (
             <button
               key={opt.value}
               type="button"
               onClick={() => setType(opt.value)}
               aria-pressed={selected}
+              disabled={used}
               className={cn(
-                'rounded-xl border px-3 py-3 text-sm font-semibold transition-colors',
+                'inline-flex items-center justify-center gap-1 rounded-xl border px-3 py-3 text-sm font-semibold transition-colors',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1',
-                selected ? TYPE_TONE[opt.value].selected : TYPE_TONE[opt.value].idle
+                used
+                  ? 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-500'
+                  : selected
+                    ? TYPE_TONE[opt.value].selected
+                    : TYPE_TONE[opt.value].idle
               )}
             >
               {t(opt.key)}
+              {used && <Check className="h-3.5 w-3.5" />}
             </button>
           );
         })}
@@ -359,6 +395,15 @@ export default function CheckinPage() {
           </Button>
         </div>
       </div>
+
+      {locStatus === 'failed' && (
+        <p className="-mt-3 flex items-start gap-1.5 px-1 text-xs text-amber-600 dark:text-amber-400">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          {isTh
+            ? 'ไม่พบตำแหน่ง GPS — ยังบันทึกได้ แต่จะถูกส่งให้ HR ตรวจสอบ และต้องชี้แจงเหตุผลกับ HR'
+            : 'No GPS — you can still save, but it will be sent to HR for review and you must explain it.'}
+        </p>
+      )}
 
       {/* Camera / photo */}
       <div className="space-y-3">
@@ -465,6 +510,39 @@ export default function CheckinPage() {
           </DataList>
         )}
       </div>
+
+      {/* No-GPS confirmation */}
+      <Modal
+        isOpen={noGpsOpen}
+        onClose={() => setNoGpsOpen(false)}
+        title={isTh ? 'ไม่พบตำแหน่ง GPS' : 'No GPS location'}
+        size="sm"
+      >
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-50 dark:bg-amber-900/30">
+            <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+          </div>
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            {isTh
+              ? 'ระบบไม่พบตำแหน่ง GPS ของคุณ หากบันทึกต่อ การลงเวลานี้จะถูกส่งให้ HR ตรวจสอบก่อน และคุณจะต้องชี้แจงเหตุผลกับ HR'
+              : 'Your GPS location was not found. If you continue, this punch is sent to HR for review first and you will need to explain the reason to HR.'}
+          </p>
+        </div>
+        <ModalFooter>
+          <Button variant="outline" onClick={() => setNoGpsOpen(false)} disabled={submitting}>
+            {isTh ? 'ยกเลิก' : 'Cancel'}
+          </Button>
+          <Button
+            onClick={() => {
+              setNoGpsOpen(false);
+              void doSubmit();
+            }}
+            isLoading={submitting}
+          >
+            {isTh ? 'บันทึกและส่งให้ HR' : 'Save & send to HR'}
+          </Button>
+        </ModalFooter>
+      </Modal>
     </div>
   );
 }

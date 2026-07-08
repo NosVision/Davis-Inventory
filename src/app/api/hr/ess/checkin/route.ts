@@ -48,12 +48,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid type' }, { status: 400 });
   }
 
-  // --- Validate GPS ---
-  const gpsLat = body.gps_lat;
-  const gpsLng = body.gps_lng;
-  if (!isValidLat(gpsLat) || !isValidLng(gpsLng)) {
-    return NextResponse.json({ error: 'Invalid GPS coordinates' }, { status: 400 });
-  }
+  // --- GPS (optional) --- Valid coords run the normal geofence flow; a punch with NO resolvable
+  // location is still accepted but HELD FOR HR REVIEW (owner ask 2026-07-08) so an employee can log
+  // time when GPS fails and then explain it to HR (never a silent geofence bypass).
+  const hasGps = isValidLat(body.gps_lat) && isValidLng(body.gps_lng);
+  const gpsLat = hasGps ? (body.gps_lat as number) : null;
+  const gpsLng = hasGps ? (body.gps_lng as number) : null;
 
   // --- Validate photo (data URL → base64 → magic bytes) ---
   const photo = typeof body.photo === 'string' ? body.photo : '';
@@ -123,7 +123,7 @@ export async function POST(request: NextRequest) {
   let distanceM: number | null = null;
   let inGeofence: boolean | null = null;
 
-  if (storeIds.length > 0) {
+  if (hasGps && storeIds.length > 0) {
     const { data: locations } = await service
       .from('hr_locations')
       .select('store_id, lat, lng, radius_m')
@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
     let bestInside: { storeId: string; dist: number } | null = null;
     for (const loc of (locations ?? []) as StoreLocation[]) {
       if (!isValidLat(loc.lat) || !isValidLng(loc.lng)) continue;
-      const dist = haversineMeters(gpsLat, gpsLng, loc.lat, loc.lng);
+      const dist = haversineMeters(gpsLat as number, gpsLng as number, loc.lat, loc.lng);
       if (!nearest || dist < nearest.dist) nearest = { storeId: loc.store_id, dist };
       if (dist <= (loc.radius_m ?? 0) && (!bestInside || dist < bestInside.dist)) {
         bestInside = { storeId: loc.store_id, dist };
@@ -161,6 +161,12 @@ export async function POST(request: NextRequest) {
       storeId = storeIds[0];
     }
     // else: multiple stores, none with a geofence → store_id stays null (ambiguous).
+  }
+
+  // No-GPS punch: nothing to geolocate, but a single assignment is unambiguous — attribute the
+  // store so HR knows where it belongs (location stays null → this punch is held for review).
+  if (!hasGps && storeId === null && storeIds.length === 1) {
+    storeId = storeIds[0];
   }
 
   // --- Server-side IP capture; ip_country / is_vpn_suspect are assessed below (§F, P2.1c).
@@ -190,10 +196,11 @@ export async function POST(request: NextRequest) {
   // their egress far from the subscriber, which would false-flag honest up-country staff. ---
   const IP_GPS_MISMATCH_M = 500_000; // 500 km — coarse IP geo; only flag gross mismatches
   const geoMismatch =
+    hasGps &&
     !ipAssessment.isMobile &&
     ipAssessment.lat !== null &&
     ipAssessment.lng !== null &&
-    haversineMeters(gpsLat, gpsLng, ipAssessment.lat, ipAssessment.lng) > IP_GPS_MISMATCH_M;
+    haversineMeters(gpsLat as number, gpsLng as number, ipAssessment.lat, ipAssessment.lng) > IP_GPS_MISMATCH_M;
   const isVpnSuspect = ipAssessment.is_vpn_suspect || geoMismatch;
   const ipCountry = ipAssessment.country;
 
@@ -203,7 +210,8 @@ export async function POST(request: NextRequest) {
   // Geofence enforcement (owner 2026-07-08): a punch OUTSIDE every assigned geofence, or one
   // flagged VPN/GPS-spoof suspect, is not silently accepted — it's held for HR review. A punch
   // that's inside (true) or undeterminable (null, no geofence configured) needs no review.
-  const reviewStatus: 'pending' | null = inGeofence === false || isVpnSuspect ? 'pending' : null;
+  const reviewStatus: 'pending' | null =
+    !hasGps || inGeofence === false || isVpnSuspect ? 'pending' : null;
 
   const { data: inserted, error: insertErr } = await service
     .from('hr_attendance')
@@ -246,11 +254,13 @@ export async function POST(request: NextRequest) {
         .maybeSingle();
       const who = prof?.display_name || prof?.username || '—';
       const label = TYPE_TH[type] ?? type;
-      const reason = isVpnSuspect
-        ? 'ตำแหน่ง/เครือข่ายน่าสงสัย'
-        : distanceM != null
-          ? `นอกพื้นที่ ~${distanceM} ม.`
-          : 'นอกพื้นที่';
+      const reason = !hasGps
+        ? 'ไม่มีตำแหน่ง GPS'
+        : isVpnSuspect
+          ? 'ตำแหน่ง/เครือข่ายน่าสงสัย'
+          : distanceM != null
+            ? `นอกพื้นที่ ~${distanceM} ม.`
+            : 'นอกพื้นที่';
       await Promise.allSettled([
         notifyHrManagers(service, {
           storeId,
