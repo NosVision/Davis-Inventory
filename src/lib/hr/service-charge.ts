@@ -87,6 +87,18 @@ export function computeEvalScDeduction(allocated: number, evalPayoutSatang: numb
   return splitWithCarry(-evalPayoutSatang, allocated);
 }
 
+/**
+ * Stock-penalty → SC deduction (owner ask 2026-07-09). A person's accumulated stock fines for the
+ * month (baht → satang) are docked from their SC for that month, carrying any part past this
+ * month's allocation to the next period (same clamp-with-carry as eval/warning). Fines are the
+ * money; discipline (SOP points → head_bar warning) is tracked separately. See
+ * docs/hr/stock-penalty-to-hr.md.
+ */
+export function computeStockPenaltyScDeduction(allocated: number, penaltySatang: number): ScDeductionResult {
+  if (penaltySatang <= 0) return { amount_satang: 0, carry_satang: 0 };
+  return splitWithCarry(penaltySatang, allocated);
+}
+
 /** Net SC = allocation − total deducted this period, floored at 0. */
 export function computeNetSc(allocated: number, deductions: { amount_satang: number }[]): number {
   const total = deductions.reduce((s, d) => s + Math.max(0, d.amount_satang), 0);

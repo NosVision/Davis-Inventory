@@ -167,6 +167,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ po
         const CARRY_FAMILIES = [
           { sources: ['warning', 'warning_carry'], outType: 'warning_carry', label: 'Warning carry (prev month)' },
           { sources: ['eval', 'eval_carry'], outType: 'eval_carry', label: 'Evaluation carry (prev month)' },
+          { sources: ['stock_penalty', 'stock_penalty_carry'], outType: 'stock_penalty_carry', label: 'Stock penalty carry (prev month)' },
         ];
         for (const fam of CARRY_FAMILIES) {
           const { data: prevCarryRows, error: prevCarryErr } = await service
@@ -254,7 +255,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ po
       .delete()
       .eq('allocation_id', allocId)
       .eq('auto', true)
-      .in('source_type', ['warning', 'warning_carry', 'leave', 'eval_carry']);
+      .in('source_type', ['warning', 'warning_carry', 'leave', 'eval_carry', 'stock_penalty_carry']);
     if (lines.length > 0) {
       await service.from(DED).insert(lines);
     }
