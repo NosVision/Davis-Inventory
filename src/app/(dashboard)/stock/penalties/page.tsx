@@ -3,13 +3,15 @@
 /**
  * Stock Penalties — HQ management surface for the stock-SOP / penalty system (owner ask 2026-07-09).
  * See docs/hr/stock-penalty-to-hr.md. HQ (owner / hq / can_manage_stock_sop) sees, per store + month:
- *   • the monthly SOP point total vs the warning threshold (progress bar),
- *   • the weekly A-02 occurrence breakdown,
- *   • an Auto/Manual toggle for whether crossing the threshold auto-warns the head_bar,
- *   • a manual "send warning to head_bar" button (Manual mode),
- *   • an ad-hoc SV (Service Charge) deduction tool (outside the SOP engine), and
- *   • the recent penalty feed for the store/month.
- * Read + mutate via /api/stock/penalties/* — every route re-checks auth server-side.
+ *   • ภาพรวม — the monthly SOP point total vs the warning threshold (hero + progress bar) with a
+ *     compact money KPI grid (total / pending / sent-HR / deducted),
+ *   • วินัย & ใบเตือน — the weekly A-02 occurrence breakdown, the Auto/Manual warning toggle, and a
+ *     manual "send warning to head_bar" button,
+ *   • การหักเงิน (SV) — the money-deduction workflow (send to HR) + an ad-hoc SV deduction tool,
+ *   • ระเบียบสต๊อก (SOP) — the HQ-managed stock SOP policy that bar/head_bar must accept, and
+ *   • รายการ — the active + (collapsible) deducted-history penalty feed.
+ * Read + mutate via /api/stock/penalties/* and /api/stock/sop-policy — every route re-checks auth
+ * server-side.
  */
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -32,6 +34,7 @@ import {
   PageHeader,
   Select,
   StatusBadge,
+  Textarea,
   type StatusTone,
   toast,
 } from '@/components/ui';
@@ -41,6 +44,7 @@ import {
   AlertTriangle,
   Banknote,
   ClipboardList,
+  FileText,
   Gauge,
   Loader2,
   Megaphone,
@@ -93,6 +97,22 @@ interface StoreMember {
   role: string;
 }
 
+// Stock SOP policy (an HQ-managed hr_policies row) + acknowledgement coverage across bar/head_bar.
+interface SopPolicy {
+  id: string;
+  title: string;
+  body: string | null;
+  version: number;
+  active: boolean;
+  updated_at: string;
+}
+
+interface SopPolicyResponse {
+  policy: SopPolicy | null;
+  acked_count?: number;
+  eligible_count?: number;
+}
+
 const EMPTY_MONEY: MoneyBreakdown = {
   pending: { count: 0, baht: 0 },
   sent_hr: { count: 0, baht: 0 },
@@ -124,7 +144,7 @@ const tileToneCls: Record<TileTone, { box: string; value: string }> = {
   },
 };
 
-// SummaryTile — one compact KPI on the top summary grid (2-up on phones, 4-up on desktop).
+// SummaryTile — one compact KPI on the overview money grid (2-up on phones, 4-up on desktop).
 function SummaryTile({
   label,
   value,
@@ -192,15 +212,20 @@ export default function StockPenaltiesPage() {
         warnNoHead: 'ไม่พบหัวหน้าบาร์ของสาขานี้',
         warnManual: 'แจ้ง HQ/เจ้าของแล้ว (ยังไม่ออกใบเตือน)',
         warnDone: 'ดำเนินการแล้ว',
-        // Summary tiles
-        tileSop: 'แต้ม SOP',
+        // Section titles
+        overviewTitle: 'ภาพรวม',
+        disciplineTitle: 'วินัย & ใบเตือน',
+        deductionTitle: 'การหักเงิน (SV)',
+        // Summary money tiles
         tileMoneyMonth: 'ค่าปรับเดือนนี้',
         tilePendingHr: 'รอส่ง HR',
         tileSentHr: 'ส่ง HR แล้ว',
+        tileDeducted: 'หักแล้ว',
         // Money-deduction status + action
         moneyPending: 'ค่าปรับรอส่ง HR',
         moneySent: 'ส่ง HR แล้ว — รอ HR หัก',
         moneyDeductedAll: 'หักครบแล้วเดือนนี้',
+        moneyNone: 'ยังไม่มีค่าปรับเดือนนี้',
         sendToHr: 'ส่งเรื่องหักให้ HR',
         sentToHrDone: (n: number) => `ส่งให้ HR แล้ว ${n} รายการ`,
         items: 'รายการ',
@@ -212,6 +237,22 @@ export default function StockPenaltiesPage() {
         stSentHr: 'ส่ง HR แล้ว',
         stDeducted: 'หักแล้ว',
         stCancelled: 'ยกเลิก',
+        // Stock SOP management
+        sopSectionTitle: 'ระเบียบสต๊อก (SOP)',
+        sopVersion: (v: number) => `เวอร์ชัน ${v}`,
+        sopActive: 'ใช้งานอยู่',
+        sopInactive: 'ปิดใช้งาน',
+        sopAcked: (a: number, e: number) => `ยอมรับแล้ว ${a}/${e} คน`,
+        sopNone: 'ยังไม่มีระเบียบสต๊อก',
+        sopEditBtn: 'แก้ไข / เผยแพร่เวอร์ชันใหม่',
+        sopEditTitle: 'แก้ไขระเบียบสต๊อก',
+        sopFieldTitle: 'ชื่อระเบียบ',
+        sopFieldBody: 'เนื้อหา (Markdown)',
+        sopFieldActive: 'เปิดใช้งาน',
+        sopBump: 'เผยแพร่เป็นเวอร์ชันใหม่ (ให้พนักงานยอมรับใหม่)',
+        sopSaved: 'บันทึกระเบียบแล้ว',
+        sopSavedBumped: 'เผยแพร่เวอร์ชันใหม่แล้ว — พนักงานต้องกดยอมรับใหม่',
+        sopConflict: 'ถูกแก้ไขที่อื่น โหลดใหม่',
       }
     : {
         title: 'Stock penalties',
@@ -253,15 +294,20 @@ export default function StockPenaltiesPage() {
         warnNoHead: 'No head_bar found for this store',
         warnManual: 'HQ/owner notified (no warning issued)',
         warnDone: 'Done',
-        // Summary tiles
-        tileSop: 'SOP points',
+        // Section titles
+        overviewTitle: 'Overview',
+        disciplineTitle: 'Discipline & warnings',
+        deductionTitle: 'Deductions (SV)',
+        // Summary money tiles
         tileMoneyMonth: 'Fines this month',
         tilePendingHr: 'To send to HR',
         tileSentHr: 'Sent to HR',
+        tileDeducted: 'Deducted',
         // Money-deduction status + action
         moneyPending: 'Fines to send to HR',
         moneySent: 'Sent to HR — awaiting deduction',
         moneyDeductedAll: 'All deducted this month',
+        moneyNone: 'No fines this month',
         sendToHr: 'Send deduction to HR',
         sentToHrDone: (n: number) => `Sent ${n} item(s) to HR`,
         items: 'items',
@@ -273,6 +319,22 @@ export default function StockPenaltiesPage() {
         stSentHr: 'Sent to HR',
         stDeducted: 'Deducted',
         stCancelled: 'Cancelled',
+        // Stock SOP management
+        sopSectionTitle: 'Stock SOP',
+        sopVersion: (v: number) => `Version ${v}`,
+        sopActive: 'Active',
+        sopInactive: 'Inactive',
+        sopAcked: (a: number, e: number) => `Accepted by ${a}/${e}`,
+        sopNone: 'No stock SOP yet',
+        sopEditBtn: 'Edit / publish new version',
+        sopEditTitle: 'Edit stock SOP',
+        sopFieldTitle: 'Title',
+        sopFieldBody: 'Body (Markdown)',
+        sopFieldActive: 'Active',
+        sopBump: 'Publish as a new version (staff must re-accept)',
+        sopSaved: 'SOP saved',
+        sopSavedBumped: 'New version published — staff must re-accept',
+        sopConflict: 'Modified elsewhere, please reload',
       };
 
   const canManage = !user || hasPermission(user, 'can_manage_stock_sop');
@@ -287,6 +349,13 @@ export default function StockPenaltiesPage() {
 
   const [adhoc, setAdhoc] = useState<{ userId: string; reason: string; amount: string } | null>(null);
   const [submittingAdhoc, setSubmittingAdhoc] = useState(false);
+
+  // Stock SOP policy + its editor.
+  const [sop, setSop] = useState<SopPolicyResponse | null>(null);
+  const [sopEdit, setSopEdit] = useState<{ title: string; body: string; active: boolean; bumpVersion: boolean } | null>(
+    null,
+  );
+  const [savingSop, setSavingSop] = useState(false);
 
   const loadSummary = useCallback(async () => {
     if (!currentStoreId || !canManage) {
@@ -313,6 +382,23 @@ export default function StockPenaltiesPage() {
   useEffect(() => {
     loadSummary();
   }, [loadSummary]);
+
+  // Stock SOP policy — global (not store-scoped), fetched once for HQ managers.
+  const loadSop = useCallback(async () => {
+    if (!canManage) return;
+    try {
+      const res = await fetch('/api/stock/sop-policy');
+      if (!res.ok) throw new Error('load failed');
+      const json = (await res.json()) as { data: SopPolicyResponse };
+      setSop(json.data);
+    } catch {
+      setSop(null);
+    }
+  }, [canManage]);
+
+  useEffect(() => {
+    loadSop();
+  }, [loadSop]);
 
   // Store members for the ad-hoc employee picker — mirror owner-review's user_stores + profiles join.
   useEffect(() => {
@@ -485,6 +571,53 @@ export default function StockPenaltiesPage() {
     }
   };
 
+  // Open the SOP editor seeded from the current policy (edit-only: PUT needs an existing id).
+  const openSopEdit = () => {
+    const p = sop?.policy;
+    if (!p) return;
+    setSopEdit({ title: p.title, body: p.body ?? '', active: p.active, bumpVersion: false });
+  };
+
+  const handleSaveSop = async () => {
+    if (!sopEdit || !sop?.policy || savingSop) return;
+    if (!sopEdit.title.trim()) {
+      toast({ type: 'error', title: L.sopFieldTitle });
+      return;
+    }
+    const prevVersion = sop.policy.version;
+    setSavingSop(true);
+    try {
+      const res = await fetch('/api/stock/sop-policy', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: sop.policy.id,
+          title: sopEdit.title.trim(),
+          body: sopEdit.body,
+          active: sopEdit.active,
+          bumpVersion: sopEdit.bumpVersion,
+        }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string; data?: { version?: number } };
+      if (res.status === 409) {
+        toast({ type: 'error', title: L.sopConflict });
+        return;
+      }
+      if (!res.ok) {
+        toast({ type: 'error', title: json.error || L.loadFail });
+        return;
+      }
+      // A content change or an explicit bump publishes a new version → bar/head_bar re-acknowledge.
+      const newVersion = json.data?.version;
+      const bumped = typeof newVersion === 'number' ? newVersion > prevVersion : sopEdit.bumpVersion;
+      toast({ type: 'success', title: bumped ? L.sopSavedBumped : L.sopSaved });
+      setSopEdit(null);
+      loadSop();
+    } finally {
+      setSavingSop(false);
+    }
+  };
+
   // Row badge: amount-less rows are SOP marks; money rows follow the pending → sent_hr → deducted
   // workflow. Cancelled is terminal regardless of amount.
   const rowStatusMeta = (p: RecentPenalty): { tone: StatusTone; label: string } => {
@@ -582,44 +715,19 @@ export default function StockPenaltiesPage() {
         <EmptyState icon={Gauge} title={L.loadFail} />
       ) : (
         <>
-          {/* Prominent KPI summary — 2-up on phones, 4-up on desktop. */}
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <SummaryTile
-              label={L.tileSop}
-              value={`${summary.sop_points} / ${summary.threshold}`}
-              sub={overThreshold ? L.overThreshold : L.underThreshold}
-              tone={overThreshold ? 'rose' : 'default'}
-            />
-            <SummaryTile label={L.tileMoneyMonth} value={`฿${bahtLabel(moneyTotalBaht)}`} />
-            <SummaryTile
-              label={L.tilePendingHr}
-              value={money.pending.count}
-              sub={`฿${bahtLabel(money.pending.baht)}`}
-              tone={money.pending.count > 0 ? 'amber' : 'default'}
-            />
-            <SummaryTile
-              label={L.tileSentHr}
-              value={money.sent_hr.count}
-              sub={`฿${bahtLabel(money.sent_hr.baht)}`}
-              tone={money.sent_hr.count > 0 ? 'info' : 'default'}
-            />
-          </div>
-
-          {/* Summary: SOP points vs threshold with a progress bar. */}
-          <Card
-            className={cn(
-              overThreshold && 'ring-rose-300 dark:ring-rose-800',
-            )}
-          >
+          {/* ── 1. ภาพรวม (Overview) — SOP hero + progress bar + money KPI grid. ── */}
+          <Card className={cn(overThreshold && 'ring-rose-300 dark:ring-rose-800')}>
+            <CardHeader title={L.overviewTitle} />
             <CardContent>
+              {/* Hero: the SOP number vs threshold. */}
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-xs text-gray-500 dark:text-gray-400">{L.monthPoints}</p>
-                  <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                  <p className="mt-0.5 text-3xl font-bold text-gray-900 dark:text-white">
                     <span className={cn('tabular-nums', overThreshold && 'text-rose-600 dark:text-rose-400')}>
                       {summary.sop_points}
                     </span>{' '}
-                    <span className="text-base font-medium text-gray-400">/ {summary.threshold}</span>
+                    <span className="text-lg font-medium text-gray-400">/ {summary.threshold}</span>
                   </p>
                 </div>
                 <StatusBadge
@@ -638,37 +746,59 @@ export default function StockPenaltiesPage() {
                 />
               </div>
 
-              {/* Weekly A-02 occurrence chips. */}
-              <div className="mt-4">
-                <p className="mb-1.5 text-xs font-medium text-gray-500 dark:text-gray-400">{L.weeklyTitle}</p>
-                {summary.week_summary.length === 0 ? (
-                  <p className="text-xs text-gray-400">{L.noWeekly}</p>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {summary.week_summary.map((w) => (
-                      <span
-                        key={w.week_key}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-gray-50 px-2.5 py-1 text-xs text-gray-700 ring-1 ring-gray-200 dark:bg-gray-700/50 dark:text-gray-200 dark:ring-gray-600"
-                      >
-                        <span className="font-mono text-[11px] text-gray-500 dark:text-gray-400">{w.week_key}</span>
-                        <span className="font-semibold tabular-nums">
-                          {w.occurrences}
-                          {L.times ? ` ${L.times}` : ''}
-                        </span>
-                      </span>
-                    ))}
-                  </div>
-                )}
+              {/* Money KPI grid — 2-up on phones, 4-up on desktop. */}
+              <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">
+                <SummaryTile label={L.tileMoneyMonth} value={`฿${bahtLabel(moneyTotalBaht)}`} />
+                <SummaryTile
+                  label={L.tilePendingHr}
+                  value={money.pending.count}
+                  sub={`฿${bahtLabel(money.pending.baht)}`}
+                  tone={money.pending.count > 0 ? 'amber' : 'default'}
+                />
+                <SummaryTile
+                  label={L.tileSentHr}
+                  value={money.sent_hr.count}
+                  sub={`฿${bahtLabel(money.sent_hr.baht)}`}
+                  tone={money.sent_hr.count > 0 ? 'info' : 'default'}
+                />
+                <SummaryTile
+                  label={L.tileDeducted}
+                  value={money.deducted.count}
+                  sub={`฿${bahtLabel(money.deducted.baht)}`}
+                />
               </div>
             </CardContent>
           </Card>
 
-          {/* Mode toggle + actions. */}
+          {/* ── 2. วินัย & ใบเตือน — weekly A-02 chips + Auto/Manual toggle + send-warning. ── */}
           <Card>
-            <CardHeader title={L.modeTitle} />
+            <CardHeader title={L.disciplineTitle} />
             <CardContent>
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              {/* Weekly A-02 occurrence chips. */}
+              <p className="mb-1.5 text-xs font-medium text-gray-500 dark:text-gray-400">{L.weeklyTitle}</p>
+              {summary.week_summary.length === 0 ? (
+                <p className="text-xs text-gray-400">{L.noWeekly}</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {summary.week_summary.map((w) => (
+                    <span
+                      key={w.week_key}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-gray-50 px-2.5 py-1 text-xs text-gray-700 ring-1 ring-gray-200 dark:bg-gray-700/50 dark:text-gray-200 dark:ring-gray-600"
+                    >
+                      <span className="font-mono text-[11px] text-gray-500 dark:text-gray-400">{w.week_key}</span>
+                      <span className="font-semibold tabular-nums">
+                        {w.occurrences}
+                        {L.times ? ` ${L.times}` : ''}
+                      </span>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Warning mode toggle + manual send-warning button. */}
+              <div className="mt-4 flex flex-col gap-4 border-t border-gray-100 pt-4 dark:border-gray-700 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
+                  <p className="mb-1.5 text-xs font-medium text-gray-500 dark:text-gray-400">{L.modeTitle}</p>
                   <div className="inline-flex rounded-lg bg-gray-100 p-0.5 dark:bg-gray-700">
                     {([
                       { key: true, label: L.modeAuto },
@@ -697,7 +827,72 @@ export default function StockPenaltiesPage() {
                     {summary.auto_hr ? L.modeAutoHint : L.modeManualHint}
                   </p>
                 </div>
+                <Button
+                  size="sm"
+                  icon={
+                    sendingWarning ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Megaphone className="h-3.5 w-3.5" />
+                    )
+                  }
+                  disabled={!overThreshold || sendingWarning}
+                  onClick={handleSendWarning}
+                >
+                  {L.sendWarning}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* ── 3. การหักเงิน (SV) — money workflow status + ad-hoc deduction. ── */}
+          <Card>
+            <CardHeader title={L.deductionTitle} />
+            <CardContent>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                {/* Money-deduction status: pending → sent_hr → deducted → (none). */}
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  {money.pending.count > 0 ? (
+                    <>
+                      <StatusBadge tone="warn" icon={Banknote} label={L.stToSend} />
+                      <span className="text-sm text-gray-700 dark:text-gray-200">
+                        {L.moneyPending}: {money.pending.count} {L.items} · ฿{bahtLabel(money.pending.baht)}
+                      </span>
+                    </>
+                  ) : money.sent_hr.count > 0 ? (
+                    <>
+                      <StatusBadge tone="info" icon={Send} label={L.stSentHr} />
+                      <span className="text-sm text-gray-700 dark:text-gray-200">
+                        {L.moneySent}: {money.sent_hr.count} · ฿{bahtLabel(money.sent_hr.baht)}
+                      </span>
+                    </>
+                  ) : money.deducted.count > 0 ? (
+                    <>
+                      <StatusBadge tone="good" label={L.stDeducted} />
+                      <span className="text-sm text-gray-700 dark:text-gray-200">{L.moneyDeductedAll}</span>
+                    </>
+                  ) : (
+                    <span className="text-sm text-gray-400">{L.moneyNone}</span>
+                  )}
+                </div>
+
                 <div className="flex flex-wrap items-center gap-2">
+                  {money.pending.count > 0 && (
+                    <Button
+                      size="sm"
+                      icon={
+                        sendingToHr ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Send className="h-3.5 w-3.5" />
+                        )
+                      }
+                      disabled={sendingToHr}
+                      onClick={handleSendToHr}
+                    >
+                      {L.sendToHr}
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     size="sm"
@@ -706,64 +901,46 @@ export default function StockPenaltiesPage() {
                   >
                     {L.adhoc}
                   </Button>
-                  <Button
-                    size="sm"
-                    icon={
-                      sendingWarning ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Megaphone className="h-3.5 w-3.5" />
-                      )
-                    }
-                    disabled={!overThreshold || sendingWarning}
-                    onClick={handleSendWarning}
-                  >
-                    {L.sendWarning}
-                  </Button>
                 </div>
               </div>
-
-              {/* Money-deduction workflow: pending → send to HR → (HR) deducted. */}
-              {money.pending.count > 0 ? (
-                <div className="mt-4 flex flex-col gap-3 border-t border-gray-100 pt-4 dark:border-gray-700 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <StatusBadge tone="warn" icon={Banknote} label={L.stToSend} />
-                    <span className="text-sm text-gray-700 dark:text-gray-200">
-                      {L.moneyPending}: {money.pending.count} {L.items} · ฿{bahtLabel(money.pending.baht)}
-                    </span>
-                  </div>
-                  <Button
-                    size="sm"
-                    icon={
-                      sendingToHr ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Send className="h-3.5 w-3.5" />
-                      )
-                    }
-                    disabled={sendingToHr}
-                    onClick={handleSendToHr}
-                  >
-                    {L.sendToHr}
-                  </Button>
-                </div>
-              ) : money.sent_hr.count > 0 ? (
-                <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-4 dark:border-gray-700">
-                  <StatusBadge tone="info" icon={Send} label={L.stSentHr} />
-                  <span className="text-sm text-gray-700 dark:text-gray-200">
-                    {L.moneySent}: {money.sent_hr.count} · ฿{bahtLabel(money.sent_hr.baht)}
-                  </span>
-                </div>
-              ) : money.deducted.count > 0 ? (
-                <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-4 dark:border-gray-700">
-                  <StatusBadge tone="good" label={L.stDeducted} />
-                  <span className="text-sm text-gray-700 dark:text-gray-200">{L.moneyDeductedAll}</span>
-                </div>
-              ) : null}
             </CardContent>
           </Card>
 
-          {/* Active feed — pending/sent_hr money + SOP/notify marks (deducted moved to history). */}
+          {/* ── 4. ระเบียบสต๊อก (SOP) — HQ-managed stock SOP that bar/head_bar must accept. ── */}
+          <Card>
+            <CardHeader title={L.sopSectionTitle} />
+            <CardContent>
+              {sop?.policy ? (
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <FileText className="h-5 w-5 shrink-0 text-gray-400" />
+                    <span className="min-w-0 font-medium text-gray-900 dark:text-white">{sop.policy.title}</span>
+                    <StatusBadge
+                      tone={sop.policy.active ? 'good' : 'neutral'}
+                      label={sop.policy.active ? L.sopActive : L.sopInactive}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {L.sopVersion(sop.policy.version)} · {L.sopAcked(sop.acked_count ?? 0, sop.eligible_count ?? 0)}
+                  </p>
+                  {canManage && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      icon={<FileText className="h-3.5 w-3.5" />}
+                      onClick={openSopEdit}
+                    >
+                      {L.sopEditBtn}
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-400">{L.sopNone}</p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* ── 5. รายการ — active feed (deducted moved to collapsible history). ── */}
           <Card padding="none">
             <CardHeader title={`${L.activeTitle} (${activeRecent.length})`} />
             {activeRecent.length === 0 ? (
@@ -823,6 +1000,65 @@ export default function StockPenaltiesPage() {
                 {L.cancel}
               </Button>
               <Button onClick={handleSubmitAdhoc} isLoading={submittingAdhoc}>
+                {L.save}
+              </Button>
+            </ModalFooter>
+          </div>
+        )}
+      </Modal>
+
+      {/* Stock SOP editor modal. */}
+      <Modal isOpen={!!sopEdit} onClose={() => setSopEdit(null)} title={L.sopEditTitle} size="lg">
+        {sopEdit && (
+          <div className="space-y-4">
+            <Input
+              label={L.sopFieldTitle}
+              value={sopEdit.title}
+              onChange={(e) => setSopEdit((prev) => prev && { ...prev, title: e.target.value })}
+            />
+            <Textarea
+              label={L.sopFieldBody}
+              rows={12}
+              className="font-mono text-xs leading-relaxed"
+              value={sopEdit.body}
+              onChange={(e) => setSopEdit((prev) => prev && { ...prev, body: e.target.value })}
+            />
+            {/* Active toggle. */}
+            <div className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2.5 dark:border-gray-700">
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-200">{L.sopFieldActive}</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={sopEdit.active}
+                onClick={() => setSopEdit((prev) => prev && { ...prev, active: !prev.active })}
+                className={cn(
+                  'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors',
+                  sopEdit.active ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-600',
+                )}
+              >
+                <span
+                  className={cn(
+                    'inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform',
+                    sopEdit.active ? 'translate-x-5' : 'translate-x-0.5',
+                  )}
+                />
+              </button>
+            </div>
+            {/* Publish-as-new-version checkbox. */}
+            <label className="flex cursor-pointer items-start gap-2">
+              <input
+                type="checkbox"
+                checked={sopEdit.bumpVersion}
+                onChange={(e) => setSopEdit((prev) => prev && { ...prev, bumpVersion: e.target.checked })}
+                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700"
+              />
+              <span className="text-sm text-gray-700 dark:text-gray-200">{L.sopBump}</span>
+            </label>
+            <ModalFooter>
+              <Button variant="outline" onClick={() => setSopEdit(null)}>
+                {L.cancel}
+              </Button>
+              <Button onClick={handleSaveSop} isLoading={savingSop}>
                 {L.save}
               </Button>
             </ModalFooter>
