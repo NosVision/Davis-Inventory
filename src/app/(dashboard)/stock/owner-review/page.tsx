@@ -135,11 +135,12 @@ export default function OwnerReviewPage() {
   // PDF download spinner gate.
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [penaltyModal, setPenaltyModal] = useState<{
-    comparison: Comparison | null;       // null = ad-hoc / EXP-01
+    comparison: Comparison | null;       // null = ad-hoc / EXP-01 / manual entry
     code: string;
     staffId: string;
     amount: string;
     notes: string;
+    businessDate: string;                // วันที่เกิดเหตุ — เดือน/สัปดาห์คำนวณจากวันนี้ (กรอกเอง = แก้ได้)
   } | null>(null);
 
   // ISO month-year (e.g. "2026-05") used as the DB column key. Stays as-is.
@@ -582,6 +583,7 @@ export default function OwnerReviewPage() {
         comparison_id: penaltyModal.comparison?.id || null,
         amount: amountToSend,
         notes: penaltyModal.notes || null,
+        business_date: penaltyModal.businessDate || null,
       }),
     });
     const json = (await res.json().catch(() => ({}))) as {
@@ -876,6 +878,29 @@ export default function OwnerReviewPage() {
         </Badge>
       </div>
 
+      {/* Log a violation NOT tied to a stock discrepancy (no-sticker A-04, late return EXP-01, or
+          backfilling a real past penalty) — the date is editable in the modal. */}
+      <div className="flex justify-end">
+        <Button
+          size="sm"
+          variant="outline"
+          icon={<Plus className="h-3.5 w-3.5" />}
+          onClick={() => {
+            const first = codes.find((c) => c.code !== 'EXP-01');
+            setPenaltyModal({
+              comparison: null,
+              code: first?.code || '',
+              staffId: '',
+              amount: first?.code === 'A-02' || !first?.default_amount ? '' : String(first.default_amount),
+              notes: '',
+              businessDate,
+            });
+          }}
+        >
+          เพิ่มความผิดเอง
+        </Button>
+      </div>
+
       {/* Per-day summary chips */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <SummaryChip
@@ -1009,6 +1034,7 @@ export default function OwnerReviewPage() {
                     staffId: '',
                     amount: String(exp01?.default_amount ?? 100),
                     notes: `ส่งเหล้าหมดอายุคืน HQ ช้า — วันที่ ${lastTuesdayTransfer.tuesday}`,
+                    businessDate: lastTuesdayTransfer.tuesday,
                   });
                 }}
               >
@@ -1283,6 +1309,7 @@ export default function OwnerReviewPage() {
                                 // A-02 amount is auto (weekly escalation) → leave blank.
                                 amount: first?.code === 'A-02' || !first?.default_amount ? '' : String(first.default_amount),
                                 notes: '',
+                                businessDate: c.comp_date || businessDate,
                               });
                             }}
                           >
@@ -1395,6 +1422,17 @@ export default function OwnerReviewPage() {
                   </span>
                 </p>
               </div>
+            )}
+            {!penaltyModal.comparison && (
+              <Input
+                type="date"
+                label="วันที่เกิดเหตุ (เดือน/สัปดาห์คำนวณจากวันนี้)"
+                value={penaltyModal.businessDate}
+                max={businessDateBangkok()}
+                onChange={(e) =>
+                  setPenaltyModal((prev) => prev && { ...prev, businessDate: e.target.value })
+                }
+              />
             )}
             <Select
               label="รหัสความผิด"
