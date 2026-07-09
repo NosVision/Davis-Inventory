@@ -182,8 +182,9 @@ export default function StockPenaltiesPage() {
         monthPoints: 'แต้มความผิดเดือนนี้',
         overThreshold: 'เกินเกณฑ์เตือนแล้ว',
         underThreshold: 'ยังไม่ถึงเกณฑ์เตือน',
-        weeklyTitle: 'ครั้งต่อสัปดาห์ (A-02)',
-        noWeekly: 'ยังไม่มีครั้ง A-02 ในเดือนนี้',
+        weeklyTitle: 'นับสต๊อกผิด — แยกรายสัปดาห์',
+        noWeekly: 'เดือนนี้ยังไม่มีการนับสต๊อกผิด',
+        gotoReview: 'ไปหน้าออกโทษ',
         week: 'สัปดาห์',
         times: 'ครั้ง',
         modeTitle: 'โหมดส่งใบเตือน HR',
@@ -264,8 +265,9 @@ export default function StockPenaltiesPage() {
         monthPoints: 'SOP points this month',
         overThreshold: 'Over the warning threshold',
         underThreshold: 'Under the warning threshold',
-        weeklyTitle: 'Occurrences per week (A-02)',
-        noWeekly: 'No A-02 occurrences this month',
+        weeklyTitle: 'Stock-count errors by week',
+        noWeekly: 'No stock-count errors this month',
+        gotoReview: 'Go to review',
         week: 'Week',
         times: '',
         modeTitle: 'HR warning mode',
@@ -697,13 +699,20 @@ export default function StockPenaltiesPage() {
         title={L.title}
         subtitle={L.subtitle}
         actions={
-          <input
-            type="month"
-            value={month}
-            max={openBusinessDateBangkok().slice(0, 7)}
-            onChange={(e) => e.target.value && setMonth(e.target.value)}
-            className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href="/stock/owner-review">
+              <Button variant="outline" size="sm" icon={<ClipboardList className="h-4 w-4" />}>
+                {L.gotoReview}
+              </Button>
+            </Link>
+            <input
+              type="month"
+              value={month}
+              max={openBusinessDateBangkok().slice(0, 7)}
+              onChange={(e) => e.target.value && setMonth(e.target.value)}
+              className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+            />
+          </div>
         }
       />
 
