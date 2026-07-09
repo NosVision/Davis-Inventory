@@ -20,6 +20,7 @@ import {
   DataList,
   toast,
 } from '@/components/ui';
+import { STOCK_SOP_CATEGORY } from '@/lib/stock/penalty-engine';
 
 interface Policy {
   id: string;
@@ -101,7 +102,8 @@ export default function PoliciesPage() {
       const res = await fetch('/api/hr/policies');
       if (res.ok) {
         const json = await res.json();
-        setRows((json.data ?? []) as Policy[]);
+        // The stock SOP is managed on the HQ page (/stock/penalties), not here — hide it.
+        setRows(((json.data ?? []) as Policy[]).filter((p) => p.category !== STOCK_SOP_CATEGORY));
       } else {
         const json = await res.json().catch(() => ({}));
         toast({ type: 'error', title: t('saveFailed'), message: json.error });

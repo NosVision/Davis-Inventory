@@ -882,7 +882,14 @@ export default function OwnerReviewPage() {
 
       {/* Log a violation NOT tied to a stock discrepancy (no-sticker A-04, late return EXP-01, or
           backfilling a real past penalty) — the date is editable in the modal. */}
-      <div className="flex justify-end">
+      <div className="flex flex-wrap justify-end gap-2">
+        {(user?.role === 'owner' || user?.role === 'hq') && (
+          <Link href="/stock/penalties">
+            <Button size="sm" variant="outline" icon={<ArrowRight className="h-3.5 w-3.5" />}>
+              หน้าจัดการ HQ
+            </Button>
+          </Link>
+        )}
         <Button
           size="sm"
           variant="outline"

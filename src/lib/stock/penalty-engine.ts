@@ -8,6 +8,10 @@
 export const DEFAULT_FINE_TIERS = [0, 300, 500]; // baht — per weekly occurrence 1 / 2 / 3 (A-02)
 export const DEFAULT_WARNING_THRESHOLD = 7;
 
+// The hr_policies.category marker for the stock SOP — managed by HQ (not HR) and shown to
+// bar/head_bar. Shared so the HQ page, its route, and the HR policies list agree.
+export const STOCK_SOP_CATEGORY = 'ระเบียบสต๊อก';
+
 // Codes that deduct money IMMEDIATELY at full rate (no weekly free-first): ghost count & missing.
 export const IMMEDIATE_MONEY_CODES = ['A-03', 'M-01'];
 // Codes that run through the weekly escalating fine (free → 300 → 500).
