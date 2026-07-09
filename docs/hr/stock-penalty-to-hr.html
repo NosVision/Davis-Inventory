@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>สเปก: ระบบหักคะแนน/ค่าปรับนับสต๊อก → HR</title>
+<style>
+  /* ---------- Design tokens ---------- */
+  :root {
+    --paper: #f7f4ee;
+    --card: #ffffff;
+    --card-2: #fbf9f4;
+    --ink: #211d1a;
+    --muted: #6d665c;
+    --faint: #928a7d;
+    --line: #e7e1d6;
+    --line-strong: #d8d0c2;
+    --accent: #8a3a4a;      /* wine — bar identity */
+    --accent-ink: #ffffff;
+    --accent-soft: #f6e9ec;
+    --money: #0e7c62;       /* SV / เงิน */
+    --money-soft: #e2f3ee;
+    --fine: #c0402f;        /* หักเงิน */
+    --fine-soft: #fbe8e4;
+    --sop: #b5791c;         /* แต้ม SOP / วินัย */
+    --sop-soft: #f7edd8;
+    --shadow: 0 1px 2px rgba(33,29,26,.04), 0 6px 20px -8px rgba(33,29,26,.14);
+    --radius: 16px;
+    --maxw: 1000px;
+    --font: 'Sarabun','IBM Plex Sans Thai','Noto Sans Thai','Leelawadee UI','Tahoma',system-ui,-apple-system,sans-serif;
+    --mono: ui-monospace,'SFMono-Regular','Menlo',monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #161318;
+      --card: #201b22;
+      --card-2: #241f27;
+      --ink: #f1ece5;
+      --muted: #a79f95;
+      --faint: #857d73;
+      --line: #332c37;
+      --line-strong: #3f3743;
+      --accent: #cd6e80;
+      --accent-ink: #1a0f12;
+      --accent-soft: #35232a;
+      --money: #2fb894;
+      --money-soft: #12332b;
+      --fine: #e6695a;
+      --fine-soft: #38211d;
+      --sop: #dfa945;
+      --sop-soft: #382c17;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 28px -12px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:#161318; --card:#201b22; --card-2:#241f27; --ink:#f1ece5; --muted:#a79f95;
+    --faint:#857d73; --line:#332c37; --line-strong:#3f3743; --accent:#cd6e80; --accent-ink:#1a0f12;
+    --accent-soft:#35232a; --money:#2fb894; --money-soft:#12332b; --fine:#e6695a; --fine-soft:#38211d;
+    --sop:#dfa945; --sop-soft:#382c17; --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 28px -12px rgba(0,0,0,.6);
+  }
+  :root[data-theme="light"] {
+    --paper:#f7f4ee; --card:#ffffff; --card-2:#fbf9f4; --ink:#211d1a; --muted:#6d665c;
+    --faint:#928a7d; --line:#e7e1d6; --line-strong:#d8d0c2; --accent:#8a3a4a; --accent-ink:#ffffff;
+    --accent-soft:#f6e9ec; --money:#0e7c62; --money-soft:#e2f3ee; --fine:#c0402f; --fine-soft:#fbe8e4;
+    --sop:#b5791c; --sop-soft:#f7edd8; --shadow:0 1px 2px rgba(33,29,26,.04),0 6px 20px -8px rgba(33,29,26,.14);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font);
+    font-size: 16px;
+    line-height: 1.65;
+    letter-spacing: .1px;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0 0 auto 0; height: 4px;
+    background: linear-gradient(90deg, var(--accent), var(--sop) 55%, var(--money));
+    z-index: 50;
+  }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 20px 96px; }
+
+  /* ---------- Header ---------- */
+  header { padding: 56px 0 26px; position: relative; }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 12px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;
+    color: var(--accent); background: var(--accent-soft);
+    padding: 6px 12px; border-radius: 999px;
+  }
+  h1 {
+    font-size: clamp(1.7rem, 1rem + 3.4vw, 2.9rem);
+    line-height: 1.12; margin: 18px 0 10px; font-weight: 800; letter-spacing: -.3px;
+    text-wrap: balance;
+  }
+  .lede { font-size: clamp(1rem, .95rem + .4vw, 1.18rem); color: var(--muted); max-width: 62ch; margin: 0; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 22px; font-size: 13.5px; color: var(--faint); }
+  .meta span { display: inline-flex; align-items: center; gap: 7px; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+
+  .toggle {
+    position: absolute; top: 56px; right: 0;
+    background: var(--card); border: 1px solid var(--line-strong); color: var(--muted);
+    width: 40px; height: 40px; border-radius: 11px; cursor: pointer; font-size: 18px;
+    display: grid; place-items: center; transition: transform .15s ease, border-color .15s ease;
+  }
+  .toggle:hover { transform: translateY(-1px); border-color: var(--accent); color: var(--accent); }
+  .toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---------- Sections ---------- */
+  section { margin-top: 44px; }
+  .sec-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 18px; }
+  .sec-num {
+    font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--accent);
+    border: 1.5px solid var(--accent); border-radius: 8px; padding: 2px 8px; line-height: 1.4;
+    flex: none;
+  }
+  .sec-head h2 { font-size: clamp(1.25rem, 1rem + 1vw, 1.6rem); margin: 0; font-weight: 800; letter-spacing: -.2px; }
+  .sec-sub { color: var(--muted); margin: -6px 0 0; font-size: 15px; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 22px; box-shadow: var(--shadow);
+  }
+
+  /* ---------- Two clocks ---------- */
+  .clocks { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .clock { border-radius: var(--radius); padding: 22px; border: 1px solid var(--line); background: var(--card); box-shadow: var(--shadow); position: relative; overflow: hidden; }
+  .clock::before { content:""; position:absolute; inset:0 auto 0 0; width:5px; }
+  .clock.money::before { background: var(--money); }
+  .clock.disc::before { background: var(--sop); }
+  .clock .ic { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; margin-bottom: 14px; }
+  .clock.money .ic { background: var(--money-soft); color: var(--money); }
+  .clock.disc .ic { background: var(--sop-soft); color: var(--sop); }
+  .clock h3 { margin: 0 0 4px; font-size: 1.15rem; font-weight: 800; }
+  .clock .tag { font-size: 12.5px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; }
+  .clock.money .tag { color: var(--money); }
+  .clock.disc .tag { color: var(--sop); }
+  .clock ul { margin: 14px 0 0; padding: 0; list-style: none; display: grid; gap: 9px; }
+  .clock li { display: grid; grid-template-columns: 18px 1fr; gap: 10px; font-size: 15px; align-items: start; }
+  .clock li b { font-weight: 700; }
+  .tick { color: var(--money); font-weight: 800; }
+  .clock.disc .tick { color: var(--sop); }
+
+  /* ---------- Escalation stepper ---------- */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; }
+  .step { border: 1px solid var(--line); border-radius: 14px; padding: 16px; text-align: center; background: var(--card-2); position: relative; }
+  .step .n { font-size: 12px; font-weight: 700; color: var(--faint); letter-spacing: .5px; }
+  .step .amt { font-size: clamp(1.3rem, 1rem + 1.6vw, 1.8rem); font-weight: 800; margin: 6px 0 2px; font-variant-numeric: tabular-nums; }
+  .step.free .amt { color: var(--muted); }
+  .step.f300 .amt { color: var(--sop); }
+  .step.f500 .amt { color: var(--fine); }
+  .step .when { font-size: 13px; color: var(--muted); }
+  .step .arrow { display: none; }
+
+  /* ---------- Table ---------- */
+  .table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+  table { border-collapse: collapse; width: 100%; min-width: 640px; background: var(--card); font-size: 14.5px; }
+  thead th { background: var(--card-2); text-align: right; font-weight: 700; color: var(--muted); padding: 13px 16px; border-bottom: 1px solid var(--line-strong); white-space: nowrap; font-size: 13px; letter-spacing: .3px; }
+  thead th:first-child { text-align: left; }
+  tbody td { padding: 13px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr:hover { background: var(--card-2); }
+  .code { font-family: var(--mono); font-weight: 700; font-size: 13px; padding: 3px 8px; border-radius: 7px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
+
+  /* ---------- Chips ---------- */
+  .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+  .chip.money { background: var(--money-soft); color: var(--money); }
+  .chip.fine { background: var(--fine-soft); color: var(--fine); }
+  .chip.sop { background: var(--sop-soft); color: var(--sop); }
+  .chip.no { background: color-mix(in srgb, var(--muted) 12%, transparent); color: var(--muted); }
+
+  /* ---------- Attribution ---------- */
+  .attr { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 4px; }
+  .flow { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border: 1px dashed var(--line-strong); border-radius: 14px; background: var(--card-2); }
+  .flow .box { text-align: center; flex: 1; }
+  .flow .box .lab { font-size: 12px; color: var(--faint); }
+  .flow .box .day { font-weight: 800; font-size: 1.05rem; }
+  .flow .to { color: var(--fine); font-weight: 800; font-size: 1.3rem; flex: none; }
+
+  /* ---------- Screens ---------- */
+  .screens { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .screen { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow); }
+  .screen .badge { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase; padding: 5px 10px; border-radius: 8px; margin-bottom: 12px; }
+  .screen.hq .badge { background: var(--accent-soft); color: var(--accent); }
+  .screen.hr .badge { background: var(--money-soft); color: var(--money); }
+  .screen.me .badge { background: var(--sop-soft); color: var(--sop); }
+  .screen h3 { margin: 0 0 8px; font-size: 1.08rem; }
+  .screen ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14px; color: var(--muted); }
+  .screen ul li::marker { color: var(--accent); }
+
+  /* ---------- generic bullets ---------- */
+  .bul { margin: 0; padding: 0; list-style: none; display: grid; gap: 11px; }
+  .bul li { display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: start; }
+  .bul li .mk { color: var(--accent); font-weight: 800; }
+  .bul.money li .mk { color: var(--money); }
+  strong { font-weight: 700; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ---------- Callout ---------- */
+  .callout { border: 1px solid var(--sop); background: var(--sop-soft); border-radius: var(--radius); padding: 20px 22px; }
+  .callout h3 { margin: 0 0 10px; font-size: 1.05rem; color: color-mix(in srgb, var(--sop) 70%, var(--ink)); }
+  .callout ol { margin: 0; padding-left: 20px; display: grid; gap: 8px; font-size: 14.5px; }
+
+  /* ---------- Phases ---------- */
+  .phases { display: grid; gap: 10px; }
+  .phase { display: grid; grid-template-columns: 40px 1fr; gap: 14px; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 13px; padding: 14px 16px; box-shadow: var(--shadow); }
+  .phase .p { width: 34px; height: 34px; border-radius: 10px; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font-weight: 800; }
+  .phase b { display:block; }
+  .phase small { color: var(--muted); font-size: 13.5px; }
+
+  footer { margin-top: 52px; padding-top: 22px; border-top: 1px solid var(--line); color: var(--faint); font-size: 13px; text-align: center; }
+
+  @media (max-width: 720px) {
+    .clocks, .attr, .screens { grid-template-columns: 1fr; }
+    .steps { grid-template-columns: 1fr; }
+    .toggle { top: 44px; }
+    header { padding-top: 44px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <button class="toggle" id="themeBtn" aria-label="สลับโหมดสว่าง/มืด" title="สลับโหมด">◐</button>
+    <span class="eyebrow"><span class="dot"></span> Ops Spec · HR × Stock</span>
+    <h1>ระบบหักคะแนน / ค่าปรับนับสต๊อก → เชื่อม HR</h1>
+    <p class="lede">แปลงกฎ SOP บาร์ให้ทำงานอัตโนมัติ: หักค่าปรับที่กอง Service Charge, สะสมแต้มวินัยเพื่อออกใบเตือนหัวหน้าบาร์ และให้ HQ / HR / พนักงาน เห็นข้อมูลของตัวเอง</p>
+    <div class="meta">
+      <span><span class="dot"></span> อ้างอิง: BACCARAT</span>
+      <span><span class="dot"></span> สรุปจากเจ้าของร้าน 2026-07-09</span>
+      <span><span class="dot"></span> สถานะ: เคาะครบ · พร้อมเฟส 1</span>
+    </div>
+  </header>
+
+  <!-- 1. Two clocks -->
+  <section>
+    <div class="sec-head"><span class="sec-num">01</span><h2>หลักการ: “2 นาฬิกา” แยกกัน</h2></div>
+    <p class="sec-sub">การ <strong>นับแต้มวินัย</strong> กับ การ <strong>หักเงิน</strong> เดินคนละจังหวะ — ห้ามผูกเป็นตัวเดียวกัน</p>
+    <div class="clocks" style="margin-top:16px">
+      <div class="clock money">
+        <div class="ic" aria-hidden="true">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        </div>
+        <span class="tag">นาฬิกาเงิน</span>
+        <h3>หัก Service Charge</h3>
+        <ul>
+          <li><span class="tick">›</span><span>นับเฉพาะครั้งที่ <b>หักเงินจริง</b></span></li>
+          <li><span class="tick">›</span><span>หน้าต่าง <b>รายสัปดาห์ (จ–อา)</b> รีเซ็ตทุกวันจันทร์</span></li>
+          <li><span class="tick">›</span><span>ลงเงินจริงตาม <b>รอบเงินเดือน 26–25</b></span></li>
+          <li><span class="tick">›</span><span>SV ไม่พอ → <b>ยกยอดเดือนถัดไป</b> (ไม่แตะเงินเดือน)</span></li>
+        </ul>
+      </div>
+      <div class="clock disc">
+        <div class="ic" aria-hidden="true">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9h18M8 2.5v4M16 2.5v4"/></svg>
+        </div>
+        <span class="tag">นาฬิกาวินัย</span>
+        <h3>แต้ม SOP → ใบเตือน</h3>
+        <ul>
+          <li><span class="tick">›</span><span>นับ <b>ทุกความผิด</b> (รวมครั้งที่ยังไม่หักเงิน)</span></li>
+          <li><span class="tick">›</span><span>หน้าต่าง <b>เดือนปฏิทิน</b> รีเซ็ตทุกวันที่ 1</span></li>
+          <li><span class="tick">›</span><span>นับ <b>รวมทั้งร้าน</b> (ไม่ใช่รายคน)</span></li>
+          <li><span class="tick">›</span><span>ครบ <b>7 แต้ม → ใบเตือนหัวหน้าบาร์ 1 ใบ</b></span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. Rates -->
+  <section>
+    <div class="sec-head"><span class="sec-num">02</span><h2>อัตราค่าปรับ &amp; การนับ</h2></div>
+    <p class="sec-sub">A-02 ปรับแบบขั้นบันไดรายสัปดาห์ · เหล้าหาย/นับปลอม หักทันที · ตรวจ 3 วัน/สัปดาห์ (สูงสุด 3 ครั้ง)</p>
+
+    <div class="steps">
+      <div class="step free"><div class="n">ครั้งที่ 1 / สัปดาห์</div><div class="amt">฿0</div><div class="when">บันทึกไว้ · ยังไม่หัก</div></div>
+      <div class="step f300"><div class="n">ครั้งที่ 2</div><div class="amt">฿300</div><div class="when">หักคนละ 300</div></div>
+      <div class="step f500"><div class="n">ครั้งที่ 3</div><div class="amt">฿500</div><div class="when">หักคนละ 500</div></div>
+    </div>
+
+    <div class="table-scroll" style="margin-top:16px">
+      <table>
+        <thead>
+          <tr><th>รหัส</th><th>เหตุการณ์</th><th>นาฬิกาเงิน</th><th>นับ SOP?</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="code">A-02</span></td>
+            <td>สต๊อกไม่ตรง (นับผิด / ลืมลงยอด)</td>
+            <td><span class="chip sop">ขั้นบันได/สัปดาห์</span> <span class="num">0 → 300 → 500</span></td>
+            <td><span class="chip sop">+1 ทุกครั้ง</span></td>
+          </tr>
+          <tr>
+            <td><span class="code">A-03</span></td>
+            <td>นับสต๊อกปลอม (Ghost)</td>
+            <td><span class="chip fine">หักทันที ฿500</span></td>
+            <td><span class="chip sop">+1</span></td>
+          </tr>
+          <tr>
+            <td><span class="code">M-01</span></td>
+            <td>เหล้าหาย (Missing)</td>
+            <td><span class="chip fine">หักทันที · ตามต้นทุน</span></td>
+            <td><span class="chip sop">+1</span></td>
+          </tr>
+          <tr>
+            <td><span class="code">A-01/04/05</span></td>
+            <td>ของไม่เรียบ / ไม่ติดสติกเกอร์เขียว / ไม่แปะโพสอิท</td>
+            <td><span class="chip no">ไม่หักเงิน</span></td>
+            <td><span class="chip sop">+1 (สะสมไป 7)</span></td>
+          </tr>
+          <tr>
+            <td><span class="code">P-01</span></td>
+            <td>ทำ PR ผิดเวลา / สั่งของช่วงออดิท</td>
+            <td><span class="chip no">ระงับสิทธิ์เบิก</span></td>
+            <td><span class="chip sop">+1</span></td>
+          </tr>
+          <tr>
+            <td><span class="code">S-01</span></td>
+            <td>เจตนาทุจริต</td>
+            <td><span class="chip fine">เลิกจ้างทันที</span></td>
+            <td><span class="chip no">—</span></td>
+          </tr>
+          <tr>
+            <td><span class="code">EXP-01</span></td>
+            <td>ส่งเหล้าหมดอายุคืนช้า</td>
+            <td><span class="chip no">ปรับ ฿100/วัน (แยก)</span></td>
+            <td><span class="chip no">ไม่นับ</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="sec-sub" style="margin-top:12px">✅ <strong>เคาะแล้ว:</strong> ทุกความผิดนับเข้า SOP หมด <strong>ยกเว้น EXP-01</strong> → ค่า <code>included_in_quota</code> เดิม<strong>ถูกต้องอยู่แล้ว</strong> (EXP-01=false, ที่เหลือ=true) ไม่ต้องแก้ flag — สิ่งที่ต้องแก้คือแยก “นับ” ออกจาก “เงิน” และเปลี่ยนการนับ 7 เป็น <strong>รายร้าน</strong></p>
+  </section>
+
+  <!-- 3. Attribution -->
+  <section>
+    <div class="sec-head"><span class="sec-num">03</span><h2>ใครรับผิด</h2></div>
+    <p class="sec-sub">รับผิดชอบร่วมของกะ — หัก <strong>คนละ</strong> กับ <strong>บาร์ทุกคนที่เข้ากะในวันธุรกิจที่ถูกตรวจ</strong> (นับก่อน 05:00 = ตรวจยอดของวันก่อนหน้า)</p>
+    <div class="attr">
+      <div class="flow">
+        <div class="box"><div class="lab">นับผิดวัน</div><div class="day">พุธ</div></div>
+        <div class="to">→</div>
+        <div class="box"><div class="lab">หักบาร์กะวัน</div><div class="day" style="color:var(--fine)">อังคาร</div></div>
+      </div>
+      <div class="flow">
+        <div class="box"><div class="lab">นับผิดวัน</div><div class="day">ศุกร์</div></div>
+        <div class="to">→</div>
+        <div class="box"><div class="lab">หักบาร์กะวัน</div><div class="day" style="color:var(--fine)">พฤหัส</div></div>
+      </div>
+    </div>
+    <ul class="bul" style="margin-top:16px">
+      <li><span class="mk">›</span><span>ผู้รับผิด = พนักงาน <strong>บาร์ / หัวหน้าบาร์</strong> ที่มีกะในวันธุรกิจที่ถูกตรวจ — ดึงจาก <strong>ตารางกะ / เช็คอิน (HR)</strong></span></li>
+      <li><span class="mk">›</span><span>แทบไม่ชี้ตัวคนเดียว แต่ระบบยังเปิดให้ระบุรายคนได้ ถ้าต้องการ</span></li>
+    </ul>
+  </section>
+
+  <!-- 4 & 5 -->
+  <section>
+    <div class="sec-head"><span class="sec-num">04</span><h2>การหักเงิน &amp; ใบเตือน</h2></div>
+    <div class="clocks">
+      <div class="card">
+        <span class="tag" style="color:var(--money);font-size:12.5px;font-weight:800;letter-spacing:.3px;text-transform:uppercase">ฝั่งเงิน (HR / SV)</span>
+        <ul class="bul money" style="margin-top:12px">
+          <li><span class="mk">›</span><span>หักจาก <strong>กอง Service Charge เท่านั้น</strong> — เงินเดือนฐานไม่แตะ (ยกเว้น “มาสาย” ซึ่งเป็นระบบเดิม)</span></li>
+          <li><span class="mk">›</span><span>ลงเงินจริงตาม <strong>รอบ 26–25</strong> · SV ไม่พอ → carry เดือนถัดไป</span></li>
+          <li><span class="mk">›</span><span>Tracking: <strong>รอหัก → หักบางส่วน → ยกยอด → หักครบ</strong></span></li>
+          <li><span class="mk">›</span><span>ใช้ <code>hr_sc_deductions</code> เดิม (+ <code>source_type='stock_penalty'</code>) · กันหักซ้ำ (SV ที่เดียว)</span></li>
+        </ul>
+      </div>
+      <div class="card">
+        <span class="tag" style="color:var(--sop);font-size:12.5px;font-weight:800;letter-spacing:.3px;text-transform:uppercase">ฝั่งวินัย (ใบเตือน)</span>
+        <ul class="bul" style="margin-top:12px">
+          <li><span class="mk">›</span><span>แต้มสะสม <strong>ต่อร้าน/เดือน</strong> ครบ <strong>7 → ใบเตือน</strong> ให้ <strong>หัวหน้าบาร์ (role head_bar)</strong> 1 ใบ</span></li>
+          <li><span class="mk">›</span><span>ส่งต่อ HR ตั้งค่าได้: <strong>Auto</strong> (ระบบส่งเอง) หรือ <strong>Manual</strong> (HQ กดส่ง)</span></li>
+          <li><span class="mk">›</span><span>ใบเตือนเข้ากระบวนการเดิม (เซ็น 3 ฝ่าย + หมดอายุ 12 เดือน)</span></li>
+          <li><span class="mk">›</span><span>ร้านที่ยังไม่ตั้ง Head Bar → ต้องเคาะปลายทางชั่วคราว</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6. Screens -->
+  <section>
+    <div class="sec-head"><span class="sec-num">05</span><h2>หน้าจอที่ต้องมี (3 ฝั่ง)</h2></div>
+    <div class="screens">
+      <div class="screen hq">
+        <span class="badge">HQ</span>
+        <h3>หน้าจัดการ (ใหม่)</h3>
+        <ul>
+          <li>สรุป<strong>รายสัปดาห์</strong> + <strong>สะสมรายเดือน</strong></li>
+          <li><strong>หัก Ad-hoc</strong> (เหตุผล+เงิน · ใครก็ได้)</li>
+          <li>จัดการ <strong>ประกาศ SOP</strong> ให้ยอมรับ</li>
+          <li>สวิตช์ <strong>ส่ง HR Auto ↔ Manual</strong> (global)</li>
+          <li>สิทธิ์: role <code>hq</code> (+ owner)</li>
+        </ul>
+      </div>
+      <div class="screen hr">
+        <span class="badge">HR</span>
+        <h3>คิว + Tracking หักเงิน</h3>
+        <ul>
+          <li>คิว “แจ้งหักเงิน” จากสต๊อก</li>
+          <li>เลือก <strong>หักรอบนี้ / ยกยอด</strong></li>
+          <li>Tracking ยอดค้าง/ยกยอด/หักครบ</li>
+          <li>คิวใบเตือน (จากเกณฑ์ 7)</li>
+        </ul>
+      </div>
+      <div class="screen me">
+        <span class="badge">พนักงาน</span>
+        <h3>เมนู “ของฉัน”</h3>
+        <ul>
+          <li>การ์ด <strong>คะแนน/ค่าปรับสต๊อก</strong></li>
+          <li>เห็นแต้ม SOP + ค่าปรับของตัวเอง</li>
+          <li>สถานะ: รอหัก / หักแล้ว / ยกยอด</li>
+          <li>ประวัติย้อนหลัง</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="clocks" style="margin-top:16px">
+      <div class="card">
+        <span class="tag" style="color:var(--accent);font-size:12.5px;font-weight:800;letter-spacing:.3px;text-transform:uppercase">การหักมี 2 แบบ</span>
+        <ul class="bul" style="margin-top:12px">
+          <li><span class="mk">A</span><span><strong>SOP (มีโครงสร้าง)</strong> — เฉพาะ bar + head_bar → escalate / นับ SOP / ใบเตือน</span></li>
+          <li><span class="mk">B</span><span><strong>Ad-hoc</strong> — HQ หักใครก็ได้ (staff/manager/cashier) ด้วย <strong>เหตุผล + จำนวนเงิน</strong> · ไม่นับ SOP · เข้า SV เหมือนกัน</span></li>
+        </ul>
+      </div>
+      <div class="card">
+        <span class="tag" style="color:var(--sop);font-size:12.5px;font-weight:800;letter-spacing:.3px;text-transform:uppercase">ประกาศ &amp; ยอมรับ SOP</span>
+        <ul class="bul" style="margin-top:12px">
+          <li><span class="mk">›</span><span>ใช้ระบบ <strong>ระเบียบบริษัท</strong> เดิม (เลื่อนอ่านสุด → ยอมรับ → เก็บตามเวอร์ชัน)</span></li>
+          <li><span class="mk">›</span><span><strong>HQ จัดการ</strong> · <strong>Version 1</strong> = SOP จากไฟล์ที่เจ้าของส่ง</span></li>
+          <li><span class="mk">›</span><span><strong>bar + head_bar</strong> กดยอมรับ <strong>หลังผูกบัญชี</strong> · อัปเดตแล้วต้องยอมรับใหม่</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7. Pending -->
+  <section>
+    <div class="sec-head"><span class="sec-num">06</span><h2>สรุปการเคาะ &amp; แผนงาน</h2></div>
+    <div class="callout" style="border-color:var(--money);background:var(--money-soft)">
+      <h3 style="color:color-mix(in srgb, var(--money) 72%, var(--ink))">✅ เคาะครบแล้ว — พร้อมเข้าเฟส 1</h3>
+      <ol>
+        <li><strong>นับ SOP</strong> — ทุกความผิดนับหมด ยกเว้น EXP-01 (flag เดิมถูกต้อง)</li>
+        <li><strong>Auto/Manual ส่ง HR</strong> — ตั้งรวมทั้งระบบ (global)</li>
+        <li><strong>Head Bar</strong> — เจ้าของตั้ง role ให้แต่ละร้านเอง (ไม่ตั้ง → เจ้าของ)</li>
+        <li><strong>หัก 2 แบบ</strong> — A (SOP: bar/head_bar) · B (ad-hoc: HQ + เหตุผล/เงิน)</li>
+        <li><strong>ประกาศ SOP</strong> — reuse ระเบียบบริษัท · v1 จากไฟล์ · bar/head_bar ยอมรับ</li>
+      </ol>
+    </div>
+    <div class="phases" style="margin-top:18px">
+      <div class="phase"><span class="p">1</span><div><b>DB + Engine</b><small>ต่อยอด penalties, escalate รายสัปดาห์, SOP รายร้าน, hook SV + ใบเตือน</small></div></div>
+      <div class="phase"><span class="p">2</span><div><b>ฝั่ง HR</b><small>SV deduction + carry tracking, คิวใบเตือน</small></div></div>
+      <div class="phase"><span class="p">3</span><div><b>หน้า HQ</b><small>สรุปสัปดาห์/สะสม + สวิตช์ auto/manual</small></div></div>
+      <div class="phase"><span class="p">4</span><div><b>ฝั่งพนักงาน</b><small>การ์ด /me + ประวัติ/สถานะ</small></div></div>
+    </div>
+  </section>
+
+  <footer>ร่างสเปกภายใน · Davis-Inventory · ต่อยอดจาก payroll-real-formula-analysis</footer>
+</div>
+
+<script>
+  (function () {
+    var btn = document.getElementById('themeBtn');
+    var root = document.documentElement;
+    function apply(t){ root.setAttribute('data-theme', t); btn.textContent = t === 'dark' ? '☀' : '◐'; }
+    var saved = null;
+    try { saved = localStorage.getItem('spec-theme'); } catch (e) {}
+    if (saved) apply(saved);
+    btn.addEventListener('click', function () {
+      var cur = root.getAttribute('data-theme');
+      if (!cur) cur = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      var next = cur === 'dark' ? 'light' : 'dark';
+      apply(next);
+      try { localStorage.setItem('spec-theme', next); } catch (e) {}
+    });
+  })();
+</script>
+</body>
+</html>
