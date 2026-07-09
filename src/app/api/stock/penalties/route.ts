@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { openBusinessDateBangkok } from '@/lib/utils/date';
 import { issueSopWarning } from '@/lib/stock/sop-warning';
 import {
   weekKeyMonday,
@@ -77,9 +78,9 @@ export async function POST(req: NextRequest) {
     const d = (comp as { comp_date?: string } | null)?.comp_date;
     if (d) businessDate = d;
   }
-  if (!businessDate) {
-    return NextResponse.json({ error: 'business_date required (no comparison to derive from)' }, { status: 400 });
-  }
+  // Standalone penalties (no comparison — e.g. EXP-01, or a manually-logged violation) default
+  // to today's Bangkok business date so they still stamp a month/week correctly.
+  if (!businessDate) businessDate = openBusinessDateBangkok();
   const monthYear = businessDate.slice(0, 7);
   const weekKey = weekKeyMonday(businessDate);
 
