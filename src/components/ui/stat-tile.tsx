@@ -25,15 +25,23 @@ interface StatTileProps {
   hint?: string;
   /** makes the whole tile a link (used for actionable KPIs / pending counts) */
   href?: string;
+  /** makes the whole tile a button (e.g. a clickable filter) — ignored if `href` is set */
+  onClick?: () => void;
+  /** highlight the tile as the active selection (for filter tiles) */
+  active?: boolean;
   className?: string;
 }
 
-export function StatTile({ label, value, icon: Icon, tone = 'default', hint, href, className }: StatTileProps) {
+export function StatTile({ label, value, icon: Icon, tone = 'default', hint, href, onClick, active, className }: StatTileProps) {
+  const interactive = !!href || !!onClick;
   const inner = (
     <div
       className={cn(
-        'rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800',
-        href && 'transition hover:border-indigo-300 hover:shadow-sm dark:hover:border-indigo-500',
+        'rounded-xl border bg-white p-4 dark:bg-gray-800',
+        active
+          ? 'border-indigo-400 ring-2 ring-indigo-200 dark:border-indigo-500 dark:ring-indigo-900/50'
+          : 'border-gray-200 dark:border-gray-700',
+        interactive && 'transition hover:border-indigo-300 hover:shadow-sm dark:hover:border-indigo-500',
         className
       )}
     >
@@ -47,13 +55,21 @@ export function StatTile({ label, value, icon: Icon, tone = 'default', hint, hre
       {hint && <p className="mt-0.5 text-[11px] text-gray-400">{hint}</p>}
     </div>
   );
-  return href ? (
-    <Link href={href} className="block">
-      {inner}
-    </Link>
-  ) : (
-    inner
-  );
+  if (href) {
+    return (
+      <Link href={href} className="block">
+        {inner}
+      </Link>
+    );
+  }
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} aria-pressed={active} className="block w-full text-left">
+        {inner}
+      </button>
+    );
+  }
+  return inner;
 }
 
 interface KpiRowProps {

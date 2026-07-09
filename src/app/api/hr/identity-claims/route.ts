@@ -21,7 +21,16 @@ export async function GET() {
       .eq('status', 'claimed')
       .order('claimed_at', { ascending: true }),
     service.from('hr_pending_identities').select('id, full_name_th, store:stores(store_name)', { count: 'exact' }).eq('status', 'unclaimed').order('full_name_th'),
-    service.from('hr_pending_identities').select('id', { count: 'exact', head: true }).eq('status', 'linked'),
+    service
+      .from('hr_pending_identities')
+      .select(
+        'id, full_name_th, position_text, sheet_ref, claimed_at, ' +
+          'company:hr_companies(name), store:stores(store_name), ' +
+          'claimant:profiles!hr_pending_identities_claimed_by_fkey(id, username, display_name)',
+        { count: 'exact' }
+      )
+      .eq('status', 'linked')
+      .order('full_name_th'),
   ]);
   if (cErr || unclaimedRes.error || linkedRes.error) {
     return NextResponse.json({ error: 'Failed to load identity claims' }, { status: 500 });
@@ -31,6 +40,7 @@ export async function GET() {
     data: {
       claims: claims ?? [],
       unclaimed: unclaimedRes.data ?? [],
+      linked: linkedRes.data ?? [],
       counts: {
         claimed: (claims ?? []).length,
         unclaimed: unclaimedRes.count ?? 0,
