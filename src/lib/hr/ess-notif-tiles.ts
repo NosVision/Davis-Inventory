@@ -11,6 +11,7 @@ export const NOTIF_TILE: Record<string, string> = {
   hr_doc_ready: 'documents',
   hr_swap_result: 'swaps',
   hr_identity_result: 'profile',
+  hr_warning_issued: 'warnings',
 };
 
 // Reverse index: tile key → the notification types that badge it. Derived so the two never drift.

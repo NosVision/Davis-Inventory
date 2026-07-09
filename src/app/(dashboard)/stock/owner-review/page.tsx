@@ -566,47 +566,36 @@ export default function OwnerReviewPage() {
       toast({ type: 'error', title: 'เลือกพนักงานที่รับผิดชอบ' });
       return;
     }
-    // Resolve target staff list. Group sentinels expand into one penalty
-    // per active member of that role at this store — the SOP wording
-    // ("หักคนละ 500 บาท") fits naturally with N rows so each member's
-    // monthly quota counter ticks up independently.
-    let targetStaffIds: string[] = [];
-    if (penaltyModal.staffId === GROUP_VALUES.staff_all) {
-      targetStaffIds = staff.filter((s) => s.role === 'staff').map((s) => s.id);
-    } else if (penaltyModal.staffId === GROUP_VALUES.bar_all) {
-      targetStaffIds = staff.filter((s) => s.role === 'bar').map((s) => s.id);
-    } else {
-      targetStaffIds = [penaltyModal.staffId];
-    }
-    if (targetStaffIds.length === 0) {
-      toast({ type: 'error', title: 'ไม่มีพนักงานในกลุ่มที่เลือก' });
+    // Server runs the engine: A-02 escalates weekly (1st free / 2nd 300 / 3rd 500), groups expand
+    // to whoever was on shift the counted business date, and crossing the monthly SOP threshold
+    // alerts HQ / warns the head_bar. A-02 amount is auto → send null; other codes send the entry.
+    const amountToSend = code.code === 'A-02' ? null : penaltyModal.amount ? Number(penaltyModal.amount) : null;
+    const res = await fetch('/api/stock/penalties', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        store_id: currentStoreId,
+        code: code.code,
+        staff_id: penaltyModal.staffId,
+        comparison_id: penaltyModal.comparison?.id || null,
+        amount: amountToSend,
+        notes: penaltyModal.notes || null,
+      }),
+    });
+    const json = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      created?: Penalty[];
+      week_seq?: number | null;
+      amount?: number | null;
+      sop_points?: number;
+      warning?: { issued?: boolean };
+    };
+    if (!res.ok) {
+      toast({ type: 'error', title: 'บันทึกล้มเหลว', message: json.error || '' });
       return;
     }
 
-    const amount = penaltyModal.amount ? Number(penaltyModal.amount) : null;
-    const supabase = createClient();
-    const rows = targetStaffIds.map((sid) => ({
-      store_id: currentStoreId,
-      staff_id: sid,
-      penalty_code: code.code,
-      comparison_id: penaltyModal.comparison?.id || null,
-      reason: code.label,
-      amount,
-      status: 'pending',
-      notes: penaltyModal.notes || null,
-      included_in_quota: code.included_in_quota,
-      approved_by: user.id,
-    }));
-    const { error, data } = await supabase
-      .from('penalties')
-      .insert(rows)
-      .select('*');
-    if (error) {
-      toast({ type: 'error', title: 'บันทึกล้มเหลว', message: error.message });
-      return;
-    }
-
-    const newRows: PenaltyRow[] = ((data as Penalty[]) || []).map((p) => ({
+    const newRows: PenaltyRow[] = (json.created ?? []).map((p) => ({
       ...p,
       code_meta: code,
       staff_name:
@@ -616,12 +605,15 @@ export default function OwnerReviewPage() {
     }));
     setPenalties((prev) => [...newRows, ...prev]);
     setPenaltyModal(null);
+
+    const amtNote =
+      code.code === 'A-02' && json.amount != null
+        ? ` · ครั้งที่ ${json.week_seq}/สัปดาห์ = ${Number(json.amount) === 0 ? 'ไม่หัก' : `฿${json.amount}`}`
+        : '';
     toast({
       type: 'success',
-      title:
-        newRows.length > 1
-          ? `สร้าง ${code.code} ${newRows.length} รายการแล้ว`
-          : `สร้าง ${code.code} แล้ว`,
+      title: newRows.length > 1 ? `สร้าง ${code.code} ${newRows.length} รายการ${amtNote}` : `สร้าง ${code.code}${amtNote}`,
+      message: json.warning?.issued ? `⚠️ แต้มครบ ${json.sop_points} → ออกใบเตือนหัวหน้าบาร์แล้ว` : undefined,
     });
     // Recompute violation buckets cheaply for every staff that got a row.
     if (code.included_in_quota) {
@@ -1316,7 +1308,8 @@ export default function OwnerReviewPage() {
                                 comparison: c,
                                 code: first?.code || '',
                                 staffId: c.responsible_staff_id || '',
-                                amount: first?.default_amount ? String(first.default_amount) : '',
+                                // A-02 amount is auto (weekly escalation) → leave blank.
+                                amount: first?.code === 'A-02' || !first?.default_amount ? '' : String(first.default_amount),
                                 notes: '',
                               });
                             }}
