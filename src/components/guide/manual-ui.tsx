@@ -9,6 +9,7 @@ export function RoleTag({ role, label }: { role: UserRole; label?: string }) {
     owner: 'Owner',
     manager: 'Manager',
     bar: 'Bar',
+    head_bar: 'Head Bar',
     technician: 'Technician',
     staff: 'Staff',
     accountant: 'Accountant',

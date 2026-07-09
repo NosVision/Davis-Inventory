@@ -8,7 +8,7 @@ export type UserAdminAuth =
 // Elevated accounts an HR (non-owner) admin may NOT create/administer — only an owner can.
 export const ELEVATED_ROLES = ['accountant', 'manager', 'hq', 'hr'] as const;
 // Roles a user account may be created/invited as at all (never owner/customer).
-export const ASSIGNABLE_ROLES = ['staff', 'bar', 'technician', 'manager', 'accountant', 'hq', 'hr', 'cashier', 'housekeeping_staff', 'boh_staff'] as const;
+export const ASSIGNABLE_ROLES = ['staff', 'bar', 'head_bar', 'technician', 'manager', 'accountant', 'hq', 'hr', 'cashier', 'housekeeping_staff', 'boh_staff'] as const;
 
 /**
  * Authorization for user administration on /users (owner ask 2026-07-08): the caller must be an

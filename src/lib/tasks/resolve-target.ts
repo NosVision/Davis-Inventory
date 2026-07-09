@@ -1,7 +1,7 @@
 import { createServiceClient } from '@/lib/supabase/server';
 import type { TaskTarget } from '@/types/tasks';
 
-const STAFF_ROLES = ['owner', 'accountant', 'manager', 'bar', 'technician', 'staff'];
+const STAFF_ROLES = ['owner', 'accountant', 'manager', 'bar', 'head_bar', 'technician', 'staff'];
 
 /**
  * แปลง TaskTarget → รายชื่อ user id ที่ active (server-only, ใช้ service client)

@@ -26,16 +26,16 @@ type ActionCardType =
 const ACTION_TYPE_ACTORS: Record<ActionCardType, readonly UserRole[]> = {
   // Bar confirms a deposit into inventory; manager / owner can also.
   // Staff *creates* the card but never acts on it.
-  deposit_claim:        ['bar', 'manager', 'owner'],
-  withdrawal_claim:     ['bar', 'manager', 'owner'],
+  deposit_claim:        ['head_bar', 'bar', 'manager', 'owner'],
+  withdrawal_claim:     ['head_bar', 'bar', 'manager', 'owner'],
   // Stock flow: bar / manager count and explain, owner / accountant approve.
-  stock_explain:        ['bar', 'manager', 'owner', 'accountant'],
-  stock_supplementary:  ['bar', 'manager', 'owner'],
+  stock_explain:        ['head_bar', 'bar', 'manager', 'owner', 'accountant'],
+  stock_supplementary:  ['head_bar', 'bar', 'manager', 'owner'],
   stock_approve:        ['owner', 'accountant', 'manager'],
   // Borrow approval: manager / owner only.
   borrow_approve:       ['manager', 'owner'],
   // Lender confirms borrower's return.
-  borrow_return_confirm:['bar', 'manager', 'owner'],
+  borrow_return_confirm:['head_bar', 'bar', 'manager', 'owner'],
   // HQ receives transfers.
   transfer_receive:     ['hq', 'manager', 'owner'],
 };
@@ -125,6 +125,7 @@ const COMMON_NOTI_TYPES = [
 const ROLE_NOTIFICATION_TYPES: Partial<Record<UserRole, readonly string[]>> = {
   staff: [...COMMON_NOTI_TYPES, ...DEPOSIT_NOTI_TYPES, ...WITHDRAWAL_NOTI_TYPES, ...REPAIR_NOTI_TYPES],
   bar:   [...COMMON_NOTI_TYPES, ...DEPOSIT_NOTI_TYPES, ...WITHDRAWAL_NOTI_TYPES, ...REPAIR_NOTI_TYPES],
+  head_bar: [...COMMON_NOTI_TYPES, ...DEPOSIT_NOTI_TYPES, ...WITHDRAWAL_NOTI_TYPES, ...REPAIR_NOTI_TYPES],
   accountant: [...COMMON_NOTI_TYPES, ...STOCK_NOTI_TYPES],
   customer: [...COMMON_NOTI_TYPES, 'promotion'],
   // owner / manager / hq → see all

@@ -125,7 +125,7 @@ export function CommissionEntryForm({ onSuccess }: CommissionEntryFormProps) {
             // (username `printer-{store_code}`) so it doesn't show up
             // as a person who can earn bottle commission.
             .filter((p) => p.active
-              && ['staff', 'bar', 'manager'].includes(p.role)
+              && ['staff', 'bar', 'head_bar', 'manager'].includes(p.role)
               && !p.username?.startsWith('printer'))
             .sort((a, b) => (a.display_name || a.username).localeCompare(b.display_name || b.username));
           setStaffList(rows.map(({ id, display_name, username, role }) => ({ id, display_name, username, role })));

@@ -276,7 +276,7 @@ export default function ProfilePage() {
   }
 
   // Determine which notification types are relevant for this role
-  const isStaffLike = ['staff', 'bar', 'manager', 'owner'].includes(user.role);
+  const isStaffLike = ['staff', 'bar', 'head_bar', 'manager', 'owner'].includes(user.role);
   const isOwnerOrManager = ['owner', 'manager'].includes(user.role);
 
   return (

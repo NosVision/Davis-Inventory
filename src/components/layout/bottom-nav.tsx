@@ -83,7 +83,7 @@ export function BottomNav() {
     ? desktopRoleNavItems
     : user.role === 'technician'
       ? technicianNavItems
-      : user.role === 'bar'
+      : user.role === 'bar' || user.role === 'head_bar'
         ? barNavItems
         : staffNavItems;
 

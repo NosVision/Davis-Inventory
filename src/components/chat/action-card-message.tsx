@@ -218,10 +218,10 @@ export const ActionCardMessage = memo(function ActionCardMessage({ message, curr
   }, [isFromCustomerDeposit, storeId, productOptions.length]);
   const isWithdrawalCard = meta.action_type === 'withdrawal_claim';
   const canClaimBarStep = isPendingBar && isDepositCard
-    && currentUserRole && ['bar', 'manager', 'owner'].includes(currentUserRole);
+    && currentUserRole && ['bar', 'head_bar', 'manager', 'owner'].includes(currentUserRole);
   // Withdrawal action cards: only bar/manager/owner can approve
   const canApproveWithdrawal = isWithdrawalCard && isPending
-    && currentUserRole && ['bar', 'manager', 'owner'].includes(currentUserRole);
+    && currentUserRole && ['bar', 'head_bar', 'manager', 'owner'].includes(currentUserRole);
 
   // Stock card variants
   const isStockExplain = meta.action_type === 'stock_explain';
@@ -529,7 +529,7 @@ export const ActionCardMessage = memo(function ActionCardMessage({ message, curr
             body: `${currentUserName} รับของแล้ว — ${summary.customer || ''} ${itemsText} (${meta.reference_id})`,
             data: { deposit_code: meta.reference_id },
             excludeUserId: currentUserId,
-            roles: ['bar', 'manager'],
+            roles: ['bar', 'head_bar', 'manager'],
           });
           sendChatBotMessage({
             storeId,

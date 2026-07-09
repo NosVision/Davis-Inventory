@@ -37,7 +37,7 @@ interface StoreOption {
   store_name: string;
 }
 
-const INVITABLE_ROLES: UserRole[] = ['accountant', 'manager', 'bar', 'technician', 'staff', 'hq', 'hr'];
+const INVITABLE_ROLES: UserRole[] = ['accountant', 'manager', 'bar', 'head_bar', 'technician', 'staff', 'hq', 'hr'];
 
 export default function InvitationsPage() {
   const [items, setItems] = useState<Invitation[]>([]);

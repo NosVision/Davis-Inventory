@@ -11,7 +11,7 @@ import { cn } from '@/lib/utils/cn';
 
 type Scope = 'people' | 'role' | 'branch' | 'everyone';
 
-const SCOPE_ROLES: UserRole[] = ['manager', 'bar', 'technician', 'staff', 'accountant'];
+const SCOPE_ROLES: UserRole[] = ['manager', 'bar', 'head_bar', 'technician', 'staff', 'accountant'];
 
 interface ProfileRow {
   id: string;

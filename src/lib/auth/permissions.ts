@@ -39,5 +39,5 @@ export function isDesktopRole(role: UserRole): boolean {
 }
 
 export function isMobileRole(role: UserRole): boolean {
-  return ['staff', 'bar', 'housekeeping_staff', 'boh_staff'].includes(role);
+  return ['staff', 'bar', 'head_bar', 'housekeeping_staff', 'boh_staff'].includes(role);
 }

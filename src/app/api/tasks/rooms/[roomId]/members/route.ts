@@ -6,7 +6,7 @@ import type { TaskRoomMember } from '@/types/tasks';
 const MEMBER_SELECT =
   '*, profile:profiles!task_room_members_user_id_fkey(id, display_name, username, avatar_url, role)';
 
-const STAFF_ROLES = ['owner', 'accountant', 'manager', 'bar', 'technician', 'staff'];
+const STAFF_ROLES = ['owner', 'accountant', 'manager', 'bar', 'head_bar', 'technician', 'staff'];
 
 type Scope = 'everyone' | 'people' | 'branch' | 'role';
 interface AddBody {

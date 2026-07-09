@@ -8,6 +8,7 @@ type Role =
   | 'accountant'
   | 'manager'
   | 'bar'
+  | 'head_bar'
   | 'technician'
   | 'staff'
   | 'hq'
@@ -20,6 +21,7 @@ const ALLOWED_ROLES: Role[] = [
   'accountant',
   'manager',
   'bar',
+  'head_bar',
   'technician',
   'staff',
   'hq',
@@ -80,7 +82,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
   }
   // Manager can only invite staff/bar
-  if (ctx.role === 'manager' && !['staff', 'bar'].includes(role)) {
+  if (ctx.role === 'manager' && !['staff', 'bar', 'head_bar'].includes(role)) {
     return NextResponse.json({ error: 'Manager can only invite staff or bar' }, { status: 403 });
   }
   // Only an owner may invite an elevated-role account (HR is limited to staff/bar/technician).

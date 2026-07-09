@@ -417,7 +417,7 @@ export default function StockOverviewPage() {
     },
   ];
 
-  const isStaffOrBar = user?.role === 'staff' || user?.role === 'bar';
+  const isStaffOrBar = user?.role === 'staff' || user?.role === 'bar' || user?.role === 'head_bar';
 
   const allQuickActions = [
     {

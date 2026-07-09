@@ -3,6 +3,7 @@ export type UserRole =
   | 'accountant'
   | 'manager'
   | 'bar'
+  | 'head_bar'
   | 'technician'
   | 'staff'
   | 'customer'
@@ -56,6 +57,16 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[] | ['*']> = {
     'can_transfer',
     'can_request_repair',
   ],
+  // Head Bar = สิทธิ์การเข้าถึงเหมือน bar ทุกอย่าง (owner ask 2026-07-09) — เป็นตำแหน่งหัวหน้าบาร์
+  head_bar: [
+    'can_count_stock',
+    'can_approve_stock',
+    'can_manage_deposit',
+    'can_approve_deposit',
+    'can_borrow',
+    'can_transfer',
+    'can_request_repair',
+  ],
   // Technician → ช่างซ่อมบำรุง (Maintenance): งานประจำ (Task) + แจ้ง/รับงานซ่อม
   technician: ['can_manage_repair', 'can_request_repair'],
   // Staff = ฝากเหล้า / เบิกเหล้า / แชท / แจ้งซ่อม
@@ -72,19 +83,21 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[] | ['*']> = {
   boh_staff: [],
 };
 
+// Position labels are shown in ENGLISH always (owner ask 2026-07-09), regardless of app locale.
 export const ROLE_LABELS: Record<UserRole, string> = {
-  owner: 'เจ้าของร้าน',
-  accountant: 'บัญชี',
-  manager: 'คนคุมร้าน',
-  bar: 'บาร์',
-  technician: 'ช่างซ่อมบำรุง',
-  staff: 'พนักงาน',
-  customer: 'ลูกค้า',
-  hq: 'พนักงานคลังกลาง',
-  hr: 'ฝ่ายบุคคล',
-  cashier: 'แคชเชียร์',
-  housekeeping_staff: 'แม่บ้าน',
-  boh_staff: 'พนักงานหลังร้าน (BOH)',
+  owner: 'Owner',
+  accountant: 'Accountant',
+  manager: 'Manager',
+  bar: 'Bar',
+  head_bar: 'Head Bar',
+  technician: 'Maintenance',
+  staff: 'Staff',
+  customer: 'Customer',
+  hq: 'HQ Warehouse',
+  hr: 'HR',
+  cashier: 'Cashier',
+  housekeeping_staff: 'Housekeeping',
+  boh_staff: 'BOH Staff',
 };
 
 /** Translation keys for role labels — use with useTranslations() */
@@ -93,6 +106,7 @@ export const ROLE_LABEL_KEYS: Record<UserRole, string> = {
   accountant: 'roles.accountant',
   manager: 'roles.manager',
   bar: 'roles.bar',
+  head_bar: 'roles.head_bar',
   technician: 'roles.technician',
   staff: 'roles.staff',
   customer: 'roles.customer',
@@ -110,6 +124,7 @@ export const ROLE_HOME_ROUTES: Record<UserRole, string> = {
   // manager no longer lands on store-overview (removed from their menu) — the shared Task hub
   manager: '/tasks',
   bar: '/me',
+  head_bar: '/me',
   technician: '/tasks',
   staff: '/me',
   customer: '/customer',

@@ -37,7 +37,7 @@ import {
 // Roles that may NOT override the "นับจริง" cell from this page —
 // staff/bar count via /stock/daily-check; only manager+ may correct
 // after the fact (request from owner: "ทุก role ยกเว้น staff/bar").
-const READ_ONLY_ROLES = new Set(['staff', 'bar']);
+const READ_ONLY_ROLES = new Set(['staff', 'bar', 'head_bar']);
 
 // Default tolerance used when store_settings hasn't been read yet —
 // matches the constants below so the first paint doesn't show a row in

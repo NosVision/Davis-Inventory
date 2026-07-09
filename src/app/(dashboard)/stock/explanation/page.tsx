@@ -33,7 +33,7 @@ import {
 
 type ViewFilter = 'pending' | 'explained';
 
-const EXPLAIN_ROLES = ['owner', 'manager', 'bar', 'staff'];
+const EXPLAIN_ROLES = ['owner', 'manager', 'bar', 'head_bar', 'staff'];
 
 export default function ExplanationPage() {
   const t = useTranslations('stock');

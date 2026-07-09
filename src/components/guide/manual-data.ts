@@ -111,7 +111,7 @@ export const manualSections: ManualSection[] = [
     descKey: 'sections.barDesc',
     icon: '🍻',
     iconBg: 'bg-teal-500',
-    roles: ['bar'],
+    roles: ['bar', 'head_bar'],
     tocGroupKey: 'tocGroups.roleMenus',
   },
   {
@@ -152,7 +152,7 @@ export const manualSections: ManualSection[] = [
     descKey: 'sections.depositDesc',
     icon: '🍷',
     iconBg: 'bg-emerald-500',
-    roles: ['owner', 'manager', 'accountant', 'bar', 'staff', 'hq'],
+    roles: ['owner', 'manager', 'accountant', 'bar', 'head_bar', 'staff', 'hq'],
     tocGroupKey: 'tocGroups.mainFeatures',
   },
   {
@@ -162,7 +162,7 @@ export const manualSections: ManualSection[] = [
     descKey: 'sections.stockDesc',
     icon: '📋',
     iconBg: 'bg-indigo-500',
-    roles: ['owner', 'manager', 'accountant', 'bar', 'hq'],
+    roles: ['owner', 'manager', 'accountant', 'bar', 'head_bar', 'hq'],
     tocGroupKey: 'tocGroups.mainFeatures',
   },
   {
@@ -172,7 +172,7 @@ export const manualSections: ManualSection[] = [
     descKey: 'sections.chatDesc',
     icon: '💬',
     iconBg: 'bg-blue-500',
-    roles: ['owner', 'manager', 'accountant', 'bar', 'staff', 'hq'],
+    roles: ['owner', 'manager', 'accountant', 'bar', 'head_bar', 'staff', 'hq'],
     tocGroupKey: 'tocGroups.mainFeatures',
   },
   {
@@ -182,7 +182,7 @@ export const manualSections: ManualSection[] = [
     descKey: 'sections.transferDesc',
     icon: '↔',
     iconBg: 'bg-blue-500',
-    roles: ['owner', 'manager', 'accountant', 'bar', 'hq'],
+    roles: ['owner', 'manager', 'accountant', 'bar', 'head_bar', 'hq'],
     tocGroupKey: 'tocGroups.mainFeatures',
   },
   {
@@ -222,7 +222,7 @@ export const manualSections: ManualSection[] = [
     descKey: 'sections.printDesc',
     icon: '🖨',
     iconBg: 'bg-cyan-500',
-    roles: ['owner', 'manager', 'bar', 'staff'],
+    roles: ['owner', 'manager', 'bar', 'head_bar', 'staff'],
     tocGroupKey: 'tocGroups.mainFeatures',
   },
   {
@@ -423,6 +423,11 @@ export const ROLE_COLOR_CLASSES: Record<UserRole, { badge: string; badgeDark: st
     badge: 'bg-teal-100 text-teal-700',
     badgeDark: 'dark:bg-teal-900 dark:text-teal-300',
     tocNum: 'bg-teal-500',
+  },
+  head_bar: {
+    badge: 'bg-sky-100 text-sky-700',
+    badgeDark: 'dark:bg-sky-900 dark:text-sky-300',
+    tocNum: 'bg-sky-500',
   },
   technician: {
     badge: 'bg-rose-100 text-rose-700',

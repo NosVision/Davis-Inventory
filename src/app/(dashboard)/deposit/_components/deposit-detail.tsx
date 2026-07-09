@@ -280,7 +280,7 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
   // can re-enter qty + per-bottle % + photo together.
   const canEditDeposit =
     !!user
-    && ['bar', 'manager', 'owner', 'accountant', 'hq'].includes(user.role)
+    && ['bar', 'head_bar', 'manager', 'owner', 'accountant', 'hq'].includes(user.role)
     && (deposit.status === 'in_store' || deposit.status === 'pending_confirm');
 
   const refreshDeposit = useCallback(async () => {
@@ -868,7 +868,7 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
         body: `${deposit.customer_name} ขอเบิก ${deposit.product_name} x${qty} (${deposit.deposit_code})`,
         data: { deposit_code: deposit.deposit_code },
         excludeUserId: user?.id,
-        roles: ['bar', 'manager', 'owner'],
+        roles: ['bar', 'head_bar', 'manager', 'owner'],
       });
     }
 
@@ -1426,12 +1426,12 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
     setLoading(false);
   };
 
-  const canBarConfirm = deposit.status === 'pending_confirm' && user && ['bar', 'manager', 'owner'].includes(user.role);
-  const canRejectDeposit = deposit.status === 'pending_confirm' && user && ['bar', 'manager', 'owner'].includes(user.role);
+  const canBarConfirm = deposit.status === 'pending_confirm' && user && ['bar', 'head_bar', 'manager', 'owner'].includes(user.role);
+  const canRejectDeposit = deposit.status === 'pending_confirm' && user && ['bar', 'head_bar', 'manager', 'owner'].includes(user.role);
   // ระหว่าง pending_confirm = ขวดยังไม่ได้รับเข้าระบบ → ทั้ง mark-expired
   // และ toggle-VIP ไม่ make sense (จะ VIP/หมดอายุของอะไรในเมื่อยังไม่รับฝาก)
   // จึงตัด pending_confirm ออกจากเงื่อนไขทั้งสอง
-  const canApproveWithdrawal = deposit.status === 'pending_withdrawal' && user && ['bar', 'manager', 'owner'].includes(user.role);
+  const canApproveWithdrawal = deposit.status === 'pending_withdrawal' && user && ['bar', 'head_bar', 'manager', 'owner'].includes(user.role);
   const canWithdraw = deposit.status === 'in_store' && deposit.remaining_qty > 0;
   const canMarkExpired = deposit.status === 'in_store' && !deposit.is_vip;
   const canTransfer = deposit.status === 'expired';

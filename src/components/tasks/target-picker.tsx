@@ -12,6 +12,7 @@ const DEFAULT_ROLE_OPTIONS: UserRole[] = [
   'manager',
   'accountant',
   'bar',
+  'head_bar',
   'technician',
   'staff',
 ];

@@ -44,7 +44,7 @@ interface CountEntry {
   notes: string;
 }
 
-const COUNT_ROLES = ['owner', 'accountant', 'manager', 'bar'];
+const COUNT_ROLES = ['owner', 'accountant', 'manager', 'bar', 'head_bar'];
 
 export default function DailyCheckPage() {
   const t = useTranslations('stock');
@@ -390,7 +390,7 @@ export default function DailyCheckPage() {
   // Bar role can record fresh counts but must not overwrite a count that
   // someone (incl. themselves) already saved for the day — keeps the
   // closing audit trail clean. Owners / managers / accountants can edit.
-  const isBar = user?.role === 'bar';
+  const isBar = user?.role === 'bar' || user?.role === 'head_bar';
 
   // ── Handlers ──
   const handleCountChange = (productCode: string, value: string) => {

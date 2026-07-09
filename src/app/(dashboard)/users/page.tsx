@@ -74,6 +74,7 @@ const roleBadgeVariants: Record<string, 'info' | 'success' | 'warning' | 'danger
   accountant: 'info',
   manager: 'warning',
   bar: 'success',
+  head_bar: 'success',
   staff: 'default',
   customer: 'default',
 };
@@ -267,7 +268,7 @@ export default function UsersPage() {
     return true;
   });
 
-  const FILTERABLE_ROLES: UserRole[] = ['owner', 'accountant', 'manager', 'bar', 'technician', 'staff', 'hq', 'hr', 'cashier', 'housekeeping_staff', 'boh_staff'];
+  const FILTERABLE_ROLES: UserRole[] = ['owner', 'accountant', 'manager', 'bar', 'head_bar', 'technician', 'staff', 'hq', 'hr', 'cashier', 'housekeeping_staff', 'boh_staff'];
   // Owner + HR may administer users; only the OWNER gets the elevated bits — the permissions
   // editor and creating/inviting elevated-role accounts (accountant/manager/hq/hr).
   const isOwner = currentUser?.role === 'owner';
@@ -325,7 +326,7 @@ export default function UsersPage() {
           onChange={(e) => setFilterRole(e.target.value)}
           className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
         >
-          <option value="all">ทุกตำแหน่ง</option>
+          <option value="all">All positions</option>
           {FILTERABLE_ROLES.map((r) => (
             <option key={r} value={r}>
               {ROLE_LABELS[r] || r}
@@ -507,8 +508,10 @@ export default function UsersPage() {
             value={formRole}
             onChange={(e) => setFormRole(e.target.value)}
             options={[
-              { value: 'staff', label: t('roleStaff') },
-              { value: 'bar', label: t('roleBar') },
+              // Position labels shown in English always (single source: ROLE_LABELS).
+              { value: 'staff', label: ROLE_LABELS.staff },
+              { value: 'bar', label: ROLE_LABELS.bar },
+              { value: 'head_bar', label: ROLE_LABELS.head_bar },
               { value: 'technician', label: ROLE_LABELS.technician },
               { value: 'cashier', label: ROLE_LABELS.cashier },
               { value: 'housekeeping_staff', label: ROLE_LABELS.housekeeping_staff },
@@ -516,10 +519,10 @@ export default function UsersPage() {
               // Elevated roles are owner-only — HR cannot mint them.
               ...(isOwner
                 ? [
-                    { value: 'manager', label: t('roleManager') },
-                    { value: 'accountant', label: t('roleAccountant') },
-                    { value: 'hq', label: t('roleHQ') },
-                    { value: 'hr', label: t('roleHR') },
+                    { value: 'manager', label: ROLE_LABELS.manager },
+                    { value: 'accountant', label: ROLE_LABELS.accountant },
+                    { value: 'hq', label: ROLE_LABELS.hq },
+                    { value: 'hr', label: ROLE_LABELS.hr },
                   ]
                 : []),
             ]}

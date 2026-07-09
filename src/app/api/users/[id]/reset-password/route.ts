@@ -51,7 +51,7 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ id: s
     return NextResponse.json({ error: 'Only an owner can reset this account' }, { status: 403 });
   }
   // Manager stays limited to staff/bar.
-  if (callerRole === 'manager' && !['staff', 'bar'].includes(target.role)) {
+  if (callerRole === 'manager' && !['staff', 'bar', 'head_bar'].includes(target.role)) {
     return NextResponse.json({ error: 'Manager can only reset staff/bar passwords' }, { status: 403 });
   }
 

@@ -285,7 +285,7 @@ export async function notifyUser(params: NotifyUserParams): Promise<void> {
  */
 export async function notifyStoreStaff(params: NotifyGroupParams): Promise<void> {
   const { storeId, type, title, body, data, excludeUserId, roles } = params;
-  const targetRoles = roles || ['staff', 'bar', 'manager'];
+  const targetRoles = roles || ['staff', 'bar', 'head_bar', 'manager'];
 
   try {
     const supabase = createServiceClient();
