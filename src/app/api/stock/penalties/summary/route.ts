@@ -94,11 +94,34 @@ export async function GET(req: NextRequest) {
   }
   const recent = recentList.map((p) => ({ ...p, staff_name: nameById.get(p.staff_id) ?? '—' }));
 
+  // Money-flow breakdown for the store/month (amount > 0 only) so HQ can show the send/deduct
+  // status + move deducted fines to history. Workflow: pending → sent_hr → deducted.
+  const { data: moneyRows } = await service
+    .from('penalties')
+    .select('status, amount')
+    .eq('store_id', storeId)
+    .eq('month_year', month)
+    .gt('amount', 0)
+    .neq('status', 'cancelled');
+  const money: Record<'pending' | 'sent_hr' | 'deducted', { count: number; baht: number }> = {
+    pending: { count: 0, baht: 0 },
+    sent_hr: { count: 0, baht: 0 },
+    deducted: { count: 0, baht: 0 },
+  };
+  for (const r of (moneyRows ?? []) as { status: string | null; amount: number | null }[]) {
+    const bucket = (r.status ?? 'pending') as keyof typeof money;
+    if (money[bucket]) {
+      money[bucket].count += 1;
+      money[bucket].baht += Number(r.amount) || 0;
+    }
+  }
+
   return NextResponse.json({
     sop_points: sopPoints,
     threshold,
     auto_hr: autoHr,
     week_summary: weekSummary,
     recent,
+    money,
   });
 }

@@ -96,6 +96,16 @@ export async function POST(request: NextRequest) {
     totalCarrySatang += ded.carry_satang;
   }
 
+  // Mark this month's money fines as deducted (workflow status → moves them to HQ's history;
+  // the SV line above is the authoritative money, this is just the lifecycle flag).
+  await service
+    .from('penalties')
+    .update({ status: 'deducted' })
+    .eq('store_id', storeId)
+    .eq('month_year', monthYear)
+    .in('status', ['pending', 'sent_hr'])
+    .gt('amount', 0);
+
   await logHrAudit(service, {
     actorId: auth.userId,
     action: 'update',

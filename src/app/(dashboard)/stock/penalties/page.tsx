@@ -12,7 +12,7 @@
  * Read + mutate via /api/stock/penalties/* — every route re-checks auth server-side.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useLocale } from 'next-intl';
 import { createClient } from '@/lib/supabase/client';
@@ -39,11 +39,13 @@ import { openBusinessDateBangkok } from '@/lib/utils/date';
 import { formatThaiDate } from '@/lib/utils/format';
 import {
   AlertTriangle,
+  Banknote,
   ClipboardList,
   Gauge,
   Loader2,
   Megaphone,
   Minus,
+  Send,
   Shield,
 } from 'lucide-react';
 
@@ -64,12 +66,24 @@ interface RecentPenalty {
   staff_name?: string;
 }
 
+interface MoneyBucket {
+  count: number;
+  baht: number;
+}
+
+interface MoneyBreakdown {
+  pending: MoneyBucket;
+  sent_hr: MoneyBucket;
+  deducted: MoneyBucket;
+}
+
 interface SummaryResponse {
   sop_points: number;
   threshold: number;
   auto_hr: boolean;
   week_summary: WeekOccurrence[];
   recent: RecentPenalty[];
+  money?: MoneyBreakdown;
 }
 
 interface StoreMember {
@@ -79,8 +93,57 @@ interface StoreMember {
   role: string;
 }
 
+const EMPTY_MONEY: MoneyBreakdown = {
+  pending: { count: 0, baht: 0 },
+  sent_hr: { count: 0, baht: 0 },
+  deducted: { count: 0, baht: 0 },
+};
+
 function bahtLabel(amount: number): string {
   return amount.toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+
+type TileTone = 'default' | 'rose' | 'amber' | 'info';
+
+const tileToneCls: Record<TileTone, { box: string; value: string }> = {
+  default: {
+    box: 'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800',
+    value: 'text-gray-900 dark:text-white',
+  },
+  rose: {
+    box: 'border-rose-200 bg-rose-50 dark:border-rose-900/50 dark:bg-rose-900/20',
+    value: 'text-rose-600 dark:text-rose-400',
+  },
+  amber: {
+    box: 'border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-900/20',
+    value: 'text-amber-700 dark:text-amber-300',
+  },
+  info: {
+    box: 'border-blue-200 bg-blue-50 dark:border-blue-900/50 dark:bg-blue-900/20',
+    value: 'text-blue-700 dark:text-blue-300',
+  },
+};
+
+// SummaryTile — one compact KPI on the top summary grid (2-up on phones, 4-up on desktop).
+function SummaryTile({
+  label,
+  value,
+  sub,
+  tone = 'default',
+}: {
+  label: string;
+  value: ReactNode;
+  sub?: ReactNode;
+  tone?: TileTone;
+}) {
+  const cls = tileToneCls[tone];
+  return (
+    <div className={cn('min-w-0 rounded-xl border p-3', cls.box)}>
+      <p className="truncate text-[11px] font-medium text-gray-500 dark:text-gray-400">{label}</p>
+      <p className={cn('mt-1 truncate text-xl font-bold tabular-nums', cls.value)}>{value}</p>
+      {sub ? <p className="mt-0.5 truncate text-[11px] text-gray-400">{sub}</p> : null}
+    </div>
+  );
 }
 
 export default function StockPenaltiesPage() {
@@ -113,9 +176,6 @@ export default function StockPenaltiesPage() {
         recentTitle: 'รายการล่าสุด',
         noRecent: 'ยังไม่มีรายการในเดือนนี้',
         noCharge: 'ไม่หัก',
-        statusPending: 'รอหัก',
-        statusCancelled: 'ยกเลิก',
-        statusRecorded: 'บันทึกแล้ว',
         loadFail: 'โหลดไม่สำเร็จ',
         savedMode: 'บันทึกโหมดแล้ว',
         adhocTitle: 'หัก SV แบบ Ad-hoc',
@@ -132,6 +192,26 @@ export default function StockPenaltiesPage() {
         warnNoHead: 'ไม่พบหัวหน้าบาร์ของสาขานี้',
         warnManual: 'แจ้ง HQ/เจ้าของแล้ว (ยังไม่ออกใบเตือน)',
         warnDone: 'ดำเนินการแล้ว',
+        // Summary tiles
+        tileSop: 'แต้ม SOP',
+        tileMoneyMonth: 'ค่าปรับเดือนนี้',
+        tilePendingHr: 'รอส่ง HR',
+        tileSentHr: 'ส่ง HR แล้ว',
+        // Money-deduction status + action
+        moneyPending: 'ค่าปรับรอส่ง HR',
+        moneySent: 'ส่ง HR แล้ว — รอ HR หัก',
+        moneyDeductedAll: 'หักครบแล้วเดือนนี้',
+        sendToHr: 'ส่งเรื่องหักให้ HR',
+        sentToHrDone: (n: number) => `ส่งให้ HR แล้ว ${n} รายการ`,
+        items: 'รายการ',
+        // Recent split + status badges
+        activeTitle: 'กำลังดำเนินการ',
+        historyTitle: 'ประวัติ (หักแล้ว)',
+        stSopMark: 'แต้ม SOP',
+        stToSend: 'รอส่ง HR',
+        stSentHr: 'ส่ง HR แล้ว',
+        stDeducted: 'หักแล้ว',
+        stCancelled: 'ยกเลิก',
       }
     : {
         title: 'Stock penalties',
@@ -157,9 +237,6 @@ export default function StockPenaltiesPage() {
         recentTitle: 'Recent penalties',
         noRecent: 'No penalties this month',
         noCharge: '—',
-        statusPending: 'Pending',
-        statusCancelled: 'Cancelled',
-        statusRecorded: 'Recorded',
         loadFail: 'Load failed',
         savedMode: 'Mode saved',
         adhocTitle: 'Ad-hoc SV deduction',
@@ -176,6 +253,26 @@ export default function StockPenaltiesPage() {
         warnNoHead: 'No head_bar found for this store',
         warnManual: 'HQ/owner notified (no warning issued)',
         warnDone: 'Done',
+        // Summary tiles
+        tileSop: 'SOP points',
+        tileMoneyMonth: 'Fines this month',
+        tilePendingHr: 'To send to HR',
+        tileSentHr: 'Sent to HR',
+        // Money-deduction status + action
+        moneyPending: 'Fines to send to HR',
+        moneySent: 'Sent to HR — awaiting deduction',
+        moneyDeductedAll: 'All deducted this month',
+        sendToHr: 'Send deduction to HR',
+        sentToHrDone: (n: number) => `Sent ${n} item(s) to HR`,
+        items: 'items',
+        // Recent split + status badges
+        activeTitle: 'In progress',
+        historyTitle: 'History (deducted)',
+        stSopMark: 'SOP mark',
+        stToSend: 'To send',
+        stSentHr: 'Sent to HR',
+        stDeducted: 'Deducted',
+        stCancelled: 'Cancelled',
       };
 
   const canManage = !user || hasPermission(user, 'can_manage_stock_sop');
@@ -186,6 +283,7 @@ export default function StockPenaltiesPage() {
   const [members, setMembers] = useState<StoreMember[]>([]);
   const [savingMode, setSavingMode] = useState(false);
   const [sendingWarning, setSendingWarning] = useState(false);
+  const [sendingToHr, setSendingToHr] = useState(false);
 
   const [adhoc, setAdhoc] = useState<{ userId: string; reason: string; amount: string } | null>(null);
   const [submittingAdhoc, setSubmittingAdhoc] = useState(false);
@@ -247,6 +345,15 @@ export default function StockPenaltiesPage() {
     if (!summary || summary.threshold <= 0) return 0;
     return Math.min(100, Math.round((summary.sop_points / summary.threshold) * 100));
   }, [summary]);
+
+  const money = summary?.money ?? EMPTY_MONEY;
+  const moneyTotalBaht = money.pending.baht + money.sent_hr.baht + money.deducted.baht;
+
+  // Split the recent feed: deducted fines drop into a collapsible history; everything else
+  // (pending/sent_hr money + SOP/notify marks + cancelled) stays in the active view.
+  const recentRows = summary?.recent ?? [];
+  const activeRecent = recentRows.filter((p) => p.status !== 'deducted');
+  const deductedRecent = recentRows.filter((p) => p.status === 'deducted');
 
   const employeeOptions = useMemo(
     () => [
@@ -313,6 +420,30 @@ export default function StockPenaltiesPage() {
     }
   };
 
+  const handleSendToHr = async () => {
+    if (!currentStoreId || sendingToHr) return;
+    setSendingToHr(true);
+    try {
+      const res = await fetch('/api/stock/penalties/send-to-hr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ store_id: currentStoreId, month }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        data?: { sent?: number };
+      };
+      if (!res.ok) {
+        toast({ type: 'error', title: json.error || L.loadFail });
+        return;
+      }
+      toast({ type: 'success', title: L.sentToHrDone(json.data?.sent ?? 0) });
+      loadSummary();
+    } finally {
+      setSendingToHr(false);
+    }
+  };
+
   const handleSubmitAdhoc = async () => {
     if (!adhoc || !currentStoreId || submittingAdhoc) return;
     if (!adhoc.userId) {
@@ -354,14 +485,21 @@ export default function StockPenaltiesPage() {
     }
   };
 
-  const statusMeta = (status: string | null): { tone: StatusTone; label: string } => {
-    switch (status) {
+  // Row badge: amount-less rows are SOP marks; money rows follow the pending → sent_hr → deducted
+  // workflow. Cancelled is terminal regardless of amount.
+  const rowStatusMeta = (p: RecentPenalty): { tone: StatusTone; label: string } => {
+    if (p.status === 'cancelled') return { tone: 'neutral', label: L.stCancelled };
+    const hasCharge = !!p.amount && p.amount > 0;
+    if (!hasCharge) return { tone: 'neutral', label: L.stSopMark };
+    switch (p.status) {
       case 'pending':
-        return { tone: 'warn', label: L.statusPending };
-      case 'cancelled':
-        return { tone: 'neutral', label: L.statusCancelled };
+        return { tone: 'warn', label: L.stToSend };
+      case 'sent_hr':
+        return { tone: 'info', label: L.stSentHr };
+      case 'deducted':
+        return { tone: 'good', label: L.stDeducted };
       default:
-        return { tone: 'good', label: status ?? L.statusRecorded };
+        return { tone: 'neutral', label: L.stSopMark };
     }
   };
 
@@ -369,6 +507,38 @@ export default function StockPenaltiesPage() {
     if (amount === null || amount === undefined) return '—';
     if (amount === 0) return L.noCharge;
     return `฿${bahtLabel(amount)}`;
+  };
+
+  const renderPenaltyRow = (p: RecentPenalty) => {
+    const meta = rowStatusMeta(p);
+    const dateLabel = formatThaiDate(p.business_date ?? p.created_at);
+    const hasCharge = !!p.amount && p.amount > 0;
+    return (
+      <li key={p.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            {p.penalty_code && (
+              <span className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[11px] font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                {p.penalty_code}
+              </span>
+            )}
+            <span className="truncate text-sm text-gray-900 dark:text-white">{p.reason ?? '—'}</span>
+          </div>
+          <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+            {p.staff_name || '—'} · {dateLabel}
+          </p>
+        </div>
+        <span
+          className={cn(
+            'text-sm font-semibold tabular-nums',
+            hasCharge ? 'text-rose-600 dark:text-rose-400' : 'text-gray-400',
+          )}
+        >
+          {amountLabel(p.amount)}
+        </span>
+        <StatusBadge tone={meta.tone} label={meta.label} />
+      </li>
+    );
   };
 
   // ── Render guards ────────────────────────────────────────────────────────
@@ -412,6 +582,29 @@ export default function StockPenaltiesPage() {
         <EmptyState icon={Gauge} title={L.loadFail} />
       ) : (
         <>
+          {/* Prominent KPI summary — 2-up on phones, 4-up on desktop. */}
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <SummaryTile
+              label={L.tileSop}
+              value={`${summary.sop_points} / ${summary.threshold}`}
+              sub={overThreshold ? L.overThreshold : L.underThreshold}
+              tone={overThreshold ? 'rose' : 'default'}
+            />
+            <SummaryTile label={L.tileMoneyMonth} value={`฿${bahtLabel(moneyTotalBaht)}`} />
+            <SummaryTile
+              label={L.tilePendingHr}
+              value={money.pending.count}
+              sub={`฿${bahtLabel(money.pending.baht)}`}
+              tone={money.pending.count > 0 ? 'amber' : 'default'}
+            />
+            <SummaryTile
+              label={L.tileSentHr}
+              value={money.sent_hr.count}
+              sub={`฿${bahtLabel(money.sent_hr.baht)}`}
+              tone={money.sent_hr.count > 0 ? 'info' : 'default'}
+            />
+          </div>
+
           {/* Summary: SOP points vs threshold with a progress bar. */}
           <Card
             className={cn(
@@ -529,54 +722,75 @@ export default function StockPenaltiesPage() {
                   </Button>
                 </div>
               </div>
+
+              {/* Money-deduction workflow: pending → send to HR → (HR) deducted. */}
+              {money.pending.count > 0 ? (
+                <div className="mt-4 flex flex-col gap-3 border-t border-gray-100 pt-4 dark:border-gray-700 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <StatusBadge tone="warn" icon={Banknote} label={L.stToSend} />
+                    <span className="text-sm text-gray-700 dark:text-gray-200">
+                      {L.moneyPending}: {money.pending.count} {L.items} · ฿{bahtLabel(money.pending.baht)}
+                    </span>
+                  </div>
+                  <Button
+                    size="sm"
+                    icon={
+                      sendingToHr ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Send className="h-3.5 w-3.5" />
+                      )
+                    }
+                    disabled={sendingToHr}
+                    onClick={handleSendToHr}
+                  >
+                    {L.sendToHr}
+                  </Button>
+                </div>
+              ) : money.sent_hr.count > 0 ? (
+                <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-4 dark:border-gray-700">
+                  <StatusBadge tone="info" icon={Send} label={L.stSentHr} />
+                  <span className="text-sm text-gray-700 dark:text-gray-200">
+                    {L.moneySent}: {money.sent_hr.count} · ฿{bahtLabel(money.sent_hr.baht)}
+                  </span>
+                </div>
+              ) : money.deducted.count > 0 ? (
+                <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-4 dark:border-gray-700">
+                  <StatusBadge tone="good" label={L.stDeducted} />
+                  <span className="text-sm text-gray-700 dark:text-gray-200">{L.moneyDeductedAll}</span>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
 
-          {/* Recent penalties feed. */}
+          {/* Active feed — pending/sent_hr money + SOP/notify marks (deducted moved to history). */}
           <Card padding="none">
-            <CardHeader title={L.recentTitle} />
-            {summary.recent.length === 0 ? (
+            <CardHeader title={`${L.activeTitle} (${activeRecent.length})`} />
+            {activeRecent.length === 0 ? (
               <div className="px-6 py-10 text-center">
                 <p className="text-sm text-gray-500 dark:text-gray-400">{L.noRecent}</p>
               </div>
             ) : (
               <ul className="divide-y divide-gray-100 dark:divide-gray-700">
-                {summary.recent.map((p) => {
-                  const meta = statusMeta(p.status);
-                  const dateLabel = formatThaiDate(p.business_date ?? p.created_at);
-                  const hasCharge = !!p.amount && p.amount > 0;
-                  return (
-                    <li key={p.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          {p.penalty_code && (
-                            <span className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[11px] font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-300">
-                              {p.penalty_code}
-                            </span>
-                          )}
-                          <span className="truncate text-sm text-gray-900 dark:text-white">
-                            {p.reason ?? '—'}
-                          </span>
-                        </div>
-                        <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                          {p.staff_name || '—'} · {dateLabel}
-                        </p>
-                      </div>
-                      <span
-                        className={cn(
-                          'text-sm font-semibold tabular-nums',
-                          hasCharge ? 'text-rose-600 dark:text-rose-400' : 'text-gray-400',
-                        )}
-                      >
-                        {amountLabel(p.amount)}
-                      </span>
-                      <StatusBadge tone={meta.tone} label={meta.label} />
-                    </li>
-                  );
-                })}
+                {activeRecent.map(renderPenaltyRow)}
               </ul>
             )}
           </Card>
+
+          {/* History — deducted fines, collapsed out of the active view. */}
+          {deductedRecent.length > 0 && (
+            <details className="group overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+              <summary className="flex cursor-pointer select-none items-center justify-between gap-2 px-4 py-3 text-sm font-medium text-gray-700 dark:text-gray-200">
+                <span>
+                  {L.historyTitle} ({deductedRecent.length})
+                </span>
+                <span className="text-xs text-gray-400 transition group-open:rotate-180">▾</span>
+              </summary>
+              <ul className="divide-y divide-gray-100 border-t border-gray-100 dark:divide-gray-700 dark:border-gray-700">
+                {deductedRecent.map(renderPenaltyRow)}
+              </ul>
+            </details>
+          )}
         </>
       )}
 
