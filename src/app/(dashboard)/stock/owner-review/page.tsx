@@ -56,8 +56,7 @@ import {
 // runs this every morning; owner + accountant + hq look in periodically.
 const REVIEW_ROLES = ['owner', 'accountant', 'manager', 'hq'];
 
-const QUOTA_WARN = 7;   // SOP: 7+ violations triggers a warning slip
-const QUOTA_MAX = 12;   // SOP: hard ceiling per month per store
+const QUOTA_WARN = 7;   // SOP threshold: 7 store OCCURRENCES/month → head_bar warning (owner 2026-07-09)
 
 interface StaffOption {
   id: string;
@@ -259,14 +258,17 @@ export default function OwnerReviewPage() {
   // sees one big number ("เดือนนี้บันทึกความผิดไปแล้ว N ครั้ง") regardless
   // of who got dinged. Excludes EXP-01 (those rows already have included_in_quota=false).
   const storeMonthTotals = useMemo(() => {
-    let count = 0;
+    // Count OCCURRENCES (a group fine = one batch = one), not person-rows — matches the engine's
+    // v_store_monthly_sop_count so this number equals what fires the head_bar warning at 7.
+    const occ = new Set<string>();
     let amount = 0;
-    for (const v of violations) {
-      count += v.violations;
-      amount += v.total_amount;
+    for (const p of penalties) {
+      if (!p.included_in_quota || p.status === 'cancelled') continue;
+      occ.add((p as { batch_id?: string | null }).batch_id ?? p.id);
+      amount += Number(p.amount || 0);
     }
-    return { count, amount };
-  }, [violations]);
+    return { count: occ.size, amount };
+  }, [penalties]);
 
   // ────────────────────────────────────────────────────────────────────────
   // Data loading
@@ -692,12 +694,7 @@ export default function OwnerReviewPage() {
           staff_name: v.staff_name,
           violations: v.violations,
           total_amount: v.total_amount,
-          level:
-            v.violations >= QUOTA_MAX
-              ? 'max'
-              : v.violations >= QUOTA_WARN
-                ? 'warn'
-                : 'normal',
+          level: v.violations >= QUOTA_WARN ? 'warn' : 'normal',
         })),
         // Use the same showAll-filtered list the screen uses so the PDF
         // matches what the owner sees on screen at print time.
@@ -738,7 +735,7 @@ export default function OwnerReviewPage() {
       type: 'system',
       content:
         `⚠️ แจ้งเตือนหัวหน้าบาร์ ${name} — ${v.staff_name} มีความผิดสะสม ${v.violations} ครั้ง ` +
-        `ในเดือน ${monthYearLabel} (เกินเกณฑ์ ${QUOTA_WARN} ครั้ง — ใกล้เกิน ${QUOTA_MAX} ครั้งที่กำหนด) ` +
+        `ในเดือน ${monthYearLabel} (เกณฑ์ร้าน ${QUOTA_WARN} ครั้ง/เดือน) ` +
         `กรุณาตรวจสอบและออกใบเตือนตาม SOP`,
     });
     toast({ type: 'success', title: 'ส่งแจ้งเตือนเข้าแชทสาขาแล้ว' });
@@ -851,11 +848,9 @@ export default function OwnerReviewPage() {
       <div
         className={cn(
           'flex flex-wrap items-center gap-3 rounded-xl px-4 py-3',
-          storeMonthTotals.count >= QUOTA_MAX
+          storeMonthTotals.count >= QUOTA_WARN
             ? 'bg-red-50 ring-1 ring-red-200 dark:bg-red-900/20 dark:ring-red-800'
-            : storeMonthTotals.count >= QUOTA_WARN
-              ? 'bg-amber-50 ring-1 ring-amber-200 dark:bg-amber-900/20 dark:ring-amber-800'
-              : 'bg-indigo-50 ring-1 ring-indigo-200 dark:bg-indigo-900/20 dark:ring-indigo-800',
+            : 'bg-indigo-50 ring-1 ring-indigo-200 dark:bg-indigo-900/20 dark:ring-indigo-800',
         )}
       >
         <Calendar className="h-5 w-5 text-gray-500" />
@@ -864,8 +859,9 @@ export default function OwnerReviewPage() {
             สาขา{storeName ? ` ${storeName}` : ''} — เดือน {monthYearLabel}
           </p>
           <p className="text-base font-bold text-gray-900 dark:text-white">
-            บันทึกความผิดแล้ว{' '}
-            <span className="tabular-nums">{storeMonthTotals.count}</span> ครั้ง
+            ความผิดร้านเดือนนี้{' '}
+            <span className="tabular-nums">{storeMonthTotals.count}</span>
+            <span className="text-sm font-medium text-gray-400"> / {QUOTA_WARN}</span> ครั้ง
             {storeMonthTotals.amount > 0 && (
               <span className="ml-2 text-sm font-medium text-gray-600 dark:text-gray-300">
                 (ค่าปรับสะสม {formatNumber(storeMonthTotals.amount)} บาท)
@@ -873,20 +869,10 @@ export default function OwnerReviewPage() {
             )}
           </p>
         </div>
-        <Badge
-          variant={
-            storeMonthTotals.count >= QUOTA_MAX
-              ? 'danger'
-              : storeMonthTotals.count >= QUOTA_WARN
-                ? 'warning'
-                : 'info'
-          }
-        >
-          {storeMonthTotals.count >= QUOTA_MAX
-            ? `≥ ${QUOTA_MAX} (ครบโควตา)`
-            : storeMonthTotals.count >= QUOTA_WARN
-              ? `≥ ${QUOTA_WARN} (ใกล้เกิน)`
-              : `≤ ${QUOTA_WARN} (ปกติ)`}
+        <Badge variant={storeMonthTotals.count >= QUOTA_WARN ? 'danger' : 'info'}>
+          {storeMonthTotals.count >= QUOTA_WARN
+            ? `≥ ${QUOTA_WARN} — ออกใบเตือนหัวหน้าบาร์`
+            : `ยังไม่ถึง ${QUOTA_WARN}`}
         </Badge>
       </div>
 
@@ -915,50 +901,36 @@ export default function OwnerReviewPage() {
       {/* Quota strip — only show staff with actual violations this month */}
       {violations.length > 0 && (
         <Card>
-          <CardHeader title={`คะแนนความผิดเดือน ${monthYearLabel}`} />
+          <CardHeader title={`ความผิดรายคน — เดือน ${monthYearLabel}`} />
           <CardContent>
+            <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
+              จำนวนครั้งที่แต่ละคนถูกบันทึก (ไว้ดูประกอบ) — เกณฑ์ออกใบเตือนนับ &ldquo;รวมทั้งร้าน&rdquo; ที่ {QUOTA_WARN} ครั้ง/เดือน
+            </p>
             <div className="space-y-2">
-              {violations.map((v) => {
-                const overWarn = v.violations >= QUOTA_WARN;
-                const overMax = v.violations >= QUOTA_MAX;
-                const tone = overMax ? 'red' : overWarn ? 'amber' : 'emerald';
-                return (
-                  <div
-                    key={v.staff_id}
-                    className={cn(
-                      'flex flex-wrap items-center gap-3 rounded-lg px-3 py-2',
-                      tone === 'red' && 'bg-red-50 dark:bg-red-900/20',
-                      tone === 'amber' && 'bg-amber-50 dark:bg-amber-900/20',
-                      tone === 'emerald' && 'bg-emerald-50 dark:bg-emerald-900/20',
-                    )}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                        {v.staff_name}
-                      </p>
-                      <p className="text-xs text-gray-600 dark:text-gray-300">
-                        {v.violations} / {QUOTA_MAX} ครั้ง — ค่าปรับสะสม{' '}
-                        {formatNumber(v.total_amount)} บาท
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={overMax ? 'danger' : overWarn ? 'warning' : 'success'}>
-                        {overMax ? 'ครบโควตา' : overWarn ? 'ใกล้เกิน' : 'ปกติ'}
-                      </Badge>
-                      {overWarn && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          icon={<Megaphone className="h-3.5 w-3.5" />}
-                          onClick={() => handleSendQuotaAlert(v)}
-                        >
-                          แจ้งเตือนแชทสาขา
-                        </Button>
-                      )}
-                    </div>
+              {violations.map((v) => (
+                <div
+                  key={v.staff_id}
+                  className="flex flex-wrap items-center gap-3 rounded-lg bg-gray-50 px-3 py-2 dark:bg-gray-700/40"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                      {v.staff_name}
+                    </p>
+                    <p className="text-xs text-gray-600 dark:text-gray-300">
+                      {v.violations} ครั้ง
+                      {v.total_amount > 0 ? ` · ค่าปรับ ${formatNumber(v.total_amount)} บาท` : ''}
+                    </p>
                   </div>
-                );
-              })}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    icon={<Megaphone className="h-3.5 w-3.5" />}
+                    onClick={() => handleSendQuotaAlert(v)}
+                  >
+                    แจ้งเตือนแชทสาขา
+                  </Button>
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>
