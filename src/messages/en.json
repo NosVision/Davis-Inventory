@@ -186,6 +186,10 @@
       "name": "Borrow Items",
       "description": "Borrow items between branches"
     },
+    "stockPenalties": {
+      "name": "Stock Penalties",
+      "description": "Weekly/monthly SOP summary + SV deductions"
+    },
     "hqWarehouse": {
       "name": "HQ Warehouse",
       "description": "Receive expired transfers, dispose items"

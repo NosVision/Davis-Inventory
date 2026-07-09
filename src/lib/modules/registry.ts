@@ -147,6 +147,19 @@ export const modules: ModuleConfig[] = [
     permission: 'can_borrow',
     groupKey: 'moduleGroups.warehouse',
   },
+  {
+    // HQ management of the stock-penalty / SOP system (owner ask 2026-07-09): weekly + monthly
+    // summary, Auto/Manual send-to-HR toggle, and ad-hoc SV deductions.
+    id: 'stock-penalties',
+    nameKey: 'modules.stockPenalties.name',
+    descriptionKey: 'modules.stockPenalties.description',
+    icon: 'scale',
+    color: 'rose',
+    href: '/stock/penalties',
+    roles: ['owner', 'hq'],
+    permission: 'can_manage_stock_sop',
+    groupKey: 'moduleGroups.warehouse',
+  },
 
   // ─── บัญชี (Accounting) — คอมมิชชั่น/AE ───
   {

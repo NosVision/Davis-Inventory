@@ -28,7 +28,8 @@ export type Permission =
   | 'can_manage_commission'
   | 'can_request_repair'
   | 'can_manage_repair'
-  | 'can_manage_hr';
+  | 'can_manage_hr'
+  | 'can_manage_stock_sop';
 
 export const ROLE_PERMISSIONS: Record<UserRole, Permission[] | ['*']> = {
   owner: ['*'],
@@ -72,7 +73,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[] | ['*']> = {
   // Staff = ฝากเหล้า / เบิกเหล้า / แชท / แจ้งซ่อม
   staff: ['can_manage_deposit', 'can_request_repair'],
   customer: ['can_view_own_deposits', 'can_request_withdrawal'],
-  hq: ['can_transfer', 'can_view_reports'],
+  hq: ['can_transfer', 'can_view_reports', 'can_manage_stock_sop'],
   // HR = ฝ่ายบุคคล: HR + จัดการผู้ใช้ (โมเดลใหม่ 2026-07-08 — แคบลง เหลือ HR + baseline)
   hr: ['can_manage_hr', 'can_manage_users'],
   // Cashier = AE (คอมมิชชั่น) + งานประจำ
