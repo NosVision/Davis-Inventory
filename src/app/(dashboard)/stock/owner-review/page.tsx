@@ -259,13 +259,15 @@ export default function OwnerReviewPage() {
   // sees one big number ("เดือนนี้บันทึกความผิดไปแล้ว N ครั้ง") regardless
   // of who got dinged. Excludes EXP-01 (those rows already have included_in_quota=false).
   const storeMonthTotals = useMemo(() => {
-    // Count OCCURRENCES (a group fine = one batch = one), not person-rows — matches the engine's
-    // v_store_monthly_sop_count so this number equals what fires the head_bar warning at 7.
+    // Count OCCURRENCES per COUNT-DAY (one business_date = one, regardless of products/people/clicks)
+    // — matches v_store_monthly_sop_count + the weekly money escalation, so this equals what fires
+    // the head_bar warning at 7. Legacy rows with no business_date fall back to batch_id then id.
     const occ = new Set<string>();
     let amount = 0;
     for (const p of penalties) {
       if (!p.included_in_quota || p.status === 'cancelled') continue;
-      occ.add((p as { batch_id?: string | null }).batch_id ?? p.id);
+      const row = p as { business_date?: string | null; batch_id?: string | null };
+      occ.add(row.business_date ?? row.batch_id ?? p.id);
       amount += Number(p.amount || 0);
     }
     return { count: occ.size, amount };
