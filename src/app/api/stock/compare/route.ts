@@ -5,6 +5,11 @@ import {
   sendBotMessage,
   buildStockSupplementaryActionCard,
 } from '@/lib/chat/bot';
+import {
+  resolveVarianceMode,
+  isVarianceWithinTolerance,
+  type VarianceMode,
+} from '@/lib/stock/variance';
 
 export async function POST(request: NextRequest) {
   const supabase = createServiceClient();
@@ -108,10 +113,13 @@ export async function POST(request: NextRequest) {
     // discrepancies just because POS has a qty and manual_counts has none.
     const productNameMap = new Map<string, string>();
     const excludedCodes = new Set<string>();
+    // Per-product variance mode override ('unit'/'percent'); 'auto' (or missing)
+    // means the shared helper decides from the numbers.
+    const varianceModeMap = new Map<string, VarianceMode>();
     if (allProductCodes.size > 0) {
       const { data: products } = await supabase
         .from('products')
-        .select('product_code, product_name, count_status')
+        .select('product_code, product_name, count_status, variance_mode')
         .eq('store_id', store_id)
         .in('product_code', Array.from(allProductCodes));
 
@@ -121,6 +129,10 @@ export async function POST(request: NextRequest) {
           if (p.count_status === 'excluded') {
             excludedCodes.add(p.product_code);
           }
+          varianceModeMap.set(
+            p.product_code,
+            (p.variance_mode as VarianceMode) ?? 'auto'
+          );
         }
       }
     }
@@ -217,11 +229,17 @@ export async function POST(request: NextRequest) {
         status = 'approved';
         matchCount++;
       } else if (
-        Math.abs(difference) <= diffToleranceUnit ||
-        (diffPercent !== null && Math.abs(diffPercent) <= diffTolerance)
+        isVarianceWithinTolerance({
+          difference,
+          diffPercent,
+          // Whole-integer counts on both sides → bottle-counted stock, so any
+          // >= 1 unit off must be explained (Dom Pérignon −1 no longer hides
+          // behind a small %). Decimal (pour) items keep the % tolerance.
+          mode: resolveVarianceMode(manualQty, posQty, varianceModeMap.get(productCode)),
+          tolerance: { unit: diffToleranceUnit, percent: diffTolerance },
+        })
       ) {
-        // Within tolerance — either small absolute units (rounding noise on
-        // low-volume items) or small percentage (rounding noise on high-volume).
+        // Within tolerance — auto-approved, not surfaced for explanation.
         status = 'approved';
         withinToleranceCount++;
       } else {

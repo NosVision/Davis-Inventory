@@ -55,6 +55,10 @@ export interface Product {
   price: number | null;
   active: boolean;
   count_status: 'active' | 'excluded';
+  // How stock-count variances are judged: 'auto' detects whole-bottle vs pour
+  // from the numbers, 'unit' forces bottle mode (>=1 off must be explained),
+  // 'percent' forces the legacy % tolerance.
+  variance_mode: 'auto' | 'unit' | 'percent';
   created_at: string;
 }
 

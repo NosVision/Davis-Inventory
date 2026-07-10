@@ -49,6 +49,7 @@ interface ProductForm {
   price: string;
   active: boolean;
   count_status: 'active' | 'excluded';
+  variance_mode: 'auto' | 'unit' | 'percent';
 }
 
 const emptyForm: ProductForm = {
@@ -60,6 +61,7 @@ const emptyForm: ProductForm = {
   price: '',
   active: true,
   count_status: 'active',
+  variance_mode: 'auto',
 };
 
 // ---------------------------------------------------------------------------
@@ -304,6 +306,7 @@ export default function ProductsPage() {
       price: product.price != null ? String(product.price) : '',
       active: product.active,
       count_status: product.count_status || 'active',
+      variance_mode: product.variance_mode || 'auto',
     });
     setFormErrors({});
     setShowModal(true);
@@ -346,6 +349,7 @@ export default function ProductsPage() {
         price: form.price ? Number(form.price) : null,
         active: form.active,
         count_status: form.count_status,
+        variance_mode: form.variance_mode,
       };
 
       if (editingProduct) {
@@ -779,6 +783,12 @@ export default function ProductsPage() {
                             {product.count_status === 'excluded' && (
                               <Badge variant="warning">{t('products.excludedCount')}</Badge>
                             )}
+                            {product.variance_mode === 'unit' && (
+                              <Badge variant="info">{t('products.varianceBadgeUnit')}</Badge>
+                            )}
+                            {product.variance_mode === 'percent' && (
+                              <Badge variant="default">{t('products.varianceBadgePercent')}</Badge>
+                            )}
                           </div>
                         </td>
                         {canEdit && (
@@ -855,6 +865,16 @@ export default function ProductsPage() {
                       {product.count_status === 'excluded' && (
                         <Badge variant="warning" size="sm">
                           {t('products.excludedCount')}
+                        </Badge>
+                      )}
+                      {product.variance_mode === 'unit' && (
+                        <Badge variant="info" size="sm">
+                          {t('products.varianceBadgeUnit')}
+                        </Badge>
+                      )}
+                      {product.variance_mode === 'percent' && (
+                        <Badge variant="default" size="sm">
+                          {t('products.varianceBadgePercent')}
                         </Badge>
                       )}
                     </div>
@@ -1056,6 +1076,41 @@ export default function ProductsPage() {
                 )}
               />
             </button>
+          </div>
+          {/* Variance mode — how stock-count differences are judged for this
+              product. 'auto' detects whole-bottle (integer) vs pour (decimal)
+              from the counted numbers; owner can force a mode per item. */}
+          <div className="rounded-lg border border-gray-200 px-4 py-3 dark:border-gray-600">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {t('products.varianceMode')}
+                </p>
+                <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                  {form.variance_mode === 'unit'
+                    ? t('products.varianceUnitHint')
+                    : form.variance_mode === 'percent'
+                      ? t('products.variancePercentHint')
+                      : t('products.varianceAutoHint')}
+                </p>
+              </div>
+              <div className="w-36 shrink-0">
+                <Select
+                  options={[
+                    { value: 'auto', label: t('products.varianceAuto') },
+                    { value: 'unit', label: t('products.varianceUnit') },
+                    { value: 'percent', label: t('products.variancePercent') },
+                  ]}
+                  value={form.variance_mode}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      variance_mode: e.target.value as ProductForm['variance_mode'],
+                    }))
+                  }
+                />
+              </div>
+            </div>
           </div>
         </div>
         <ModalFooter>
