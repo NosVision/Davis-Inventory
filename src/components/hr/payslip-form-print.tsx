@@ -87,8 +87,13 @@ export function PayslipFormPrint({ data, calibrate = false }: { data: PayslipDet
   const monthLabel = payrun
     ? `${new Date(Date.UTC(payrun.period_year, payrun.period_month - 1, 1)).toLocaleString('en-US', { month: 'long' })} ${payrun.period_year}`
     : '—';
+  const dmy = (d?: string | null) => {
+    if (!d) return '';
+    const [y, m, dd] = String(d).slice(0, 10).split('-');
+    return y && m && dd ? `${dd}/${m}/${y}` : String(d);
+  };
   const periodLabel = payrun && 'cycle_start' in payrun
-    ? `${(payrun as { cycle_start?: string | null }).cycle_start ?? ''} - ${(payrun as { cycle_end?: string | null }).cycle_end ?? ''}`
+    ? `${dmy((payrun as { cycle_start?: string | null }).cycle_start)} - ${dmy((payrun as { cycle_end?: string | null }).cycle_end)}`
     : '';
   const V = (s: string | null | undefined) => (calibrate ? 'X'.repeat(6) : s || '');
   const A = (n: number) => (calibrate ? '9,999.99' : F(n));

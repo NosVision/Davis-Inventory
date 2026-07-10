@@ -94,6 +94,13 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
 
   const payTypeLabel = t(`payTypeVal.${payslip.pay_type}`);
   const monthLabel = payrun ? `${String(payrun.period_month).padStart(2, '0')}/${payrun.period_year}` : '—';
+  // 'YYYY-MM-DD' → 'DD/MM/YYYY'
+  const payDateLabel = (() => {
+    const d = payrun?.pay_date;
+    if (!d) return '—';
+    const [y, m, dd] = String(d).slice(0, 10).split('-');
+    return y && m && dd ? `${dd}/${m}/${y}` : String(d);
+  })();
   const wrap = print ? 'text-[11px] leading-tight text-black' : 'text-sm text-gray-900 dark:text-white';
   const rowCls = print ? 'py-0.5' : 'py-1.5';
   const divide = print ? 'divide-gray-300' : 'divide-gray-100 dark:divide-gray-700';
@@ -122,7 +129,7 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
         <Meta label={t('employee')} value={payslip.employee_name ?? '—'} print={print} />
         <Meta label={t('period')} value={monthLabel} print={print} />
         <Meta label={t('payType')} value={payTypeLabel} print={print} />
-        <Meta label={t('payDate')} value={payrun?.pay_date ?? '—'} print={print} />
+        <Meta label={t('payDate')} value={payDateLabel} print={print} />
       </div>
 
       {/* earnings */}

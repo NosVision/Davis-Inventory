@@ -59,7 +59,17 @@ interface PayrunDetail {
   pools?: { month: string; sc: PoolSummary; tip: PoolSummary };
 }
 
-const PRINT_CSS = `@media print { @page { size: 9in 5.5in; margin: 0.3in; } }`;
+// Print isolation: window.print() otherwise prints the whole dashboard (sidebar/header from the
+// shared layout) around the slip. Hide EVERYTHING, then reveal only the payslip print root and
+// pin it to the page origin — so only the 9×5.5" slip prints (owner report 2026-07-10).
+const PRINT_CSS = `
+@media print {
+  @page { size: 9in 5.5in; margin: 0.3in; }
+  html, body { background: #fff !important; }
+  body * { visibility: hidden !important; }
+  #payslip-print-root, #payslip-print-root * { visibility: visible !important; }
+  #payslip-print-root { position: absolute !important; left: 0; top: 0; width: 100%; display: block !important; }
+}`;
 
 interface PrintQueueRow {
   payslip_id: string;
@@ -83,6 +93,14 @@ const CALIBRATE_DATA: PayslipDetailData = {
 function currentMonth(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+// 'YYYY-MM-DD' (or an ISO timestamp) → 'DD/MM/YYYY' (owner ask 2026-07-10).
+function dmy(d?: string | null): string {
+  if (!d) return '—';
+  const s = String(d).slice(0, 10);
+  const [y, m, dd] = s.split('-');
+  return y && m && dd ? `${dd}/${m}/${y}` : s;
 }
 
 export default function HrPayrollPage() {
@@ -483,7 +501,7 @@ export default function HrPayrollPage() {
           </div>
 
           {/* detail */}
-          <div>
+          <div className="min-w-0">
             {!detail ? (
               <EmptyState icon={Wallet} title={t('selectPayrun')} />
             ) : (
@@ -492,8 +510,8 @@ export default function HrPayrollPage() {
                 <PoolStrip detail={detail} />
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-sm text-gray-600 dark:text-gray-300">
-                    {t('cycle')}: {detail.payrun.cycle_start} → {detail.payrun.cycle_end}
-                    {detail.payrun.pay_date ? ` · ${t('payDate')} ${detail.payrun.pay_date}` : ''}
+                    {t('cycle')}: {dmy(detail.payrun.cycle_start)} → {dmy(detail.payrun.cycle_end)}
+                    {detail.payrun.pay_date ? ` · ${t('payDate')} ${dmy(detail.payrun.pay_date)}` : ''}
                   </div>
                   <div className="flex gap-2">
                     <Button variant="ghost" size="sm" icon={<Printer className="h-4 w-4" />} onClick={() => doPrint(CALIBRATE_DATA)} title={t('printCalibrateHint')}>
@@ -838,7 +856,7 @@ export default function HrPayrollPage() {
       )}
 
       {/* print-only slip — fixed-position 9×5.5" security-form layout */}
-      <div className="hidden print:block">
+      <div id="payslip-print-root" className="hidden print:block">
         {printSlip && printBatch.length === 0 && (
           <PayslipFormPrint data={printSlip} calibrate={printSlip.payslip.id === 'calibrate'} />
         )}
@@ -905,7 +923,7 @@ function PayrunStepper({ detail }: { detail: PayrunDetail }) {
                     {s.label}
                   </p>
                   {s.sub && <p className="text-[10px] leading-tight text-gray-500 dark:text-gray-400">{s.sub}</p>}
-                  {s.done && s.at && <p className="text-[10px] leading-tight text-gray-400 dark:text-gray-500">{s.at.slice(0, 10)}</p>}
+                  {s.done && s.at && <p className="text-[10px] leading-tight text-gray-400 dark:text-gray-500">{dmy(s.at)}</p>}
                 </div>
               </div>
               {i < steps.length - 1 && (
