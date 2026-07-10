@@ -1,5 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient as createSbClient } from '@supabase/supabase-js';
 import { createServiceClient } from '@/lib/supabase/server';
+
+// Verify an existing login (username + password) WITHOUT persisting a session — used when a
+// self-registering hire matches an account that already exists, so they can link their imported
+// name to it instead of creating a duplicate. A throwaway anon client checks the credentials.
+async function verifyLogin(username: string, password: string): Promise<{ ok: boolean; userId?: string }> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anon) return { ok: false };
+  const sb = createSbClient(url, anon, { auth: { persistSession: false, autoRefreshToken: false } });
+  const { data, error } = await sb.auth.signInWithPassword({ email: `${username}@stockmanager.app`, password });
+  if (error || !data?.user) return { ok: false };
+  return { ok: true, userId: data.user.id };
+}
 
 // Public HR self-registration (owner ask 2026-07-10). Token-gated, service-role. A new hire opens
 // the HR link, sets a username + password, matches an imported identity (or types name + bank),
@@ -92,11 +106,75 @@ export async function POST(request: NextRequest) {
   const bodyCompanyId = typeof body.company_id === 'string' && body.company_id ? body.company_id : null;
   const pendingIdentityId = typeof body.pending_identity_id === 'string' && body.pending_identity_id ? body.pending_identity_id : null;
 
+  const action = typeof body.action === 'string' ? body.action : 'create';
+
   const service = createServiceClient();
   const link = await loadLink(service, token);
   if (!link) return NextResponse.json({ error: 'ลิงก์ไม่ถูกต้องหรือหมดอายุ' }, { status: 410 });
-  if (link.used_count >= USED_COUNT_CAP) {
+  if (action === 'create' && link.used_count >= USED_COUNT_CAP) {
     return NextResponse.json({ error: 'ลิงก์นี้ถูกใช้ครบจำนวนแล้ว กรุณาติดต่อ HR' }, { status: 429 });
+  }
+
+  // ── verify: the hire hit an existing username — confirm they own it (login password) so they
+  // can LINK their imported name instead of creating a duplicate account. ──────────────────────
+  if (action === 'verify') {
+    if (!username || !password) {
+      return NextResponse.json({ error: 'กรุณากรอกชื่อผู้ใช้และรหัสผ่าน' }, { status: 400 });
+    }
+    const v = await verifyLogin(username, password);
+    if (!v.ok || !v.userId) return NextResponse.json({ data: { ok: false } });
+    const [{ data: prof }, { data: emp }] = await Promise.all([
+      service.from('profiles').select('display_name, username').eq('id', v.userId).maybeSingle(),
+      service.from('hr_employees').select('bank_account_no').eq('profile_id', v.userId).maybeSingle(),
+    ]);
+    return NextResponse.json({
+      data: {
+        ok: true,
+        display_name: prof?.display_name || prof?.username || username,
+        existing_bank_account_no: (emp?.bank_account_no as string | null) ?? null,
+        has_employee: !!emp,
+      },
+    });
+  }
+
+  // ── link: confirmed — attach the imported name/bank to the EXISTING account (no new account). ─
+  if (action === 'link') {
+    if (!fullName) return NextResponse.json({ error: 'กรุณาระบุชื่อ-นามสกุล' }, { status: 400 });
+    const v = await verifyLogin(username, password);
+    if (!v.ok || !v.userId) return NextResponse.json({ error: 'รหัสผ่านไม่ถูกต้อง' }, { status: 401 });
+    const userId = v.userId;
+
+    let linkCompanyId = link.company_id ?? bodyCompanyId;
+    if (linkCompanyId) {
+      const { data: co } = await service.from('hr_companies').select('id').eq('id', linkCompanyId).maybeSingle();
+      if (!co) linkCompanyId = null;
+    }
+
+    const { data: existingEmp } = await service.from('hr_employees').select('id').eq('profile_id', userId).maybeSingle();
+    const empFields: Record<string, unknown> = { full_name: fullName };
+    if (bankAccountNo) empFields.bank_account_no = bankAccountNo;
+    if (bankName) empFields.bank_name = bankName;
+    if (positionId) empFields.position_id = positionId;
+    if (linkCompanyId) empFields.company_id = linkCompanyId;
+    if (existingEmp) {
+      await service.from('hr_employees').update(empFields).eq('id', existingEmp.id);
+    } else {
+      await service.from('hr_employees').insert({ profile_id: userId, status: 'probation', created_by: link.created_by, ...empFields });
+    }
+
+    if (pendingIdentityId) {
+      await service
+        .from('hr_pending_identities')
+        .update({ status: 'linked', claimed_by: userId, claimed_at: new Date().toISOString() })
+        .eq('id', pendingIdentityId)
+        .eq('status', 'unclaimed');
+    }
+    await service.from('hr_registration_links').update({ used_count: link.used_count + 1 }).eq('id', link.id);
+    await service.from('audit_logs').insert({
+      action_type: 'HR_SELF_LINKED', table_name: 'hr_employees', record_id: userId,
+      new_value: { username, full_name: fullName, via: 'hr_registration_link' }, changed_by: userId,
+    });
+    return NextResponse.json({ data: { success: true, linked: true, username } });
   }
 
   // Validate inputs (mirrors the client rules; a reason is surfaced in Thai).

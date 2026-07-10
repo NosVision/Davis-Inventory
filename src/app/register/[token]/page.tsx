@@ -37,6 +37,14 @@ export default function HrRegisterPage() {
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
 
+  // "username taken → verify & link to the existing account" sub-flow.
+  const [loginPassword, setLoginPassword] = useState('');
+  const [verifying, setVerifying] = useState(false);
+  const [verified, setVerified] = useState<{ display_name: string; existing_bank_account_no: string | null; has_employee: boolean } | null>(null);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+  const [linking, setLinking] = useState(false);
+  const [wasLinked, setWasLinked] = useState(false);
+
   const [mode, setMode] = useState<'search' | 'manual'>('search');
   const [q, setQ] = useState('');
   const [results, setResults] = useState<Identity[]>([]);
@@ -74,6 +82,7 @@ export default function HrRegisterPage() {
   const uTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (uTimer.current) clearTimeout(uTimer.current);
+    setVerified(null); setVerifyError(null); setLoginPassword('');
     const u = username.trim().toLowerCase();
     if (!u) { setUStatus('idle'); return; }
     if (u.length < 3 || !/^[a-z0-9_]+$/.test(u)) { setUStatus('invalid'); return; }
@@ -160,6 +169,60 @@ export default function HrRegisterPage() {
     }
   };
 
+  // Verify the existing account's login password, then reveal its bank account for a final confirm.
+  const verify = async () => {
+    setVerifyError(null);
+    if (!loginPassword) return;
+    setVerifying(true);
+    try {
+      const res = await fetch('/api/auth/hr-register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, action: 'verify', username: username.trim().toLowerCase(), password: loginPassword }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (j.data?.ok) setVerified(j.data);
+      else setVerifyError('รหัสผ่านไม่ถูกต้อง');
+    } catch {
+      setVerifyError('เกิดข้อผิดพลาด กรุณาลองใหม่');
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  // Confirm: link this imported name/bank to the existing account (no new account).
+  const linkExisting = async () => {
+    setError(null);
+    if (!fullName.trim()) { setError('กรุณาเลือกหรือกรอกชื่อ-นามสกุลก่อน'); return; }
+    setLinking(true);
+    try {
+      const res = await fetch('/api/auth/hr-register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token,
+          action: 'link',
+          username: username.trim().toLowerCase(),
+          password: loginPassword,
+          full_name: fullName.trim(),
+          bank_account_no: bankNo.trim() || undefined,
+          bank_name: bankName.trim() || undefined,
+          company_id: ctx?.company_id || companyId || undefined,
+          position_id: positionId || undefined,
+          pending_identity_id: picked?.id || undefined,
+        }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) { setError(typeof j.error === 'string' ? j.error : 'ผูกบัญชีไม่สำเร็จ'); return; }
+      setWasLinked(true);
+      setDone(true);
+    } catch {
+      setError('เกิดข้อผิดพลาด กรุณาลองใหม่');
+    } finally {
+      setLinking(false);
+    }
+  };
+
   // ── Render states ──────────────────────────────────────────────────────────
   if (loading) {
     return (
@@ -188,10 +251,11 @@ export default function HrRegisterPage() {
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30">
             <Check className="h-7 w-7 text-emerald-600 dark:text-emerald-400" />
           </div>
-          <h1 className="mt-3 text-lg font-bold text-gray-900 dark:text-white">สมัครสำเร็จ!</h1>
+          <h1 className="mt-3 text-lg font-bold text-gray-900 dark:text-white">{wasLinked ? 'ผูกบัญชีสำเร็จ!' : 'สมัครสำเร็จ!'}</h1>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            บัญชีของคุณพร้อมใช้งานแล้ว เข้าสู่ระบบด้วยชื่อผู้ใช้ <b className="text-gray-800 dark:text-gray-200">{username.trim().toLowerCase()}</b> ได้เลย
-            <br />รอ HR กำหนดสิทธิ์/ตำแหน่งให้อีกครั้ง
+            {wasLinked
+              ? <>ผูกชื่อ-นามสกุลเข้ากับบัญชีเดิมเรียบร้อย เข้าสู่ระบบด้วยชื่อผู้ใช้ <b className="text-gray-800 dark:text-gray-200">{username.trim().toLowerCase()}</b> ได้เลย</>
+              : <>บัญชีของคุณพร้อมใช้งานแล้ว เข้าสู่ระบบด้วยชื่อผู้ใช้ <b className="text-gray-800 dark:text-gray-200">{username.trim().toLowerCase()}</b> ได้เลย<br />รอ HR กำหนดสิทธิ์/ตำแหน่งให้อีกครั้ง</>}
           </p>
           <a href="/login" className="mt-5 inline-block rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700">
             เข้าสู่ระบบ
@@ -232,22 +296,64 @@ export default function HrRegisterPage() {
               {(uStatus === 'taken' || uStatus === 'invalid') && <X className="h-4 w-4 text-red-500" />}
             </span>
           </div>
-          {uStatus === 'taken' && <p className="mt-1 text-xs text-red-500">ชื่อนี้ถูกใช้แล้ว</p>}
+          {uStatus === 'taken' && <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">ชื่อผู้ใช้นี้มีอยู่แล้ว — ถ้าเป็นบัญชีของคุณ ยืนยันด้านล่างเพื่อผูกบัญชีเดิม</p>}
           {uStatus === 'invalid' && <p className="mt-1 text-xs text-red-500">ใช้ a-z, 0-9, _ อย่างน้อย 3 ตัว</p>}
         </div>
 
-        {/* Password */}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div>
-            <label className={label}>รหัสผ่าน</label>
-            <input type="password" className={input} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="6 ตัวขึ้นไป" autoComplete="new-password" />
+        {uStatus === 'taken' ? (
+          /* Existing account → verify with the login password, then confirm linking. */
+          <div className="space-y-3 rounded-lg border border-amber-300 bg-amber-50/60 p-3 dark:border-amber-800 dark:bg-amber-900/10">
+            {!verified ? (
+              <>
+                <p className="text-xs text-amber-700 dark:text-amber-300">
+                  มีบัญชีชื่อ <b>{username.trim().toLowerCase()}</b> อยู่แล้ว — ถ้าเป็นบัญชีของคุณ กรอกรหัสผ่าน (รหัสเข้าใช้งาน) เพื่อยืนยันตัวตน
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    className={input}
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    placeholder="รหัสผ่านเข้าใช้งาน"
+                    autoComplete="current-password"
+                    onKeyDown={(e) => { if (e.key === 'Enter') verify(); }}
+                  />
+                  <button type="button" onClick={verify} disabled={!loginPassword || verifying} className="shrink-0 rounded-lg bg-amber-500 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-50">
+                    {verifying ? '…' : 'ยืนยันตัวตน'}
+                  </button>
+                </div>
+                {verifyError && <p className="text-xs text-red-500">{verifyError}</p>}
+              </>
+            ) : (
+              <div className="space-y-2">
+                <p className="flex items-center gap-1.5 text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+                  <Check className="h-4 w-4" /> ยืนยันตัวตนแล้ว — {verified.display_name}
+                </p>
+                {(verified.existing_bank_account_no || bankNo) && (
+                  <p className="text-xs text-gray-600 dark:text-gray-300">
+                    เลขที่บัญชี: <b className="tabular-nums">{verified.existing_bank_account_no || bankNo}</b>
+                  </p>
+                )}
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  ยืนยันผูกชื่อ <b className="text-gray-800 dark:text-gray-200">{fullName.trim() || '(เลือก/กรอกชื่อด้านล่างก่อน)'}</b> กับบัญชีนี้ แทนการสมัครใหม่
+                </p>
+              </div>
+            )}
           </div>
-          <div>
-            <label className={label}>ยืนยันรหัสผ่าน</label>
-            <input type="password" className={input} value={password2} onChange={(e) => setPassword2(e.target.value)} autoComplete="new-password" />
-            {password2 && password !== password2 && <p className="mt-1 text-xs text-red-500">รหัสผ่านไม่ตรงกัน</p>}
+        ) : (
+          /* New account → set a password. */
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className={label}>รหัสผ่าน</label>
+              <input type="password" className={input} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="6 ตัวขึ้นไป" autoComplete="new-password" />
+            </div>
+            <div>
+              <label className={label}>ยืนยันรหัสผ่าน</label>
+              <input type="password" className={input} value={password2} onChange={(e) => setPassword2(e.target.value)} autoComplete="new-password" />
+              {password2 && password !== password2 && <p className="mt-1 text-xs text-red-500">รหัสผ่านไม่ตรงกัน</p>}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Identity: search imported OR manual */}
         <div>
@@ -334,15 +440,31 @@ export default function HrRegisterPage() {
 
         {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</p>}
 
-        <button
-          type="button"
-          onClick={submit}
-          disabled={!canSubmit}
-          className="w-full rounded-lg bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {submitting ? 'กำลังสมัคร…' : 'สมัครและสร้างบัญชี'}
-        </button>
-        <p className="text-center text-[11px] text-gray-400">สมัครแล้วจะได้สิทธิ์ &quot;ยังไม่ระบุ&quot; รอ HR กำหนดตำแหน่ง/สิทธิ์ให้อีกครั้ง</p>
+        {uStatus === 'taken' ? (
+          <>
+            <button
+              type="button"
+              onClick={linkExisting}
+              disabled={!verified || !fullName.trim() || linking}
+              className="w-full rounded-lg bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {linking ? 'กำลังผูกบัญชี…' : 'ยืนยันผูกกับบัญชีเดิม'}
+            </button>
+            <p className="text-center text-[11px] text-gray-400">ผูกชื่อ-นามสกุลกับบัญชีที่มีอยู่ แทนการสมัครใหม่</p>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={submit}
+              disabled={!canSubmit}
+              className="w-full rounded-lg bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {submitting ? 'กำลังสมัคร…' : 'สมัครและสร้างบัญชี'}
+            </button>
+            <p className="text-center text-[11px] text-gray-400">สมัครแล้วจะได้สิทธิ์ &quot;ยังไม่ระบุ&quot; รอ HR กำหนดตำแหน่ง/สิทธิ์ให้อีกครั้ง</p>
+          </>
+        )}
       </div>
     </div>
   );
