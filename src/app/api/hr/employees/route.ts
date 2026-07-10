@@ -23,7 +23,7 @@ const ELEVATED_ROLES = ['accountant', 'manager', 'hq', 'hr'];
 const SEARCH_CAP = 500;
 
 const LIST_SELECT =
-  'id, profile_id, employee_code, rate_satang, pay_type, work_hours_per_day, ot_eligible, ' +
+  'id, profile_id, employee_code, full_name, rate_satang, pay_type, work_hours_per_day, ot_eligible, ' +
   'ot_hour_divisor, standard_days_off, tax_mode, sso_enrolled, status, start_date, probation_end, ' +
   'company_id, position_id, department_id, created_at, ' +
   'profile:profiles!hr_employees_profile_id_fkey(id, username, display_name, active, avatar_url), ' +
@@ -48,18 +48,21 @@ export async function GET(request: NextRequest) {
   const idSets: string[][] = [];
   if (q) {
     const like = `%${q}%`;
-    const [n1, n2, ec] = await Promise.all([
+    const [n1, n2, ec, fn] = await Promise.all([
       service.from('profiles').select('id').ilike('display_name', like).limit(SEARCH_CAP),
       service.from('profiles').select('id').ilike('username', like).limit(SEARCH_CAP),
       service.from('hr_employees').select('profile_id').ilike('employee_code', like).limit(SEARCH_CAP),
+      // The registry shows the employee's real full name, so let HR search by it too.
+      service.from('hr_employees').select('profile_id').ilike('full_name', like).limit(SEARCH_CAP),
     ]);
-    if (n1.error || n2.error || ec.error) {
+    if (n1.error || n2.error || ec.error || fn.error) {
       return NextResponse.json({ error: 'Search failed' }, { status: 500 });
     }
     const set = new Set<string>();
     (n1.data ?? []).forEach((r) => set.add(r.id as string));
     (n2.data ?? []).forEach((r) => set.add(r.id as string));
     (ec.data ?? []).forEach((r) => set.add(r.profile_id as string));
+    (fn.data ?? []).forEach((r) => set.add(r.profile_id as string));
     idSets.push([...set]);
   }
   if (storeId) {

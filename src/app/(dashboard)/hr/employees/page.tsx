@@ -20,6 +20,7 @@ interface EmployeeRow extends Record<string, unknown> {
   id: string;
   profile_id: string;
   employee_code: string | null;
+  full_name: string | null;
   rate_satang: number;
   pay_type: string;
   status: string;
@@ -42,6 +43,12 @@ const STATUS_TONE: Record<string, StatusTone> = {
 
 function bahtFromSatang(satang: number): string {
   return (satang / 100).toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+
+// Prefer the employee's real full name (ชื่อ-นามสกุล); fall back to the profile nickname/
+// username only when full_name is unset (e.g. an unlinked/test account).
+function employeeName(e: EmployeeRow): string {
+  return e.full_name?.trim() || e.profile?.display_name || e.profile?.username || '—';
 }
 
 export default function EmployeesPage() {
@@ -85,7 +92,7 @@ export default function EmployeesPage() {
       if (!res.ok || !d) { toast({ type: 'error', title: t('profile.fail') }); return; }
       const { buildEmployeeProfilePdf, downloadBlob } = await import('./_components/employee-profile-pdf');
       const s = (v: unknown) => (v == null || v === '' ? '' : String(v));
-      const name = e.profile?.display_name || e.profile?.username || '—';
+      const name = employeeName(e);
       const now = new Date();
       const blob = await buildEmployeeProfilePdf({
         doc_title: t('profile.docTitle'),
@@ -140,7 +147,7 @@ export default function EmployeesPage() {
         headcount: rows.length,
         rows: rows.map((r) => ({
           code: r.employee_code || '',
-          name: r.profile?.display_name || r.profile?.username || '—',
+          name: employeeName(r),
           position: r.position?.name || '—',
           department: r.department?.name || '—',
           store: r.stores.length ? r.stores.map((s) => s.store_name).join(', ') : '—',
@@ -218,7 +225,7 @@ export default function EmployeesPage() {
         render: (e) => (
           <div className="min-w-0">
             <div className="truncate font-medium text-gray-900 dark:text-white">
-              {e.profile?.display_name || e.profile?.username || '—'}
+              {employeeName(e)}
             </div>
             {e.employee_code && (
               <div className="text-xs text-gray-400">{e.employee_code}</div>
@@ -287,7 +294,7 @@ export default function EmployeesPage() {
               aria-label={t('history.action')}
               onClick={(ev) => {
                 ev.stopPropagation();
-                setHistoryFor({ id: e.id, name: e.profile?.display_name || e.employee_code || '—' });
+                setHistoryFor({ id: e.id, name: employeeName(e) });
               }}
               className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-700 dark:hover:text-indigo-400"
             >
@@ -299,7 +306,7 @@ export default function EmployeesPage() {
               aria-label={t('payHistory.action')}
               onClick={(ev) => {
                 ev.stopPropagation();
-                setPayHistoryFor({ id: e.id, name: e.profile?.display_name || e.employee_code || '—' });
+                setPayHistoryFor({ id: e.id, name: employeeName(e) });
               }}
               className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-amber-600 dark:hover:bg-gray-700 dark:hover:text-amber-400"
             >
