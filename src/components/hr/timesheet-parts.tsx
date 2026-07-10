@@ -64,9 +64,13 @@ export function addDaysStr(dateStr: string, delta: number): string {
   return new Date(Date.UTC(y, m - 1, d + delta)).toISOString().slice(0, 10);
 }
 
-/** A day with no schedule, no day-off, no punches and no leave is empty noise — dim it. */
+/**
+ * A day with no schedule, no day-off, no punches, no leave AND no HR override is empty
+ * noise — dim it. An override (e.g. a bulk backfill / manual entry) is intentional data, so
+ * such a day is NOT empty even though it has no schedule row or punch.
+ */
 export function isEmptyDay(d: DaySummary): boolean {
-  return !d.scheduled && !d.is_day_off && !d.first_in && !d.last_out && !d.leave;
+  return !d.scheduled && !d.is_day_off && !d.first_in && !d.last_out && !d.leave && !d.overridden;
 }
 
 // ---------------------------------------------------------------------------
@@ -138,7 +142,7 @@ function StatusCell({ d }: { d: DaySummary }) {
       </Badge>
     );
   }
-  if (d.scheduled && (d.late_min ?? 0) > 0) {
+  if ((d.late_min ?? 0) > 0) {
     badges.push(
       <Badge key="late" variant="warning" size="sm">
         {t('late')}
@@ -158,6 +162,17 @@ function StatusCell({ d }: { d: DaySummary }) {
         <Badge variant="info" size="sm">
           {t('overridden')}
         </Badge>
+      </span>
+    );
+  }
+
+  // An overridden working day (bulk backfill / manual entry) has no punch, so it wouldn't
+  // otherwise show the green "present" dot punched days get. Add it so the row reads as worked.
+  const isWorkedDay = (d.first_in != null || (d.worked_min ?? 0) > 0) && !d.absent;
+  if (isWorkedDay && !d.is_day_off && !d.incomplete && (d.late_min ?? 0) === 0 && badges.length > 0) {
+    badges.unshift(
+      <span key="ok" className="text-emerald-500 dark:text-emerald-400" aria-hidden>
+        ●
       </span>
     );
   }

@@ -42,6 +42,7 @@ interface AttendanceRow {
 interface EmployeeRow {
   profile_id: string;
   company_id: string | null;
+  full_name: string | null;
   work_hours_per_day: number | null;
   ot_eligible: boolean | null;
   status: string | null;
@@ -127,7 +128,7 @@ export async function GET(request: NextRequest) {
     service.from('profiles').select('id, username, display_name').in('id', userIds),
     service
       .from('hr_employees')
-      .select('profile_id, company_id, work_hours_per_day, ot_eligible, status')
+      .select('profile_id, company_id, full_name, work_hours_per_day, ot_eligible, status')
       .in('profile_id', userIds),
     service
       .from('hr_schedule')
@@ -239,7 +240,9 @@ export async function GET(request: NextRequest) {
       });
       return {
         user_id: uid,
-        name: p?.display_name || p?.username || '—',
+        // Prefer the employee's real full name (ชื่อ-นามสกุล); fall back to the profile
+        // nickname/username only when it's unset (e.g. an unlinked account).
+        name: e?.full_name?.trim() || p?.display_name || p?.username || '—',
         company_id: e?.company_id ?? null,
         work_hours_per_day: workHours,
         ot_eligible: otEligible,

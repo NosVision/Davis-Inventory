@@ -71,12 +71,15 @@ export async function GET(request: NextRequest) {
 
   const { data: emps, error: empErr } = await service
     .from('hr_employees')
-    .select('profile_id, profile:profiles!hr_employees_profile_id_fkey(display_name, username)')
+    .select('profile_id, full_name, profile:profiles!hr_employees_profile_id_fkey(display_name, username)')
     .in('profile_id', memberIds)
     .in('status', ['active', 'probation']);
   if (empErr) return NextResponse.json({ error: 'Failed to load employees' }, { status: 500 });
   const employees = (emps ?? [])
-    .map((e) => ({ user_id: e.profile_id as string, name: nameOf(e.profile as never) }))
+    .map((e) => ({
+      user_id: e.profile_id as string,
+      name: (e.full_name as string | null)?.trim() || nameOf(e.profile as never),
+    }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
   const { data: ovs } = await service

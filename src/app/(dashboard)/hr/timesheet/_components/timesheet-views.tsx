@@ -31,6 +31,8 @@ export type DayStatus =
 
 // Collapse a derived day into ONE headline status for the block grid. Order matters: the most
 // notable condition wins (leave > absent > no-clock-out > late > worked). OT/override are overlays.
+// A day carried purely by an HR override (bulk backfill / manual entry) has no schedule row or
+// punch, so it is read from the override's worked/absent/late fields rather than first_in.
 export function deriveDayStatus(d: DaySummary): DayStatus {
   if (d.leave) return 'leave';
   if (isEmptyDay(d)) return 'empty';
@@ -38,9 +40,11 @@ export function deriveDayStatus(d: DaySummary): DayStatus {
   if (d.is_day_off && !d.worked_on_day_off) return 'dayoff';
   if (d.incomplete) return 'incomplete';
   if (d.worked_on_day_off) return 'wod';
-  if (d.scheduled && (d.late_min ?? 0) > 0) return 'late';
+  if ((d.late_min ?? 0) > 0) return 'late';
   if (d.first_in) return 'normal';
+  if ((d.worked_min ?? 0) > 0) return 'normal'; // override-set working day (no punch)
   if (d.scheduled) return 'normal';
+  if (d.overridden) return 'dayoff'; // overridden, worked 0, not absent → a marked day off
   return 'empty';
 }
 

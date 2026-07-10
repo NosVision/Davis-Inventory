@@ -243,7 +243,9 @@ export interface TimesheetTotals {
 export function sumDays(days: DaySummary[]): TimesheetTotals {
   return days.reduce<TimesheetTotals>(
     (acc, d) => ({
-      work_days: acc.work_days + (d.first_in ? 1 : 0),
+      // A worked day = punched in, OR an HR override credited working minutes (bulk backfill /
+      // manual entry) even without a punch.
+      work_days: acc.work_days + (d.first_in || (d.worked_min ?? 0) > 0 ? 1 : 0),
       absent_days: acc.absent_days + (d.absent ? 1 : 0),
       late_days: acc.late_days + ((d.late_min ?? 0) > 0 ? 1 : 0),
       worked_min: acc.worked_min + (d.worked_min ?? 0),
