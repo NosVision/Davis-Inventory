@@ -121,7 +121,8 @@
     "hr": "HR",
     "cashier": "Cashier",
     "housekeeping_staff": "House Keeping",
-    "boh_staff": "BOH Staff"
+    "boh_staff": "BOH Staff",
+    "unspecified": "Unspecified"
   },
   "nav": {
     "darkMode": "Dark mode",

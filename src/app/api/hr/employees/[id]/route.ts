@@ -12,13 +12,21 @@ import {
 } from '@/lib/hr/employees';
 
 const EMPLOYEE_SELECT =
-  '*, profile:profiles!hr_employees_profile_id_fkey(id, username, display_name, active, avatar_url), ' +
+  '*, profile:profiles!hr_employees_profile_id_fkey(id, username, display_name, active, avatar_url, role), ' +
   'supervisor:profiles!hr_employees_supervisor_id_fkey(id, display_name), ' +
   'position:hr_positions(id, name), department:hr_departments(id, name), company:hr_companies(id, name)';
 
 // Sensitive fields whose edit requires an audit reason (§B).
 const SENSITIVE_KEYS = ['rate_satang', 'bank_name', 'bank_account_no', 'bank_account_name', 'sso_no', 'tax_id'];
 const TERMINAL_STATUSES = ['resigned', 'terminated'];
+
+// Roles HR may assign from the employee modal (owner ask 2026-07-10). Excludes 'owner'/'customer'.
+// Elevated (owner-equivalent) roles may only be granted by an owner caller.
+const ASSIGNABLE_ROLES = new Set([
+  'staff', 'bar', 'head_bar', 'manager', 'technician', 'hq', 'accountant', 'hr',
+  'cashier', 'housekeeping_staff', 'boh_staff', 'unspecified',
+]);
+const ELEVATED_ROLES = new Set(['accountant', 'manager', 'hq', 'hr']);
 
 // GET /api/hr/employees/[id]
 export async function GET(
@@ -118,7 +126,19 @@ export async function PUT(
   }
 
   const hasDisplayName = 'display_name' in body;
-  if (Object.keys(fields).length === 0 && !hasDisplayName) {
+
+  // System role change (validated up-front so a bad/forbidden role rejects before any write).
+  const roleChange = typeof body.role === 'string' && body.role ? body.role : null;
+  if (roleChange) {
+    if (!ASSIGNABLE_ROLES.has(roleChange)) {
+      return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
+    }
+    if (ELEVATED_ROLES.has(roleChange) && auth.role !== 'owner') {
+      return NextResponse.json({ error: 'Only an owner may grant this role' }, { status: 403 });
+    }
+  }
+
+  if (Object.keys(fields).length === 0 && !hasDisplayName && !roleChange) {
     return NextResponse.json({ error: 'No updatable fields provided' }, { status: 400 });
   }
 
@@ -149,6 +169,26 @@ export async function PUT(
     const shouldBeActive = !TERMINAL_STATUSES.includes(effectiveStatus);
     const { error: actErr } = await service.from('profiles').update({ active: shouldBeActive }).eq('id', current.profile_id);
     if (actErr) console.error('hr employee update: active toggle failed', current.profile_id, actErr.message);
+  }
+
+  // System role change (owner ask 2026-07-10): update the login role only when it actually differs;
+  // audited separately on the profiles table.
+  if (roleChange) {
+    const { data: curProfile } = await service.from('profiles').select('role').eq('id', current.profile_id).maybeSingle();
+    const oldRole = (curProfile?.role as string | undefined) ?? null;
+    if (oldRole !== roleChange) {
+      const { error: roleErr } = await service.from('profiles').update({ role: roleChange }).eq('id', current.profile_id);
+      if (roleErr) return NextResponse.json({ error: roleErr.message }, { status: 500 });
+      await logHrAudit(service, {
+        actorId: auth.userId,
+        action: 'update',
+        table: 'profiles',
+        recordId: current.profile_id as string,
+        before: { role: oldRole },
+        after: { role: roleChange },
+        reason: 'system role changed by HR',
+      });
+    }
   }
 
   await logHrAudit(service, {

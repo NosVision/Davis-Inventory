@@ -29,6 +29,8 @@ const ALL_STAFF: UserRole[] = [
   'cashier',
   'housekeeping_staff',
   'boh_staff',
+  // ยังไม่ระบุ (self-registered, pending HR) — baseline only: chat / me / task rooms.
+  'unspecified',
 ];
 
 export const modules: ModuleConfig[] = [

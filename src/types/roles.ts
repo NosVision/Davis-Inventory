@@ -11,7 +11,10 @@ export type UserRole =
   | 'hr'
   | 'cashier'
   | 'housekeeping_staff'
-  | 'boh_staff';
+  | 'boh_staff'
+  // Default for self-registered employees until HR assigns a real role. No permissions;
+  // sees only the baseline menus (chat / me / task rooms).
+  | 'unspecified';
 
 export type Permission =
   | 'can_count_stock'
@@ -82,6 +85,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[] | ['*']> = {
   housekeeping_staff: [],
   // BOH (หลังร้าน) = งานประจำ (Task) เท่านั้น
   boh_staff: [],
+  // ยังไม่ระบุ = ไม่มีสิทธิ์ใดๆ เห็นแค่ chat/me/tasks รอ HR กำหนดสิทธิ์
+  unspecified: [],
 };
 
 // Position labels are shown in ENGLISH always (owner ask 2026-07-09), regardless of app locale.
@@ -99,6 +104,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   cashier: 'Cashier',
   housekeeping_staff: 'Housekeeping',
   boh_staff: 'BOH Staff',
+  unspecified: 'Unspecified',
 };
 
 /** Translation keys for role labels — use with useTranslations() */
@@ -116,6 +122,7 @@ export const ROLE_LABEL_KEYS: Record<UserRole, string> = {
   cashier: 'roles.cashier',
   housekeeping_staff: 'roles.housekeeping_staff',
   boh_staff: 'roles.boh_staff',
+  unspecified: 'roles.unspecified',
 };
 
 export const ROLE_HOME_ROUTES: Record<UserRole, string> = {
@@ -134,4 +141,6 @@ export const ROLE_HOME_ROUTES: Record<UserRole, string> = {
   cashier: '/tasks',
   housekeeping_staff: '/tasks',
   boh_staff: '/tasks',
+  // ยังไม่ระบุ → หน้าของฉัน (ยังไม่มีเมนูปฏิบัติการ)
+  unspecified: '/me',
 };

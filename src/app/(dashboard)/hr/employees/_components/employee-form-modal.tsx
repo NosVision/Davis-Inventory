@@ -6,6 +6,8 @@ import { Search, Loader2 } from 'lucide-react';
 import { Modal, Input, Select, Button, Textarea, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { createClient } from '@/lib/supabase/client';
+import { ROLE_LABELS } from '@/types/roles';
+import type { UserRole } from '@/types/roles';
 import { CredentialShare } from './credential-share';
 import {
   PAY_TYPES,
@@ -108,7 +110,7 @@ interface SensitiveSnapshot {
   tax_id: string | null;
 }
 
-const ROLE_OPTIONS = ['staff', 'bar', 'head_bar', 'manager', 'technician', 'hq', 'accountant', 'hr'] as const;
+const ROLE_OPTIONS = ['staff', 'bar', 'head_bar', 'manager', 'technician', 'hq', 'accountant', 'hr', 'cashier', 'housekeeping_staff', 'boh_staff', 'unspecified'] as const;
 const DOC_SLOTS: DocumentType[] = ['id_card', 'signature', 'contract'];
 const TERMINAL_STATUSES = ['resigned', 'terminated'];
 
@@ -351,7 +353,7 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
         return;
       }
       const d = json.data as Record<string, unknown>;
-      const profile = (d.profile ?? {}) as { display_name?: string | null; username?: string | null; avatar_url?: string | null };
+      const profile = (d.profile ?? {}) as { display_name?: string | null; username?: string | null; avatar_url?: string | null; role?: string | null };
       setAvatarUrl(profile.avatar_url ?? null);
       const ec = (d.emergency_contact && typeof d.emergency_contact === 'object'
         ? d.emergency_contact
@@ -361,7 +363,7 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
         username: profile.username ?? '',
         password: '123456',
         display_name: profile.display_name ?? '',
-        role: 'staff',
+        role: profile.role ?? 'staff',
         company_id: (d.company_id as string) ?? '',
         position_id: (d.position_id as string) ?? '',
         department_id: (d.department_id as string) ?? '',
@@ -581,7 +583,7 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
       // sensitive fields when they actually changed so we don't force a reason.
       url = `/api/hr/employees/${employeeId}`;
       method = 'PUT';
-      body = { ...common };
+      body = { ...common, role: form.role };
       if (isTerminalStatus(form.status)) {
         body.end_date = form.end_date || null;
         body.end_reason = form.end_reason.trim() || null;
@@ -832,7 +834,7 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
                     label={t('role')}
                     value={form.role}
                     onChange={(e) => update('role', e.target.value)}
-                    options={ROLE_OPTIONS.map((r) => ({ value: r, label: capitalize(r) }))}
+                    options={ROLE_OPTIONS.map((r) => ({ value: r, label: ROLE_LABELS[r as UserRole] ?? capitalize(r) }))}
                   />
                 </>
               )}
@@ -868,6 +870,16 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
                 </label>
               </div>
               <Input label={t('displayName')} value={form.display_name} onChange={(e) => update('display_name', e.target.value)} />
+              {/* System role — show current + let HR change it (owner ask 2026-07-10). */}
+              <Select
+                label={t('role')}
+                value={form.role}
+                onChange={(e) => update('role', e.target.value)}
+                options={Array.from(new Set([form.role, ...ROLE_OPTIONS])).map((r) => ({
+                  value: r,
+                  label: ROLE_LABELS[r as UserRole] ?? r,
+                }))}
+              />
             </>
           )}
           <Select

@@ -475,4 +475,9 @@ export const ROLE_COLOR_CLASSES: Record<UserRole, { badge: string; badgeDark: st
     badgeDark: 'dark:bg-stone-900 dark:text-stone-300',
     tocNum: 'bg-stone-500',
   },
+  unspecified: {
+    badge: 'bg-gray-100 text-gray-600',
+    badgeDark: 'dark:bg-gray-800 dark:text-gray-400',
+    tocNum: 'bg-gray-400',
+  },
 };

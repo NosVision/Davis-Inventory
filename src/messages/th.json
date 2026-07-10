@@ -121,7 +121,8 @@
     "hr": "ฝ่ายบุคคล",
     "cashier": "แคชเชียร์",
     "housekeeping_staff": "แม่บ้าน",
-    "boh_staff": "พนักงานหลังร้าน (BOH)"
+    "boh_staff": "พนักงานหลังร้าน (BOH)",
+    "unspecified": "ยังไม่ระบุ"
   },
   "nav": {
     "darkMode": "โหมดมืด",
