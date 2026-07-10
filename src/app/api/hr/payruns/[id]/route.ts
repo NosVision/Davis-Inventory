@@ -38,7 +38,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
   // Names (prefer the real full name), Service-Charge net + SV-deductions for the month, and the
   // accountant review link's status (powers the status stepper + the finalize gate).
-  const [profsRes, empsRes, scRes, linkRes] = await Promise.all([
+  const [profsRes, empsRes, scRes, linkRes, scPoolsRes, tipPoolsRes] = await Promise.all([
     service.from('profiles').select('id, username, display_name').in('id', userIds),
     service.from('hr_employees').select('profile_id, full_name').in('profile_id', userIds),
     service
@@ -54,6 +54,9 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
+    // SC + tip pool readiness for the month (feeds the "จัดสรร SC/ทิป" strip on the payroll page).
+    service.from('hr_sc_pools').select('status, store_id').eq('period_month', periodMonth),
+    service.from('hr_tip_pools').select('status, store_id').eq('period_month', periodMonth),
   ]);
 
   const nameById = new Map<string, string>();
@@ -103,5 +106,18 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       }
     : null;
 
-  return NextResponse.json({ data: { payrun, payslips, totals, review } });
+  // SC/tip pool readiness for the month. A store-scoped payrun looks only at its own store's
+  // pools; a company-wide run summarises every store's pools for the month.
+  const payrunStoreId = (payrun as { store_id: string | null }).store_id ?? null;
+  const summarizePools = (rows: { status: string; store_id: string | null }[] | null | undefined) => {
+    const scoped = (rows ?? []).filter((r) => !payrunStoreId || r.store_id === payrunStoreId);
+    return { total: scoped.length, finalized: scoped.filter((r) => r.status === 'finalized').length };
+  };
+  const pools = {
+    month: periodMonth,
+    sc: summarizePools(scPoolsRes.data as { status: string; store_id: string | null }[] | null),
+    tip: summarizePools(tipPoolsRes.data as { status: string; store_id: string | null }[] | null),
+  };
+
+  return NextResponse.json({ data: { payrun, payslips, totals, review, pools } });
 }

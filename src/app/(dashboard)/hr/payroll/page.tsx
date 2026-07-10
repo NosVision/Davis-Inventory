@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useTranslations } from 'next-intl';
-import { Loader2, Wallet, Play, Lock, LockOpen, Printer, X, FileText, Settings2, Percent, GitCompareArrows, Users, Coins, Send, Megaphone, RefreshCw, CheckCircle2, ChevronRight } from 'lucide-react';
+import { useLocale, useTranslations } from 'next-intl';
+import { Loader2, Wallet, Play, Lock, LockOpen, Printer, X, FileText, Settings2, Percent, GitCompareArrows, Users, Coins, Send, Megaphone, RefreshCw, CheckCircle2, ChevronRight, ArrowRight } from 'lucide-react';
 import { Button, EmptyState, Modal, ModalFooter, PageHeader, KpiRow, StatTile, MoneyValue, StatusBadge, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { formatBaht } from '@/lib/pos/money';
@@ -47,11 +47,16 @@ interface ReviewInfo {
   saved_at: string | null;
   confirmed_at: string | null;
 }
+interface PoolSummary {
+  total: number;
+  finalized: number;
+}
 interface PayrunDetail {
   payrun: PayrunRow & { company_id: string; cycle_start: string; cycle_end: string; finalized_at?: string | null };
   payslips: PayslipSummary[];
   totals: { gross: number; net: number; sso: number; tax: number; sc_net: number; sv_deduct: number };
   review: ReviewInfo | null;
+  pools?: { month: string; sc: PoolSummary; tip: PoolSummary };
 }
 
 const PRINT_CSS = `@media print { @page { size: 9in 5.5in; margin: 0.3in; } }`;
@@ -484,6 +489,7 @@ export default function HrPayrollPage() {
             ) : (
               <div className="space-y-3">
                 <PayrunStepper detail={detail} />
+                <PoolStrip detail={detail} />
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-sm text-gray-600 dark:text-gray-300">
                     {t('cycle')}: {detail.payrun.cycle_start} → {detail.payrun.cycle_end}
@@ -909,6 +915,41 @@ function PayrunStepper({ detail }: { detail: PayrunDetail }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// SC + tip pool readiness for the payrun's month, with shortcuts to the allocation pages (owner
+// ask 2026-07-10: keep allocation on its own pages, but surface "is it ready?" on payroll).
+function PoolStrip({ detail }: { detail: PayrunDetail }) {
+  const isTh = useLocale() === 'th';
+  const pools = detail.pools;
+  if (!pools) return null;
+
+  const chip = (label: string, p: PoolSummary, href: string) => {
+    const state = p.total === 0 ? 'none' : p.finalized === p.total ? 'ready' : 'draft';
+    const text =
+      state === 'none' ? (isTh ? 'ยังไม่มี' : 'None')
+      : state === 'ready' ? (isTh ? 'พร้อม' : 'Ready')
+      : `${isTh ? 'ร่าง' : 'Draft'} ${p.finalized}/${p.total}`;
+    const cls =
+      state === 'ready' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+      : state === 'draft' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+      : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400';
+    return (
+      <Link href={href} className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1 text-xs transition-colors hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-700/50">
+        <span className="font-medium text-gray-700 dark:text-gray-200">{label}</span>
+        <span className={cn('rounded-full px-1.5 py-0.5 font-semibold', cls)}>{text}</span>
+        <ArrowRight className="h-3 w-3 text-gray-400" />
+      </Link>
+    );
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-800">
+      <span className="text-xs font-medium text-gray-500 dark:text-gray-400">{isTh ? 'จัดสรรเดือนนี้' : 'This month'}:</span>
+      {chip('SC', pools.sc, '/hr/service-charge')}
+      {chip(isTh ? 'ทิป' : 'Tip', pools.tip, '/hr/tip-pool')}
     </div>
   );
 }
