@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { Loader2, Wallet, Play, Lock, LockOpen, Printer, X, FileText, Settings2, Percent, GitCompareArrows, Users, Coins, Send, Megaphone } from 'lucide-react';
+import { Loader2, Wallet, Play, Lock, LockOpen, Printer, X, FileText, Settings2, Percent, GitCompareArrows, Users, Coins, Send, Megaphone, RefreshCw } from 'lucide-react';
 import { Button, EmptyState, Modal, ModalFooter, PageHeader, KpiRow, StatTile, MoneyValue, StatusBadge, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { formatBaht } from '@/lib/pos/money';
@@ -79,6 +79,7 @@ export default function HrPayrollPage() {
   const [detail, setDetail] = useState<PayrunDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [recomputing, setRecomputing] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const [slip, setSlip] = useState<PayslipDetailData | null>(null);
@@ -212,11 +213,14 @@ export default function HrPayrollPage() {
     }
   }, [companyId, month, t, loadPayruns, openPayrun]);
 
-  // Recompute the currently-open payrun for its OWN period (used after saving a bonus, which the
-  // engine must fold into gross → 3% tax → net; the payrun row id is stable across regenerate).
-  const regenerateCurrent = useCallback(async () => {
+  // Recompute the currently-open payrun for its OWN period (the manual "คำนวณใหม่" button, and
+  // also used after saving a bonus, which the engine must fold into gross → 3% tax → net; the
+  // payrun row id is stable across regenerate). `silent` skips the success toast for the
+  // post-bonus auto-recompute (that flow shows its own "bonus saved" toast).
+  const regenerateCurrent = useCallback(async (silent = false) => {
     if (!detail) return;
     const { company_id, period_year, period_month } = detail.payrun;
+    setRecomputing(true);
     try {
       const res = await fetch('/api/hr/payruns', {
         method: 'POST',
@@ -231,8 +235,11 @@ export default function HrPayrollPage() {
       }
       await loadPayruns();
       await openPayrun(detail.payrun.id);
+      if (!silent) toast({ type: 'success', title: t('recomputed') });
     } catch {
       toast({ type: 'error', title: t('generateFailed') });
+    } finally {
+      setRecomputing(false);
     }
   }, [detail, loadPayruns, openPayrun, t]);
 
@@ -476,9 +483,22 @@ export default function HrPayrollPage() {
                         </Button>
                       </>
                     ) : (
-                      <Button variant="danger" size="sm" icon={<Lock className="h-4 w-4" />} onClick={finalize} disabled={busy || detail.payslips.length === 0}>
-                        {t('finalize')}
-                      </Button>
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          icon={<RefreshCw className="h-4 w-4" />}
+                          onClick={() => regenerateCurrent()}
+                          isLoading={recomputing}
+                          disabled={busy || recomputing}
+                          title={t('recomputeHint')}
+                        >
+                          {t('recompute')}
+                        </Button>
+                        <Button variant="danger" size="sm" icon={<Lock className="h-4 w-4" />} onClick={finalize} disabled={busy || recomputing || detail.payslips.length === 0}>
+                          {t('finalize')}
+                        </Button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -723,7 +743,7 @@ export default function HrPayrollPage() {
                   slip={slip}
                   onSaved={async () => {
                     setSlip(null);
-                    await regenerateCurrent();
+                    await regenerateCurrent(true); // silent — the bonus box shows its own toast
                   }}
                 />
                 <TaxOverrideBox
