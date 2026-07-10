@@ -18,10 +18,13 @@ interface MoneyValueProps {
   className?: string;
 }
 
+// Responsive so a 7-digit ฿ amount (an unbreakable comma-grouped token) shrinks to fit a narrow
+// KPI card instead of overflowing it, while staying prominent on wider screens (owner report
+// 2026-07-10). Never truncated — the whole number always shows.
 const sizeCls: Record<Emphasis, string> = {
-  hero: 'text-3xl font-bold',
-  kpi: 'text-2xl font-bold',
-  strong: 'text-lg font-semibold',
+  hero: 'text-lg font-bold sm:text-2xl xl:text-3xl',
+  kpi: 'text-base font-bold sm:text-xl xl:text-2xl',
+  strong: 'text-base font-semibold sm:text-lg',
   inline: 'font-medium',
 };
 const toneCls: Record<Tone, string> = {
