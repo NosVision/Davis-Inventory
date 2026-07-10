@@ -63,10 +63,11 @@ export async function GET(request: NextRequest) {
     const q = (sp.get('q') ?? '').trim();
     if (q.length < 2) return NextResponse.json({ data: [] });
     const like = `%${q}%`;
+    // Return every status (not just unclaimed) with `status`, so the page can warn when a name is
+    // already claimed (under HR review) or linked (HR accepted) instead of letting them re-register.
     let query = service
       .from('hr_pending_identities')
-      .select('id, full_name_th, full_name_en, position_text, company_id, bank_name, bank_account_no, store:stores(store_name)')
-      .eq('status', 'unclaimed')
+      .select('id, full_name_th, full_name_en, position_text, company_id, bank_name, bank_account_no, status, store:stores(store_name)')
       .or(`full_name_th.ilike.${like},full_name_en.ilike.${like},bank_account_no.ilike.${like}`)
       .limit(15);
     if (link.company_id) query = query.eq('company_id', link.company_id);
@@ -189,6 +190,13 @@ export async function POST(request: NextRequest) {
   }
   if (await usernameTaken(service, username)) {
     return NextResponse.json({ error: 'ชื่อผู้ใช้นี้ถูกใช้แล้ว' }, { status: 409 });
+  }
+  // Guard: don't create a new account for a name that's already claimed (under review) or linked.
+  if (pendingIdentityId) {
+    const { data: pid } = await service.from('hr_pending_identities').select('status').eq('id', pendingIdentityId).maybeSingle();
+    if (pid && pid.status !== 'unclaimed') {
+      return NextResponse.json({ error: 'ชื่อนี้ลงทะเบียนไปแล้ว กรุณาเข้าสู่ระบบด้วยบัญชีเดิม' }, { status: 409 });
+    }
   }
 
   // A company scope on the link wins; otherwise take the picked company (validated to exist).

@@ -18,6 +18,7 @@ interface Identity {
   company_id: string | null;
   bank_name: string | null;
   bank_account_no: string | null;
+  status: string;
   store?: { store_name: string | null } | null;
 }
 
@@ -61,6 +62,8 @@ export default function HrRegisterPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  // Set when the picked name is already claimed (HR reviewing) or linked (HR accepted) — blocks re-registration.
+  const [alreadyRegistered, setAlreadyRegistered] = useState<{ status: string } | null>(null);
 
   // Load link context (companies + positions), or mark the link invalid.
   useEffect(() => {
@@ -122,6 +125,12 @@ export default function HrRegisterPage() {
   }, [q, mode, token]);
 
   const pickIdentity = useCallback((it: Identity) => {
+    // Already registered? Warn instead of letting them re-register.
+    if (it.status && it.status !== 'unclaimed') {
+      setAlreadyRegistered({ status: it.status });
+      setResults([]);
+      return;
+    }
     setPicked(it);
     setFullName(it.full_name_th || it.full_name_en || '');
     setBankNo(it.bank_account_no || '');
@@ -273,6 +282,35 @@ export default function HrRegisterPage() {
     );
   }
 
+  if (alreadyRegistered) {
+    const linked = alreadyRegistered.status === 'linked';
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4 dark:bg-gray-900">
+        <div className="max-w-sm rounded-2xl bg-white p-8 text-center shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
+            <ShieldQuestion className="h-7 w-7 text-amber-600 dark:text-amber-400" />
+          </div>
+          <h1 className="mt-3 text-lg font-bold text-gray-900 dark:text-white">คุณลงทะเบียนไปแล้ว</h1>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            {linked
+              ? 'ชื่อนี้ HR ยืนยัน/ผูกบัญชีไว้แล้ว — ไม่ต้องสมัครซ้ำ เข้าสู่ระบบด้วยบัญชีเดิมได้เลย'
+              : 'ชื่อนี้ลงทะเบียนแล้ว อยู่ระหว่าง HR ตรวจสอบ — ไม่ต้องสมัครซ้ำ กรุณารอ HR ยืนยัน หรือติดต่อ HR'}
+          </p>
+          <div className="mt-5 flex items-center justify-center gap-2">
+            <a href="/login" className="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700">เข้าสู่ระบบ</a>
+            <button
+              type="button"
+              onClick={() => { setAlreadyRegistered(null); setQ(''); }}
+              className="rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+            >
+              ค้นหาชื่ออื่น
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-8 dark:bg-gray-900">
       <div className="mx-auto max-w-md space-y-5 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
@@ -384,11 +422,18 @@ export default function HrRegisterPage() {
                 <ul className="mt-1 max-h-52 divide-y divide-gray-100 overflow-y-auto rounded-lg border border-gray-200 dark:divide-gray-700 dark:border-gray-700">
                   {results.map((it) => (
                     <li key={it.id}>
-                      <button type="button" onClick={() => pickIdentity(it)} className="flex w-full flex-col items-start px-3 py-2 text-left hover:bg-indigo-50 dark:hover:bg-indigo-900/20">
-                        <span className="text-sm font-medium text-gray-800 dark:text-gray-100">{it.full_name_th || it.full_name_en}</span>
-                        <span className="text-[11px] text-gray-500 dark:text-gray-400">
-                          {[it.position_text, it.store?.store_name, it.bank_account_no ? `****${it.bank_account_no.slice(-4)}` : null].filter(Boolean).join(' · ')}
+                      <button type="button" onClick={() => pickIdentity(it)} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-indigo-50 dark:hover:bg-indigo-900/20">
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-medium text-gray-800 dark:text-gray-100">{it.full_name_th || it.full_name_en}</span>
+                          <span className="block text-[11px] text-gray-500 dark:text-gray-400">
+                            {[it.position_text, it.store?.store_name, it.bank_account_no ? `****${it.bank_account_no.slice(-4)}` : null].filter(Boolean).join(' · ')}
+                          </span>
                         </span>
+                        {it.status !== 'unclaimed' && (
+                          <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${it.status === 'linked' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'}`}>
+                            {it.status === 'linked' ? 'ลงทะเบียนแล้ว' : 'รอตรวจสอบ'}
+                          </span>
+                        )}
                       </button>
                     </li>
                   ))}
