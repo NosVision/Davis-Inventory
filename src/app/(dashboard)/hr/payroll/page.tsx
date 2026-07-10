@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { Loader2, Wallet, Play, Lock, LockOpen, Printer, X, FileText, Settings2, Percent, GitCompareArrows, Users, Coins, Send, Megaphone, RefreshCw } from 'lucide-react';
+import { Loader2, Wallet, Play, Lock, LockOpen, Printer, X, FileText, Settings2, Percent, GitCompareArrows, Users, Coins, Send, Megaphone, RefreshCw, CheckCircle2, ChevronRight } from 'lucide-react';
 import { Button, EmptyState, Modal, ModalFooter, PageHeader, KpiRow, StatTile, MoneyValue, StatusBadge, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { formatBaht } from '@/lib/pos/money';
@@ -36,11 +36,22 @@ interface PayslipSummary {
   sso_satang: number;
   tax_satang: number;
   net_satang: number;
+  total_deduction_satang: number;
+  sc_net_satang: number;
+  sv_deduct_satang: number;
+}
+interface ReviewInfo {
+  created_at: string;
+  expires_at: string;
+  accessed_at: string | null;
+  saved_at: string | null;
+  confirmed_at: string | null;
 }
 interface PayrunDetail {
-  payrun: PayrunRow & { company_id: string };
+  payrun: PayrunRow & { company_id: string; cycle_start: string; cycle_end: string; finalized_at?: string | null };
   payslips: PayslipSummary[];
-  totals: { gross: number; net: number; sso: number; tax: number };
+  totals: { gross: number; net: number; sso: number; tax: number; sc_net: number; sv_deduct: number };
+  review: ReviewInfo | null;
 }
 
 const PRINT_CSS = `@media print { @page { size: 9in 5.5in; margin: 0.3in; } }`;
@@ -248,14 +259,31 @@ export default function HrPayrollPage() {
     if (!window.confirm(t('finalizeConfirm'))) return;
     setBusy(true);
     try {
-      const res = await fetch(`/api/hr/payruns/${detail.payrun.id}/finalize`, { method: 'POST' });
-      if (!res.ok) {
-        toast({ type: 'error', title: t('actionFailed') });
+      // Up to two attempts: a plain finalize, then — if the server blocks because the accountant
+      // hasn't confirmed — one retry carrying HR's override reason (owner ask 2026-07-10).
+      let overrideReason: string | undefined;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const res = await fetch(`/api/hr/payruns/${detail.payrun.id}/finalize`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(overrideReason ? { override_reason: overrideReason } : {}),
+        });
+        const json = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
+        if (res.status === 409 && json?.code === 'accountant_not_confirmed' && attempt === 0) {
+          const reason = window.prompt(t('finalizeOverridePrompt'));
+          if (!reason || !reason.trim()) return; // HR cancelled the override
+          overrideReason = reason.trim();
+          continue;
+        }
+        if (!res.ok) {
+          toast({ type: 'error', title: t('actionFailed'), message: typeof json?.error === 'string' ? json.error : undefined });
+          return;
+        }
+        toast({ type: 'success', title: t('finalized') });
+        await loadPayruns();
+        await openPayrun(detail.payrun.id);
         return;
       }
-      toast({ type: 'success', title: t('finalized') });
-      await loadPayruns();
-      await openPayrun(detail.payrun.id);
     } finally {
       setBusy(false);
     }
@@ -455,6 +483,7 @@ export default function HrPayrollPage() {
               <EmptyState icon={Wallet} title={t('selectPayrun')} />
             ) : (
               <div className="space-y-3">
+                <PayrunStepper detail={detail} />
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-sm text-gray-600 dark:text-gray-300">
                     {t('cycle')}: {detail.payrun.cycle_start} → {detail.payrun.cycle_end}
@@ -528,6 +557,7 @@ export default function HrPayrollPage() {
                           <th className="px-3 py-2 text-right">{t('colGross')}</th>
                           <th className="px-3 py-2 text-right">{t('colSso')}</th>
                           <th className="px-3 py-2 text-right">{t('colTax')}</th>
+                          <th className="px-3 py-2 text-right">{t('colSv')}</th>
                           <th className="px-3 py-2 text-right">{t('colNet')}</th>
                           <th className="px-3 py-2" />
                         </tr>
@@ -535,10 +565,31 @@ export default function HrPayrollPage() {
                       <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                         {detail.payslips.map((s) => (
                           <tr key={s.id} className="bg-white dark:bg-gray-800">
-                            <td className="px-3 py-2 font-medium text-gray-900 dark:text-white">{s.name}</td>
+                            <td className="px-3 py-2">
+                              <button
+                                type="button"
+                                onClick={() => openSlip(s.id)}
+                                className="text-left font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+                                title={t('viewSlip')}
+                              >
+                                {s.name}
+                              </button>
+                            </td>
                             <td className="px-3 py-2 text-right tabular-nums">{formatBaht(s.gross_satang)}</td>
                             <td className="px-3 py-2 text-right tabular-nums text-gray-500">{formatBaht(s.sso_satang)}</td>
                             <td className="px-3 py-2 text-right tabular-nums text-gray-500">{formatBaht(s.tax_satang)}</td>
+                            <td className="px-3 py-2 text-right tabular-nums">
+                              {s.sc_net_satang > 0 || s.sv_deduct_satang > 0 ? (
+                                <>
+                                  <span className="text-violet-700 dark:text-violet-300">{formatBaht(s.sc_net_satang)}</span>
+                                  {s.sv_deduct_satang > 0 && (
+                                    <div className="text-[10px] text-red-500">{t('svDeducted', { amount: formatBaht(s.sv_deduct_satang) })}</div>
+                                  )}
+                                </>
+                              ) : (
+                                <span className="text-gray-300 dark:text-gray-600">—</span>
+                              )}
+                            </td>
                             <td className="px-3 py-2 text-right font-semibold tabular-nums text-gray-900 dark:text-white">{formatBaht(s.net_satang)}</td>
                             <td className="px-3 py-2">
                               <div className="flex justify-end gap-1">
@@ -566,6 +617,7 @@ export default function HrPayrollPage() {
                           <td className="px-3 py-2 text-right tabular-nums">{formatBaht(detail.totals.gross)}</td>
                           <td className="px-3 py-2 text-right tabular-nums text-gray-500">{formatBaht(detail.totals.sso)}</td>
                           <td className="px-3 py-2 text-right tabular-nums text-gray-500">{formatBaht(detail.totals.tax)}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-violet-700 dark:text-violet-300">{formatBaht(detail.totals.sc_net)}</td>
                           <td className="px-3 py-2 text-right tabular-nums">{formatBaht(detail.totals.net)}</td>
                           <td />
                         </tr>
@@ -789,6 +841,73 @@ export default function HrPayrollPage() {
             <PayslipFormPrint data={d} />
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// The 4-stage status flow for a payrun (owner ask 2026-07-10): cycle ended → totals computed →
+// sent to & confirmed by the accountant → finalized. Each stage is DERIVED from existing signals
+// (dates, payslip count, review-link state, status) — no new DB state. The finalize gate keys off
+// the same "accountant confirmed" signal shown here.
+function PayrunStepper({ detail }: { detail: PayrunDetail }) {
+  const t = useTranslations('hr.payroll');
+  const today = new Date().toISOString().slice(0, 10);
+  const cycleEnded = today >= detail.payrun.cycle_end;
+  const hasSlips = detail.payslips.length > 0;
+  const review = detail.review;
+  const sent = !!review;
+  const confirmed = !!review?.confirmed_at;
+  const finalized = detail.payrun.status === 'finalized';
+
+  const steps: { key: string; label: string; done: boolean; at: string | null; sub?: string }[] = [
+    { key: 'cycle', label: t('stepCycle'), done: cycleEnded, at: detail.payrun.cycle_end, sub: cycleEnded ? undefined : t('stepCyclePending') },
+    { key: 'totals', label: t('stepTotals'), done: hasSlips, at: null, sub: hasSlips ? t('stepTotalsDone', { n: detail.payslips.length }) : t('stepTotalsPending') },
+    {
+      key: 'accountant',
+      label: t('stepAccountant'),
+      done: confirmed,
+      at: review?.confirmed_at ?? null,
+      sub: confirmed ? t('stepAccConfirmed') : review?.saved_at ? t('stepAccSaved') : review?.accessed_at ? t('stepAccOpened') : sent ? t('stepAccSent') : t('stepAccNotSent'),
+    },
+    { key: 'finalized', label: t('stepFinalized'), done: finalized, at: detail.payrun.finalized_at ?? null, sub: finalized ? undefined : t('stepFinalizedPending') },
+  ];
+  const currentIndex = steps.findIndex((s) => !s.done);
+
+  return (
+    <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+      <div className="flex min-w-[34rem] items-stretch">
+        {steps.map((s, i) => {
+          const state = s.done ? 'done' : i === currentIndex ? 'current' : 'pending';
+          return (
+            <div key={s.key} className="flex flex-1 items-center">
+              <div className="flex flex-1 items-start gap-2">
+                <span
+                  className={cn(
+                    'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold',
+                    state === 'done'
+                      ? 'bg-emerald-500 text-white'
+                      : state === 'current'
+                        ? 'bg-indigo-500 text-white ring-4 ring-indigo-100 dark:ring-indigo-900/40'
+                        : 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
+                  )}
+                >
+                  {state === 'done' ? <CheckCircle2 className="h-4 w-4" /> : i + 1}
+                </span>
+                <div className="min-w-0">
+                  <p className={cn('text-xs font-semibold leading-tight', state === 'pending' ? 'text-gray-400 dark:text-gray-500' : 'text-gray-800 dark:text-gray-100')}>
+                    {s.label}
+                  </p>
+                  {s.sub && <p className="text-[10px] leading-tight text-gray-500 dark:text-gray-400">{s.sub}</p>}
+                  {s.done && s.at && <p className="text-[10px] leading-tight text-gray-400 dark:text-gray-500">{s.at.slice(0, 10)}</p>}
+                </div>
+              </div>
+              {i < steps.length - 1 && (
+                <ChevronRight className={cn('mx-1 h-4 w-4 shrink-0 self-center', s.done ? 'text-emerald-400' : 'text-gray-300 dark:text-gray-600')} />
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

@@ -40,7 +40,23 @@ export interface PayslipDetailData {
   tax_override?: { tax_satang: number; note: string | null; set_via: string; updated_at: string } | null;
   /** HR one-time bonus for this payrun (null = none) */
   bonus?: { amount_satang: number; label: string | null } | null;
+  /** Service Charge (SV) detail for the month: gross allocation + every deduction line (null = none). */
+  service_charge?: {
+    allocated_satang: number;
+    deducted_satang: number;
+    net_satang: number;
+    deductions: { source_type: string; label: string | null; amount_satang: number; carry_satang: number; note: string | null; auto: boolean }[];
+  } | null;
 }
+
+// SV deduction source → Thai label (a deduction usually carries its own `label`; this is the
+// fallback when it doesn't). Keeps the register's "หัก Sv" lines readable.
+const SV_SOURCE_TH: Record<string, string> = {
+  stock_penalty: 'ปรับสต๊อก',
+  carry: 'ยกยอดหักเดือนก่อน',
+  adhoc: 'หักเพิ่มเติม',
+  manual: 'หักด้วยมือ',
+};
 
 // Localized line-type labels; a standard type (salary/ot/sso/tax/…) is translated, while a
 // free-form label (an allowance name, a leave code) falls through to the stored text.
@@ -156,6 +172,36 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
         <span>{t('net')}</span>
         <span className="tabular-nums">{formatBaht(payslip.net_satang)} ฿</span>
       </div>
+
+      {/* Service Charge (SV) breakdown — how the SV net was derived (gross allocation minus each
+          deduction, e.g. stock penalties). Screen only; the printed slip stays clean. */}
+      {!print && data.service_charge && (data.service_charge.allocated_satang > 0 || data.service_charge.deductions.length > 0) && (
+        <div className="rounded-lg border border-violet-200 bg-violet-50/50 p-3 dark:border-violet-800 dark:bg-violet-900/10">
+          <h3 className="mb-1 text-sm font-semibold text-violet-700 dark:text-violet-300">{t('sc.title')}</h3>
+          <ul className="divide-y divide-violet-200/60 dark:divide-violet-800/60">
+            <li className="flex items-center justify-between py-1">
+              <span>{t('sc.allocated')}</span>
+              <span className="tabular-nums">{formatBaht(data.service_charge.allocated_satang)}</span>
+            </li>
+            {data.service_charge.deductions.map((d, i) => (
+              <li key={i} className="flex items-start justify-between gap-2 py-1">
+                <span className="min-w-0">
+                  {d.label || SV_SOURCE_TH[d.source_type] || d.source_type}
+                  {d.note ? <span className="text-gray-400"> · {d.note}</span> : null}
+                  {d.carry_satang > 0 ? (
+                    <span className="text-amber-600 dark:text-amber-400"> · {t('sc.carry', { amount: formatBaht(d.carry_satang) })}</span>
+                  ) : null}
+                </span>
+                <span className="shrink-0 tabular-nums text-red-600 dark:text-red-400">−{formatBaht(d.amount_satang)}</span>
+              </li>
+            ))}
+            <li className="flex items-center justify-between py-1 font-semibold">
+              <span>{t('sc.net')}</span>
+              <span className="tabular-nums text-violet-700 dark:text-violet-300">{formatBaht(data.service_charge.net_satang)}</span>
+            </li>
+          </ul>
+        </div>
+      )}
 
       {/* money actually lands in TWO transfers: SC/tip mid-month (15th), salary at month end */}
       {(() => {

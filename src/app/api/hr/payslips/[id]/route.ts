@@ -50,6 +50,47 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   const emp = empRes.data as { employee_code: string | null; full_name: string | null; bank_account_no: string | null } | null;
   const employeeName = emp?.full_name || profRes.data?.display_name || profRes.data?.username || '—';
   const nickname = profRes.data?.display_name && profRes.data.display_name !== employeeName ? profRes.data.display_name : null;
+
+  // Service Charge (SV) for this payrun's calendar month — the gross allocation, every deduction
+  // line (stock penalties, ad-hoc, carry, …), and the resulting net. This is the "หัก Sv" detail
+  // HR keeps in the Remark column of their register (owner ask 2026-07-10). SC pools are per store,
+  // so a multi-store employee's allocations are summed. Absent → null (no SV this month).
+  type SvLine = { source_type: string; label: string | null; amount_satang: number; carry_satang: number; note: string | null; auto: boolean };
+  let serviceCharge: { allocated_satang: number; deducted_satang: number; net_satang: number; deductions: SvLine[] } | null = null;
+  const pr = payrunRes.data as { period_year?: number; period_month?: number } | null;
+  if (pr?.period_year && pr?.period_month) {
+    const periodMonth = `${pr.period_year}-${String(pr.period_month).padStart(2, '0')}-01`;
+    const { data: allocs } = await service
+      .from('hr_sc_allocations')
+      .select('allocated_satang, pool:hr_sc_pools!inner(period_month), hr_sc_deductions(source_type, label, amount_satang, carry_satang, note, auto)')
+      .eq('user_id', slip.user_id)
+      .eq('pool.period_month', periodMonth);
+    const rows = (allocs ?? []) as unknown as {
+      allocated_satang: number;
+      hr_sc_deductions: SvLine[];
+    }[];
+    if (rows.length) {
+      let allocated = 0;
+      let deducted = 0;
+      const lines: SvLine[] = [];
+      for (const a of rows) {
+        allocated += Number(a.allocated_satang) || 0;
+        for (const d of a.hr_sc_deductions ?? []) {
+          deducted += Math.max(0, Number(d.amount_satang) || 0);
+          lines.push({
+            source_type: d.source_type,
+            label: d.label,
+            amount_satang: Number(d.amount_satang) || 0,
+            carry_satang: Number(d.carry_satang) || 0,
+            note: d.note,
+            auto: !!d.auto,
+          });
+        }
+      }
+      serviceCharge = { allocated_satang: allocated, deducted_satang: deducted, net_satang: Math.max(0, allocated - deducted), deductions: lines };
+    }
+  }
+
   return NextResponse.json({
     data: {
       payslip: {
@@ -66,6 +107,8 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       tax_override: ovrRes.data ?? null,
       // HR one-time bonus for this payrun (null = none)
       bonus: bonusRes.data ?? null,
+      // Service Charge (SV) detail for the month (null = none)
+      service_charge: serviceCharge,
     },
   });
 }

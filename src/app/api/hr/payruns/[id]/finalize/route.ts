@@ -7,7 +7,7 @@ import { announcePayrun } from '@/lib/hr/announce';
 
 // POST /api/hr/payruns/[id]/finalize — lock a draft payrun (§A: payrun locks after finalize;
 // editing requires reopen). HR only, atomic compare-and-set on status='draft' → 409 otherwise.
-export async function POST(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const service = createServiceClient();
 
@@ -30,6 +30,27 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
     return NextResponse.json({ error: 'Cannot finalize a payrun with no payslips' }, { status: 409 });
   }
 
+  // Accountant-confirmation gate (owner ask 2026-07-10): the accountant must have CONFIRMED the
+  // review link (i.e. entered the official tax) before the run can lock. HR may override this by
+  // supplying a reason — the override is recorded in the audit trail.
+  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  const overrideReason = typeof body.override_reason === 'string' ? body.override_reason.trim() : '';
+  const { data: link } = await service
+    .from('hr_payrun_review_links')
+    .select('confirmed_at')
+    .eq('payrun_id', id)
+    .is('revoked_at', null)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const accountantConfirmed = !!link?.confirmed_at;
+  if (!accountantConfirmed && !overrideReason) {
+    return NextResponse.json(
+      { error: 'Accountant has not confirmed the payrun', code: 'accountant_not_confirmed' },
+      { status: 409 }
+    );
+  }
+
   const { data: updated, error } = await service
     .from('hr_payruns')
     .update({ status: 'finalized', finalized_by: auth.userId, finalized_at: new Date().toISOString() })
@@ -43,7 +64,10 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
 
   await logHrAudit(service, {
     actorId: auth.userId, action: 'update', table: 'hr_payruns', recordId: id,
-    before: { status: 'draft' }, after: { status: 'finalized' }, reason: 'payrun finalized',
+    before: { status: 'draft' }, after: { status: 'finalized' },
+    reason: accountantConfirmed
+      ? 'payrun finalized (accountant confirmed)'
+      : `payrun finalized (HR override — accountant not confirmed): ${overrideReason}`,
   });
 
   // ⑤ immediate announce mode: push "เงินเดือนออกแล้ว" the moment the run locks (best-effort —
