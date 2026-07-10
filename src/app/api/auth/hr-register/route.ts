@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
     const like = `%${q}%`;
     let query = service
       .from('hr_pending_identities')
-      .select('id, full_name_th, full_name_en, position_text, bank_name, bank_account_no, store:stores(store_name)')
+      .select('id, full_name_th, full_name_en, position_text, company_id, bank_name, bank_account_no, store:stores(store_name)')
       .eq('status', 'unclaimed')
       .or(`full_name_th.ilike.${like},full_name_en.ilike.${like},bank_account_no.ilike.${like}`)
       .limit(15);

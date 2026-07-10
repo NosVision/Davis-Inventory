@@ -15,6 +15,7 @@ interface Identity {
   full_name_th: string | null;
   full_name_en: string | null;
   position_text: string | null;
+  company_id: string | null;
   bank_name: string | null;
   bank_account_no: string | null;
   store?: { store_name: string | null } | null;
@@ -125,9 +126,16 @@ export default function HrRegisterPage() {
     setFullName(it.full_name_th || it.full_name_en || '');
     setBankNo(it.bank_account_no || '');
     setBankName(it.bank_name || '');
+    // Prefill company (unless the link is company-scoped) + match the position by its text.
+    if (!ctx?.company_id && it.company_id) setCompanyId(it.company_id);
+    if (it.position_text) {
+      const want = it.position_text.trim().toLowerCase();
+      const match = ctx?.positions.find((p) => p.name.trim().toLowerCase() === want);
+      if (match) setPositionId(match.id);
+    }
     setResults([]);
     setQ('');
-  }, []);
+  }, [ctx]);
 
   const canSubmit = useMemo(() => {
     return (
