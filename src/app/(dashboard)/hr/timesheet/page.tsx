@@ -13,7 +13,7 @@ import {
   TimesheetSummaryTable,
   type TimesheetEmployee,
 } from './_components/timesheet-views';
-import { TimesheetEditModal, type EditTarget } from './_components/timesheet-edit-modal';
+import { TimesheetEditModal, type EditTarget, type LeaveTypeOption } from './_components/timesheet-edit-modal';
 import { AttendanceScoreCard } from '@/components/hr/attendance-score-card';
 import type { ScoreConfig } from '@/lib/hr/attendance-score';
 
@@ -57,6 +57,7 @@ export default function HrTimesheetPage() {
   const [from, setFrom] = useState<string>(initialRange.from);
   const [to, setTo] = useState<string>(initialRange.to);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [leaveTypes, setLeaveTypes] = useState<LeaveTypeOption[]>([]);
   const [scoreConfig, setScoreConfig] = useState<ScoreConfig | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
@@ -95,6 +96,7 @@ export default function HrTimesheetPage() {
       if (!res.ok) throw new Error('load failed');
       const j = await res.json();
       setEmployees((j.employees ?? []) as Employee[]);
+      setLeaveTypes((j.leave_types ?? []) as LeaveTypeOption[]);
       if (j.score_config) setScoreConfig(j.score_config as ScoreConfig);
     } catch {
       toast({ type: 'error', title: t('loadFailed') });
@@ -220,7 +222,7 @@ export default function HrTimesheetPage() {
       ) : view === 'blocks' ? (
         <TimesheetBlockGrid
           employees={filtered}
-          onPick={(emp, day) => setEditTarget({ userId: emp.user_id, name: emp.name, day })}
+          onPick={(emp, day) => setEditTarget({ userId: emp.user_id, name: emp.name, companyId: emp.company_id, day })}
         />
       ) : view === 'summary' ? (
         <TimesheetSummaryTable
@@ -242,7 +244,7 @@ export default function HrTimesheetPage() {
                 {hasData ? (
                   <DayTable
                     days={emp.days}
-                    onEditDay={(day) => setEditTarget({ userId: emp.user_id, name: emp.name, day })}
+                    onEditDay={(day) => setEditTarget({ userId: emp.user_id, name: emp.name, companyId: emp.company_id, day })}
                   />
                 ) : (
                   <p className="rounded-xl border border-dashed border-gray-200 px-4 py-6 text-center text-sm text-gray-400 dark:border-gray-700">
@@ -259,6 +261,7 @@ export default function HrTimesheetPage() {
         isOpen={!!editTarget}
         target={editTarget}
         storeId={storeId}
+        leaveTypes={leaveTypes}
         onClose={() => setEditTarget(null)}
         onSaved={() => {
           setEditTarget(null);

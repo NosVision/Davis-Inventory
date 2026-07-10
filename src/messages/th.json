@@ -3750,6 +3750,16 @@
       "saved": "บันทึกการแก้ไขแล้ว",
       "saveFailed": "บันทึกการแก้ไขไม่สำเร็จ",
       "cleared": "ล้างการแก้ไขแล้ว",
+      "leave": "ลา",
+      "editingLabel": "กำลังแก้ไข",
+      "statusLabel": "สถานะวัน",
+      "statusPresent": "มาทำงาน",
+      "statusAbsent": "ขาด",
+      "statusLeave": "ลา",
+      "leaveTypeLabel": "ชนิดการลา",
+      "selectLeaveType": "เลือกชนิดการลา",
+      "selectLeaveTypeRequired": "กรุณาเลือกชนิดการลา",
+      "noLeaveTypes": "พนักงานยังไม่ผูกบริษัท หรือยังไม่มีชนิดการลาที่ใช้ได้",
       "close": "ปิด"
     },
     "otRequests": {

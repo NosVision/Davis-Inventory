@@ -1,22 +1,38 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { useEffect, useMemo, useState } from 'react';
+import { useLocale, useTranslations } from 'next-intl';
+import { User } from 'lucide-react';
 import { Modal, ModalFooter, Input, Button, toast } from '@/components/ui';
+import { cn } from '@/lib/utils/cn';
 import type { DaySummary } from '@/components/hr/timesheet-parts';
+
+/** A leave type the HR user may assign from the day-edit modal. */
+export interface LeaveTypeOption {
+  id: string;
+  code: string;
+  name_th: string | null;
+  name_en: string | null;
+  company_id: string | null;
+}
 
 /** The day + employee an HR user chose to correct. */
 export interface EditTarget {
   userId: string;
   name: string;
+  companyId: string | null; // the employee's company — scopes the leave-type options
   day: DaySummary;
 }
+
+type DayStatusChoice = 'present' | 'absent' | 'leave';
 
 interface TimesheetEditModalProps {
   isOpen: boolean;
   target: EditTarget | null;
-  /** Currently-selected store filter — sent as store_id on the override. */
+  /** Currently-selected store filter — sent as store_id on the override / leave. */
   storeId: string;
+  /** Active leave types (from the timesheet payload); filtered to the employee's company here. */
+  leaveTypes: LeaveTypeOption[];
   onClose: () => void;
   /** Called after a successful save/clear so the page can refetch. */
   onSaved: () => void;
@@ -41,26 +57,40 @@ function minStrToMin(v: string): number | null {
 }
 
 /**
- * HR-only edit form for a single derived timesheet day (§J8 / P2.4b). Layers an override
- * over the derived metrics via PUT /api/hr/timesheet/override (a reason is mandatory); an
- * already-overridden day can be reverted with DELETE. The punches are never modified.
+ * HR-only edit form for a single derived timesheet day (§J8 / P2.4b). Beyond the raw metric
+ * override (worked/late/OT via PUT /api/hr/timesheet/override), HR sets the day's STATUS:
+ *   • present / absent → the `absent` flag on the override (a reason is mandatory).
+ *   • leave            → creates an approved single-day leave (POST /api/hr/leaves) so payroll
+ *                        "covers" the day instead of docking it as an unauthorised absence.
+ * Switching a leave day back to present/absent cancels the leave first. The employee name is
+ * shown prominently so HR knows whose backdated day they're editing (owner ask 2026-07-10).
  */
 export function TimesheetEditModal({
   isOpen,
   target,
   storeId,
+  leaveTypes,
   onClose,
   onSaved,
 }: TimesheetEditModalProps) {
   const t = useTranslations('hr.timesheet');
+  const isTh = useLocale() === 'th';
 
+  const [status, setStatus] = useState<DayStatusChoice>('present');
   const [worked, setWorked] = useState('');
   const [late, setLate] = useState('');
   const [ot, setOt] = useState('');
-  const [absent, setAbsent] = useState(false);
+  const [leaveTypeId, setLeaveTypeId] = useState('');
   const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
   const [clearing, setClearing] = useState(false);
+
+  // Leave types available to THIS employee: shared (null company) + their own company.
+  const availableTypes = useMemo(
+    () => leaveTypes.filter((lt) => lt.company_id === null || lt.company_id === target?.companyId),
+    [leaveTypes, target?.companyId]
+  );
+  const typeName = (lt: LeaveTypeOption) => (isTh ? lt.name_th : lt.name_en) || lt.code;
 
   // Seed the form from the derived/merged values each time a day is opened.
   useEffect(() => {
@@ -69,12 +99,29 @@ export function TimesheetEditModal({
     setWorked(minToHoursStr(d.worked_min));
     setLate(d.late_min == null ? '' : String(d.late_min));
     setOt(minToHoursStr(d.ot_min));
-    setAbsent(d.absent);
     setReason('');
-  }, [isOpen, target]);
+    if (d.leave) {
+      setStatus('leave');
+      const match = leaveTypes.find(
+        (lt) => lt.code === d.leave!.code && (lt.company_id === null || lt.company_id === target.companyId)
+      );
+      setLeaveTypeId(match?.id ?? '');
+    } else {
+      setStatus(d.absent ? 'absent' : 'present');
+      setLeaveTypeId('');
+    }
+  }, [isOpen, target, leaveTypes]);
 
   if (!target) return null;
   const busy = saving || clearing;
+  const existingLeaveId = target.day.leave?.id ?? null;
+  const existingLeaveCode = target.day.leave?.code ?? null;
+
+  const STATUS_OPTIONS: { key: DayStatusChoice; label: string; active: string }[] = [
+    { key: 'present', label: t('statusPresent'), active: 'bg-emerald-500 text-white ring-emerald-500' },
+    { key: 'absent', label: t('statusAbsent'), active: 'bg-red-500 text-white ring-red-500' },
+    { key: 'leave', label: t('statusLeave'), active: 'bg-violet-500 text-white ring-violet-500' },
+  ];
 
   const handleSave = async () => {
     const trimmed = reason.trim();
@@ -82,26 +129,72 @@ export function TimesheetEditModal({
       toast({ type: 'warning', title: t('reasonRequired') });
       return;
     }
+    if (status === 'leave' && !leaveTypeId) {
+      toast({ type: 'warning', title: t('selectLeaveTypeRequired') });
+      return;
+    }
     setSaving(true);
     try {
-      const res = await fetch('/api/hr/timesheet/override', {
-        method: 'PUT',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          user_id: target.userId,
-          business_date: target.day.business_date,
-          store_id: storeId || undefined,
-          worked_min: hoursStrToMin(worked),
-          late_min: minStrToMin(late),
-          ot_min: hoursStrToMin(ot),
-          absent,
-          reason: trimmed,
-        }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        toast({ type: 'error', title: t('saveFailed'), message: json?.error });
-        return;
+      if (status === 'leave') {
+        const selected = availableTypes.find((lt) => lt.id === leaveTypeId);
+        const sameAsExisting = !!existingLeaveId && !!selected && selected.code === existingLeaveCode;
+        if (!sameAsExisting) {
+          // Replace any existing leave (e.g. a type change) before creating the new one.
+          if (existingLeaveId) {
+            const del = await fetch(`/api/hr/leaves/${existingLeaveId}`, { method: 'DELETE' });
+            if (!del.ok) {
+              const j = (await del.json().catch(() => ({}))) as { error?: string };
+              toast({ type: 'error', title: t('saveFailed'), message: j?.error });
+              return;
+            }
+          }
+          const res = await fetch('/api/hr/leaves', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              user_id: target.userId,
+              store_id: storeId || undefined,
+              leave_type_id: leaveTypeId,
+              from_date: target.day.business_date,
+              to_date: target.day.business_date,
+              reason: trimmed,
+            }),
+          });
+          if (!res.ok) {
+            const j = (await res.json().catch(() => ({}))) as { error?: string };
+            toast({ type: 'error', title: t('saveFailed'), message: j?.error });
+            return;
+          }
+        }
+      } else {
+        // present / absent — drop any leave that used to cover the day, then write the override.
+        if (existingLeaveId) {
+          const del = await fetch(`/api/hr/leaves/${existingLeaveId}`, { method: 'DELETE' });
+          if (!del.ok) {
+            const j = (await del.json().catch(() => ({}))) as { error?: string };
+            toast({ type: 'error', title: t('saveFailed'), message: j?.error });
+            return;
+          }
+        }
+        const res = await fetch('/api/hr/timesheet/override', {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            user_id: target.userId,
+            business_date: target.day.business_date,
+            store_id: storeId || undefined,
+            worked_min: hoursStrToMin(worked),
+            late_min: minStrToMin(late),
+            ot_min: hoursStrToMin(ot),
+            absent: status === 'absent',
+            reason: trimmed,
+          }),
+        });
+        if (!res.ok) {
+          const j = (await res.json().catch(() => ({}))) as { error?: string };
+          toast({ type: 'error', title: t('saveFailed'), message: j?.error });
+          return;
+        }
       }
       toast({ type: 'success', title: t('saved') });
       onSaved();
@@ -119,9 +212,7 @@ export function TimesheetEditModal({
         user_id: target.userId,
         business_date: target.day.business_date,
       });
-      const res = await fetch(`/api/hr/timesheet/override?${qs.toString()}`, {
-        method: 'DELETE',
-      });
+      const res = await fetch(`/api/hr/timesheet/override?${qs.toString()}`, { method: 'DELETE' });
       const json = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
         toast({ type: 'error', title: t('saveFailed'), message: json?.error });
@@ -137,52 +228,99 @@ export function TimesheetEditModal({
   };
 
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      title={t('editDayTitle')}
-      description={`${target.name} · ${target.day.business_date}`}
-      size="md"
-    >
-      <div className="space-y-3">
-        <div className="grid grid-cols-2 gap-3">
-          <Input
-            label={t('worked')}
-            type="number"
-            inputMode="decimal"
-            min={0}
-            step={0.25}
-            value={worked}
-            onChange={(e) => setWorked(e.target.value)}
-          />
-          <Input
-            label={t('lateMin')}
-            type="number"
-            inputMode="numeric"
-            min={0}
-            step={1}
-            value={late}
-            onChange={(e) => setLate(e.target.value)}
-          />
-          <Input
-            label={t('ot')}
-            type="number"
-            inputMode="decimal"
-            min={0}
-            step={0.25}
-            value={ot}
-            onChange={(e) => setOt(e.target.value)}
-          />
-          <label className="flex items-center gap-2 self-end pb-2.5 text-sm text-gray-700 dark:text-gray-300">
-            <input
-              type="checkbox"
-              checked={absent}
-              onChange={(e) => setAbsent(e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800"
-            />
-            {t('absentToggle')}
-          </label>
+    <Modal isOpen={isOpen} onClose={onClose} title={t('editDayTitle')} size="md">
+      <div className="space-y-4">
+        {/* Whose day is being edited — prominent so backdated manual entries aren't mis-filed. */}
+        <div className="flex items-center gap-2.5 rounded-lg bg-indigo-50 px-3 py-2 dark:bg-indigo-900/20">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-300">
+            <User className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-gray-900 dark:text-white">{target.name}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {t('editingLabel')} · {target.day.business_date}
+            </p>
+          </div>
         </div>
+
+        {/* Day status: present / absent / leave */}
+        <div>
+          <p className="mb-1.5 text-xs font-medium text-gray-600 dark:text-gray-400">{t('statusLabel')}</p>
+          <div className="grid grid-cols-3 gap-1.5">
+            {STATUS_OPTIONS.map((o) => (
+              <button
+                key={o.key}
+                type="button"
+                onClick={() => setStatus(o.key)}
+                className={cn(
+                  'rounded-lg px-2 py-2 text-sm font-medium ring-1 transition-colors',
+                  status === o.key
+                    ? o.active
+                    : 'bg-gray-50 text-gray-600 ring-gray-200 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-300 dark:ring-gray-700 dark:hover:bg-gray-700'
+                )}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {status === 'leave' ? (
+          availableTypes.length === 0 ? (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+              {t('noLeaveTypes')}
+            </p>
+          ) : (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+                {t('leaveTypeLabel')}
+              </label>
+              <select
+                value={leaveTypeId}
+                onChange={(e) => setLeaveTypeId(e.target.value)}
+                className="control w-full"
+              >
+                <option value="">{t('selectLeaveType')}</option>
+                {availableTypes.map((lt) => (
+                  <option key={lt.id} value={lt.id}>
+                    {typeName(lt)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )
+        ) : (
+          <div className="grid grid-cols-3 gap-3">
+            <Input
+              label={t('worked')}
+              type="number"
+              inputMode="decimal"
+              min={0}
+              step={0.25}
+              value={worked}
+              onChange={(e) => setWorked(e.target.value)}
+            />
+            <Input
+              label={t('lateMin')}
+              type="number"
+              inputMode="numeric"
+              min={0}
+              step={1}
+              value={late}
+              onChange={(e) => setLate(e.target.value)}
+            />
+            <Input
+              label={t('ot')}
+              type="number"
+              inputMode="decimal"
+              min={0}
+              step={0.25}
+              value={ot}
+              onChange={(e) => setOt(e.target.value)}
+            />
+          </div>
+        )}
+
         <Input
           label={t('reason')}
           type="text"

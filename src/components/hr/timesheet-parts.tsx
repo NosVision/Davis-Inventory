@@ -7,11 +7,19 @@
  * Both callers use the `hr.timesheet` i18n namespace.
  */
 
-import { useTranslations } from 'next-intl';
+import { useTranslations, useLocale } from 'next-intl';
 import { Pencil } from 'lucide-react';
 import { Badge } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { formatTimeBangkok } from '@/lib/utils/date';
+
+/** An approved leave covering this day, surfaced so the UI shows "ลา (type)" not "ขาด". */
+export interface DayLeave {
+  id: string;
+  code: string;
+  name_th: string;
+  name_en: string;
+}
 
 export interface DaySummary {
   business_date: string;
@@ -28,6 +36,7 @@ export interface DaySummary {
   worked_on_day_off: boolean;
   overridden: boolean; // an HR override is layered over the derived metrics (§J8)
   override_reason: string | null; // the reason HR gave for the override
+  leave?: DayLeave | null; // an approved leave covering this day (owner ask 2026-07-10)
 }
 
 export interface TimesheetTotals {
@@ -55,9 +64,9 @@ export function addDaysStr(dateStr: string, delta: number): string {
   return new Date(Date.UTC(y, m - 1, d + delta)).toISOString().slice(0, 10);
 }
 
-/** A day with no schedule, no day-off and no punches is empty noise — dim it. */
+/** A day with no schedule, no day-off, no punches and no leave is empty noise — dim it. */
 export function isEmptyDay(d: DaySummary): boolean {
-  return !d.scheduled && !d.is_day_off && !d.first_in && !d.last_out;
+  return !d.scheduled && !d.is_day_off && !d.first_in && !d.last_out && !d.leave;
 }
 
 // ---------------------------------------------------------------------------
@@ -90,8 +99,18 @@ export function SummaryChips({ totals }: { totals: TimesheetTotals }) {
 
 function StatusCell({ d }: { d: DaySummary }) {
   const t = useTranslations('hr.timesheet');
+  const isTh = useLocale() === 'th';
   const badges: React.ReactNode[] = [];
 
+  // An approved leave takes precedence over the absent/day-off badges.
+  if (d.leave) {
+    const name = isTh ? d.leave.name_th : d.leave.name_en;
+    badges.push(
+      <Badge key="leave" variant="info" size="sm" className="bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">
+        {t('leave')}{name ? ` · ${name}` : ''}
+      </Badge>
+    );
+  }
   if (d.worked_on_day_off) {
     badges.push(
       <Badge key="wod" variant="info" size="sm">

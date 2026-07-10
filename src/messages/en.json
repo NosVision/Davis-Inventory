@@ -3749,6 +3749,16 @@
       "saved": "Override saved",
       "saveFailed": "Failed to save override",
       "cleared": "Override cleared",
+      "leave": "Leave",
+      "editingLabel": "Editing",
+      "statusLabel": "Day status",
+      "statusPresent": "Present",
+      "statusAbsent": "Absent",
+      "statusLeave": "Leave",
+      "leaveTypeLabel": "Leave type",
+      "selectLeaveType": "Select leave type",
+      "selectLeaveTypeRequired": "Please select a leave type",
+      "noLeaveTypes": "Employee has no company linked, or no available leave types",
       "close": "Close"
     },
     "otRequests": {

@@ -41,6 +41,7 @@ interface AttendanceRow {
 }
 interface EmployeeRow {
   profile_id: string;
+  company_id: string | null;
   work_hours_per_day: number | null;
   ot_eligible: boolean | null;
   status: string | null;
@@ -49,6 +50,20 @@ interface ProfileRow {
   id: string;
   username: string | null;
   display_name: string | null;
+}
+interface LeaveRow {
+  id: string;
+  user_id: string;
+  from_date: string;
+  to_date: string;
+  leave_type: { code: string; name_th: string | null; name_en: string | null } | null;
+}
+/** The leave that covers a timesheet day, surfaced so the UI shows "ลา (type)" not "ขาด". */
+export interface DayLeave {
+  id: string;
+  code: string;
+  name_th: string;
+  name_en: string;
 }
 
 function isCalendarDate(d: string): boolean {
@@ -108,11 +123,11 @@ export async function GET(request: NextRequest) {
   }
   if (userIds.length === 0) return NextResponse.json({ employees: [], from, to });
 
-  const [profilesRes, employeesRes, scheduleRes, attendanceRes, overridesRes] = await Promise.all([
+  const [profilesRes, employeesRes, scheduleRes, attendanceRes, overridesRes, leavesRes] = await Promise.all([
     service.from('profiles').select('id, username, display_name').in('id', userIds),
     service
       .from('hr_employees')
-      .select('profile_id, work_hours_per_day, ot_eligible, status')
+      .select('profile_id, company_id, work_hours_per_day, ot_eligible, status')
       .in('profile_id', userIds),
     service
       .from('hr_schedule')
@@ -133,13 +148,23 @@ export async function GET(request: NextRequest) {
       .in('user_id', userIds)
       .gte('business_date', from)
       .lte('business_date', to),
+    // Approved leaves overlapping the window → overlay each covered day as "ลา (type)" so a
+    // scheduled-but-not-punched day on approved leave reads as leave, not absent (owner ask).
+    service
+      .from('hr_leaves')
+      .select('id, user_id, from_date, to_date, leave_type:hr_leave_types(code, name_th, name_en)')
+      .in('user_id', userIds)
+      .eq('status', 'approved')
+      .lte('from_date', to)
+      .gte('to_date', from),
   ]);
   if (
     profilesRes.error ||
     employeesRes.error ||
     scheduleRes.error ||
     attendanceRes.error ||
-    overridesRes.error
+    overridesRes.error ||
+    leavesRes.error
   ) {
     return NextResponse.json({ error: 'Failed to load timesheet data' }, { status: 500 });
   }
@@ -149,6 +174,21 @@ export async function GET(request: NextRequest) {
   const schedule = (scheduleRes.data ?? []) as unknown as ScheduleCell[];
   const attendance = (attendanceRes.data ?? []) as AttendanceRow[];
   const overrides = (overridesRes.data ?? []) as OverrideRow[];
+  const leaves = (leavesRes.data ?? []) as unknown as LeaveRow[];
+
+  // Map (user|date) → the covering leave, for each day within the leave's inclusive span.
+  const leaveByCell = new Map<string, DayLeave>();
+  for (const lv of leaves) {
+    const info: DayLeave = {
+      id: lv.id,
+      code: lv.leave_type?.code ?? 'leave',
+      name_th: lv.leave_type?.name_th ?? lv.leave_type?.code ?? 'ลา',
+      name_en: lv.leave_type?.name_en ?? lv.leave_type?.code ?? 'Leave',
+    };
+    for (const d of dates) {
+      if (d >= lv.from_date && d <= lv.to_date) leaveByCell.set(`${lv.user_id}|${d}`, info);
+    }
+  }
   const overrideByCell = new Map<string, TimesheetOverride>(
     overrides.map((o) => [
       `${o.user_id}|${o.business_date}`,
@@ -180,7 +220,7 @@ export async function GET(request: NextRequest) {
       const e = empById.get(uid);
       const workHours = e?.work_hours_per_day ?? DEFAULT_WORK_HOURS;
       const otEligible = e?.ot_eligible ?? false;
-      const days: DaySummary[] = dates.map((date) => {
+      const days: (DaySummary & { leave: DayLeave | null })[] = dates.map((date) => {
         const cell = schedByCell.get(`${uid}|${date}`);
         const derived = computeDaySummary({
           businessDate: date,
@@ -191,11 +231,16 @@ export async function GET(request: NextRequest) {
           workHoursPerDay: workHours,
           otEligible,
         });
-        return applyOverride(derived, overrideByCell.get(`${uid}|${date}`));
+        const merged = applyOverride(derived, overrideByCell.get(`${uid}|${date}`));
+        const leave = leaveByCell.get(`${uid}|${date}`) ?? null;
+        // A covered leave day is not an "absence" — it reads as leave and drops out of the
+        // absent tally (payroll reconciles leave-vs-absent on its own path).
+        return leave ? { ...merged, absent: false, leave } : { ...merged, leave: null };
       });
       return {
         user_id: uid,
         name: p?.display_name || p?.username || '—',
+        company_id: e?.company_id ?? null,
         work_hours_per_day: workHours,
         ot_eligible: otEligible,
         days,
@@ -204,6 +249,16 @@ export async function GET(request: NextRequest) {
     })
     .sort((a, b) => a.name.localeCompare(b.name));
 
+  // Active leave types (for the HR day-edit "mark as leave" picker). Returned in the payload so
+  // the modal needs no extra fetch — and store-scoped managers (who lack the company-wide
+  // can_manage_hr the /leave-types route requires) still get them. Client filters by company.
+  const { data: leaveTypesData } = await service
+    .from('hr_leave_types')
+    .select('id, code, name_th, name_en, company_id')
+    .eq('active', true)
+    .order('sort_order', { ascending: true });
+  const leaveTypes = leaveTypesData ?? [];
+
   const scoreConfig = (await getHrPolicies(service)).work_index;
-  return NextResponse.json({ employees: staff, from, to, score_config: scoreConfig });
+  return NextResponse.json({ employees: staff, from, to, score_config: scoreConfig, leave_types: leaveTypes });
 }
