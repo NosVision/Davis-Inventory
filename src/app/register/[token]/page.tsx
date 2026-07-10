@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { Loader2, Check, X, Search, UserPlus, ShieldQuestion } from 'lucide-react';
 
 interface Ctx {
@@ -29,6 +29,7 @@ const label = 'mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300';
 export default function HrRegisterPage() {
   const params = useParams<{ token: string }>();
   const token = params?.token ?? '';
+  const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [ctx, setCtx] = useState<Ctx | null>(null);
@@ -123,6 +124,14 @@ export default function HrRegisterPage() {
     }, 350);
     return () => { if (qTimer.current) clearTimeout(qTimer.current); };
   }, [q, mode, token]);
+
+  // After success, send them to the login page automatically (they log in with their new/existing
+  // credentials). The manual button stays as a fallback.
+  useEffect(() => {
+    if (!done) return;
+    const timer = setTimeout(() => router.push('/login'), 2500);
+    return () => clearTimeout(timer);
+  }, [done, router]);
 
   const pickIdentity = useCallback((it: Identity) => {
     // Already registered? Warn instead of letting them re-register.
@@ -277,6 +286,7 @@ export default function HrRegisterPage() {
           <a href="/login" className="mt-5 inline-block rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700">
             เข้าสู่ระบบ
           </a>
+          <p className="mt-2 text-[11px] text-gray-400">กำลังพาไปหน้าเข้าสู่ระบบ…</p>
         </div>
       </div>
     );
