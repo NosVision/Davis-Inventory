@@ -1,0 +1,349 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useParams } from 'next/navigation';
+import { Loader2, Check, X, Search, UserPlus, ShieldQuestion } from 'lucide-react';
+
+interface Ctx {
+  company_id: string | null;
+  company_name: string | null;
+  companies: { id: string; name: string }[];
+  positions: { id: string; name: string }[];
+}
+interface Identity {
+  id: string;
+  full_name_th: string | null;
+  full_name_en: string | null;
+  position_text: string | null;
+  bank_name: string | null;
+  bank_account_no: string | null;
+  store?: { store_name: string | null } | null;
+}
+
+const input =
+  'w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white';
+const label = 'mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300';
+
+export default function HrRegisterPage() {
+  const params = useParams<{ token: string }>();
+  const token = params?.token ?? '';
+
+  const [loading, setLoading] = useState(true);
+  const [ctx, setCtx] = useState<Ctx | null>(null);
+  const [invalid, setInvalid] = useState(false);
+
+  const [username, setUsername] = useState('');
+  const [uStatus, setUStatus] = useState<'idle' | 'checking' | 'ok' | 'taken' | 'invalid'>('idle');
+  const [password, setPassword] = useState('');
+  const [password2, setPassword2] = useState('');
+
+  const [mode, setMode] = useState<'search' | 'manual'>('search');
+  const [q, setQ] = useState('');
+  const [results, setResults] = useState<Identity[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [picked, setPicked] = useState<Identity | null>(null);
+
+  const [fullName, setFullName] = useState('');
+  const [bankNo, setBankNo] = useState('');
+  const [bankName, setBankName] = useState('');
+  const [companyId, setCompanyId] = useState('');
+  const [positionId, setPositionId] = useState('');
+
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  // Load link context (companies + positions), or mark the link invalid.
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`/api/auth/hr-register?token=${encodeURIComponent(token)}`);
+        if (!res.ok) { setInvalid(true); return; }
+        const j = await res.json();
+        setCtx(j.data as Ctx);
+        if (j.data?.company_id) setCompanyId(j.data.company_id);
+      } catch {
+        setInvalid(true);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [token]);
+
+  // Debounced username availability.
+  const uTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (uTimer.current) clearTimeout(uTimer.current);
+    const u = username.trim().toLowerCase();
+    if (!u) { setUStatus('idle'); return; }
+    if (u.length < 3 || !/^[a-z0-9_]+$/.test(u)) { setUStatus('invalid'); return; }
+    setUStatus('checking');
+    uTimer.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/auth/hr-register?token=${encodeURIComponent(token)}&action=check-username&username=${encodeURIComponent(u)}`);
+        const j = await res.json();
+        setUStatus(j.data?.available ? 'ok' : 'taken');
+      } catch {
+        setUStatus('idle');
+      }
+    }, 400);
+    return () => { if (uTimer.current) clearTimeout(uTimer.current); };
+  }, [username, token]);
+
+  // Debounced imported-identity search.
+  const qTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (mode !== 'search') return;
+    if (qTimer.current) clearTimeout(qTimer.current);
+    if (q.trim().length < 2) { setResults([]); return; }
+    setSearching(true);
+    qTimer.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/auth/hr-register?token=${encodeURIComponent(token)}&action=identities&q=${encodeURIComponent(q.trim())}`);
+        const j = await res.json();
+        setResults((j.data ?? []) as Identity[]);
+      } catch {
+        setResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 350);
+    return () => { if (qTimer.current) clearTimeout(qTimer.current); };
+  }, [q, mode, token]);
+
+  const pickIdentity = useCallback((it: Identity) => {
+    setPicked(it);
+    setFullName(it.full_name_th || it.full_name_en || '');
+    setBankNo(it.bank_account_no || '');
+    setBankName(it.bank_name || '');
+    setResults([]);
+    setQ('');
+  }, []);
+
+  const canSubmit = useMemo(() => {
+    return (
+      uStatus === 'ok' &&
+      password.length >= 6 &&
+      password === password2 &&
+      fullName.trim().length > 0 &&
+      !submitting
+    );
+  }, [uStatus, password, password2, fullName, submitting]);
+
+  const submit = async () => {
+    setError(null);
+    if (password !== password2) { setError('รหัสผ่านไม่ตรงกัน'); return; }
+    setSubmitting(true);
+    try {
+      const res = await fetch('/api/auth/hr-register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token,
+          username: username.trim().toLowerCase(),
+          password,
+          full_name: fullName.trim(),
+          bank_account_no: bankNo.trim() || undefined,
+          bank_name: bankName.trim() || undefined,
+          company_id: ctx?.company_id || companyId || undefined,
+          position_id: positionId || undefined,
+          pending_identity_id: picked?.id || undefined,
+        }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) { setError(typeof j.error === 'string' ? j.error : 'สมัครไม่สำเร็จ'); return; }
+      setDone(true);
+    } catch {
+      setError('เกิดข้อผิดพลาด กรุณาลองใหม่');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // ── Render states ──────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-900">
+        <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
+      </div>
+    );
+  }
+
+  if (invalid || !ctx) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4 dark:bg-gray-900">
+        <div className="max-w-sm rounded-2xl bg-white p-8 text-center shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+          <ShieldQuestion className="mx-auto h-12 w-12 text-gray-300 dark:text-gray-600" />
+          <h1 className="mt-3 text-lg font-bold text-gray-900 dark:text-white">ลิงก์ไม่ถูกต้อง</h1>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">ลิงก์สมัครนี้หมดอายุหรือถูกยกเลิกแล้ว กรุณาติดต่อ HR เพื่อขอลิงก์ใหม่</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (done) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4 dark:bg-gray-900">
+        <div className="max-w-sm rounded-2xl bg-white p-8 text-center shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30">
+            <Check className="h-7 w-7 text-emerald-600 dark:text-emerald-400" />
+          </div>
+          <h1 className="mt-3 text-lg font-bold text-gray-900 dark:text-white">สมัครสำเร็จ!</h1>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            บัญชีของคุณพร้อมใช้งานแล้ว เข้าสู่ระบบด้วยชื่อผู้ใช้ <b className="text-gray-800 dark:text-gray-200">{username.trim().toLowerCase()}</b> ได้เลย
+            <br />รอ HR กำหนดสิทธิ์/ตำแหน่งให้อีกครั้ง
+          </p>
+          <a href="/login" className="mt-5 inline-block rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700">
+            เข้าสู่ระบบ
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 px-4 py-8 dark:bg-gray-900">
+      <div className="mx-auto max-w-md space-y-5 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+        <div className="text-center">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-100 dark:bg-indigo-900/30">
+            <UserPlus className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
+          </div>
+          <h1 className="mt-2 text-xl font-bold text-gray-900 dark:text-white">สมัครพนักงาน</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            {ctx.company_name ? ctx.company_name : 'กรอกข้อมูลเพื่อสร้างบัญชีเข้าใช้งาน'}
+          </p>
+        </div>
+
+        {/* Username */}
+        <div>
+          <label className={label}>ชื่อผู้ใช้ (สำหรับเข้าสู่ระบบ)</label>
+          <div className="relative">
+            <input
+              className={input}
+              value={username}
+              onChange={(e) => setUsername(e.target.value.toLowerCase())}
+              placeholder="เช่น somchai.k"
+              autoCapitalize="none"
+              autoComplete="off"
+            />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2">
+              {uStatus === 'checking' && <Loader2 className="h-4 w-4 animate-spin text-gray-400" />}
+              {uStatus === 'ok' && <Check className="h-4 w-4 text-emerald-500" />}
+              {(uStatus === 'taken' || uStatus === 'invalid') && <X className="h-4 w-4 text-red-500" />}
+            </span>
+          </div>
+          {uStatus === 'taken' && <p className="mt-1 text-xs text-red-500">ชื่อนี้ถูกใช้แล้ว</p>}
+          {uStatus === 'invalid' && <p className="mt-1 text-xs text-red-500">ใช้ a-z, 0-9, _ อย่างน้อย 3 ตัว</p>}
+        </div>
+
+        {/* Password */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label className={label}>รหัสผ่าน</label>
+            <input type="password" className={input} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="6 ตัวขึ้นไป" autoComplete="new-password" />
+          </div>
+          <div>
+            <label className={label}>ยืนยันรหัสผ่าน</label>
+            <input type="password" className={input} value={password2} onChange={(e) => setPassword2(e.target.value)} autoComplete="new-password" />
+            {password2 && password !== password2 && <p className="mt-1 text-xs text-red-500">รหัสผ่านไม่ตรงกัน</p>}
+          </div>
+        </div>
+
+        {/* Identity: search imported OR manual */}
+        <div>
+          <div className="mb-1.5 flex items-center justify-between">
+            <label className={`${label} mb-0`}>ข้อมูลพนักงาน</label>
+            <div className="inline-flex rounded-lg bg-gray-100 p-0.5 text-xs dark:bg-gray-700">
+              <button type="button" onClick={() => setMode('search')} className={`rounded-md px-2 py-1 font-medium ${mode === 'search' ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-800 dark:text-indigo-300' : 'text-gray-500'}`}>ค้นหาชื่อ</button>
+              <button type="button" onClick={() => { setMode('manual'); setPicked(null); }} className={`rounded-md px-2 py-1 font-medium ${mode === 'manual' ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-800 dark:text-indigo-300' : 'text-gray-500'}`}>กรอกเอง</button>
+            </div>
+          </div>
+
+          {mode === 'search' && !picked && (
+            <div>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <input className={`${input} pl-9`} value={q} onChange={(e) => setQ(e.target.value)} placeholder="พิมพ์ชื่อจริง หรือเลขบัญชี" />
+              </div>
+              {searching && <p className="mt-1 text-xs text-gray-400">กำลังค้นหา…</p>}
+              {results.length > 0 && (
+                <ul className="mt-1 max-h-52 divide-y divide-gray-100 overflow-y-auto rounded-lg border border-gray-200 dark:divide-gray-700 dark:border-gray-700">
+                  {results.map((it) => (
+                    <li key={it.id}>
+                      <button type="button" onClick={() => pickIdentity(it)} className="flex w-full flex-col items-start px-3 py-2 text-left hover:bg-indigo-50 dark:hover:bg-indigo-900/20">
+                        <span className="text-sm font-medium text-gray-800 dark:text-gray-100">{it.full_name_th || it.full_name_en}</span>
+                        <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                          {[it.position_text, it.store?.store_name, it.bank_account_no ? `****${it.bank_account_no.slice(-4)}` : null].filter(Boolean).join(' · ')}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {q.trim().length >= 2 && !searching && results.length === 0 && (
+                <p className="mt-1 text-xs text-gray-400">ไม่พบชื่อ — กด &quot;กรอกเอง&quot; เพื่อระบุข้อมูลเอง</p>
+              )}
+            </div>
+          )}
+
+          {(mode === 'manual' || picked) && (
+            <div className="space-y-3">
+              {picked && (
+                <div className="flex items-center justify-between rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300">
+                  <span>เลือกจากข้อมูลนำเข้าแล้ว</span>
+                  <button type="button" onClick={() => { setPicked(null); setMode('search'); setFullName(''); setBankNo(''); setBankName(''); }} className="font-medium underline">เปลี่ยน</button>
+                </div>
+              )}
+              <div>
+                <label className={label}>ชื่อ-นามสกุล</label>
+                <input className={input} value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="เช่น นายสมชาย ใจดี" />
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className={label}>เลขบัญชีธนาคาร</label>
+                  <input className={input} value={bankNo} onChange={(e) => setBankNo(e.target.value)} inputMode="numeric" />
+                </div>
+                <div>
+                  <label className={label}>ธนาคาร</label>
+                  <input className={input} value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="เช่น BBL" />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Company (only if the link isn't company-scoped) + Position */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {!ctx.company_id && (
+            <div>
+              <label className={label}>บริษัท</label>
+              <select className={input} value={companyId} onChange={(e) => setCompanyId(e.target.value)}>
+                <option value="">— เลือก —</option>
+                {ctx.companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+          )}
+          <div>
+            <label className={label}>ตำแหน่ง</label>
+            <select className={input} value={positionId} onChange={(e) => setPositionId(e.target.value)}>
+              <option value="">— เลือก —</option>
+              {ctx.positions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</p>}
+
+        <button
+          type="button"
+          onClick={submit}
+          disabled={!canSubmit}
+          className="w-full rounded-lg bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {submitting ? 'กำลังสมัคร…' : 'สมัครและสร้างบัญชี'}
+        </button>
+        <p className="text-center text-[11px] text-gray-400">สมัครแล้วจะได้สิทธิ์ &quot;ยังไม่ระบุ&quot; รอ HR กำหนดตำแหน่ง/สิทธิ์ให้อีกครั้ง</p>
+      </div>
+    </div>
+  );
+}

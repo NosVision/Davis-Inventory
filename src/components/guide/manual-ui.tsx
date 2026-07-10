@@ -19,7 +19,7 @@ export function RoleTag({ role, label }: { role: UserRole; label?: string }) {
     cashier: 'Cashier',
     housekeeping_staff: 'House Keeping',
     boh_staff: 'BOH',
-    unspecified: 'Unspecified',
+    not_assign: 'Not Assigned',
   };
   return (
     <span

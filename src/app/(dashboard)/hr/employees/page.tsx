@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Plus, ArrowLeftRight, History, Printer, IdCard, Archive, UserRound } from 'lucide-react';
+import { Plus, ArrowLeftRight, History, Printer, IdCard, Archive, UserRound, Link2 } from 'lucide-react';
 import { Button, Select, Badge, PageHeader, StatusBadge, type StatusTone, toast } from '@/components/ui';
 import { DataTable, type Column } from '@/components/data/data-table';
 import { createClient } from '@/lib/supabase/client';
@@ -11,6 +11,7 @@ import { TransferModal } from './_components/transfer-modal';
 import { EmployeeHistoryModal } from './_components/employee-history-modal';
 import { EmployeePayHistoryModal } from './_components/employee-pay-history-modal';
 import { EmployeeDetailModal } from './_components/employee-detail-modal';
+import { RegistrationLinkModal } from './_components/registration-link-modal';
 
 interface Ref {
   id: string;
@@ -83,6 +84,7 @@ export default function EmployeesPage() {
   const [detailFor, setDetailFor] = useState<EmployeeRow | null>(null);
   const [printing, setPrinting] = useState(false);
   const [profilePrintId, setProfilePrintId] = useState<string | null>(null);
+  const [showRegLink, setShowRegLink] = useState(false);
 
   const printProfile = async (e: EmployeeRow) => {
     setProfilePrintId(e.id);
@@ -344,6 +346,10 @@ export default function EmployeesPage() {
         subtitle={`${t('subtitle')} · ${t('count', { count })}`}
         actions={
           <>
+            <Button variant="outline" type="button" onClick={() => setShowRegLink(true)}>
+              <Link2 className="h-4 w-4" />
+              {t('regLink')}
+            </Button>
             <Button
               variant="outline"
               type="button"
@@ -434,6 +440,8 @@ export default function EmployeesPage() {
       />
 
       <EmployeeDetailModal employee={detailFor} onClose={() => setDetailFor(null)} />
+
+      <RegistrationLinkModal isOpen={showRegLink} onClose={() => setShowRegLink(false)} />
     </div>
   );
 }

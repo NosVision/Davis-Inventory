@@ -122,7 +122,7 @@
     "cashier": "แคชเชียร์",
     "housekeeping_staff": "แม่บ้าน",
     "boh_staff": "พนักงานหลังร้าน (BOH)",
-    "unspecified": "ยังไม่ระบุ"
+    "not_assign": "ยังไม่ระบุ"
   },
   "nav": {
     "darkMode": "โหมดมืด",
@@ -4049,6 +4049,7 @@
       "history": {
         "action": "ประวัติการปรับ"
       },
+      "regLink": "ลิงก์สมัคร",
       "payHistory": {
         "action": "ประวัติเงินเดือน (นำเข้า)"
       },

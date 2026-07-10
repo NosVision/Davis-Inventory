@@ -110,7 +110,7 @@ interface SensitiveSnapshot {
   tax_id: string | null;
 }
 
-const ROLE_OPTIONS = ['staff', 'bar', 'head_bar', 'manager', 'technician', 'hq', 'accountant', 'hr', 'cashier', 'housekeeping_staff', 'boh_staff', 'unspecified'] as const;
+const ROLE_OPTIONS = ['staff', 'bar', 'head_bar', 'manager', 'technician', 'hq', 'accountant', 'hr', 'cashier', 'housekeeping_staff', 'boh_staff', 'not_assign'] as const;
 const DOC_SLOTS: DocumentType[] = ['id_card', 'signature', 'contract'];
 const TERMINAL_STATUSES = ['resigned', 'terminated'];
 

@@ -122,7 +122,7 @@
     "cashier": "Cashier",
     "housekeeping_staff": "House Keeping",
     "boh_staff": "BOH Staff",
-    "unspecified": "Unspecified"
+    "not_assign": "Not Assigned"
   },
   "nav": {
     "darkMode": "Dark mode",
@@ -4048,6 +4048,7 @@
       "history": {
         "action": "Change history"
       },
+      "regLink": "Registration link",
       "payHistory": {
         "action": "Pay history (imported)"
       },

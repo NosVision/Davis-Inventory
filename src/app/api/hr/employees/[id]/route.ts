@@ -24,7 +24,7 @@ const TERMINAL_STATUSES = ['resigned', 'terminated'];
 // Elevated (owner-equivalent) roles may only be granted by an owner caller.
 const ASSIGNABLE_ROLES = new Set([
   'staff', 'bar', 'head_bar', 'manager', 'technician', 'hq', 'accountant', 'hr',
-  'cashier', 'housekeeping_staff', 'boh_staff', 'unspecified',
+  'cashier', 'housekeeping_staff', 'boh_staff', 'not_assign',
 ]);
 const ELEVATED_ROLES = new Set(['accountant', 'manager', 'hq', 'hr']);
 
