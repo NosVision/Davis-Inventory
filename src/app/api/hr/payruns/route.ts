@@ -219,7 +219,11 @@ export async function POST(request: NextRequest) {
         .select('user_id, type, ts, business_date')
         .in('user_id', userIds)
         .gte('business_date', start)
-        .lte('business_date', end),
+        .lte('business_date', end)
+        // Exclude punches HR has rejected (out-of-geofence / VPN-suspect). Matches the HR
+        // timesheet, which never counts a rejected punch toward pay; NULL review_status
+        // (an ordinary un-flagged punch) is kept.
+        .or('review_status.is.null,review_status.neq.rejected'),
       service
         .from('hr_timesheet_overrides')
         .select('user_id, business_date, worked_min, late_min, ot_min, absent, reason')

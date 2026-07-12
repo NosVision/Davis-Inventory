@@ -319,8 +319,11 @@ export function computePayslip(input: PayrollInput): Payslip {
 
   // ── Statutory deductions ─────────────────────────────────────────────────
   // SSO = min(rate × sso_rate, ceiling × sso_rate); only when enrolled and not part-time.
+  // SS5% and SS3% are mutually exclusive — an employee is in ONE social-security system, never
+  // both (§4.2 real formula). tax_mode='withholding_3pct' models the SS3% group, so it must NOT
+  // also be charged the 5% SSO.
   let sso = 0;
-  if (emp.sso_enrolled && !partTime) {
+  if (emp.sso_enrolled && !partTime && emp.tax_mode !== 'withholding_3pct') {
     const raw = Math.round(emp.rate_satang * company.sso_rate);
     const cap = Math.round(company.sso_wage_ceiling_satang * company.sso_rate);
     sso = Math.min(raw, cap);
