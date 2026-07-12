@@ -409,7 +409,10 @@ export async function POST(request: NextRequest) {
           : dateRange(empStart, empEnd).length; // calendar days employed
     }
 
-    const workedDays = days.filter((d) => d.first_in).length;
+    // A worked day = a real punch OR an HR override that credits worked minutes (matching
+    // time-engine's sumDays). Counting only `first_in` underpaid pt_daily/pt_monthly staff for
+    // days HR back-filled via hr_timesheet_overrides without a punch.
+    const workedDays = days.filter((d) => d.first_in || (d.worked_min ?? 0) > 0).length;
     const ptHours = days.reduce((s, d) => s + (d.worked_min ?? 0), 0) / 60;
     const otMinutes = days.reduce((s, d) => s + d.ot_min, 0);
     const lateOccurrences = days.map((d) => d.late_min ?? 0).filter((m) => m > 0);
