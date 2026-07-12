@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManagerForStore } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
-import { newReviewToken, hashReviewToken, REVIEW_LINK_TTL_DAYS, normalizePasscode, DEFAULT_REVIEW_PASSCODE } from '@/lib/hr/review-link';
+import { newReviewToken, hashReviewToken, REVIEW_LINK_TTL_DAYS, normalizePasscode, newReviewPasscode } from '@/lib/hr/review-link';
 
 async function authForPayrun(service: ReturnType<typeof createServiceClient>, payrunId: string) {
   const { data: payrun } = await service.from('hr_payruns').select('id, store_id, status').eq('id', payrunId).maybeSingle();
@@ -28,8 +28,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     .is('revoked_at', null);
 
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-  // passcode: caller may set one; blank → default '1234'; malformed → 400
-  let passcode = DEFAULT_REVIEW_PASSCODE;
+  // passcode: caller may set one; blank → a fresh random 6-digit code (returned below); malformed → 400
+  let passcode = newReviewPasscode();
   if (body.passcode !== undefined && body.passcode !== null && body.passcode !== '') {
     const norm = normalizePasscode(body.passcode);
     if (!norm) return NextResponse.json({ error: 'passcode must be 4–12 letters/digits' }, { status: 400 });

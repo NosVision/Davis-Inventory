@@ -17,15 +17,16 @@ export async function GET(request: NextRequest) {
   const service = createServiceClient();
   const { data, error } = await service
     .from('hr_pending_identities')
-    .select('id, full_name_th, bank_name, bank_account_no, store:stores(store_name)')
+    .select('id, full_name_th, bank_account_no, store:stores(store_name)')
     .eq('status', 'unclaimed')
     .ilike('full_name_th', `%${q.replace(/[%_]/g, '')}%`)
     .order('full_name_th')
     .limit(12);
   if (error) return NextResponse.json({ error: 'Failed to search names' }, { status: 500 });
 
-  // Second-factor guide: when the row has a bank account the claim will demand the full number,
-  // so surface bank + LAST 4 DIGITS ONLY as the hint — the full number never leaves the server.
+  // Only reveal WHETHER a bank number will be required at claim time — never the bank name or
+  // last digits. Leaking those let any authenticated user enumerate payroll PII and narrow a
+  // brute-force of the claim's full-account second factor. The real person knows their own account.
   const rows = (data ?? []).map((r) => {
     const acct = (r.bank_account_no as string | null) ?? '';
     return {
@@ -33,8 +34,6 @@ export async function GET(request: NextRequest) {
       full_name_th: r.full_name_th as string,
       store_name: ((r.store as { store_name?: string } | null)?.store_name as string) ?? null,
       requires_bank_verify: acct.length >= 4,
-      bank_name: acct.length >= 4 ? ((r.bank_name as string | null) ?? null) : null,
-      bank_last4: acct.length >= 4 ? acct.slice(-4) : null,
     };
   });
   return NextResponse.json({ data: rows });

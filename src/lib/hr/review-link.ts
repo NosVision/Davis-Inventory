@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomInt } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 // Accountant review-link plumbing (owner plan 2026-07-06). The raw token is the entire
@@ -27,7 +27,11 @@ export interface ReviewLinkRow {
   passcode: string;
 }
 
-export const DEFAULT_REVIEW_PASSCODE = '1234';
+/** A fresh random 6-digit passcode, used when the HR user does not set their own.
+ *  (Replaces the old fixed '1234' default — it is returned to HR on link creation.) */
+export function newReviewPasscode(): string {
+  return String(randomInt(0, 1_000_000)).padStart(6, '0');
+}
 /** normalize a passcode input; valid = 4–12 chars, digits/letters only */
 export function normalizePasscode(raw: unknown): string | null {
   const s = String(raw ?? '').trim();

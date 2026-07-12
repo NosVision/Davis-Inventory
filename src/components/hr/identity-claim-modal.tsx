@@ -14,8 +14,6 @@ interface Option {
   full_name_th: string;
   store_name: string | null;
   requires_bank_verify?: boolean;
-  bank_name?: string | null;
-  bank_last4?: string | null;
 }
 
 const SNOOZE_KEY = 'hr-identity-snooze'; // Bangkok date string — re-prompt on the next day
@@ -201,9 +199,6 @@ export function IdentityClaimModal({ role }: { role: string }) {
           {chosen?.requires_bank_verify && (
             <div className="mt-3 rounded-xl border border-indigo-200 bg-indigo-50/60 p-3 dark:border-indigo-800 dark:bg-indigo-900/20">
               <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">{L.bankLabel}</p>
-              <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                {L.bankHintOf(chosen.bank_name ?? null, chosen.bank_last4 ?? '????')}
-              </p>
               <input
                 inputMode="numeric"
                 autoComplete="off"
