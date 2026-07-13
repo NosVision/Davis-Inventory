@@ -213,6 +213,35 @@ export async function POST(request: NextRequest) {
   const reviewStatus: 'pending' | null =
     !hasGps || inGeofence === false || isVpnSuspect ? 'pending' : null;
 
+  // Business-date bucket. Default = the 06:00-cutoff Bangkok business day. Overnight-shift fix: a
+  // closing punch (out / break_end) recorded AFTER 06:00 would land on the NEXT business date and
+  // orphan the whole night, while its matching opener sits unclosed on the previous date. If this
+  // employee has an un-closed opener on a recent earlier business date, adopt THAT date so the pair
+  // stays in one bucket (payroll/timesheet then reconcile the overnight shift correctly).
+  let businessDate = openBusinessDateBangkok();
+  if (type === 'out' || type === 'break_end') {
+    const openerType = type === 'out' ? 'in' : 'break_start';
+    const { data: opener } = await service
+      .from('hr_attendance')
+      .select('business_date')
+      .eq('user_id', user.id)
+      .eq('type', openerType)
+      .lt('business_date', businessDate)
+      .gte('ts', new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString())
+      .order('ts', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (opener?.business_date) {
+      const { count } = await service
+        .from('hr_attendance')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('type', type)
+        .eq('business_date', opener.business_date as string);
+      if (!count) businessDate = opener.business_date as string;
+    }
+  }
+
   const { data: inserted, error: insertErr } = await service
     .from('hr_attendance')
     .insert({
@@ -220,7 +249,7 @@ export async function POST(request: NextRequest) {
       store_id: storeId,
       type,
       ts,
-      business_date: openBusinessDateBangkok(),
+      business_date: businessDate,
       gps_lat: gpsLat,
       gps_lng: gpsLng,
       distance_m: distanceM,
