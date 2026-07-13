@@ -518,7 +518,7 @@ export async function POST(request: NextRequest) {
 
   // Persist per employee: payslip + earning/deduction lines; link approved claims.
   let created = 0;
-  for (const { emp, slip, claimIds } of assembled) {
+  for (const { emp, slip } of assembled) {
     const { data: ps, error: psErr } = await service
       .from('hr_payslips')
       .insert({
@@ -554,15 +554,11 @@ export async function POST(request: NextRequest) {
       );
       if (dedErr) return NextResponse.json({ error: 'Failed to persist payslip deduction lines' }, { status: 500 });
     }
-    // Mark approved claims paid via this payslip (link the claim earning).
-    if (claimIds.length) {
-      const claimEarn = slip.earnings.find((l) => l.type === 'claim');
-      await service
-        .from('hr_claims')
-        .update({ status: 'paid', paid_at: new Date().toISOString(), payslip_earning_id: claimEarn ? ps.id : null })
-        .in('id', claimIds)
-        .eq('status', 'approved');
-    }
+    // NOTE: approved claims are NOT marked paid here. A payrun POST always produces a DRAFT, and a
+    // draft can be regenerated or abandoned — marking claims 'paid' on generation permanently lost
+    // the reimbursement if the draft was discarded. Claims stay 'approved' (re-picked on every
+    // regenerate via the payslip_earning_id-null filter) and are marked paid at FINALIZE, keyed by
+    // the claim id carried in each claim earning's `ref`.
     created++;
   }
 

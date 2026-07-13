@@ -62,6 +62,25 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: 'Payrun not found or already finalized' }, { status: 409 });
   }
 
+  // Now — and only now, at finalize — mark the reimbursement claims carried by this payrun as paid.
+  // Each 'claim' earning stores its source claim id in `ref`; we flip those claims approved → paid
+  // and link them to the actual earning row. Doing this on the draft generate lost the claim if the
+  // draft was ever regenerated/abandoned.
+  const { data: claimEarns } = await service
+    .from('hr_payslip_earnings')
+    .select('id, ref, payslip:hr_payslips!inner(payrun_id)')
+    .eq('type', 'claim')
+    .eq('payslip.payrun_id', id);
+  const paidAt = new Date().toISOString();
+  for (const e of (claimEarns ?? []) as { id: string; ref: string | null }[]) {
+    if (!e.ref) continue;
+    await service
+      .from('hr_claims')
+      .update({ status: 'paid', paid_at: paidAt, payslip_earning_id: e.id })
+      .eq('id', e.ref)
+      .eq('status', 'approved');
+  }
+
   await logHrAudit(service, {
     actorId: auth.userId, action: 'update', table: 'hr_payruns', recordId: id,
     before: { status: 'draft' }, after: { status: 'finalized' },
