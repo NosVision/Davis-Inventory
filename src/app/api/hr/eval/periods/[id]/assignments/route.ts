@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import { isUniqueViolation } from '@/lib/hr/db-errors';
+import { notifyUser } from '@/lib/notifications/service';
 
 const ASSIGNMENTS = 'hr_eval_assignments';
 const SELECT =
@@ -54,11 +55,33 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const created = data as unknown as { id: string };
+  const created = data as unknown as {
+    id: string;
+    employee?: { display_name: string | null; username: string | null } | null;
+  };
   await logHrAudit(service, {
     actorId: auth.userId, action: 'create', table: ASSIGNMENTS, recordId: created.id,
     before: null, after: data, reason: 'evaluation assignment created',
   });
+
+  // Tell the evaluator they have a new person to evaluate (§Phase 4). Best-effort — a notification
+  // failure must never fail the assignment. Do not notify the actor if they assigned themselves.
+  if (evaluatorId !== auth.userId) {
+    const employeeName = created.employee?.display_name || created.employee?.username || 'พนักงาน';
+    try {
+      await notifyUser({
+        userId: evaluatorId,
+        storeId,
+        type: 'hr_eval_assigned',
+        title: 'ได้รับมอบหมายประเมินผล',
+        body: `คุณได้รับมอบหมายให้ประเมิน ${employeeName}`,
+        data: { period_id: id, url: '/me/evaluations' },
+      });
+    } catch (e) {
+      console.error('[eval/assignments] notify evaluator failed:', e);
+    }
+  }
+
   return NextResponse.json({ data }, { status: 201 });
 }
 
