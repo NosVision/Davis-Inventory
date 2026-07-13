@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
-import { BellRing, Loader2, Plus, Pencil, Save, Undo2, AlertTriangle } from 'lucide-react';
+import { Loader2, Plus, Pencil, Save, Undo2, AlertTriangle } from 'lucide-react';
 import { Button, Modal, ModalFooter, PageHeader, StatusBadge, type StatusTone, toast } from '@/components/ui';
 import { todayBangkok } from '@/lib/utils/date';
 import ScheduleFillTools, { type PatternSlot } from './ScheduleFillTools';
@@ -36,12 +36,6 @@ interface Entry {
   note: string | null;
 }
 type MonthStatus = 'empty' | 'draft' | 'submitted' | 'acknowledged' | 'mixed';
-interface PendingItem {
-  store_id: string;
-  store_name: string;
-  month: string;
-  count: number;
-}
 
 // The active "brush" painted onto cells and used by the bulk fill tools.
 type Brush = { kind: 'shift'; id: string } | { kind: 'off' } | { kind: 'clear' } | null;
@@ -89,7 +83,6 @@ export default function SchedulePage({
   const [entries, setEntries] = useState<Entry[]>([]);
   const [monthStatus, setMonthStatus] = useState<MonthStatus>('empty');
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<PendingItem[]>([]);
 
   // Draft (unsaved) edits + the paint brush + which employees the bulk tools act on.
   const [draft, setDraft] = useState<Map<string, DraftVal>>(new Map());
@@ -157,20 +150,6 @@ export default function SchedulePage({
     });
   }, [templates]);
 
-  // HR acknowledge inbox (unchanged).
-  const loadPending = useCallback(async () => {
-    try {
-      const res = await fetch('/api/hr/schedule/pending');
-      if (!res.ok) return setPending([]);
-      const j = await res.json();
-      setPending((j.data ?? []) as PendingItem[]);
-    } catch {
-      setPending([]);
-    }
-  }, []);
-  useEffect(() => {
-    loadPending();
-  }, [loadPending]);
 
   const days = useMemo(() => daysOfMonth(month), [month]);
   const tplById = useMemo(() => new Map(templates.map((x) => [x.id, x])), [templates]);
@@ -299,29 +278,23 @@ export default function SchedulePage({
     }
   }, [form, storeId, load, t]);
 
-  // --- publish actions ---
-  const runPublishAction = useCallback(
-    async (path: 'submit' | 'acknowledge', sid: string, m: string) => {
-      try {
-        const res = await fetch(`/api/hr/schedule/${path}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ store_id: sid, month: m }),
-        });
-        if (!res.ok) throw new Error();
-        toast({ type: 'success', title: path === 'submit' ? t('submittedToast') : t('acknowledgedToast') });
-        await loadPending();
-        if (sid === storeId && m === month) await load();
-      } catch {
-        toast({ type: 'error', title: t('actionFailed') });
-      }
-    },
-    [storeId, month, load, loadPending, t]
-  );
-  const doAction = useCallback(
-    (path: 'submit' | 'acknowledge') => runPublishAction(path, storeId, month),
-    [runPublishAction, storeId, month]
-  );
+  // --- publish ---
+  // HQ publishes the roster (draft → submitted); employees see it immediately. The HR "acknowledge"
+  // step was removed (owner: publishing is enough for now).
+  const publishRoster = useCallback(async () => {
+    try {
+      const res = await fetch('/api/hr/schedule/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ store_id: storeId, month }),
+      });
+      if (!res.ok) throw new Error();
+      toast({ type: 'success', title: t('submittedToast') });
+      await load();
+    } catch {
+      toast({ type: 'error', title: t('actionFailed') });
+    }
+  }, [storeId, month, load, t]);
 
   // Publishing is allowed even if some staff have no shift yet — but warn first (owner ask). An
   // "unassigned" employee has no shift AND no day-off anywhere this month.
@@ -331,8 +304,8 @@ export default function SchedulePage({
       setPublishWarn(unassigned);
       return;
     }
-    runPublishAction('submit', storeId, month);
-  }, [employees, days, effectiveCell, runPublishAction, storeId, month]);
+    publishRoster();
+  }, [employees, days, effectiveCell, publishRoster]);
 
   // Live per-employee balance from the EFFECTIVE (draft-aware) cells, so day-off counts update as
   // you edit — before saving.
@@ -407,32 +380,7 @@ export default function SchedulePage({
         }
       />
 
-      {/* HR acknowledge inbox */}
-      {pending.length > 0 && (
-        <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-800/60 dark:bg-amber-900/20">
-          <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-800 dark:text-amber-200">
-            <BellRing className="h-4 w-4" />
-            {t('pendingHeading')} ({pending.length})
-          </div>
-          <ul className="space-y-1.5">
-            {pending.map((p) => (
-              <li key={`${p.store_id}|${p.month}`} className="flex flex-wrap items-center gap-2 rounded-lg bg-white/70 px-2.5 py-1.5 text-sm dark:bg-gray-900/40">
-                <span className="font-medium text-gray-800 dark:text-gray-100">{p.store_name}</span>
-                <span className="tabular-nums text-gray-500 dark:text-gray-400">{p.month}</span>
-                <span className="text-xs text-gray-400">· {t('pendingCount', { count: p.count })}</span>
-                <div className="flex-1" />
-                <button type="button" onClick={() => { setStoreId(p.store_id); setMonth(p.month); }}
-                  className="rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700">
-                  {t('pendingOpen')}
-                </button>
-                <Button size="sm" onClick={() => runPublishAction('acknowledge', p.store_id, p.month)}>{t('acknowledge')}</Button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* status + publish actions (publish acts on SAVED cells → disabled while a draft is pending) */}
+      {/* status + publish (publish acts on SAVED cells → disabled while a draft is pending) */}
       <div className="flex flex-wrap items-center gap-2">
         <StatusBadge tone={statusTone[monthStatus]} label={`${t('statusLabel')}: ${statusText[monthStatus]}`} />
         {dirty > 0 && (
@@ -441,11 +389,8 @@ export default function SchedulePage({
           </span>
         )}
         <div className="flex-1" />
-        <Button size="sm" variant="outline" onClick={attemptSubmit} disabled={dirty > 0 || monthStatus === 'empty' || monthStatus === 'acknowledged'}>
+        <Button size="sm" onClick={attemptSubmit} disabled={dirty > 0 || monthStatus === 'empty'}>
           {t('submitToHr')}
-        </Button>
-        <Button size="sm" onClick={() => doAction('acknowledge')} disabled={dirty > 0 || (monthStatus !== 'submitted' && monthStatus !== 'mixed')}>
-          {t('acknowledge')}
         </Button>
       </div>
 
@@ -648,7 +593,7 @@ export default function SchedulePage({
             <p className="text-xs text-gray-400">{tt('เผยแพร่ต่อได้ และกลับมาแก้ไขภายหลังได้', 'You can publish anyway and come back to edit later')}</p>
             <ModalFooter className="px-0 pb-0">
               <Button variant="ghost" onClick={() => setPublishWarn(null)}>{tt('กลับไปแก้', 'Back to edit')}</Button>
-              <Button onClick={() => { setPublishWarn(null); runPublishAction('submit', storeId, month); }}>
+              <Button onClick={() => { setPublishWarn(null); publishRoster(); }}>
                 {tt('เผยแพร่ต่อไป', 'Publish anyway')}
               </Button>
             </ModalFooter>
