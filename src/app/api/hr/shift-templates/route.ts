@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireStoreManager } from '@/lib/hr/route-auth';
+import { requireScheduler } from '@/lib/hr/route-auth';
 
 const TABLE = 'hr_shift_templates';
 const SELECT = 'id, label, start_time, end_time, color, active';
@@ -9,7 +9,7 @@ const TIME_RE = /^\d{2}:\d{2}$/;
 // GET /api/hr/shift-templates?store_id — shift templates for one store (§C).
 export async function GET(request: NextRequest) {
   const storeId = request.nextUrl.searchParams.get('store_id') ?? '';
-  const auth = await requireStoreManager(storeId);
+  const auth = await requireScheduler();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const service = createServiceClient();
@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const storeId = typeof body.store_id === 'string' ? body.store_id : '';
-  const auth = await requireStoreManager(storeId);
+  const auth = await requireScheduler();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const label = typeof body.label === 'string' ? body.label.trim() : '';
@@ -71,7 +71,7 @@ export async function PUT(request: NextRequest) {
   if (rowErr) return NextResponse.json({ error: 'Failed to load shift template' }, { status: 500 });
   if (!row) return NextResponse.json({ error: 'Shift template not found' }, { status: 404 });
 
-  const auth = await requireStoreManager(row.store_id as string);
+  const auth = await requireScheduler();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const patch: Record<string, unknown> = {};
@@ -123,7 +123,7 @@ export async function DELETE(request: NextRequest) {
   if (rowErr) return NextResponse.json({ error: 'Failed to load shift template' }, { status: 500 });
   if (!row) return NextResponse.json({ error: 'Shift template not found' }, { status: 404 });
 
-  const auth = await requireStoreManager(row.store_id as string);
+  const auth = await requireScheduler();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const { error } = await service.from(TABLE).update({ active: false }).eq('id', id);

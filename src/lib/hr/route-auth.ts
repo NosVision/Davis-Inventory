@@ -95,6 +95,39 @@ export async function requireStoreManager(storeId: string): Promise<HrAuthResult
 }
 
 /**
+ * Auth for SCHEDULING (HQ model, §C). Company-wide (NOT store-scoped): the HQ scheduler role
+ * (`hq`) plus HR/owner (`canManageHr`). Under the HQ model, HQ builds and edits every store's
+ * roster; store managers do not edit here (they view via ESS, and shift changes go through the
+ * employee → HR swap-request flow). Used by the schedule + shift-template write routes.
+ */
+export async function requireScheduler(): Promise<HrAuthResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: 'Unauthorized', status: 401 };
+
+  const [profileRes, permsRes] = await Promise.all([
+    supabase.from('profiles').select('role').eq('id', user.id).single(),
+    supabase.from('user_permissions').select('permission').eq('user_id', user.id),
+  ]);
+  if (profileRes.error || permsRes.error) {
+    console.error('requireScheduler: auth lookup failed', {
+      profileErr: profileRes.error?.message,
+      permsErr: permsRes.error?.message,
+    });
+    return { ok: false, error: 'authorization check failed', status: 503 };
+  }
+
+  const role = (profileRes.data?.role as string) ?? '';
+  const permissions = (permsRes.data ?? []).map((p) => p.permission as string);
+  if (role === 'hq' || canManageHr({ role, permissions })) {
+    return { ok: true, userId: user.id, role };
+  }
+  return { ok: false, error: 'Forbidden — requires scheduling access (HQ / HR)', status: 403 };
+}
+
+/**
  * Per-store gate for a row that carries a nullable `store_id` (§P5.5). A company-wide row
  * (`store_id IS NULL`, e.g. a company-wide payrun) is full-HR only; a store-scoped row is
  * reachable by company-wide HR OR a manager scoped to that store. Keeps company-HR behaviour

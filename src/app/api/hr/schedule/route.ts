@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireStoreManager } from '@/lib/hr/route-auth';
+import { requireScheduler } from '@/lib/hr/route-auth';
 
 const MONTH_RE = /^\d{4}-\d{2}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -63,7 +63,7 @@ function shiftMinutes(start: string, end: string): number {
 export async function GET(request: NextRequest) {
   const sp = request.nextUrl.searchParams;
   const storeId = sp.get('store_id') ?? '';
-  const auth = await requireStoreManager(storeId);
+  const auth = await requireScheduler();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const month = sp.get('month') ?? '';
@@ -175,7 +175,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const storeId = typeof body.store_id === 'string' ? body.store_id : '';
-  const auth = await requireStoreManager(storeId);
+  const auth = await requireScheduler();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const userId = typeof body.user_id === 'string' ? body.user_id : '';
@@ -260,7 +260,7 @@ export async function DELETE(request: NextRequest) {
   if (rowErr) return NextResponse.json({ error: 'Failed to load assignment' }, { status: 500 });
   if (!row) return NextResponse.json({ error: 'Assignment not found' }, { status: 404 });
 
-  const auth = await requireStoreManager(row.store_id as string);
+  const auth = await requireScheduler();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const { error } = await service.from('hr_schedule').delete().eq('id', id);
