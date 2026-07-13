@@ -3,6 +3,14 @@ import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { notifyHrManagers } from '@/lib/hr/notify';
 import { logHrAudit } from '@/lib/hr/audit';
 
+// Throttle the bank-account second factor (§Phase 0A): the claim endpoint verifies a full bank
+// account number, so an unthrottled caller could brute-force / enumerate payroll bank numbers. After
+// this many failed verifications by one user within the window, lock further attempts. Counted from
+// the audit rows the mismatch path already writes — no extra table.
+const MAX_BANK_VERIFY_FAILS = 5;
+const BANK_VERIFY_WINDOW_MIN = 15;
+const BANK_VERIFY_FAIL_MARK = 'Identity claim blocked — bank account number mismatch';
+
 // POST /api/hr/ess/identity/claim { identity_id } — the employee says "this real name is me"
 // (owner flow 2026-07-05). Guards: caller must not already be a linked employee, must not have
 // another claim awaiting review (partial-unique backstop), and the name must still be unclaimed
@@ -26,6 +34,23 @@ export async function POST(request: NextRequest) {
   ]);
   if (emp) return NextResponse.json({ error: 'You are already linked as an employee' }, { status: 409 });
   if (open) return NextResponse.json({ error: 'You already have a claim awaiting review' }, { status: 409 });
+
+  // Lockout: too many recent failed bank-number verifications by this user → stop brute-force before
+  // any further probing (applies across all target identities, not per-identity).
+  const windowStart = new Date(Date.now() - BANK_VERIFY_WINDOW_MIN * 60_000).toISOString();
+  const { count: recentFails } = await service
+    .from('hr_audit_log')
+    .select('id', { count: 'exact', head: true })
+    .eq('actor_id', user.id)
+    .eq('table_name', 'hr_pending_identities')
+    .eq('reason', BANK_VERIFY_FAIL_MARK)
+    .gte('created_at', windowStart);
+  if ((recentFails ?? 0) >= MAX_BANK_VERIFY_FAILS) {
+    return NextResponse.json(
+      { error: 'ยืนยันเลขบัญชีผิดหลายครั้งเกินไป — กรุณารอสักครู่แล้วลองใหม่', locked_out: true },
+      { status: 429 }
+    );
+  }
 
   // Second factor (owner 2026-07-07): a row that carries a payroll bank account demands the FULL
   // account number back (the UI guides with bank + last 4). Only the real person knows their own
@@ -54,7 +79,7 @@ export async function POST(request: NextRequest) {
         recordId: identityId,
         before: null,
         after: { bank_verify: 'failed' },
-        reason: 'Identity claim blocked — bank account number mismatch',
+        reason: BANK_VERIFY_FAIL_MARK,
       });
       return NextResponse.json({ error: 'เลขบัญชีไม่ตรงกับข้อมูลในระบบ — ตรวจสอบสมุดบัญชีของคุณอีกครั้ง', need_bank_verify: true }, { status: 400 });
     }
