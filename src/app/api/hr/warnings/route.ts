@@ -95,10 +95,16 @@ export async function POST(request: NextRequest) {
   // the person is not (yet) a registered HR employee.
   const { data: emp } = await service
     .from('hr_employees')
-    .select('company_id')
+    .select('company_id, pay_type')
     .eq('profile_id', userId)
     .maybeSingle();
   const companyId = (emp?.company_id as string | undefined) ?? null;
+
+  // Part-time staff (hourly / daily / monthly PT) are not subject to disciplinary warnings
+  // (client rule: part-time = no ใบเตือน — and there is no Service Charge to deduct from).
+  if (emp && ['pt_hourly', 'pt_daily', 'pt_monthly'].includes(emp.pay_type as string)) {
+    return NextResponse.json({ error: 'พนักงาน Part-time ไม่มีใบเตือน', code: 'part_time_no_warning' }, { status: 409 });
+  }
 
   // Scope guard: a store manager passes requireStoreManager for THEIR store, but that
   // alone doesn't authorize warning an employee of a DIFFERENT store. When a store is
