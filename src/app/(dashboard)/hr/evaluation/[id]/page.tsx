@@ -4,9 +4,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useLocale } from 'next-intl';
-import { Loader2, Plus, Trash2, ArrowLeft, Calculator } from 'lucide-react';
+import { Loader2, Trash2, ArrowLeft, Calculator } from 'lucide-react';
 import { Button, EmptyState, PageHeader, SectionHeading, StatusBadge, type StatusTone, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
+import AssignWizard from './AssignWizard';
+import CriteriaEditor from './CriteriaEditor';
 
 // §G evaluation — period detail: manage evaluator↔employee assignments, compute results after
 // scoring, and review per-employee scores. Self-contained locale strings.
@@ -32,9 +34,6 @@ export default function EvalPeriodDetailPage() {
   const [results, setResults] = useState<Result[]>([]);
   const [employees, setEmployees] = useState<EmployeeOpt[]>([]);
   const [loading, setLoading] = useState(true);
-  const [evaluatorId, setEvaluatorId] = useState('');
-  const [employeeId, setEmployeeId] = useState('');
-  const [adding, setAdding] = useState(false);
   const [computing, setComputing] = useState(false);
   const [flatBaht, setFlatBaht] = useState('');
   const [perPctBaht, setPerPctBaht] = useState('');
@@ -72,23 +71,6 @@ export default function EvalPeriodDetailPage() {
   }, [id, L.loadFailed]);
 
   useEffect(() => { load(); }, [load]);
-
-  const addAssignment = async () => {
-    if (!evaluatorId || !employeeId) { toast({ type: 'warning', title: L.pickBoth }); return; }
-    setAdding(true);
-    try {
-      const res = await fetch(`/api/hr/eval/periods/${id}/assignments`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ evaluator_id: evaluatorId, employee_id: employeeId }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) { toast({ type: 'error', title: L.saveFailed, message: json?.error }); return; }
-      toast({ type: 'success', title: L.added });
-      setEvaluatorId(''); setEmployeeId('');
-      await load();
-    } finally { setAdding(false); }
-  };
 
   const removeAssignment = async (assignmentId: string) => {
     const res = await fetch(`/api/hr/eval/periods/${id}/assignments?assignment_id=${assignmentId}`, { method: 'DELETE' });
@@ -203,13 +185,17 @@ export default function EvalPeriodDetailPage() {
             }
           />
 
-          {/* assignments */}
+          {/* topics (criteria) — the "pick what to score on" step */}
+          <CriteriaEditor periodId={id} isTh={isTh} periodStatus={period.status} onChange={load} />
+
+          {/* assignments: guided per-branch wizard + the current assignment list */}
           <section className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
             <SectionHeading title={L.assignments} className="mb-3" />
+            <AssignWizard periodId={id} isTh={isTh} onDone={load} />
             {assignments.length === 0 ? (
-              <p className="text-sm text-gray-400">{L.noAssignments}</p>
+              <p className="mt-3 text-sm text-gray-400">{L.noAssignments}</p>
             ) : (
-              <ul className="mb-3 divide-y divide-gray-100 dark:divide-gray-700">
+              <ul className="mt-3 divide-y divide-gray-100 dark:divide-gray-700">
                 {assignments.map((a) => (
                   <li key={a.id} className="flex items-center justify-between gap-2 py-2 text-sm">
                     <span className="text-gray-900 dark:text-white">
@@ -225,21 +211,6 @@ export default function EvalPeriodDetailPage() {
                 ))}
               </ul>
             )}
-            <div className="flex flex-wrap items-end gap-2">
-              <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">{L.evaluator}
-                <select value={evaluatorId} onChange={(e) => setEvaluatorId(e.target.value)} className="control mt-1 w-44">
-                  <option value="">—</option>
-                  {employees.map((e) => (<option key={e.id} value={e.id}>{e.name}</option>))}
-                </select>
-              </label>
-              <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">{L.employee}
-                <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className="control mt-1 w-44">
-                  <option value="">—</option>
-                  {employees.map((e) => (<option key={e.id} value={e.id}>{e.name}</option>))}
-                </select>
-              </label>
-              <Button size="sm" type="button" onClick={addAssignment} isLoading={adding} icon={<Plus className="h-4 w-4" />}>{L.add}</Button>
-            </div>
           </section>
 
           {/* results */}
