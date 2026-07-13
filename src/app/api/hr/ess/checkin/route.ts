@@ -214,31 +214,62 @@ export async function POST(request: NextRequest) {
     !hasGps || inGeofence === false || isVpnSuspect ? 'pending' : null;
 
   // Business-date bucket. Default = the 06:00-cutoff Bangkok business day. Overnight-shift fix: a
-  // closing punch (out / break_end) recorded AFTER 06:00 would land on the NEXT business date and
-  // orphan the whole night, while its matching opener sits unclosed on the previous date. If this
-  // employee has an un-closed opener on a recent earlier business date, adopt THAT date so the pair
-  // stays in one bucket (payroll/timesheet then reconcile the overnight shift correctly).
+  // closing punch (out / break_end) recorded AFTER 06:00 lands on the NEXT business date and orphans
+  // the night, while its opener sits unclosed on the previous date. When there IS such an unclosed
+  // opener, decide whether this punch actually closes the previous night's shift by consulting the
+  // employee's SCHEDULED shift end_time (precise) — a punch within a short grace of the shift's end
+  // is a real close; a punch hours later is a forgotten check-out and is left for HR to correct.
+  const OVERNIGHT_GRACE_MS = 3 * 60 * 60 * 1000;
   let businessDate = openBusinessDateBangkok();
   if (type === 'out' || type === 'break_end') {
     const openerType = type === 'out' ? 'in' : 'break_start';
+    const prevD = new Date(`${businessDate}T00:00:00Z`);
+    prevD.setUTCDate(prevD.getUTCDate() - 1);
+    const prev = prevD.toISOString().slice(0, 10);
+
+    // An unclosed opener on the previous business date (the overnight shift's work_date)?
     const { data: opener } = await service
       .from('hr_attendance')
-      .select('business_date')
+      .select('id')
       .eq('user_id', user.id)
       .eq('type', openerType)
-      .lt('business_date', businessDate)
-      .gte('ts', new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString())
-      .order('ts', { ascending: false })
+      .eq('business_date', prev)
       .limit(1)
       .maybeSingle();
-    if (opener?.business_date) {
-      const { count } = await service
+    if (opener) {
+      const { count: closes } = await service
         .from('hr_attendance')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', user.id)
         .eq('type', type)
-        .eq('business_date', opener.business_date as string);
-      if (!count) businessDate = opener.business_date as string;
+        .eq('business_date', prev);
+      if (!closes) {
+        const { data: cell } = await service
+          .from('hr_schedule')
+          .select('shift:hr_shift_templates(start_time, end_time)')
+          .eq('user_id', user.id)
+          .eq('work_date', prev)
+          .maybeSingle();
+        const rawShift = cell?.shift;
+        const shift = (Array.isArray(rawShift) ? rawShift[0] : rawShift) as
+          | { start_time: string; end_time: string }
+          | null
+          | undefined;
+        const now = Date.now();
+        let adopt = false;
+        if (shift && shift.end_time < shift.start_time) {
+          // Overnight shift on `prev` ends at end_time on `businessDate` (today). Adopt when clocking
+          // out up to a short grace after that end; later than that is a forgotten check-out.
+          const endInstant = new Date(`${businessDate}T${shift.end_time}+07:00`).getTime();
+          adopt = now <= endInstant + OVERNIGHT_GRACE_MS;
+        } else if (!shift) {
+          // No scheduled shift to consult — only bridge the narrow gap just past the 06:00 cutoff
+          // (out before ~09:00 Bangkok); a forgotten check-out hours later is left for HR.
+          const cutoffInstant = new Date(`${businessDate}T06:00:00+07:00`).getTime();
+          adopt = now <= cutoffInstant + OVERNIGHT_GRACE_MS;
+        }
+        if (adopt) businessDate = prev;
+      }
     }
   }
 
