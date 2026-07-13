@@ -112,6 +112,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           type: 'hr_eval_assigned',
           title: 'ได้รับมอบหมายประเมินผล',
           body: `คุณได้รับมอบหมายให้ประเมิน ${n} คน`,
+          titleKey: 'notificationTemplates.evalAssigned.title',
+          bodyKey: 'notificationTemplates.evalAssigned.bodyMany',
+          params: { count: n },
           data: { period_id: id, url: '/me/evaluations' },
         }).catch((e) => console.error('[assignments/batch] notify failed:', e))
       )

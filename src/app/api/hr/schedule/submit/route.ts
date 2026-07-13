@@ -45,11 +45,15 @@ export async function POST(request: NextRequest) {
         .select('store_name')
         .eq('id', storeId)
         .maybeSingle();
+      const storeName = (store?.store_name as string) ?? '';
       await notifyHrManagers(service, {
         storeId,
         type: 'hr_schedule_published',
         title: 'ตารางกะเผยแพร่แล้ว — รอรับทราบ',
-        body: `เผยแพร่ตารางร้าน ${(store?.store_name as string) ?? ''} เดือน ${month} แล้ว — กรุณารับทราบ`,
+        body: `เผยแพร่ตารางร้าน ${storeName} เดือน ${month} แล้ว — กรุณารับทราบ`,
+        titleKey: 'notificationTemplates.schedulePublished.title',
+        bodyKey: 'notificationTemplates.schedulePublished.body',
+        msgParams: { store: storeName, month },
         data: { store_id: storeId, month, url: '/hr/schedule' },
         excludeUserId: auth.userId,
       });

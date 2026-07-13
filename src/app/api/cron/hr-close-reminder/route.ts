@@ -34,27 +34,33 @@ export async function GET(request: NextRequest) {
   // today's calendar date, so its day component is the Bangkok day-of-month.
   const dom = Number(openBusinessDateBangkok().slice(8, 10));
 
-  const reminders: { title: string; body: string }[] = [];
+  // `key` selects the notificationTemplates.closeReminder.<key> message for render-time i18n; the
+  // literal title/body remain the push text + fallback.
+  const reminders: { key: string; title: string; body: string }[] = [];
   if (dom === 10) {
     reminders.push({
+      key: 'evalCutoff',
       title: 'ตัดผลประเมินวันนี้',
       body: 'วันนี้วันที่ 10 — ปิดรับผลประเมินประจำเดือน ก่อนออก Service Charge วันที่ 15',
     });
   }
   if (dom === 13 || dom === 14) {
     reminders.push({
+      key: 'svClose',
       title: 'ถึงเวลาปิดกอง SV',
       body: 'ปิด + จัดสรรกอง Service Charge เดือนก่อนให้เสร็จภายในวันที่ 15 (ก่อนจ่าย SV)',
     });
   }
   if (dom === 26) {
     reminders.push({
+      key: 'payroll',
       title: 'ถึงเวลาทำเงินเดือน',
       body: 'เริ่มสร้างรอบเงินเดือน + ส่งลิงก์ให้บัญชีกรอกภาษี (ช่วงวันที่ 26–29)',
     });
   }
   if (dom === 30) {
     reminders.push({
+      key: 'finalize',
       title: 'ใกล้สิ้นเดือน — ปิดยอดเงินเดือน',
       body: 'ตรวจทาน + ปิดยอดเงินเดือน และเตรียมไฟล์โอนธนาคารให้เสร็จภายในสิ้นเดือน',
     });
@@ -70,6 +76,8 @@ export async function GET(request: NextRequest) {
       type: 'hr_close_reminder',
       title: r.title,
       body: r.body,
+      titleKey: `notificationTemplates.closeReminder.${r.key}.title`,
+      bodyKey: `notificationTemplates.closeReminder.${r.key}.body`,
       data: { url: '/hr/close', day: dom },
     }).catch(() => {});
   }

@@ -8,6 +8,7 @@ import { useNotifications } from '@/hooks/use-notifications';
 import { useNotificationStore } from '@/stores/notification-store';
 import { useAuthStore } from '@/stores/auth-store';
 import { resolveNotificationUrl } from '@/lib/notifications/resolve-url';
+import { localizeNotification, type NotifTranslate } from '@/lib/notifications/localize';
 import { isNotificationTypeVisibleToRole } from '@/lib/role-task-visibility';
 import { cn } from '@/lib/utils/cn';
 import { formatThaiDate } from '@/lib/utils/format';
@@ -79,6 +80,7 @@ function getNotificationIcon(
 export default function NotificationsPage() {
   const router = useRouter();
   const t = useTranslations('notificationsPage');
+  const tRoot = useTranslations();
   const { markRead, markAllRead } = useNotifications();
   const { notifications, unreadCount } = useNotificationStore();
   const role = useAuthStore((s) => s.user?.role) as UserRole | undefined;
@@ -152,6 +154,7 @@ export default function NotificationsPage() {
                 notif.type,
                 notif.data,
               );
+              const { title, body } = localizeNotification(tRoot as unknown as NotifTranslate, notif);
 
               return (
                 <button
@@ -181,11 +184,11 @@ export default function NotificationsPage() {
                           : 'font-medium text-gray-900 dark:text-white',
                       )}
                     >
-                      {notif.title}
+                      {title}
                     </p>
-                    {notif.body && (
+                    {body && (
                       <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                        {notif.body}
+                        {body}
                       </p>
                     )}
                     <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">

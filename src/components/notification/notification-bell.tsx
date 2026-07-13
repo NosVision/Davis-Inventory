@@ -6,9 +6,11 @@ import { cn } from '@/lib/utils/cn';
 import { useNotificationStore } from '@/stores/notification-store';
 import { formatThaiDateTime } from '@/lib/utils/format';
 import { useTranslations } from 'next-intl';
+import { localizeNotification, type NotifTranslate } from '@/lib/notifications/localize';
 
 export function NotificationBell() {
   const t = useTranslations('notificationBell');
+  const tRoot = useTranslations();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotificationStore();
@@ -68,7 +70,9 @@ export function NotificationBell() {
                 <p className="text-sm">{t('empty')}</p>
               </div>
             ) : (
-              notifications.slice(0, 20).map((notif) => (
+              notifications.slice(0, 20).map((notif) => {
+                const { title, body } = localizeNotification(tRoot as unknown as NotifTranslate, notif);
+                return (
                 <button
                   key={notif.id}
                   onClick={() => {
@@ -89,15 +93,15 @@ export function NotificationBell() {
                             : 'font-medium text-gray-900 dark:text-white'
                         )}
                       >
-                        {notif.title}
+                        {title}
                       </p>
                       {!notif.read && (
                         <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-indigo-500" />
                       )}
                     </div>
-                    {notif.body && (
+                    {body && (
                       <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400 line-clamp-2">
-                        {notif.body}
+                        {body}
                       </p>
                     )}
                     <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
@@ -105,7 +109,8 @@ export function NotificationBell() {
                     </p>
                   </div>
                 </button>
-              ))
+                );
+              })
             )}
           </div>
         </div>

@@ -331,6 +331,11 @@ export interface Notification {
   read: boolean;
   data: Record<string, unknown> | null;
   created_at: string;
+  /** Optional i18n keys + params — when present, rendered in the viewer's locale (see
+   *  localizeNotification); title/body remain the literal fallback (and the push/LINE text). */
+  title_key?: string | null;
+  body_key?: string | null;
+  params?: Record<string, unknown> | null;
 }
 
 export interface NotificationPreferences {

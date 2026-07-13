@@ -61,8 +61,15 @@ export interface NotifyUserParams {
   /** null = แจ้งเตือนระดับบริษัท/ทั้งเครือ (ไม่ผูกสาขา) — notifications.store_id is nullable */
   storeId: string | null;
   type: NotificationType;
+  /** Literal title/body. ALWAYS required: this is what push/LINE render (outside the app's i18n),
+   *  and the fallback for the in-app view. Write it in the operational default language (Thai). */
   title: string;
   body: string;
+  /** Optional next-intl message keys + params. When set, the in-app view renders these in the
+   *  VIEWER'S locale (see localizeNotification); title/body stay as the push text + fallback. */
+  titleKey?: string;
+  bodyKey?: string;
+  params?: Record<string, unknown>;
   data?: Record<string, unknown>;
   /** If provided, also send LINE push to this LINE userId */
   lineUserId?: string;
@@ -191,6 +198,9 @@ export async function notifyUser(params: NotifyUserParams): Promise<void> {
     type,
     title,
     body,
+    titleKey,
+    bodyKey,
+    params: msgParams,
     data,
     lineUserId,
     lineMessage,
@@ -209,6 +219,9 @@ export async function notifyUser(params: NotifyUserParams): Promise<void> {
       type,
       read: false,
       data: data || null,
+      title_key: titleKey ?? null,
+      body_key: bodyKey ?? null,
+      params: msgParams ?? null,
     });
 
     if (insertError) {

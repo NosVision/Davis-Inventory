@@ -290,6 +290,35 @@
     "hoursAgo": "{count} hr ago",
     "daysAgo": "{count} days ago"
   },
+  "notificationTemplates": {
+    "schedulePublished": {
+      "title": "Roster published — awaiting acknowledgment",
+      "body": "The {store} roster for {month} is published — please acknowledge"
+    },
+    "evalAssigned": {
+      "title": "You've been assigned to evaluate",
+      "bodyOne": "You've been assigned to evaluate {name}",
+      "bodyMany": "You've been assigned to evaluate {count} {count, plural, one {person} other {people}}"
+    },
+    "closeReminder": {
+      "evalCutoff": {
+        "title": "Evaluation cutoff is today",
+        "body": "It's the 10th — close this month's evaluations before Service Charge goes out on the 15th"
+      },
+      "svClose": {
+        "title": "Time to close the SV pool",
+        "body": "Close + allocate last month's Service Charge pool by the 15th (before SV is paid)"
+      },
+      "payroll": {
+        "title": "Time to run payroll",
+        "body": "Start generating payroll + send the accountant the tax link (26th–29th)"
+      },
+      "finalize": {
+        "title": "Month-end — finalize payroll",
+        "body": "Review + finalize payroll and prepare the bank transfer file before month end"
+      }
+    }
+  },
   "noStore": {
     "title": "No branches in the system",
     "description": "Please create your first branch to start using the system",

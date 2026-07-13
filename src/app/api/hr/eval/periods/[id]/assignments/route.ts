@@ -75,6 +75,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         type: 'hr_eval_assigned',
         title: 'ได้รับมอบหมายประเมินผล',
         body: `คุณได้รับมอบหมายให้ประเมิน ${employeeName}`,
+        titleKey: 'notificationTemplates.evalAssigned.title',
+        bodyKey: 'notificationTemplates.evalAssigned.bodyOne',
+        params: { name: employeeName },
         data: { period_id: id, url: '/me/evaluations' },
       });
     } catch (e) {

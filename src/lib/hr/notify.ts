@@ -12,6 +12,10 @@ export async function notifyHrManagers(
     type: NotificationType;
     title: string;
     body: string;
+    /** optional i18n keys + params — forwarded so the in-app view localizes per viewer */
+    titleKey?: string;
+    bodyKey?: string;
+    msgParams?: Record<string, unknown>;
     data?: Record<string, unknown>;
     /** don't notify this user (e.g. the actor themselves) */
     excludeUserId?: string;
@@ -36,6 +40,9 @@ export async function notifyHrManagers(
         type: params.type,
         title: params.title,
         body: params.body,
+        titleKey: params.titleKey,
+        bodyKey: params.bodyKey,
+        params: params.msgParams,
         data: params.data,
       })
     )

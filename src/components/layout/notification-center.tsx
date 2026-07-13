@@ -25,6 +25,7 @@ import { useNotificationStore } from '@/stores/notification-store';
 import { useAuthStore } from '@/stores/auth-store';
 import { isNotificationTypeVisibleToRole } from '@/lib/role-task-visibility';
 import { resolveNotificationUrl } from '@/lib/notifications/resolve-url';
+import { localizeNotification, type NotifTranslate } from '@/lib/notifications/localize';
 import type { UserRole } from '@/types/roles';
 import type { Notification } from '@/types/database';
 
@@ -235,6 +236,7 @@ export function NotificationCenter({ className }: NotificationCenterProps) {
                   notification.type,
                   notification.data
                 );
+                const { title, body } = localizeNotification(t as unknown as NotifTranslate, notification);
 
                 return (
                   <button
@@ -261,11 +263,11 @@ export function NotificationCenter({ className }: NotificationCenterProps) {
 
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-gray-900 dark:text-white">
-                        {notification.title}
+                        {title}
                       </p>
-                      {notification.body && (
+                      {body && (
                         <p className="mt-0.5 line-clamp-2 text-xs text-gray-500 dark:text-gray-400">
-                          {notification.body}
+                          {body}
                         </p>
                       )}
                       <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
