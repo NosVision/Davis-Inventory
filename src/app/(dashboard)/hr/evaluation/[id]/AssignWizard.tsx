@@ -1,12 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Loader2, Users } from 'lucide-react';
+import { Loader2, Users, Save, Trash2 } from 'lucide-react';
 import { Button, toast } from '@/components/ui';
 
 interface StoreOpt { id: string; store_name: string }
 interface PositionOpt { id: string; name: string }
 interface PersonOpt { id: string; name: string; position: string | null }
+interface TemplateOpt { id: string; name: string; pair_count: number }
 
 interface Props {
   periodId: string;
@@ -29,11 +30,13 @@ export default function AssignWizard({ periodId, isTh, onDone }: Props) {
     ? { heading: 'มอบหมายผู้ประเมิน (ต่อสาขา)', store: 'สาขา', pickStore: '— เลือกสาขา —', allPos: 'ทุกตำแหน่ง',
         evaluatees: 'ผู้ถูกประเมิน', evaluators: 'ผู้ประเมิน', filterPos: 'ตำแหน่ง', selectAll: 'เลือกทั้งหมด', clear: 'ล้าง',
         selected: 'เลือกแล้ว', none: 'ไม่มีพนักงานตามตัวกรอง', pickStoreFirst: 'เลือกสาขาก่อน',
-        assign: 'มอบหมาย', pairs: 'คู่', assigned: 'มอบหมายแล้ว', skipped: 'ข้าม (ซ้ำ)', pickBoth: 'เลือกผู้ประเมินและผู้ถูกประเมินอย่างน้อยกลุ่มละ 1 คน', failed: 'ทำรายการไม่สำเร็จ' }
+        assign: 'มอบหมาย', pairs: 'คู่', assigned: 'มอบหมายแล้ว', skipped: 'ข้าม (ซ้ำ)', pickBoth: 'เลือกผู้ประเมินและผู้ถูกประเมินอย่างน้อยกลุ่มละ 1 คน', failed: 'ทำรายการไม่สำเร็จ',
+        tpl: 'เทมเพลทสาขานี้', useTpl: 'ใช้เทมเพลท', pickTpl: '— เลือกเทมเพลท —', noTpl: 'ยังไม่มีเทมเพลท', saveTpl: 'บันทึกเป็นเทมเพลท', tplNamePh: 'ตั้งชื่อเทมเพลท', tplSaved: 'บันทึกเทมเพลทแล้ว', tplApplied: 'ดึงเทมเพลทมาใช้แล้ว', tplNameNeeded: 'ตั้งชื่อเทมเพลทก่อน', delTpl: 'ลบเทมเพลท', pairsForTpl: 'เลือกผู้ประเมิน+ผู้ถูกประเมินก่อนบันทึกเทมเพลท' }
     : { heading: 'Assign evaluators (per branch)', store: 'Branch', pickStore: '— pick a branch —', allPos: 'All positions',
         evaluatees: 'Evaluatees', evaluators: 'Evaluators', filterPos: 'Position', selectAll: 'Select all', clear: 'Clear',
         selected: 'selected', none: 'No staff match the filter', pickStoreFirst: 'Pick a branch first',
-        assign: 'Assign', pairs: 'pairs', assigned: 'Assigned', skipped: 'skipped (duplicates)', pickBoth: 'Pick at least one evaluator and one evaluatee', failed: 'Action failed' };
+        assign: 'Assign', pairs: 'pairs', assigned: 'Assigned', skipped: 'skipped (duplicates)', pickBoth: 'Pick at least one evaluator and one evaluatee', failed: 'Action failed',
+        tpl: 'Branch templates', useTpl: 'Apply template', pickTpl: '— pick a template —', noTpl: 'No templates yet', saveTpl: 'Save as template', tplNamePh: 'Template name', tplSaved: 'Template saved', tplApplied: 'Template applied', tplNameNeeded: 'Name the template first', delTpl: 'Delete template', pairsForTpl: 'Select evaluators + evaluatees before saving a template' };
 
   const [stores, setStores] = useState<StoreOpt[]>([]);
   const [positions, setPositions] = useState<PositionOpt[]>([]);
@@ -48,6 +51,11 @@ export default function AssignWizard({ periodId, isTh, onDone }: Props) {
   const [loadingTees, setLoadingTees] = useState(false);
   const [loadingTors, setLoadingTors] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  const [templates, setTemplates] = useState<TemplateOpt[]>([]);
+  const [tplId, setTplId] = useState('');
+  const [tplName, setTplName] = useState('');
+  const [tplBusy, setTplBusy] = useState(false);
 
   // Reference data: manageable stores + positions.
   useEffect(() => {
@@ -113,11 +121,81 @@ export default function AssignWizard({ periodId, isTh, onDone }: Props) {
     return () => { alive = false; };
   }, [storeId, torPos, fetchPeople]);
 
+  // Saved templates for the selected store.
+  const loadTemplates = useCallback(async () => {
+    if (!storeId) { setTemplates([]); setTplId(''); return; }
+    try {
+      const res = await fetch(`/api/hr/eval/templates?store_id=${storeId}`);
+      const list = res.ok ? (((await res.json()).data ?? []) as TemplateOpt[]) : [];
+      setTemplates(list);
+      setTplId((prev) => (list.some((t) => t.id === prev) ? prev : ''));
+    } catch {
+      setTemplates([]);
+    }
+  }, [storeId]);
+  useEffect(() => { loadTemplates(); }, [loadTemplates]);
+
   const pairCount = useMemo(() => {
     let n = 0;
     for (const tor of selTors) for (const tee of selTees) if (tor !== tee) n++;
     return n;
   }, [selTors, selTees]);
+
+  // The current selection as explicit pairs (for saving a template).
+  const selectedPairs = useMemo(() => {
+    const out: { evaluator_id: string; employee_id: string }[] = [];
+    for (const tor of selTors) for (const tee of selTees) if (tor !== tee) out.push({ evaluator_id: tor, employee_id: tee });
+    return out;
+  }, [selTors, selTees]);
+
+  const saveTemplate = async () => {
+    if (!tplName.trim()) { toast({ type: 'warning', title: L.tplNameNeeded }); return; }
+    if (selectedPairs.length === 0) { toast({ type: 'warning', title: L.pairsForTpl }); return; }
+    setTplBusy(true);
+    try {
+      const res = await fetch('/api/hr/eval/templates', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ store_id: storeId, name: tplName.trim(), pairs: selectedPairs }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) { toast({ type: 'error', title: L.failed, message: json?.error }); return; }
+      toast({ type: 'success', title: L.tplSaved });
+      setTplName('');
+      await loadTemplates();
+    } finally {
+      setTplBusy(false);
+    }
+  };
+
+  const applyTemplate = async () => {
+    if (!tplId) return;
+    setTplBusy(true);
+    try {
+      const res = await fetch(`/api/hr/eval/periods/${periodId}/assignments/batch`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ template_id: tplId }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string; data?: { created: number; skipped: number } };
+      if (!res.ok) { toast({ type: 'error', title: L.failed, message: json?.error }); return; }
+      toast({ type: 'success', title: `${L.tplApplied}: ${json.data?.created ?? 0}`, message: json.data?.skipped ? `${L.skipped}: ${json.data.skipped}` : undefined });
+      await onDone();
+    } finally {
+      setTplBusy(false);
+    }
+  };
+
+  const deleteTemplate = async () => {
+    if (!tplId) return;
+    setTplBusy(true);
+    try {
+      const res = await fetch(`/api/hr/eval/templates/${tplId}`, { method: 'DELETE' });
+      if (res.ok) await loadTemplates();
+    } finally {
+      setTplBusy(false);
+    }
+  };
 
   const submit = async () => {
     if (selTees.size === 0 || selTors.size === 0) { toast({ type: 'warning', title: L.pickBoth }); return; }
@@ -157,6 +235,27 @@ export default function AssignWizard({ periodId, isTh, onDone }: Props) {
         <p className="py-6 text-center text-sm text-gray-400">{L.pickStoreFirst}</p>
       ) : (
         <>
+          {/* reusable per-store templates: apply a saved matrix, or save the current selection */}
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-white/70 p-2 text-xs dark:border-gray-700 dark:bg-gray-800/50">
+            <span className="font-semibold text-gray-600 dark:text-gray-300">{L.tpl}:</span>
+            <select value={tplId} onChange={(e) => setTplId(e.target.value)} className="control h-8 py-0 text-xs" disabled={templates.length === 0}>
+              <option value="">{templates.length === 0 ? L.noTpl : L.pickTpl}</option>
+              {templates.map((tp) => (<option key={tp.id} value={tp.id}>{tp.name} ({tp.pair_count})</option>))}
+            </select>
+            <Button size="sm" variant="outline" type="button" onClick={applyTemplate} isLoading={tplBusy} disabled={!tplId}>{L.useTpl}</Button>
+            {tplId && (
+              <button type="button" onClick={deleteTemplate} aria-label={L.delTpl} title={L.delTpl}
+                className="rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20">
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            )}
+            <span className="mx-1 h-4 w-px bg-gray-200 dark:bg-gray-600" />
+            <input value={tplName} onChange={(e) => setTplName(e.target.value)} placeholder={L.tplNamePh}
+              className="control h-8 w-40 py-0 text-xs" />
+            <Button size="sm" variant="outline" type="button" onClick={saveTemplate} isLoading={tplBusy}
+              disabled={selectedPairs.length === 0} icon={<Save className="h-3.5 w-3.5" />}>{L.saveTpl}</Button>
+          </div>
+
           <div className="grid gap-3 sm:grid-cols-2">
             <PickColumn label={L.evaluatees} people={evaluatees} loading={loadingTees} selected={selTees} setSelected={setSelTees}
               posId={teePos} setPosId={setTeePos} positions={positions} L={L} />
