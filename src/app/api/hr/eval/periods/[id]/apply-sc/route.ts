@@ -32,11 +32,15 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
   if (pErr) return NextResponse.json({ error: pErr.message }, { status: 500 });
   if (!period) return NextResponse.json({ error: 'Period not found' }, { status: 404 });
 
-  // Negative payouts (deductions) with their employee, via the joined result.
+  // APPROVED negative payouts (deductions) only — symmetric with the positive side (payrun applies
+  // only status='approved' eval bonuses). Applying draft/void/superseded negatives would dock SC on
+  // unconfirmed or reverted results; combined with the clear-then-reapply below, a payout later
+  // voided is cleared and never re-applied.
   const { data: payouts, error: poErr } = await service
     .from(PAYOUTS)
     .select('id, amount_satang, status, result:hr_eval_results!inner(employee_id, period_id)')
     .eq('result.period_id', id)
+    .eq('status', 'approved')
     .lt('amount_satang', 0);
   if (poErr) return NextResponse.json({ error: poErr.message }, { status: 500 });
   const negatives = (payouts ?? []) as unknown as {
