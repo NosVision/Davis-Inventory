@@ -67,24 +67,35 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
 
   const snapshot = freezeRule(engineRule);
 
-  // Clear prior DRAFT payouts (idempotent rebuild); keep applied ones.
+  // Clear prior DRAFT payouts (idempotent rebuild); keep approved/applied ones.
   const resultIds = results.map((r) => r.id);
   await service.from(PAYOUTS).delete().in('result_id', resultIds).eq('status', 'draft');
 
-  const rows = results.map((r) => {
-    const payout = resolveEvalPayout(engineRule, r.score_pct === null ? null : Number(r.score_pct));
-    return {
-      result_id: r.id,
-      rule_id: rule.id,
-      tier_matched_id: payout.tier_matched_id,
-      input_pct_score: payout.input_pct_score,
-      formula_snapshot: snapshot,
-      amount_satang: payout.amount_satang,
-      calculation_note: payout.note,
-      status: 'draft',
-      created_by: auth.userId,
-    };
-  });
+  // Any result that STILL has a payout after clearing drafts already carries an approved/terminal
+  // one — inserting a second draft would double-pay (recompute previously created duplicate rows
+  // because there was no unique(result_id)). Only compute drafts for results with no payout yet.
+  const { data: existingPayouts } = await service.from(PAYOUTS).select('result_id').in('result_id', resultIds);
+  const alreadyHasPayout = new Set((existingPayouts ?? []).map((p) => p.result_id as string));
+
+  const rows = results
+    .filter((r) => !alreadyHasPayout.has(r.id))
+    .map((r) => {
+      const payout = resolveEvalPayout(engineRule, r.score_pct === null ? null : Number(r.score_pct));
+      return {
+        result_id: r.id,
+        rule_id: rule.id,
+        tier_matched_id: payout.tier_matched_id,
+        input_pct_score: payout.input_pct_score,
+        formula_snapshot: snapshot,
+        amount_satang: payout.amount_satang,
+        calculation_note: payout.note,
+        status: 'draft',
+        created_by: auth.userId,
+      };
+    });
+  if (rows.length === 0) {
+    return NextResponse.json({ data: { period_id: id, payouts: 0, note: 'all results already have a payout' } });
+  }
 
   const { data: inserted, error: insErr } = await service.from(PAYOUTS).insert(rows).select('id');
   if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
