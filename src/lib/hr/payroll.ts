@@ -433,7 +433,13 @@ export function computePayslip(input: PayrollInput): Payslip {
   if (tax > 0) deductions.push({ type: 'tax', label: 'tax', amount_satang: tax });
 
   const totalDeduction = deductions.reduce((s, l) => s + l.amount_satang, 0);
-  const net = gross - totalDeduction;
+  // Service Charge + tips are paid SEPARATELY (client model: SV is a distinct transfer on the
+  // 15th of the following month). They remain on the slip as reference earnings, but are NOT part
+  // of the end-of-month salary net that goes to the bank file. (WHT already excludes them.)
+  const svTipSatang = earnings
+    .filter((l) => l.type === 'service_charge' || l.type === 'tip')
+    .reduce((s, l) => s + l.amount_satang, 0);
+  const net = gross - totalDeduction - svTipSatang;
 
   return {
     earnings,
