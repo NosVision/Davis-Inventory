@@ -94,7 +94,10 @@ export async function GET(request: NextRequest) {
       .select('type, ts, business_date')
       .eq('user_id', user.id)
       .gte('business_date', from)
-      .lte('business_date', to),
+      .lte('business_date', to)
+      // Exclude HR-rejected punches so the employee's own timesheet matches the HR timesheet and
+      // payroll (which drop them); NULL review_status (an ordinary punch) is kept.
+      .or('review_status.is.null,review_status.neq.rejected'),
     service
       .from('hr_timesheet_overrides')
       .select('business_date, worked_min, late_min, ot_min, absent, reason')
