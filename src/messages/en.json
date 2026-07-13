@@ -199,6 +199,10 @@
       "name": "Commission",
       "description": "AE Commission & Bottle Commission"
     },
+    "schedule": {
+      "name": "Schedule",
+      "description": "Monthly shift rosters per branch (HQ)"
+    },
     "hr": {
       "name": "HR",
       "description": "Employee records, attendance, payroll & evaluation"

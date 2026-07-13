@@ -223,6 +223,18 @@ export const modules: ModuleConfig[] = [
   },
   */
 
+  // ─── จัดตาราง (HQ scheduling) — owner + hr + hq (§C: HQ builds rosters here) ───
+  {
+    id: 'schedule',
+    nameKey: 'modules.schedule.name',
+    descriptionKey: 'modules.schedule.description',
+    icon: 'calendar-days',
+    color: 'indigo',
+    href: '/schedule',
+    roles: ['owner', 'hr', 'hq'],
+    groupKey: 'moduleGroups.hr',
+  },
+
   // ─── HR (บุคคล) — owner + hr (โมเดลใหม่: hr เห็นเฉพาะ HR + baseline) ───
   {
     id: 'hr',

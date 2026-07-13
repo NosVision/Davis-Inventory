@@ -199,6 +199,10 @@
       "name": "คอมมิชชั่น",
       "description": "AE Commission & Bottle Commission"
     },
+    "schedule": {
+      "name": "จัดตาราง",
+      "description": "จัดตารางกะรายเดือนต่อสาขา (HQ)"
+    },
     "hr": {
       "name": "บุคคล (HR)",
       "description": "ข้อมูลพนักงาน เวลา เงินเดือน และประเมินผล"
