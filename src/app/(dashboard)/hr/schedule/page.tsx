@@ -63,12 +63,19 @@ function weekday(dateStr: string): string {
   return WEEKDAYS[new Date(y, m - 1, d).getDay()];
 }
 
-export default function SchedulePage() {
+// Also embeddable inside the /hr/close hub (§Phase 2 item 3 — edit the roster without leaving the
+// close page). `initialMonth` seeds the month; `embedded` drops the standalone page chrome
+// (outer max-width/padding) so the host controls layout. As a Next.js page these props are
+// undefined and it renders exactly as before.
+export default function SchedulePage({
+  initialMonth,
+  embedded = false,
+}: { initialMonth?: string; embedded?: boolean } = {}) {
   const t = useTranslations('hr.schedule');
 
   const [stores, setStores] = useState<StoreOpt[]>([]);
   const [storeId, setStoreId] = useState('');
-  const [month, setMonth] = useState<string>(() => todayBangkok().slice(0, 7));
+  const [month, setMonth] = useState<string>(() => initialMonth || todayBangkok().slice(0, 7));
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -257,7 +264,7 @@ export default function SchedulePage() {
   };
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4 p-4">
+    <div className={embedded ? 'space-y-4' : 'mx-auto max-w-7xl space-y-4 p-4'}>
       <PageHeader
         title={t('title')}
         subtitle={t('subtitle')}
