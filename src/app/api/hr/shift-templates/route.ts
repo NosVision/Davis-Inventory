@@ -7,12 +7,23 @@ const SELECT = 'id, label, start_time, end_time, color, active';
 const TIME_RE = /^\d{2}:\d{2}$/;
 
 // GET /api/hr/shift-templates?store_id — shift templates for one store (§C).
+// GET /api/hr/shift-templates?usage=<id> — how many roster assignments use a template (delete warn).
 export async function GET(request: NextRequest) {
   const storeId = request.nextUrl.searchParams.get('store_id') ?? '';
+  const usageId = request.nextUrl.searchParams.get('usage') ?? '';
   const auth = await requireScheduler();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const service = createServiceClient();
+
+  if (usageId) {
+    const { count, error } = await service
+      .from('hr_schedule')
+      .select('id', { count: 'exact', head: true })
+      .eq('shift_template_id', usageId);
+    if (error) return NextResponse.json({ error: 'Failed to count usage' }, { status: 500 });
+    return NextResponse.json({ data: { count: count ?? 0 } });
+  }
   const { data, error } = await service
     .from(TABLE)
     .select(SELECT)
@@ -108,8 +119,10 @@ export async function PUT(request: NextRequest) {
   return NextResponse.json({ data });
 }
 
-// DELETE ?id — soft-delete (active=false). hr_schedule FKs this with ON DELETE
-// RESTRICT, so a hard delete would fail once the template has been assigned.
+// DELETE ?id — remove a shift template. Since hr_schedule FKs it with ON DELETE RESTRICT, first
+// CLEAR every assignment that uses it (the caller is warned these vanish), then deactivate the
+// template. Returns how many assignments were removed. GET ?count=&id= gives that count up front so
+// the UI can warn before confirming.
 export async function DELETE(request: NextRequest) {
   const id = request.nextUrl.searchParams.get('id') ?? '';
   if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
@@ -126,7 +139,18 @@ export async function DELETE(request: NextRequest) {
   const auth = await requireScheduler();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
+  // Count then clear the assignments using this shift (removing them frees the FK for delete).
+  const { count } = await service
+    .from('hr_schedule')
+    .select('id', { count: 'exact', head: true })
+    .eq('shift_template_id', id);
+  const removed = count ?? 0;
+  if (removed > 0) {
+    const { error: delErr } = await service.from('hr_schedule').delete().eq('shift_template_id', id);
+    if (delErr) return NextResponse.json({ error: 'Failed to clear assignments for this shift' }, { status: 500 });
+  }
+
   const { error } = await service.from(TABLE).update({ active: false }).eq('id', id);
   if (error) return NextResponse.json({ error: 'Failed to delete shift template' }, { status: 500 });
-  return NextResponse.json({ data: { id, active: false } });
+  return NextResponse.json({ data: { id, active: false, removed_assignments: removed } });
 }
