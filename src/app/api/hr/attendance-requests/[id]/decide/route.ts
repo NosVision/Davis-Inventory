@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireStoreManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
+import { isDateInFinalizedPeriod, FINALIZED_PERIOD_ERROR } from '@/lib/hr/period-lock';
 
 const REQUEST_TABLE = 'hr_attendance_requests';
 const ATTENDANCE_TABLE = 'hr_attendance';
@@ -80,6 +81,16 @@ export async function POST(
   }
 
   if (decision === 'approved') {
+    // §Phase 0B: approving APPLIES this correction into hr_attendance, which feeds payroll. Refuse
+    // if the punch's pay period is already finalized (reject is still allowed — it changes nothing).
+    try {
+      if (await isDateInFinalizedPeriod(service, row.business_date as string, [row.store_id as string])) {
+        return NextResponse.json({ error: FINALIZED_PERIOD_ERROR }, { status: 409 });
+      }
+    } catch {
+      return NextResponse.json({ error: 'Failed to verify pay period' }, { status: 500 });
+    }
+
     // FIRST: atomic compare-and-set flip to approved. This is the source of truth for
     // "the request was decided" — everything after this point is best-effort apply.
     const { data: updated, error } = await service

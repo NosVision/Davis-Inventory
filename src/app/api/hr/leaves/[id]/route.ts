@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManagerForEmployeeProfile } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
+import { isRangeInFinalizedPeriod, employeeStoreIds, FINALIZED_PERIOD_ERROR } from '@/lib/hr/period-lock';
 
 const TABLE = 'hr_leaves';
 const COLS =
@@ -32,6 +33,19 @@ export async function DELETE(
 
   if (before.status === 'cancelled') {
     return NextResponse.json({ data: before }); // already cancelled — idempotent
+  }
+
+  // §Phase 0B: cancelling an APPROVED leave removes paid/absent days that fed payroll. Refuse if the
+  // leave overlaps a finalized period (a pending leave has no payroll effect, so it stays cancellable).
+  if (before.status === 'approved') {
+    try {
+      const storeIds = await employeeStoreIds(service, before.user_id as string, before.store_id as string | null);
+      if (await isRangeInFinalizedPeriod(service, before.from_date as string, before.to_date as string, storeIds)) {
+        return NextResponse.json({ error: FINALIZED_PERIOD_ERROR }, { status: 409 });
+      }
+    } catch {
+      return NextResponse.json({ error: 'Failed to verify pay period' }, { status: 500 });
+    }
   }
 
   const { data, error } = await service

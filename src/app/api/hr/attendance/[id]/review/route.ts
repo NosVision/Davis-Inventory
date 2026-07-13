@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManager, requireStoreManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import { notifyUser } from '@/lib/notifications/service';
+import { isDateInFinalizedPeriod, employeeStoreIds, FINALIZED_PERIOD_ERROR } from '@/lib/hr/period-lock';
 
 const TABLE = 'hr_attendance';
 const OVERRIDE_TABLE = 'hr_timesheet_overrides';
@@ -61,6 +62,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const userId = row.user_id as string;
   const businessDate = row.business_date as string;
   const label = TYPE_TH[row.type as string] ?? (row.type as string);
+
+  // §Phase 0B: every resolution (approve/reject/set_time/absent/leave) changes this day's derived
+  // timesheet, a payroll input. Refuse once the day's pay period is finalized — reopen first.
+  try {
+    const storeIds = await employeeStoreIds(service, userId, row.store_id as string | null);
+    if (await isDateInFinalizedPeriod(service, businessDate, storeIds)) {
+      return NextResponse.json({ error: FINALIZED_PERIOD_ERROR }, { status: 409 });
+    }
+  } catch {
+    return NextResponse.json({ error: 'Failed to verify pay period' }, { status: 500 });
+  }
 
   // ---- Validate + prepare the punch mutation (set_time) ----
   let newTs: string | null = null;

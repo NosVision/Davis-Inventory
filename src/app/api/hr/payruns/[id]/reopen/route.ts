@@ -10,7 +10,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const service = createServiceClient();
 
   // §P5.5: gate on the payrun's store.
-  const { data: pr, error: prErr } = await service.from('hr_payruns').select('store_id').eq('id', id).maybeSingle();
+  const { data: pr, error: prErr } = await service
+    .from('hr_payruns')
+    .select('store_id, bank_exported_at')
+    .eq('id', id)
+    .maybeSingle();
   if (prErr) return NextResponse.json({ error: 'Failed to reopen payrun' }, { status: 500 });
   if (!pr) return NextResponse.json({ error: 'Payrun not found' }, { status: 404 });
   const auth = await requireHrManagerForStore(pr.store_id as string | null);
@@ -19,9 +23,28 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const reason = typeof body.reason === 'string' ? body.reason.trim().slice(0, 300) : '';
   if (!reason) return NextResponse.json({ error: 'A reason is required to reopen a payrun' }, { status: 400 });
+
+  // §Phase 0B: this payrun's bank file was already exported → money may have been transferred.
+  // Refuse to rewind it to draft unless HR explicitly overrides (force:true), which is loudly audited.
+  const bankExportedAt = pr.bank_exported_at as string | null;
+  const force = body.force === true;
+  if (bankExportedAt && !force) {
+    return NextResponse.json(
+      {
+        error:
+          'A bank file was already exported for this payrun — money may have been transferred. Re-send with force to reopen anyway.',
+        bank_exported_at: bankExportedAt,
+        requires_force: true,
+      },
+      { status: 409 }
+    );
+  }
+  // Clear the bank-export stamp: reopening means the payrun is being redone, so any prior export no
+  // longer describes it (the export time is preserved in the audit entry below). A fresh export after
+  // re-finalizing re-arms the lock.
   const { data: updated, error } = await service
     .from('hr_payruns')
-    .update({ status: 'draft', finalized_by: null, finalized_at: null })
+    .update({ status: 'draft', finalized_by: null, finalized_at: null, bank_exported_at: null, bank_exported_by: null })
     .eq('id', id)
     .eq('status', 'finalized')
     .select('id');
@@ -32,7 +55,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   await logHrAudit(service, {
     actorId: auth.userId, action: 'update', table: 'hr_payruns', recordId: id,
-    before: { status: 'finalized' }, after: { status: 'draft' }, reason: `payrun reopened: ${reason}`,
+    before: { status: 'finalized', bank_exported_at: bankExportedAt },
+    after: { status: 'draft', forced_after_bank_export: Boolean(bankExportedAt) },
+    reason: bankExportedAt
+      ? `payrun FORCE-reopened after bank export (${bankExportedAt}): ${reason}`
+      : `payrun reopened: ${reason}`,
   });
 
   return NextResponse.json({ data: { id, status: 'draft' } });

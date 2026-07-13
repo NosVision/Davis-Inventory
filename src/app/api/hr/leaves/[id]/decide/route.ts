@@ -4,6 +4,7 @@ import { requireHrManager, requireStoreManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import { notifyUser } from '@/lib/notifications/service';
 import { enumerateDates, classifyLeaveEffect } from '@/lib/hr/leaves';
+import { isRangeInFinalizedPeriod, employeeStoreIds, FINALIZED_PERIOD_ERROR } from '@/lib/hr/period-lock';
 
 // Tell the employee their leave was approved/rejected (best-effort — never fail the decision).
 async function notifyLeaveDecision(
@@ -115,6 +116,17 @@ export async function POST(
     );
 
     return NextResponse.json({ data: { id, status: 'rejected' } });
+  }
+
+  // §Phase 0B: approving writes paid/absent overrides for each scheduled work day in the range —
+  // payroll inputs. Refuse if any day overlaps a finalized period (reject stays allowed).
+  try {
+    const storeIds = await employeeStoreIds(service, row.user_id as string, row.store_id as string | null);
+    if (await isRangeInFinalizedPeriod(service, row.from_date as string, row.to_date as string, storeIds)) {
+      return NextResponse.json({ error: FINALIZED_PERIOD_ERROR }, { status: 409 });
+    }
+  } catch {
+    return NextResponse.json({ error: 'Failed to verify pay period' }, { status: 500 });
   }
 
   // --- APPROVE: FIRST the atomic flip (source of truth), THEN best-effort apply. ---

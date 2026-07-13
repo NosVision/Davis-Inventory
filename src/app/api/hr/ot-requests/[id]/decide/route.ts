@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireStoreManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
+import { isDateInFinalizedPeriod, FINALIZED_PERIOD_ERROR } from '@/lib/hr/period-lock';
 
 const OT_TABLE = 'hr_ot_requests';
 const OVERRIDE_TABLE = 'hr_timesheet_overrides';
@@ -87,6 +88,16 @@ export async function POST(
         { error: 'decided_ot_min must be a non-negative integer' },
         { status: 400 }
       );
+    }
+
+    // §Phase 0B: approving writes ot_min into the day's timesheet override (a payroll input). Refuse
+    // if the work date's pay period is already finalized (reject is still allowed — it changes nothing).
+    try {
+      if (await isDateInFinalizedPeriod(service, row.work_date as string, [row.store_id as string])) {
+        return NextResponse.json({ error: FINALIZED_PERIOD_ERROR }, { status: 409 });
+      }
+    } catch {
+      return NextResponse.json({ error: 'Failed to verify pay period' }, { status: 500 });
     }
     const finalOtMin =
       decidedOtMin.value === undefined || decidedOtMin.value === null

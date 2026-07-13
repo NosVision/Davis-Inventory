@@ -12,6 +12,7 @@ import {
 import { classifyLeaveEffect, countLeaveDays, enumerateDates } from '@/lib/hr/leaves';
 import { computePayslip, type PayrollInput, type PayslipLine, type PayType, type TaxMode } from '@/lib/hr/payroll';
 import { getHrPolicies } from '@/lib/hr/policy';
+import { isUniqueViolation } from '@/lib/hr/db-errors';
 
 const DEFAULT_WORK_HOURS = 9;
 
@@ -160,18 +161,22 @@ export async function POST(request: NextRequest) {
 
   // Upsert the payrun (draft). A finalized payrun must not be regenerated. The
   // company-wide bucket is the store_id IS NULL row; a store-scoped run matches store_id.
-  let existingQuery = service
-    .from('hr_payruns')
-    .select('id, status')
-    .eq('company_id', companyId)
-    .eq('period_year', year)
-    .eq('period_month', month);
-  existingQuery = storeId ? existingQuery.eq('store_id', storeId) : existingQuery.is('store_id', null);
-  const { data: existing } = await existingQuery.maybeSingle();
+  // Fresh each call (PostgREST builders are single-shot) so we can re-read after a race.
+  const findExisting = () => {
+    const q = service
+      .from('hr_payruns')
+      .select('id, status')
+      .eq('company_id', companyId)
+      .eq('period_year', year)
+      .eq('period_month', month);
+    return storeId ? q.eq('store_id', storeId) : q.is('store_id', null);
+  };
+  const finalizedResponse = () =>
+    NextResponse.json({ error: 'Payrun is finalized; reopen before regenerating' }, { status: 409 });
+
+  const { data: existing } = await findExisting().maybeSingle();
   let payrun = existing;
-  if (payrun && payrun.status === 'finalized') {
-    return NextResponse.json({ error: 'Payrun is finalized; reopen before regenerating' }, { status: 409 });
-  }
+  if (payrun && payrun.status === 'finalized') return finalizedResponse();
   if (!payrun) {
     const { data: created, error: createErr } = await service
       .from('hr_payruns')
@@ -188,8 +193,20 @@ export async function POST(request: NextRequest) {
       })
       .select('id, status')
       .single();
-    if (createErr) return NextResponse.json({ error: 'Failed to create payrun' }, { status: 500 });
-    payrun = created;
+    if (createErr) {
+      // A concurrent generate (double-click / parallel request) won the insert race on the
+      // (company, store, period) unique index. Adopt that row and rebuild it rather than 500ing.
+      if (!isUniqueViolation(createErr)) {
+        return NextResponse.json({ error: 'Failed to create payrun' }, { status: 500 });
+      }
+      const { data: raced } = await findExisting().maybeSingle();
+      if (!raced) return NextResponse.json({ error: 'Failed to create payrun' }, { status: 500 });
+      if (raced.status === 'finalized') return finalizedResponse();
+      payrun = raced;
+      await service.from('hr_payslips').delete().eq('payrun_id', raced.id);
+    } else {
+      payrun = created;
+    }
   } else {
     // Rebuild: drop prior payslips (cascade clears their lines).
     await service.from('hr_payslips').delete().eq('payrun_id', payrun.id);

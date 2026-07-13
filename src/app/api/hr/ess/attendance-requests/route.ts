@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { isDateInFinalizedPeriod, FINALIZED_PERIOD_ERROR } from '@/lib/hr/period-lock';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_OPEN_ATTENDANCE_REQUESTS = 20;
@@ -134,6 +135,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'you are not scheduled on that date' }, { status: 400 });
     }
     storeId = sched.store_id as string;
+  }
+
+  // §Phase 0B: once the pay period covering this date is finalized, its punches are settled — a
+  // correction can no longer flow into payroll, so reject it instead of creating a dead request.
+  try {
+    if (await isDateInFinalizedPeriod(service, businessDate, storeId ? [storeId] : [])) {
+      return NextResponse.json({ error: FINALIZED_PERIOD_ERROR }, { status: 409 });
+    }
+  } catch {
+    return NextResponse.json({ error: 'Failed to verify pay period' }, { status: 500 });
   }
 
   // Abuse / duplicate guard: cap open requests, and reject a duplicate still-pending

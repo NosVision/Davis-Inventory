@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { requireStoreManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import { notifyUser } from '@/lib/notifications/service';
+import { isDateInFinalizedPeriod, FINALIZED_PERIOD_ERROR } from '@/lib/hr/period-lock';
 
 // POST /api/hr/dayoff-swaps/[id]/decide — HR (or the store's manager) approves or rejects a
 // pending swap (§C, P2.3a; flow re-confirmed by the owner 2026-07-05: staff file → HR notified →
@@ -58,6 +59,21 @@ export async function POST(
   };
 
   if (decision === 'approved') {
+    // §Phase 0B: the swap exchanges two schedule cells (is_day_off), changing paid work-day counts.
+    // Refuse if EITHER date's pay period is finalized (both employees share this store). Reject stays allowed.
+    try {
+      const storeIds = [swap.store_id as string];
+      const [reqLocked, cpLocked] = await Promise.all([
+        isDateInFinalizedPeriod(service, swap.requester_date as string, storeIds),
+        isDateInFinalizedPeriod(service, swap.counterpart_date as string, storeIds),
+      ]);
+      if (reqLocked || cpLocked) {
+        return NextResponse.json({ error: FINALIZED_PERIOD_ERROR }, { status: 409 });
+      }
+    } catch {
+      return NextResponse.json({ error: 'Failed to verify pay period' }, { status: 500 });
+    }
+
     const { error: rpcErr } = await service.rpc('hr_approve_dayoff_swap', {
       p_swap_id: id,
       p_approver: auth.userId,

@@ -86,6 +86,18 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     payDate: payrun.pay_date ?? '',
   });
 
+  // Stamp the export so a paid payrun can't be silently reopened/regenerated after money moved
+  // (§Phase 0B; enforced in /reopen). Only when the file carries payable rows — a header-only export
+  // (every slip non-payable) moves no money, so it must not arm the force-required reopen lock.
+  // Best-effort: a stamp failure must not fail the download, but it is logged so the gap is visible.
+  if (count > 0) {
+    const { error: stampErr } = await service
+      .from('hr_payruns')
+      .update({ bank_exported_at: new Date().toISOString(), bank_exported_by: auth.userId })
+      .eq('id', id);
+    if (stampErr) console.error('[bank-file] failed to stamp bank_exported_at', stampErr.message);
+  }
+
   await logHrAudit(service, {
     actorId: auth.userId, action: 'update', table: 'hr_payruns', recordId: id,
     before: null,

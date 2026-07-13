@@ -2,9 +2,31 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManagerForEmployeeProfile } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
+import { isDateInFinalizedPeriod, employeeStoreIds, FINALIZED_PERIOD_ERROR } from '@/lib/hr/period-lock';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TABLE = 'hr_timesheet_overrides';
+
+// §Phase 0B: an override feeds payroll, so it must not change a date whose pay period is finalized.
+// The lock fires for a company-wide finalized payrun OR one scoped to any store this employee works,
+// so we resolve the employee's stores (plus any explicit store_id) before checking. Returns a ready
+// NextResponse to short-circuit on (409 locked / 500 lookup failure), or null when the edit is allowed.
+async function finalizedPeriodBlock(
+  service: ReturnType<typeof createServiceClient>,
+  userId: string,
+  businessDate: string,
+  explicitStoreId: string | null
+): Promise<NextResponse | null> {
+  try {
+    const storeIds = await employeeStoreIds(service, userId, explicitStoreId);
+    if (await isDateInFinalizedPeriod(service, businessDate, storeIds)) {
+      return NextResponse.json({ error: FINALIZED_PERIOD_ERROR }, { status: 409 });
+    }
+    return null;
+  } catch {
+    return NextResponse.json({ error: 'Failed to verify pay period' }, { status: 500 });
+  }
+}
 const COLS = 'id, user_id, business_date, store_id, worked_min, late_min, ot_min, absent, note, reason, edited_by, updated_at';
 
 function isCalendarDate(d: string): boolean {
@@ -43,6 +65,10 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: 'A reason is required for a timesheet override' }, { status: 400 });
   }
 
+  const service = createServiceClient();
+  const blocked = await finalizedPeriodBlock(service, userId, businessDate, storeId);
+  if (blocked) return blocked;
+
   const w = optInt(body.worked_min);
   const l = optInt(body.late_min);
   const o = optInt(body.ot_min);
@@ -53,8 +79,6 @@ export async function PUT(request: NextRequest) {
   const lateMin = l.value;
   const otMin = o.value;
   const absent = typeof body.absent === 'boolean' ? body.absent : body.absent === null ? null : undefined;
-
-  const service = createServiceClient();
 
   // Snapshot the prior override (if any) for the audit trail.
   const { data: before } = await service
@@ -111,6 +135,11 @@ export async function DELETE(request: NextRequest) {
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const service = createServiceClient();
+
+  // §Phase 0B: can't remove an override once its pay period is finalized.
+  const blocked = await finalizedPeriodBlock(service, userId, businessDate, null);
+  if (blocked) return blocked;
+
   const { data: before } = await service
     .from(TABLE)
     .select(COLS)
