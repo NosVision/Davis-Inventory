@@ -38,6 +38,11 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
   const { data: period, error: pErr } = await service.from(PERIODS).select('id, status').eq('id', id).maybeSingle();
   if (pErr) return NextResponse.json({ error: pErr.message }, { status: 500 });
   if (!period) return NextResponse.json({ error: 'Period not found' }, { status: 404 });
+  // Money is only produced after the period is CLOSED (scoring finished). Computing payouts while a
+  // period is still 'open' would pay on mid-scoring data (§G "computed once at close").
+  if (period.status !== 'closed') {
+    return NextResponse.json({ error: 'Close the evaluation period before computing payouts', code: 'period_not_closed' }, { status: 409 });
+  }
 
   const { data: rule, error: rErr } = await service.from(RULES).select('*').eq('period_id', id).maybeSingle();
   if (rErr) return NextResponse.json({ error: rErr.message }, { status: 500 });

@@ -31,6 +31,10 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
     .maybeSingle();
   if (pErr) return NextResponse.json({ error: pErr.message }, { status: 500 });
   if (!period) return NextResponse.json({ error: 'Period not found' }, { status: 404 });
+  // Only dock SC after the period is CLOSED (scoring finished) — never on mid-scoring results.
+  if (period.status !== 'closed') {
+    return NextResponse.json({ error: 'Close the evaluation period before applying to SC', code: 'period_not_closed' }, { status: 409 });
+  }
 
   // APPROVED negative payouts (deductions) only — symmetric with the positive side (payrun applies
   // only status='approved' eval bonuses). Applying draft/void/superseded negatives would dock SC on
