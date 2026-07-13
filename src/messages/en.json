@@ -2762,7 +2762,8 @@
       "profileRequests": "Profile Changes",
       "offboarding": "Offboarding",
       "today": "Today",
-      "certificates": "Certificates"
+      "certificates": "Certificates",
+      "close": "Monthly Close"
     },
     "leaves": {
       "title": "Leave",

@@ -2763,7 +2763,8 @@
       "profileRequests": "คำขอแก้ไขข้อมูล",
       "offboarding": "การพ้นสภาพ",
       "today": "แดชบอร์ดวันนี้",
-      "certificates": "หนังสือรับรอง"
+      "certificates": "หนังสือรับรอง",
+      "close": "ปิดยอดประจำเดือน"
     },
     "leaves": {
       "title": "ลางาน",

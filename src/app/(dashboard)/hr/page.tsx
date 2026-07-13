@@ -10,6 +10,7 @@ import {
   Clock,
   CalendarDays,
   CalendarClock,
+  CalendarCheck,
   CalendarX,
   Repeat,
   AlertTriangle,
@@ -41,6 +42,7 @@ import { PageHeader } from '@/components/ui';
  * (P1–P5); tiles without an `href` are placeholders.
  */
 const NAV_TILES: { key: string; icon: LucideIcon; href?: string }[] = [
+  { key: 'close', icon: CalendarCheck, href: '/hr/close' },
   { key: 'today', icon: LayoutDashboard, href: '/hr/dashboard' },
   { key: 'employees', icon: Users, href: '/hr/employees' },
   { key: 'users', icon: UserCog, href: '/users' },
