@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Loader2, Plus, X } from 'lucide-react';
+import { BellRing, Loader2, Plus, X } from 'lucide-react';
 import { Button, PageHeader, StatusBadge, type StatusTone, toast } from '@/components/ui';
 import { todayBangkok } from '@/lib/utils/date';
 
@@ -43,6 +43,12 @@ interface Balance {
   off_delta: number;
 }
 type MonthStatus = 'empty' | 'draft' | 'submitted' | 'acknowledged' | 'mixed';
+interface PendingItem {
+  store_id: string;
+  store_name: string;
+  month: string;
+  count: number;
+}
 
 const hhmm = (t: string) => t.slice(0, 5);
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -70,6 +76,7 @@ export default function SchedulePage() {
   const [balance, setBalance] = useState<Balance[]>([]);
   const [monthStatus, setMonthStatus] = useState<MonthStatus>('empty');
   const [loading, setLoading] = useState(true);
+  const [pending, setPending] = useState<PendingItem[]>([]);
 
   const [selected, setSelected] = useState<{ userId: string; date: string } | null>(null);
   const [showAdd, setShowAdd] = useState(false);
@@ -116,6 +123,23 @@ export default function SchedulePage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // HR's acknowledge inbox — published rosters awaiting acknowledgment across all their stores.
+  // 403 (caller is HQ-scheduler, not HR) just leaves the queue empty; the banner is HR-only.
+  const loadPending = useCallback(async () => {
+    try {
+      const res = await fetch('/api/hr/schedule/pending');
+      if (!res.ok) return setPending([]);
+      const j = await res.json();
+      setPending((j.data ?? []) as PendingItem[]);
+    } catch {
+      setPending([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadPending();
+  }, [loadPending]);
 
   const days = useMemo(() => daysOfMonth(month), [month]);
   const tplById = useMemo(() => new Map(templates.map((x) => [x.id, x])), [templates]);
@@ -190,22 +214,31 @@ export default function SchedulePage() {
   );
 
   // --- publish actions ---
-  const doAction = useCallback(
-    async (path: 'submit' | 'acknowledge') => {
+  // Acknowledge (or submit) a specific store+month. Explicit args let the inbox banner act on any
+  // pending roster, not just the one currently open in the grid.
+  const runPublishAction = useCallback(
+    async (path: 'submit' | 'acknowledge', sid: string, m: string) => {
       try {
         const res = await fetch(`/api/hr/schedule/${path}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ store_id: storeId, month }),
+          body: JSON.stringify({ store_id: sid, month: m }),
         });
         if (!res.ok) throw new Error();
         toast({ type: 'success', title: path === 'submit' ? t('submittedToast') : t('acknowledgedToast') });
-        await load();
+        await loadPending();
+        // Only reload the grid when the acted-on roster is the one on screen.
+        if (sid === storeId && m === month) await load();
       } catch {
         toast({ type: 'error', title: t('actionFailed') });
       }
     },
-    [storeId, month, load, t]
+    [storeId, month, load, loadPending, t]
+  );
+
+  const doAction = useCallback(
+    (path: 'submit' | 'acknowledge') => runPublishAction(path, storeId, month),
+    [runPublishAction, storeId, month]
   );
 
   const statusText: Record<MonthStatus, string> = {
@@ -257,6 +290,42 @@ export default function SchedulePage() {
           </>
         }
       />
+
+      {/* HR acknowledge inbox — published rosters awaiting acknowledgment (HR only; empty for HQ) */}
+      {pending.length > 0 && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-800/60 dark:bg-amber-900/20">
+          <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-800 dark:text-amber-200">
+            <BellRing className="h-4 w-4" />
+            {t('pendingHeading')} ({pending.length})
+          </div>
+          <ul className="space-y-1.5">
+            {pending.map((p) => (
+              <li
+                key={`${p.store_id}|${p.month}`}
+                className="flex flex-wrap items-center gap-2 rounded-lg bg-white/70 px-2.5 py-1.5 text-sm dark:bg-gray-900/40"
+              >
+                <span className="font-medium text-gray-800 dark:text-gray-100">{p.store_name}</span>
+                <span className="tabular-nums text-gray-500 dark:text-gray-400">{p.month}</span>
+                <span className="text-xs text-gray-400">· {t('pendingCount', { count: p.count })}</span>
+                <div className="flex-1" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStoreId(p.store_id);
+                    setMonth(p.month);
+                  }}
+                  className="rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+                >
+                  {t('pendingOpen')}
+                </button>
+                <Button size="sm" onClick={() => runPublishAction('acknowledge', p.store_id, p.month)}>
+                  {t('acknowledge')}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* status + publish actions */}
       <div className="flex flex-wrap items-center gap-2">
