@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireScheduler } from '@/lib/hr/route-auth';
-import { isDateInFinalizedPeriod, FINALIZED_PERIOD_ERROR } from '@/lib/hr/period-lock';
+import { isDateInFinalizedPeriod, employeeStoreIds, FINALIZED_PERIOD_ERROR } from '@/lib/hr/period-lock';
 
 const MONTH_RE = /^\d{4}-\d{2}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -227,8 +227,11 @@ export async function POST(request: NextRequest) {
   }
 
   // §Phase 0B: don't let a finalized (possibly paid) period's roster be edited after the fact.
+  // hr_schedule is unique on (user_id, work_date), so the lock must span EVERY store the employee
+  // works — not just this one — or an upsert here could overwrite another store's finalized row.
   try {
-    if (await isDateInFinalizedPeriod(service, workDate, [storeId])) {
+    const storeIds = await employeeStoreIds(service, userId, storeId);
+    if (await isDateInFinalizedPeriod(service, workDate, storeIds)) {
       return NextResponse.json({ error: FINALIZED_PERIOD_ERROR }, { status: 409 });
     }
   } catch {
@@ -264,7 +267,7 @@ export async function DELETE(request: NextRequest) {
   const service = createServiceClient();
   const { data: row, error: rowErr } = await service
     .from('hr_schedule')
-    .select('store_id, work_date')
+    .select('store_id, work_date, user_id')
     .eq('id', id)
     .maybeSingle();
   if (rowErr) return NextResponse.json({ error: 'Failed to load assignment' }, { status: 500 });
@@ -273,9 +276,11 @@ export async function DELETE(request: NextRequest) {
   const auth = await requireScheduler();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-  // §Phase 0B: a finalized (possibly paid) period's roster is locked from deletion too.
+  // §Phase 0B: a finalized (possibly paid) period's roster is locked from deletion too — across
+  // every store the employee works (unique key is user_id+work_date).
   try {
-    if (await isDateInFinalizedPeriod(service, row.work_date as string, [row.store_id as string])) {
+    const storeIds = await employeeStoreIds(service, row.user_id as string, row.store_id as string);
+    if (await isDateInFinalizedPeriod(service, row.work_date as string, storeIds)) {
       return NextResponse.json({ error: FINALIZED_PERIOD_ERROR }, { status: 409 });
     }
   } catch {

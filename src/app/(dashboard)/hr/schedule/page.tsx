@@ -1,10 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useTranslations } from 'next-intl';
-import { BellRing, Loader2, Plus, X } from 'lucide-react';
+import { useTranslations, useLocale } from 'next-intl';
+import { BellRing, Loader2, Plus, X, Save, Undo2 } from 'lucide-react';
 import { Button, PageHeader, StatusBadge, type StatusTone, toast } from '@/components/ui';
 import { todayBangkok } from '@/lib/utils/date';
+import ScheduleFillTools, { type PatternSlot } from './ScheduleFillTools';
 
 interface StoreOpt {
   id: string;
@@ -33,15 +34,6 @@ interface Entry {
   status: string;
   note: string | null;
 }
-interface Balance {
-  user_id: string;
-  work_days: number;
-  day_off_days: number;
-  scheduled_minutes: number;
-  standard_minutes: number;
-  off_target: number;
-  off_delta: number;
-}
 type MonthStatus = 'empty' | 'draft' | 'submitted' | 'acknowledged' | 'mixed';
 interface PendingItem {
   store_id: string;
@@ -49,6 +41,11 @@ interface PendingItem {
   month: string;
   count: number;
 }
+
+// The active "brush" painted onto cells and used by the bulk fill tools.
+type Brush = { kind: 'shift'; id: string } | { kind: 'off' } | { kind: 'clear' } | null;
+// A pending (unsaved) change for one cell: an assignment or a clear.
+type DraftVal = { shift_template_id: string | null; is_day_off: boolean } | { clear: true };
 
 const hhmm = (t: string) => t.slice(0, 5);
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -58,20 +55,29 @@ function daysOfMonth(month: string): string[] {
   const last = new Date(y, m, 0).getDate();
   return Array.from({ length: last }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`);
 }
-function weekday(dateStr: string): string {
+function getDay(dateStr: string): number {
   const [y, m, d] = dateStr.split('-').map(Number);
-  return WEEKDAYS[new Date(y, m - 1, d).getDay()];
+  return new Date(y, m - 1, d).getDay();
 }
+function toMin(t: string): number {
+  const [h, m] = t.split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+function shiftMinutes(start: string, end: string): number {
+  const d = (toMin(end) - toMin(start) + 1440) % 1440;
+  return d === 0 ? 1440 : d;
+}
+const key = (userId: string, date: string) => `${userId}|${date}`;
 
-// Also embeddable inside the /hr/close hub (§Phase 2 item 3 — edit the roster without leaving the
-// close page). `initialMonth` seeds the month; `embedded` drops the standalone page chrome
-// (outer max-width/padding) so the host controls layout. As a Next.js page these props are
-// undefined and it renders exactly as before.
+// Also embeddable inside the /hr/close hub (§Phase 2). `initialMonth` seeds the month; `embedded`
+// drops the standalone page chrome. As a Next.js page these props are undefined.
 export default function SchedulePage({
   initialMonth,
   embedded = false,
 }: { initialMonth?: string; embedded?: boolean } = {}) {
   const t = useTranslations('hr.schedule');
+  const isTh = useLocale() === 'th';
+  const tt = (th: string, en: string) => (isTh ? th : en);
 
   const [stores, setStores] = useState<StoreOpt[]>([]);
   const [storeId, setStoreId] = useState('');
@@ -80,16 +86,19 @@ export default function SchedulePage({
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
-  const [balance, setBalance] = useState<Balance[]>([]);
   const [monthStatus, setMonthStatus] = useState<MonthStatus>('empty');
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<PendingItem[]>([]);
 
-  const [selected, setSelected] = useState<{ userId: string; date: string } | null>(null);
+  // Draft (unsaved) edits + the paint brush + which employees the bulk tools act on.
+  const [draft, setDraft] = useState<Map<string, DraftVal>>(new Map());
+  const [brush, setBrush] = useState<Brush>(null);
+  const [selectedEmps, setSelectedEmps] = useState<Set<string>>(new Set());
+  const [saving, setSaving] = useState(false);
+
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ label: '', start: '17:00', end: '01:00', color: '#6366f1' });
 
-  // manageable stores
   useEffect(() => {
     (async () => {
       try {
@@ -117,13 +126,11 @@ export default function SchedulePage({
       setEmployees((j.employees ?? []) as Employee[]);
       setTemplates((j.templates ?? []) as Template[]);
       setEntries((j.entries ?? []) as Entry[]);
-      setBalance((j.balance ?? []) as Balance[]);
       setMonthStatus((j.monthStatus ?? 'empty') as MonthStatus);
     } catch {
       toast({ type: 'error', title: t('actionFailed') });
     } finally {
       setLoading(false);
-      setSelected(null);
     }
   }, [storeId, month, t]);
 
@@ -131,8 +138,22 @@ export default function SchedulePage({
     load();
   }, [load]);
 
-  // HR's acknowledge inbox — published rosters awaiting acknowledgment across all their stores.
-  // 403 (caller is HQ-scheduler, not HR) just leaves the queue empty; the banner is HR-only.
+  // Switching store/month is a fresh context — drop any draft + selection.
+  useEffect(() => {
+    setDraft(new Map());
+    setSelectedEmps(new Set());
+  }, [storeId, month]);
+
+  // Keep a sensible default brush: first active shift; reset if the current one vanished.
+  useEffect(() => {
+    setBrush((b) => {
+      if (b && b.kind === 'shift' && !templates.some((x) => x.id === b.id)) return templates[0] ? { kind: 'shift', id: templates[0].id } : null;
+      if (!b && templates.length) return { kind: 'shift', id: templates[0].id };
+      return b;
+    });
+  }, [templates]);
+
+  // HR acknowledge inbox (unchanged).
   const loadPending = useCallback(async () => {
     try {
       const res = await fetch('/api/hr/schedule/pending');
@@ -143,53 +164,120 @@ export default function SchedulePage({
       setPending([]);
     }
   }, []);
-
   useEffect(() => {
     loadPending();
   }, [loadPending]);
 
   const days = useMemo(() => daysOfMonth(month), [month]);
   const tplById = useMemo(() => new Map(templates.map((x) => [x.id, x])), [templates]);
-  const balByUser = useMemo(() => new Map(balance.map((b) => [b.user_id, b])), [balance]);
   const entryByCell = useMemo(() => {
     const m = new Map<string, Entry>();
-    for (const e of entries) m.set(`${e.user_id}|${e.work_date}`, e);
+    for (const e of entries) m.set(key(e.user_id, e.work_date), e);
     return m;
   }, [entries]);
 
-  // --- cell assignment ---
-  const assign = useCallback(
-    async (payload: { shift_template_id?: string; is_day_off?: boolean }) => {
-      if (!selected) return;
-      try {
-        const res = await fetch('/api/hr/schedule', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ store_id: storeId, user_id: selected.userId, work_date: selected.date, ...payload }),
-        });
-        if (!res.ok) throw new Error();
-        await load();
-      } catch {
-        toast({ type: 'error', title: t('saveFailed') });
+  // Effective cell = draft override, else the saved entry.
+  const effectiveCell = useCallback(
+    (userId: string, date: string): { shift_template_id: string | null; is_day_off: boolean } | null => {
+      const k = key(userId, date);
+      if (draft.has(k)) {
+        const d = draft.get(k)!;
+        return 'clear' in d ? null : d;
       }
+      const e = entryByCell.get(k);
+      return e ? { shift_template_id: e.shift_template_id, is_day_off: e.is_day_off } : null;
     },
-    [selected, storeId, load, t]
+    [draft, entryByCell]
   );
 
-  const clearCell = useCallback(async () => {
-    if (!selected) return;
-    const e = entryByCell.get(`${selected.userId}|${selected.date}`);
-    if (!e) return setSelected(null);
-    try {
-      const res = await fetch(`/api/hr/schedule?id=${e.id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error();
-      await load();
-    } catch {
-      toast({ type: 'error', title: t('saveFailed') });
-    }
-  }, [selected, entryByCell, load, t]);
+  const brushToDraft = (b: Brush): DraftVal | null => {
+    if (!b) return null;
+    if (b.kind === 'clear') return { clear: true };
+    if (b.kind === 'off') return { shift_template_id: null, is_day_off: true };
+    return { shift_template_id: b.id, is_day_off: false };
+  };
 
-  // --- shift templates ---
+  // Paint one cell with the active brush.
+  const paintCell = useCallback(
+    (userId: string, date: string) => {
+      const val = brushToDraft(brush);
+      if (!val) {
+        toast({ type: 'warning', title: tt('เลือกกะ (แปรง) ก่อน', 'Pick a shift (brush) first') });
+        return;
+      }
+      setDraft((prev) => new Map(prev).set(key(userId, date), val));
+    },
+    [brush] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  // Bulk: fill the active brush for every selected employee on the chosen weekdays.
+  const fillSelected = useCallback(
+    (weekdays: number[]) => {
+      const val = brushToDraft(brush);
+      if (!val || selectedEmps.size === 0) return;
+      const wd = new Set(weekdays);
+      setDraft((prev) => {
+        const next = new Map(prev);
+        for (const uid of selectedEmps) for (const d of days) if (wd.has(getDay(d))) next.set(key(uid, d), val);
+        return next;
+      });
+    },
+    [brush, selectedEmps, days] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  // Bulk: stamp a 1-week pattern across the month for every selected employee.
+  const applyPattern = useCallback(
+    (pattern: PatternSlot[]) => {
+      if (selectedEmps.size === 0) return;
+      setDraft((prev) => {
+        const next = new Map(prev);
+        for (const uid of selectedEmps)
+          for (const d of days) {
+            const slot = pattern[getDay(d)];
+            if (!slot) continue;
+            next.set(key(uid, d), slot.kind === 'off' ? { shift_template_id: null, is_day_off: true } : { shift_template_id: slot.id, is_day_off: false });
+          }
+        return next;
+      });
+    },
+    [selectedEmps, days]
+  );
+
+  const dirty = draft.size;
+
+  const saveDraft = useCallback(async () => {
+    if (dirty === 0) return;
+    setSaving(true);
+    try {
+      const cells = [...draft.entries()].map(([k, val]) => {
+        const [user_id, work_date] = k.split('|');
+        return 'clear' in val
+          ? { user_id, work_date, clear: true }
+          : { user_id, work_date, shift_template_id: val.shift_template_id, is_day_off: val.is_day_off };
+      });
+      const res = await fetch('/api/hr/schedule/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ store_id: storeId, cells }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { error?: string; data?: { saved: number; skipped: number } };
+      if (!res.ok) {
+        toast({ type: 'error', title: t('saveFailed'), message: j?.error });
+        return;
+      }
+      toast({
+        type: 'success',
+        title: tt(`บันทึกแล้ว ${j.data?.saved ?? 0} ช่อง`, `Saved ${j.data?.saved ?? 0} cells`),
+        message: j.data?.skipped ? tt(`ข้ามงวดที่ปิดยอดแล้ว ${j.data.skipped} ช่อง`, `Skipped ${j.data.skipped} finalized cells`) : undefined,
+      });
+      setDraft(new Map());
+      await load();
+    } finally {
+      setSaving(false);
+    }
+  }, [dirty, draft, storeId, load, t]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // --- shift templates (unchanged) ---
   const addTemplate = useCallback(async () => {
     if (!form.label.trim()) return;
     try {
@@ -220,9 +308,7 @@ export default function SchedulePage({
     [load, t]
   );
 
-  // --- publish actions ---
-  // Acknowledge (or submit) a specific store+month. Explicit args let the inbox banner act on any
-  // pending roster, not just the one currently open in the grid.
+  // --- publish actions (unchanged) ---
   const runPublishAction = useCallback(
     async (path: 'submit' | 'acknowledge', sid: string, m: string) => {
       try {
@@ -234,7 +320,6 @@ export default function SchedulePage({
         if (!res.ok) throw new Error();
         toast({ type: 'success', title: path === 'submit' ? t('submittedToast') : t('acknowledgedToast') });
         await loadPending();
-        // Only reload the grid when the acted-on roster is the one on screen.
         if (sid === storeId && m === month) await load();
       } catch {
         toast({ type: 'error', title: t('actionFailed') });
@@ -242,26 +327,59 @@ export default function SchedulePage({
     },
     [storeId, month, load, loadPending, t]
   );
-
   const doAction = useCallback(
     (path: 'submit' | 'acknowledge') => runPublishAction(path, storeId, month),
     [runPublishAction, storeId, month]
   );
 
+  // Live per-employee balance from the EFFECTIVE (draft-aware) cells, so day-off counts update as
+  // you edit — before saving.
+  const liveBalance = useMemo(() => {
+    return employees.map((emp) => {
+      let workDays = 0;
+      let offDays = 0;
+      let minutes = 0;
+      for (const d of days) {
+        const c = effectiveCell(emp.user_id, d);
+        if (!c) continue;
+        if (c.is_day_off) offDays++;
+        else {
+          workDays++;
+          const tpl = c.shift_template_id ? tplById.get(c.shift_template_id) : null;
+          if (tpl) minutes += shiftMinutes(tpl.start_time, tpl.end_time);
+        }
+      }
+      return {
+        user_id: emp.user_id,
+        work_days: workDays,
+        day_off_days: offDays,
+        scheduled_minutes: minutes,
+        standard_minutes: workDays * emp.work_hours_per_day * 60,
+        off_target: emp.standard_days_off,
+        off_delta: offDays - emp.standard_days_off,
+      };
+    });
+  }, [employees, days, effectiveCell, tplById]);
+  const balByUser = useMemo(() => new Map(liveBalance.map((b) => [b.user_id, b])), [liveBalance]);
+
+  const allSelected = employees.length > 0 && employees.every((e) => selectedEmps.has(e.user_id));
+  const toggleEmp = (uid: string) =>
+    setSelectedEmps((prev) => {
+      const next = new Set(prev);
+      if (next.has(uid)) next.delete(uid); else next.add(uid);
+      return next;
+    });
+
   const statusText: Record<MonthStatus, string> = {
-    empty: t('statusEmpty'),
-    draft: t('statusDraft'),
-    submitted: t('statusSubmitted'),
-    acknowledged: t('statusAcknowledged'),
-    mixed: t('statusMixed'),
+    empty: t('statusEmpty'), draft: t('statusDraft'), submitted: t('statusSubmitted'),
+    acknowledged: t('statusAcknowledged'), mixed: t('statusMixed'),
   };
   const statusTone: Record<MonthStatus, StatusTone> = {
-    empty: 'neutral',
-    draft: 'warn',
-    submitted: 'info',
-    acknowledged: 'good',
-    mixed: 'warn',
+    empty: 'neutral', draft: 'warn', submitted: 'info', acknowledged: 'good', mixed: 'warn',
   };
+
+  const brushLabel = (b: Brush): string =>
+    !b ? '—' : b.kind === 'clear' ? t('clear') : b.kind === 'off' ? t('dayOff') : (tplById.get(b.id)?.label ?? '—');
 
   return (
     <div className={embedded ? 'space-y-4' : 'mx-auto max-w-7xl space-y-4 p-4'}>
@@ -272,33 +390,22 @@ export default function SchedulePage({
           <>
             <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
               {t('filterStore')}
-              <select
-                value={storeId}
-                onChange={(e) => setStoreId(e.target.value)}
-                className="control mt-1"
-              >
+              <select value={storeId} onChange={(e) => setStoreId(e.target.value)} className="control mt-1">
                 {stores.length === 0 && <option value="">{t('noStores')}</option>}
                 {stores.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.store_name}
-                  </option>
+                  <option key={s.id} value={s.id}>{s.store_name}</option>
                 ))}
               </select>
             </label>
             <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
               {t('filterMonth')}
-              <input
-                type="month"
-                value={month}
-                onChange={(e) => setMonth(e.target.value)}
-                className="control mt-1"
-              />
+              <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="control mt-1" />
             </label>
           </>
         }
       />
 
-      {/* HR acknowledge inbox — published rosters awaiting acknowledgment (HR only; empty for HQ) */}
+      {/* HR acknowledge inbox */}
       {pending.length > 0 && (
         <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-800/60 dark:bg-amber-900/20">
           <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-800 dark:text-amber-200">
@@ -307,189 +414,138 @@ export default function SchedulePage({
           </div>
           <ul className="space-y-1.5">
             {pending.map((p) => (
-              <li
-                key={`${p.store_id}|${p.month}`}
-                className="flex flex-wrap items-center gap-2 rounded-lg bg-white/70 px-2.5 py-1.5 text-sm dark:bg-gray-900/40"
-              >
+              <li key={`${p.store_id}|${p.month}`} className="flex flex-wrap items-center gap-2 rounded-lg bg-white/70 px-2.5 py-1.5 text-sm dark:bg-gray-900/40">
                 <span className="font-medium text-gray-800 dark:text-gray-100">{p.store_name}</span>
                 <span className="tabular-nums text-gray-500 dark:text-gray-400">{p.month}</span>
                 <span className="text-xs text-gray-400">· {t('pendingCount', { count: p.count })}</span>
                 <div className="flex-1" />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStoreId(p.store_id);
-                    setMonth(p.month);
-                  }}
-                  className="rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
-                >
+                <button type="button" onClick={() => { setStoreId(p.store_id); setMonth(p.month); }}
+                  className="rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700">
                   {t('pendingOpen')}
                 </button>
-                <Button size="sm" onClick={() => runPublishAction('acknowledge', p.store_id, p.month)}>
-                  {t('acknowledge')}
-                </Button>
+                <Button size="sm" onClick={() => runPublishAction('acknowledge', p.store_id, p.month)}>{t('acknowledge')}</Button>
               </li>
             ))}
           </ul>
         </div>
       )}
 
-      {/* status + publish actions */}
+      {/* status + publish actions (publish acts on SAVED cells → disabled while a draft is pending) */}
       <div className="flex flex-wrap items-center gap-2">
-        <StatusBadge
-          tone={statusTone[monthStatus]}
-          label={`${t('statusLabel')}: ${statusText[monthStatus]}`}
-        />
+        <StatusBadge tone={statusTone[monthStatus]} label={`${t('statusLabel')}: ${statusText[monthStatus]}`} />
+        {dirty > 0 && (
+          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+            {tt(`ยังไม่บันทึก ${dirty} ช่อง`, `${dirty} unsaved`)}
+          </span>
+        )}
         <div className="flex-1" />
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => doAction('submit')}
-          disabled={monthStatus === 'empty' || monthStatus === 'acknowledged'}
-        >
+        <Button size="sm" variant="outline" onClick={() => doAction('submit')} disabled={dirty > 0 || monthStatus === 'empty' || monthStatus === 'acknowledged'}>
           {t('submitToHr')}
         </Button>
-        <Button
-          size="sm"
-          onClick={() => doAction('acknowledge')}
-          disabled={monthStatus !== 'submitted' && monthStatus !== 'mixed'}
-        >
+        <Button size="sm" onClick={() => doAction('acknowledge')} disabled={dirty > 0 || (monthStatus !== 'submitted' && monthStatus !== 'mixed')}>
           {t('acknowledge')}
         </Button>
       </div>
 
-      {/* shift templates strip */}
+      {/* shift templates strip + brush picker */}
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs font-medium text-gray-500 dark:text-gray-400">{t('shifts')}:</span>
-        {templates.length === 0 && (
-          <span className="text-xs text-gray-400">{t('noTemplates')}</span>
-        )}
-        {templates.map((tpl) => (
-          <span
-            key={tpl.id}
-            className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs dark:border-gray-700 dark:bg-gray-800"
-          >
-            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: tpl.color || '#6366f1' }} />
-            <span className="font-medium text-gray-800 dark:text-gray-200">{tpl.label}</span>
-            <span className="tabular-nums text-gray-400">
-              {hhmm(tpl.start_time)}–{hhmm(tpl.end_time)}
+        {templates.length === 0 && <span className="text-xs text-gray-400">{t('noTemplates')}</span>}
+        {templates.map((tpl) => {
+          const active = brush?.kind === 'shift' && brush.id === tpl.id;
+          return (
+            <span key={tpl.id}
+              className={`inline-flex items-center gap-1.5 rounded-full border bg-white px-2.5 py-1 text-xs dark:bg-gray-800 ${active ? 'border-indigo-500 ring-2 ring-indigo-300 dark:ring-indigo-700' : 'border-gray-200 dark:border-gray-700'}`}>
+              <button type="button" onClick={() => setBrush({ kind: 'shift', id: tpl.id })} className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: tpl.color || '#6366f1' }} />
+                <span className="font-medium text-gray-800 dark:text-gray-200">{tpl.label}</span>
+                <span className="tabular-nums text-gray-400">{hhmm(tpl.start_time)}–{hhmm(tpl.end_time)}</span>
+              </button>
+              <button type="button" onClick={() => deactivateTemplate(tpl.id)} className="text-gray-300 hover:text-red-500" aria-label={t('deactivate')}>
+                <X className="h-3 w-3" />
+              </button>
             </span>
-            <button
-              type="button"
-              onClick={() => deactivateTemplate(tpl.id)}
-              className="text-gray-300 hover:text-red-500"
-              aria-label={t('deactivate')}
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </span>
-        ))}
-        <button
-          type="button"
-          onClick={() => setShowAdd((v) => !v)}
-          className="inline-flex items-center gap-1 rounded-full border border-dashed border-gray-300 px-2.5 py-1 text-xs text-gray-500 hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-600"
-        >
+          );
+        })}
+        {/* OFF + Clear brushes */}
+        <button type="button" onClick={() => setBrush({ kind: 'off' })}
+          className={`rounded-full border px-2.5 py-1 text-xs font-medium ${brush?.kind === 'off' ? 'border-indigo-500 bg-indigo-50 text-indigo-700 ring-2 ring-indigo-300 dark:bg-indigo-900/30 dark:text-indigo-200 dark:ring-indigo-700' : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300'}`}>
+          {t('dayOff')}
+        </button>
+        <button type="button" onClick={() => setBrush({ kind: 'clear' })}
+          className={`rounded-full border px-2.5 py-1 text-xs font-medium ${brush?.kind === 'clear' ? 'border-red-400 bg-red-50 text-red-600 ring-2 ring-red-200 dark:bg-red-900/20' : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300'}`}>
+          {t('clear')}
+        </button>
+        <button type="button" onClick={() => setShowAdd((v) => !v)}
+          className="inline-flex items-center gap-1 rounded-full border border-dashed border-gray-300 px-2.5 py-1 text-xs text-gray-500 hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-600">
           <Plus className="h-3 w-3" /> {t('addShift')}
         </button>
       </div>
 
       {showAdd && (
         <div className="flex flex-wrap items-end gap-2 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/50">
-          <input
-            placeholder={t('shiftLabel')}
-            value={form.label}
-            onChange={(e) => setForm({ ...form, label: e.target.value })}
-            className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-          />
-          <input
-            type="time"
-            value={form.start}
-            onChange={(e) => setForm({ ...form, start: e.target.value })}
-            className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-          />
-          <input
-            type="time"
-            value={form.end}
-            onChange={(e) => setForm({ ...form, end: e.target.value })}
-            className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-          />
-          <input
-            type="color"
-            value={form.color}
-            onChange={(e) => setForm({ ...form, color: e.target.value })}
-            className="h-9 w-10 rounded border border-gray-300 dark:border-gray-600"
-          />
-          <Button size="sm" onClick={addTemplate}>
-            {t('add')}
-          </Button>
+          <input placeholder={t('shiftLabel')} value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })}
+            className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" />
+          <input type="time" value={form.start} onChange={(e) => setForm({ ...form, start: e.target.value })}
+            className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" />
+          <input type="time" value={form.end} onChange={(e) => setForm({ ...form, end: e.target.value })}
+            className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" />
+          <input type="color" value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })}
+            className="h-9 w-10 rounded border border-gray-300 dark:border-gray-600" />
+          <Button size="sm" onClick={addTemplate}>{t('add')}</Button>
         </div>
       )}
 
-      {/* cell editor */}
-      {selected && (
-        <div className="sticky top-2 z-10 flex flex-wrap items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 p-3 dark:border-indigo-800 dark:bg-indigo-900/20">
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
-            {t('editing')}: {employees.find((e) => e.user_id === selected.userId)?.name} · {selected.date}
+      {/* bulk fill tools */}
+      {!loading && employees.length > 0 && (
+        <ScheduleFillTools
+          isTh={isTh}
+          templates={templates}
+          selectedCount={selectedEmps.size}
+          hasBrush={!!brush}
+          onFillSelected={fillSelected}
+          onApplyPattern={applyPattern}
+        />
+      )}
+
+      {/* save bar (sticky) */}
+      {dirty > 0 && (
+        <div className="sticky top-2 z-20 flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 shadow-sm dark:border-amber-700 dark:bg-amber-900/30">
+          <span className="text-sm font-medium text-amber-800 dark:text-amber-200">
+            {tt(`มีการเปลี่ยนแปลง ${dirty} ช่อง`, `${dirty} unsaved change(s)`)}
           </span>
+          <span className="text-xs text-amber-600 dark:text-amber-300">· {tt('แปรง', 'Brush')}: {brushLabel(brush)}</span>
           <div className="flex-1" />
-          {templates.map((tpl) => (
-            <button
-              key={tpl.id}
-              type="button"
-              onClick={() => assign({ shift_template_id: tpl.id })}
-              className="rounded-lg border px-2.5 py-1 text-xs font-medium text-white"
-              style={{ backgroundColor: tpl.color || '#6366f1', borderColor: tpl.color || '#6366f1' }}
-            >
-              {tpl.label}
-            </button>
-          ))}
-          <button
-            type="button"
-            onClick={() => assign({ is_day_off: true })}
-            className="rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
-          >
-            {t('dayOff')}
-          </button>
-          <button
-            type="button"
-            onClick={clearCell}
-            className="rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-gray-600"
-          >
-            {t('clear')}
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelected(null)}
-            className="rounded-lg px-2.5 py-1 text-xs text-gray-500 hover:text-gray-700"
-          >
-            {t('cancel')}
-          </button>
+          <Button size="sm" variant="ghost" onClick={() => setDraft(new Map())} icon={<Undo2 className="h-4 w-4" />}>
+            {tt('ยกเลิกร่าง', 'Discard')}
+          </Button>
+          <Button size="sm" onClick={saveDraft} isLoading={saving} icon={<Save className="h-4 w-4" />}>
+            {tt('บันทึก', 'Save')}
+          </Button>
         </div>
       )}
 
       {/* roster grid */}
       {loading ? (
-        <div className="flex items-center justify-center py-10 text-gray-400">
-          <Loader2 className="h-5 w-5 animate-spin" />
-        </div>
+        <div className="flex items-center justify-center py-10 text-gray-400"><Loader2 className="h-5 w-5 animate-spin" /></div>
       ) : employees.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-gray-300 px-4 py-10 text-center text-sm text-gray-400 dark:border-gray-700">
-          {t('noEmployees')}
-        </p>
+        <p className="rounded-xl border border-dashed border-gray-300 px-4 py-10 text-center text-sm text-gray-400 dark:border-gray-700">{t('noEmployees')}</p>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
           <table className="min-w-full border-collapse text-xs">
             <thead>
               <tr className="bg-gray-50 dark:bg-gray-800">
-                <th className="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-                  {t('employee')}
+                <th className="sticky left-0 z-10 bg-gray-50 px-2 py-2 text-left font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                  <label className="flex items-center gap-1.5">
+                    <input type="checkbox" checked={allSelected}
+                      onChange={(e) => setSelectedEmps(e.target.checked ? new Set(employees.map((x) => x.user_id)) : new Set())}
+                      className="h-3.5 w-3.5 rounded border-gray-300 text-indigo-600" />
+                    {t('employee')}
+                  </label>
                 </th>
                 {days.map((d) => (
-                  <th
-                    key={d}
-                    className="min-w-[38px] px-1 py-2 text-center font-medium text-gray-500 dark:text-gray-400"
-                  >
-                    <div className="text-[10px] uppercase">{weekday(d)}</div>
+                  <th key={d} className="min-w-[38px] px-1 py-2 text-center font-medium text-gray-500 dark:text-gray-400">
+                    <div className="text-[10px] uppercase">{WEEKDAYS[getDay(d)]}</div>
                     <div className="tabular-nums">{Number(d.split('-')[2])}</div>
                   </th>
                 ))}
@@ -498,39 +554,26 @@ export default function SchedulePage({
             <tbody>
               {employees.map((emp) => (
                 <tr key={emp.user_id} className="border-t border-gray-100 dark:border-gray-700/50">
-                  <td className="sticky left-0 z-10 whitespace-nowrap bg-white px-3 py-1.5 font-medium text-gray-800 dark:bg-gray-900 dark:text-gray-200">
-                    {emp.name}
+                  <td className="sticky left-0 z-10 whitespace-nowrap bg-white px-2 py-1.5 font-medium text-gray-800 dark:bg-gray-900 dark:text-gray-200">
+                    <label className="flex items-center gap-1.5">
+                      <input type="checkbox" checked={selectedEmps.has(emp.user_id)} onChange={() => toggleEmp(emp.user_id)}
+                        className="h-3.5 w-3.5 rounded border-gray-300 text-indigo-600" />
+                      {emp.name}
+                    </label>
                   </td>
                   {days.map((d) => {
-                    const e = entryByCell.get(`${emp.user_id}|${d}`);
-                    const tpl = e?.shift_template_id ? tplById.get(e.shift_template_id) : null;
-                    const isSel = selected?.userId === emp.user_id && selected?.date === d;
+                    const c = effectiveCell(emp.user_id, d);
+                    const tpl = c?.shift_template_id ? tplById.get(c.shift_template_id) : null;
+                    const isDirty = draft.has(key(emp.user_id, d));
                     return (
                       <td key={d} className="p-0.5 text-center">
-                        <button
-                          type="button"
-                          onClick={() => setSelected({ userId: emp.user_id, date: d })}
-                          className={`flex h-8 w-full items-center justify-center rounded ${
-                            isSel ? 'ring-2 ring-indigo-500' : ''
-                          } ${
-                            e
-                              ? e.is_day_off
-                                ? 'bg-gray-100 text-gray-400 dark:bg-gray-700/50'
-                                : 'text-white'
-                              : 'bg-transparent hover:bg-gray-100 dark:hover:bg-gray-700/50'
+                        <button type="button" onClick={() => paintCell(emp.user_id, d)}
+                          className={`flex h-8 w-full items-center justify-center rounded ${isDirty ? 'ring-2 ring-amber-400' : ''} ${
+                            c ? (c.is_day_off ? 'bg-gray-100 text-gray-400 dark:bg-gray-700/50' : 'text-white') : 'bg-transparent hover:bg-gray-100 dark:hover:bg-gray-700/50'
                           }`}
-                          style={!e || e.is_day_off ? undefined : { backgroundColor: tpl?.color || '#6366f1' }}
-                          title={e?.is_day_off ? t('dayOff') : tpl?.label}
-                        >
-                          {e ? (
-                            e.is_day_off ? (
-                              <span className="text-[10px]">OFF</span>
-                            ) : (
-                              <span className="truncate px-0.5 text-[10px] font-medium">{tpl?.label?.slice(0, 3)}</span>
-                            )
-                          ) : (
-                            ''
-                          )}
+                          style={!c || c.is_day_off ? undefined : { backgroundColor: tpl?.color || '#6366f1' }}
+                          title={c?.is_day_off ? t('dayOff') : tpl?.label}>
+                          {c ? (c.is_day_off ? <span className="text-[10px]">OFF</span> : <span className="truncate px-0.5 text-[10px] font-medium">{tpl?.label?.slice(0, 3)}</span>) : ''}
                         </button>
                       </td>
                     );
@@ -542,7 +585,7 @@ export default function SchedulePage({
         </div>
       )}
 
-      {/* balance panel */}
+      {/* balance panel (live from draft) */}
       {!loading && employees.length > 0 && (
         <div className="rounded-xl border border-gray-200 dark:border-gray-700">
           <div className="border-b border-gray-100 px-3 py-2 text-sm font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-300">
@@ -554,12 +597,8 @@ export default function SchedulePage({
                 <tr className="text-left text-xs text-gray-500 dark:text-gray-400">
                   <th className="px-3 py-1.5">{t('employee')}</th>
                   <th className="px-3 py-1.5">{t('workDays')}</th>
-                  <th className="px-3 py-1.5">
-                    {t('offDays')} / {t('offTarget')}
-                  </th>
-                  <th className="px-3 py-1.5">
-                    {t('hours')} / {t('standardHours')}
-                  </th>
+                  <th className="px-3 py-1.5">{t('offDays')} / {t('offTarget')}</th>
+                  <th className="px-3 py-1.5">{t('hours')} / {t('standardHours')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -575,9 +614,7 @@ export default function SchedulePage({
                       <td className={`px-3 py-1.5 tabular-nums ${offBad ? 'font-semibold text-red-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-400'}`}>
                         {b?.day_off_days ?? 0} / {b?.off_target ?? 0}
                       </td>
-                      <td className="px-3 py-1.5 tabular-nums text-gray-600 dark:text-gray-400">
-                        {hrs} / {std}
-                      </td>
+                      <td className="px-3 py-1.5 tabular-nums text-gray-600 dark:text-gray-400">{hrs} / {std}</td>
                     </tr>
                   );
                 })}
