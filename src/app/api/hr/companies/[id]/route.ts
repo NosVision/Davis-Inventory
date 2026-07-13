@@ -6,7 +6,7 @@ import { logHrAudit } from '@/lib/hr/audit';
 // PUT /api/hr/companies/[id] — edit a legal entity. The MONEY parameters (sso_rate, ceiling,
 // day_divisor, OT multiplier) feed computePayslip directly, so changing any of them requires a
 // reason (same bar as employee rate/bank edits) and everything is audited before/after.
-const MONEY_FIELDS = ['sso_rate', 'sso_wage_ceiling_satang', 'day_divisor', 'ot_multipliers', 'wht_rate'] as const;
+const MONEY_FIELDS = ['sso_rate', 'sso_wage_ceiling_satang', 'day_divisor', 'ot_multipliers', 'wht_rate', 'sso_prorate'] as const;
 
 export async function PUT(
   request: NextRequest,
@@ -58,6 +58,7 @@ export async function PUT(
     if (!Number.isFinite(n) || n < 0 || n > 0.2) errors.push('wht_rate must be 0–0.20 (fraction)');
     else fields.wht_rate = n;
   }
+  if ('sso_prorate' in body) fields.sso_prorate = Boolean(body.sso_prorate);
   if (errors.length) return NextResponse.json({ error: errors.join('; ') }, { status: 400 });
   if (Object.keys(fields).length === 0) return NextResponse.json({ error: 'Nothing to update' }, { status: 400 });
 

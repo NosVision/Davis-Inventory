@@ -125,6 +125,10 @@ export interface PayrollCompany {
   day_divisor: number; // 30
   ot1_multiplier: number; // 1.5 (standard work-day OT)
   wht_rate: number; // 0.03 — flat withholding rate for tax_mode = 'withholding_3pct'
+  /** When true, SSO is based on the prorated salary earned (like PVD), not the full monthly rate.
+   *  Default/undefined = full rate (historical behaviour). Only differs for mid-month hires/leavers
+   *  below the wage ceiling. */
+  sso_prorate?: boolean;
 }
 
 /** Pre-aggregated timesheet numbers for the pay period (from time-engine sumDays). */
@@ -324,7 +328,10 @@ export function computePayslip(input: PayrollInput): Payslip {
   // also be charged the 5% SSO.
   let sso = 0;
   if (emp.sso_enrolled && !partTime && emp.tax_mode !== 'withholding_3pct') {
-    const raw = Math.round(emp.rate_satang * company.sso_rate);
+    // Base on the prorated salary earned (aligns with PVD) when the company opts in; else the full
+    // monthly rate. Identical for a full-month employee and for anyone at/above the ceiling.
+    const ssoBase = company.sso_prorate ? baseSalary : emp.rate_satang;
+    const raw = Math.round(ssoBase * company.sso_rate);
     const cap = Math.round(company.sso_wage_ceiling_satang * company.sso_rate);
     sso = Math.min(raw, cap);
   }

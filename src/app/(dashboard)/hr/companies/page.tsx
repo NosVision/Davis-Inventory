@@ -19,20 +19,22 @@ interface Company {
   day_divisor: number;
   ot_multipliers: { ot1?: number } | null;
   wht_rate: number;
+  sso_prorate: boolean;
   active: boolean;
 }
 
 export default function HrCompaniesPage() {
   const isTh = useLocale() === 'th';
   const L = isTh
-    ? { title: 'บริษัท & กติกาเงินเดือน', subtitle: 'ค่าเหล่านี้ใช้คำนวณเงินเดือนจริงของแต่ละบริษัท — แก้ได้โดยไม่ต้องแก้โค้ด', edit: 'แก้ไข', name: 'ชื่อบริษัท', address: 'ที่อยู่ (หัวสลิป/รายงาน)', taxId: 'เลขผู้เสียภาษี (13 หลัก)', paper: 'ขนาดกระดาษสลิป', ssoRate: 'อัตรา สปส. (%)', ssoCeiling: 'เพดานค่าจ้าง สปส. (บาท/เดือน)', dayDivisor: 'ตัวหารรายวัน (÷)', ot1: 'ตัวคูณ OT วันปกติ (×)', whtRate: 'อัตราภาษีหัก ณ ที่จ่าย 3% (%)', reason: 'เหตุผล (บังคับเมื่อแก้ค่าที่มีผลต่อเงินเดือน)', save: 'บันทึก', cancel: 'ยกเลิก', saved: 'บันทึกแล้ว', failed: 'บันทึกไม่สำเร็จ', loadFailed: 'โหลดไม่สำเร็จ', inactive: 'ปิดใช้งาน', needReason: 'กรุณากรอกเหตุผลเมื่อแก้ค่าเงินเดือน', hintMoney: 'มีผลกับสลิปตั้งแต่รอบถัดไปที่กด "สร้าง/คำนวณใหม่"' }
-    : { title: 'Companies & payroll parameters', subtitle: 'These values drive real payslip math per entity — editable without code changes', edit: 'Edit', name: 'Company name', address: 'Address (slip/report header)', taxId: 'Tax ID (13 digits)', paper: 'Payslip paper', ssoRate: 'SSO rate (%)', ssoCeiling: 'SSO wage ceiling (THB/month)', dayDivisor: 'Daily divisor (÷)', ot1: 'Weekday OT multiplier (×)', whtRate: 'Withholding tax rate 3% (%)', reason: 'Reason (required when changing payroll values)', save: 'Save', cancel: 'Cancel', saved: 'Saved', failed: 'Save failed', loadFailed: 'Load failed', inactive: 'Inactive', needReason: 'A reason is required when changing payroll values', hintMoney: 'Applies to slips from the next generate/recompute' };
+    ? { title: 'บริษัท & กติกาเงินเดือน', subtitle: 'ค่าเหล่านี้ใช้คำนวณเงินเดือนจริงของแต่ละบริษัท — แก้ได้โดยไม่ต้องแก้โค้ด', edit: 'แก้ไข', name: 'ชื่อบริษัท', address: 'ที่อยู่ (หัวสลิป/รายงาน)', taxId: 'เลขผู้เสียภาษี (13 หลัก)', paper: 'ขนาดกระดาษสลิป', ssoRate: 'อัตรา สปส. (%)', ssoCeiling: 'เพดานค่าจ้าง สปส. (บาท/เดือน)', dayDivisor: 'ตัวหารรายวัน (÷)', ot1: 'ตัวคูณ OT วันปกติ (×)', whtRate: 'อัตราภาษีหัก ณ ที่จ่าย 3% (%)', ssoProrate: 'คิด สปส. ตามยอด prorate (เข้า/ออกกลางเดือน)', ssoProrateHint: 'ปิด = คิดจากเรตเต็ม · เปิด = คิดจากเงินเดือนที่ได้จริงตามวันทำงาน (เหมือน PVD)', reason: 'เหตุผล (บังคับเมื่อแก้ค่าที่มีผลต่อเงินเดือน)', save: 'บันทึก', cancel: 'ยกเลิก', saved: 'บันทึกแล้ว', failed: 'บันทึกไม่สำเร็จ', loadFailed: 'โหลดไม่สำเร็จ', inactive: 'ปิดใช้งาน', needReason: 'กรุณากรอกเหตุผลเมื่อแก้ค่าเงินเดือน', hintMoney: 'มีผลกับสลิปตั้งแต่รอบถัดไปที่กด "สร้าง/คำนวณใหม่"' }
+    : { title: 'Companies & payroll parameters', subtitle: 'These values drive real payslip math per entity — editable without code changes', edit: 'Edit', name: 'Company name', address: 'Address (slip/report header)', taxId: 'Tax ID (13 digits)', paper: 'Payslip paper', ssoRate: 'SSO rate (%)', ssoCeiling: 'SSO wage ceiling (THB/month)', dayDivisor: 'Daily divisor (÷)', ot1: 'Weekday OT multiplier (×)', whtRate: 'Withholding tax rate 3% (%)', ssoProrate: 'Prorate SSO for mid-month hires/leavers', ssoProrateHint: 'Off = full monthly rate · On = the salary actually earned by days worked (like PVD)', reason: 'Reason (required when changing payroll values)', save: 'Save', cancel: 'Cancel', saved: 'Saved', failed: 'Save failed', loadFailed: 'Load failed', inactive: 'Inactive', needReason: 'A reason is required when changing payroll values', hintMoney: 'Applies to slips from the next generate/recompute' };
 
   const [rows, setRows] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Company | null>(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ name: '', address: '', tax_id: '', payslip_paper: '', sso_pct: '', ceiling_baht: '', day_divisor: '', ot1: '', wht_pct: '', reason: '' });
+  const [ssoProrate, setSsoProrate] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -63,6 +65,7 @@ export default function HrCompaniesPage() {
       wht_pct: String((Number(c.wht_rate) || 0.03) * 100),
       reason: '',
     });
+    setSsoProrate(c.sso_prorate ?? false);
     setEditing(c);
   };
 
@@ -71,7 +74,8 @@ export default function HrCompaniesPage() {
       Number(form.ceiling_baht) !== (Number(editing.sso_wage_ceiling_satang) || 0) / 100 ||
       Number(form.day_divisor) !== (editing.day_divisor ?? 30) ||
       Number(form.ot1) !== (editing.ot_multipliers?.ot1 ?? 1.5) ||
-      Number(form.wht_pct) !== (Number(editing.wht_rate) || 0.03) * 100
+      Number(form.wht_pct) !== (Number(editing.wht_rate) || 0.03) * 100 ||
+      ssoProrate !== (editing.sso_prorate ?? false)
     : false;
 
   const save = async () => {
@@ -95,6 +99,7 @@ export default function HrCompaniesPage() {
           day_divisor: Number(form.day_divisor) || 30,
           ot1_multiplier: Number(form.ot1) || 1.5,
           wht_rate: (Number(form.wht_pct) || 0) / 100,
+          sso_prorate: ssoProrate,
           reason: form.reason.trim() || undefined,
         }),
       });
@@ -169,6 +174,18 @@ export default function HrCompaniesPage() {
           </label>
           <label className="text-xs font-medium text-gray-600 dark:text-gray-300">{L.whtRate}
             <input type="number" step="0.1" min="0" max="20" value={form.wht_pct} onChange={upd('wht_pct')} className="control mt-1 w-full" />
+          </label>
+          <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-gray-200 p-2.5 sm:col-span-2 dark:border-gray-700">
+            <input
+              type="checkbox"
+              checked={ssoProrate}
+              onChange={(e) => setSsoProrate(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+              {L.ssoProrate}
+              <span className="mt-0.5 block text-[11px] font-normal text-gray-400">{L.ssoProrateHint}</span>
+            </span>
           </label>
           {moneyChanged && (
             <label className="sm:col-span-2 text-xs font-medium text-amber-600 dark:text-amber-400">{L.reason}
