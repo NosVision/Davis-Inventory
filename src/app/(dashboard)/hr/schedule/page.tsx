@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
-import { BellRing, Loader2, Plus, X, Save, Undo2 } from 'lucide-react';
-import { Button, PageHeader, StatusBadge, type StatusTone, toast } from '@/components/ui';
+import { BellRing, Loader2, Plus, Pencil, Save, Undo2, AlertTriangle } from 'lucide-react';
+import { Button, Modal, ModalFooter, PageHeader, StatusBadge, type StatusTone, toast } from '@/components/ui';
 import { todayBangkok } from '@/lib/utils/date';
 import ScheduleFillTools, { type PatternSlot } from './ScheduleFillTools';
+import ShiftModal from './ShiftModal';
 
 interface StoreOpt {
   id: string;
@@ -98,6 +99,9 @@ export default function SchedulePage({
 
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ label: '', start: '17:00', end: '01:00', color: '#6366f1' });
+  const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
+  // Names of employees with no shift/day-off this month — shown as a non-blocking publish warning.
+  const [publishWarn, setPublishWarn] = useState<string[] | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -295,20 +299,7 @@ export default function SchedulePage({
     }
   }, [form, storeId, load, t]);
 
-  const deactivateTemplate = useCallback(
-    async (id: string) => {
-      try {
-        const res = await fetch(`/api/hr/shift-templates?id=${id}`, { method: 'DELETE' });
-        if (!res.ok) throw new Error();
-        await load();
-      } catch {
-        toast({ type: 'error', title: t('saveFailed') });
-      }
-    },
-    [load, t]
-  );
-
-  // --- publish actions (unchanged) ---
+  // --- publish actions ---
   const runPublishAction = useCallback(
     async (path: 'submit' | 'acknowledge', sid: string, m: string) => {
       try {
@@ -331,6 +322,17 @@ export default function SchedulePage({
     (path: 'submit' | 'acknowledge') => runPublishAction(path, storeId, month),
     [runPublishAction, storeId, month]
   );
+
+  // Publishing is allowed even if some staff have no shift yet — but warn first (owner ask). An
+  // "unassigned" employee has no shift AND no day-off anywhere this month.
+  const attemptSubmit = useCallback(() => {
+    const unassigned = employees.filter((emp) => !days.some((d) => effectiveCell(emp.user_id, d))).map((e) => e.name);
+    if (unassigned.length > 0) {
+      setPublishWarn(unassigned);
+      return;
+    }
+    runPublishAction('submit', storeId, month);
+  }, [employees, days, effectiveCell, runPublishAction, storeId, month]);
 
   // Live per-employee balance from the EFFECTIVE (draft-aware) cells, so day-off counts update as
   // you edit — before saving.
@@ -439,7 +441,7 @@ export default function SchedulePage({
           </span>
         )}
         <div className="flex-1" />
-        <Button size="sm" variant="outline" onClick={() => doAction('submit')} disabled={dirty > 0 || monthStatus === 'empty' || monthStatus === 'acknowledged'}>
+        <Button size="sm" variant="outline" onClick={attemptSubmit} disabled={dirty > 0 || monthStatus === 'empty' || monthStatus === 'acknowledged'}>
           {t('submitToHr')}
         </Button>
         <Button size="sm" onClick={() => doAction('acknowledge')} disabled={dirty > 0 || (monthStatus !== 'submitted' && monthStatus !== 'mixed')}>
@@ -461,8 +463,8 @@ export default function SchedulePage({
                 <span className="font-medium text-gray-800 dark:text-gray-200">{tpl.label}</span>
                 <span className="tabular-nums text-gray-400">{hhmm(tpl.start_time)}–{hhmm(tpl.end_time)}</span>
               </button>
-              <button type="button" onClick={() => deactivateTemplate(tpl.id)} className="text-gray-300 hover:text-red-500" aria-label={t('deactivate')}>
-                <X className="h-3 w-3" />
+              <button type="button" onClick={() => setEditingTemplate(tpl)} className="text-gray-300 hover:text-indigo-500" aria-label={tt('แก้ไขกะ', 'Edit shift')}>
+                <Pencil className="h-3 w-3" />
               </button>
             </span>
           );
@@ -493,6 +495,9 @@ export default function SchedulePage({
           <input type="color" value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })}
             className="h-9 w-10 rounded border border-gray-300 dark:border-gray-600" />
           <Button size="sm" onClick={addTemplate}>{t('add')}</Button>
+          <Button size="sm" variant="ghost" onClick={() => { setShowAdd(false); setForm({ label: '', start: '17:00', end: '01:00', color: '#6366f1' }); }}>
+            {tt('ยกเลิก', 'Cancel')}
+          </Button>
         </div>
       )}
 
@@ -573,7 +578,7 @@ export default function SchedulePage({
                           }`}
                           style={!c || c.is_day_off ? undefined : { backgroundColor: tpl?.color || '#6366f1' }}
                           title={c?.is_day_off ? t('dayOff') : tpl?.label}>
-                          {c ? (c.is_day_off ? <span className="text-[10px]">OFF</span> : <span className="truncate px-0.5 text-[10px] font-medium">{tpl?.label?.slice(0, 3)}</span>) : ''}
+                          {c ? (c.is_day_off ? <span className="text-[10px]">OFF</span> : <span className="hidden truncate px-0.5 text-[10px] font-medium sm:inline">{tpl?.label?.slice(0, 3)}</span>) : ''}
                         </button>
                       </td>
                     );
@@ -622,6 +627,33 @@ export default function SchedulePage({
             </table>
           </div>
         </div>
+      )}
+
+      {/* edit/delete a shift template */}
+      {editingTemplate && (
+        <ShiftModal template={editingTemplate} isTh={isTh} onClose={() => setEditingTemplate(null)} onSaved={load} />
+      )}
+
+      {/* non-blocking warning: publishing while some staff have no schedule yet */}
+      {publishWarn && (
+        <Modal isOpen onClose={() => setPublishWarn(null)} title={tt('ยังจัดกะไม่ครบทุกคน', 'Some staff are unassigned')} size="sm">
+          <div className="space-y-3">
+            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800/60 dark:bg-amber-900/20 dark:text-amber-200">
+              <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+              <span>{tt(`พนักงาน ${publishWarn.length} คนยังไม่ถูกจัดกะเลยเดือนนี้`, `${publishWarn.length} employee(s) have no schedule this month`)}</span>
+            </div>
+            <ul className="max-h-40 overflow-y-auto rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm text-gray-600 dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-300">
+              {publishWarn.map((n) => (<li key={n}>· {n}</li>))}
+            </ul>
+            <p className="text-xs text-gray-400">{tt('เผยแพร่ต่อได้ และกลับมาแก้ไขภายหลังได้', 'You can publish anyway and come back to edit later')}</p>
+            <ModalFooter className="px-0 pb-0">
+              <Button variant="ghost" onClick={() => setPublishWarn(null)}>{tt('กลับไปแก้', 'Back to edit')}</Button>
+              <Button onClick={() => { setPublishWarn(null); runPublishAction('submit', storeId, month); }}>
+                {tt('เผยแพร่ต่อไป', 'Publish anyway')}
+              </Button>
+            </ModalFooter>
+          </div>
+        </Modal>
       )}
     </div>
   );
