@@ -47,6 +47,8 @@ export interface PayslipDetailData {
     net_satang: number;
     deductions: { source_type: string; label: string | null; amount_satang: number; carry_satang: number; note: string | null; auto: boolean }[];
   } | null;
+  /** free-form register remark for this person on this payrun (null = none) */
+  remark?: string | null;
 }
 
 // SV deduction source → Thai label (a deduction usually carries its own `label`; this is the
@@ -66,6 +68,13 @@ const KNOWN_TYPES = new Set([
   'student_loan', 'advance', 'guarantee', 'loan', 'provident_fund', 'other', 'allowance',
 ]);
 
+/** Day count from a leave-line ref ("{leave_id}:{N}d") — null when the ref isn't that shape. */
+function leaveDaysFromRef(ref: string | null | undefined): number | null {
+  if (!ref) return null;
+  const m = /:(\d+(?:\.\d+)?)d$/.exec(ref);
+  return m ? Number(m[1]) : null;
+}
+
 interface PayslipViewProps {
   data: PayslipDetailData;
   /** print variant tightens spacing for the 9×5.5in slip */
@@ -77,8 +86,8 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
   const { payslip, payrun, earnings, deductions } = data;
 
   const lineLabel = (l: PayslipLine): string => {
-    // allowance/claim/commission carry a human label already; standard types are translated.
-    if (l.type === 'allowance' || l.type === 'claim' || l.type === 'commission' || l.type === 'eval_bonus') {
+    // allowance/claim/commission/adjustment carry a human label already; standard types are translated.
+    if (l.type === 'allowance' || l.type === 'claim' || l.type === 'commission' || l.type === 'eval_bonus' || l.type === 'adjustment') {
       return l.label;
     }
     if (KNOWN_TYPES.has(l.type)) {
@@ -90,6 +99,28 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
       return base;
     }
     return l.label;
+  };
+
+  // The formula behind a computed line, rendered from the stored machine ref — the number's
+  // provenance at a glance (HR ask 2026-07-14: "อยากเห็นการแจกแจงทุกตัวเลข"). The engine docks
+  // leave at rate÷30 × days and travel at allowance÷30 × days (payroll.ts).
+  const dailyRateSatang = payslip.rate_satang ? payslip.rate_satang / 30 : 0;
+  const lineFormula = (l: PayslipLine): string | null => {
+    if (l.type === 'ot' && l.ref) return l.ref; // "12.50h"
+    if (l.type === 'late' && l.ref) return l.ref; // "3x"
+    if (l.type === 'absent' && l.ref) return t('formula.absent', { days: l.ref.replace(/d$/, '') });
+    if (l.type === 'leave_unpaid') {
+      const days = leaveDaysFromRef(l.ref);
+      if (days != null && dailyRateSatang > 0) {
+        return t('formula.leave', { days, daily: formatBaht(Math.round(dailyRateSatang)) });
+      }
+      if (days != null) return t('formula.days', { days });
+    }
+    if (l.type === 'travel_leave') {
+      const days = leaveDaysFromRef(l.ref);
+      if (days != null) return t('formula.travel', { days });
+    }
+    return null;
   };
 
   const payTypeLabel = t(`payTypeVal.${payslip.pay_type}`);
@@ -130,7 +161,23 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
         <Meta label={t('period')} value={monthLabel} print={print} />
         <Meta label={t('payType')} value={payTypeLabel} print={print} />
         <Meta label={t('payDate')} value={payDateLabel} print={print} />
+        {!print && (payslip.rate_satang ?? 0) > 0 && (
+          <>
+            <Meta label={t('metaRate')} value={`${formatBaht(payslip.rate_satang as number)} ฿`} print={print} />
+            <Meta label={t('metaDailyRate')} value={`${formatBaht(Math.round((payslip.rate_satang as number) / 30))} ฿`} print={print} />
+          </>
+        )}
+        {!print && payslip.worked_days != null && (
+          <Meta label={t('metaWorkedDays')} value={String(payslip.worked_days)} print={print} />
+        )}
       </div>
+
+      {/* free-form register remark (legacy Payment file Remark column) — screen only */}
+      {!print && data.remark && (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+          📝 {data.remark}
+        </p>
+      )}
 
       {/* earnings */}
       <div>
@@ -139,9 +186,18 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
         </h3>
         <ul className={`divide-y ${divide}`}>
           {earnings.map((l, i) => (
-            <li key={i} className={`flex items-center justify-between ${rowCls}`}>
-              <span>{lineLabel(l)}{l.ref && l.type === 'ot' ? ` · ${l.ref}` : ''}</span>
-              <span className="tabular-nums">{formatBaht(l.amount_satang)}</span>
+            <li key={i} className={`flex items-center justify-between gap-2 ${rowCls}`}>
+              <span className="min-w-0">
+                {lineLabel(l)}
+                {l.type === 'adjustment' && !print && (
+                  <span className="ml-1.5 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-300">
+                    {t('adjBadge')}
+                  </span>
+                )}
+                {lineFormula(l) ? <span className="text-gray-400"> · {lineFormula(l)}</span> : null}
+                {l.type === 'adjustment' && l.reason && !print ? <span className="text-gray-400"> · {l.reason}</span> : null}
+              </span>
+              <span className="shrink-0 tabular-nums">{formatBaht(l.amount_satang)}</span>
             </li>
           ))}
           <li className={`flex items-center justify-between font-semibold ${rowCls}`}>
@@ -161,9 +217,18 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
         ) : (
           <ul className={`divide-y ${divide}`}>
             {deductions.map((l, i) => (
-              <li key={i} className={`flex items-center justify-between ${rowCls}`}>
-                <span>{lineLabel(l)}{l.ref && (l.type === 'late' || l.type === 'absent') ? ` · ${l.ref}` : ''}</span>
-                <span className={`tabular-nums ${print ? '' : 'text-red-600 dark:text-red-400'}`}>−{formatBaht(l.amount_satang)}</span>
+              <li key={i} className={`flex items-center justify-between gap-2 ${rowCls}`}>
+                <span className="min-w-0">
+                  {lineLabel(l)}
+                  {l.type === 'adjustment' && !print && (
+                    <span className="ml-1.5 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-300">
+                      {t('adjBadge')}
+                    </span>
+                  )}
+                  {lineFormula(l) ? <span className="text-gray-400"> · {lineFormula(l)}</span> : null}
+                  {l.type === 'adjustment' && l.reason && !print ? <span className="text-gray-400"> · {l.reason}</span> : null}
+                </span>
+                <span className={`shrink-0 tabular-nums ${print ? '' : 'text-red-600 dark:text-red-400'}`}>−{formatBaht(l.amount_satang)}</span>
               </li>
             ))}
             <li className={`flex items-center justify-between font-semibold ${rowCls}`}>

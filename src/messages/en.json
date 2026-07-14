@@ -3026,6 +3026,18 @@
           "other": "Other"
         }
       },
+      "colDays": "Days",
+      "colSalary": "Salary",
+      "colAllowance": "Allowances",
+      "colOtherDed": "Other ded.",
+      "taxBadge3": "3%",
+      "taxBadgeProg": "PND1",
+      "expandRow": "Expand full breakdown",
+      "remarkAdd": "Remark",
+      "remarkPrompt": "Remark for {name} (empty = clear)",
+      "remarkSaved": "Remark saved",
+      "exportExcel": "Excel",
+      "exportHint": "Download the full Payment register (SS5/SS3 split + Remark)",
       "adjustments": {
         "title": "This-period items",
         "hint": "One-off earning/deduction lines for this payrun (e.g. student loan, damage, bonus) — reason is mandatory, every entry is attributed, computed lines stay untouchable",
@@ -3141,6 +3153,16 @@
         "carry": "carried to next month {amount}"
       },
       "twoRounds": "Paid in 2 transfers: service charge/tip {sv} ฿ (mid-month, 15th) · salary {salary} ฿ (month end)",
+      "metaRate": "Rate",
+      "metaDailyRate": "Daily rate (÷30)",
+      "metaWorkedDays": "Worked days",
+      "adjBadge": "One-off",
+      "formula": {
+        "absent": "absent {days}d × daily rate",
+        "leave": "{days}d × {daily} ฿ (salary÷30)",
+        "travel": "travel docked {days}d (÷30/day)",
+        "days": "{days}d"
+      },
       "print": "Print",
       "close": "Close",
       "loadFailed": "Failed to load",

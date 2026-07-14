@@ -32,7 +32,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
-  const [earnRes, dedRes, payrunRes, profRes, ovrRes, empRes, bonusRes] = await Promise.all([
+  const [earnRes, dedRes, payrunRes, profRes, ovrRes, empRes, bonusRes, remarkRes] = await Promise.all([
     service.from('hr_payslip_earnings').select('type, label, amount_satang, ref, sort').eq('payslip_id', id).order('sort'),
     service.from('hr_payslip_deductions').select('type, label, amount_satang, reason, ref, sort').eq('payslip_id', id).order('sort'),
     service.from('hr_payruns').select('id, company_id, period_year, period_month, cycle_start, cycle_end, pay_date, status, company:hr_companies(name, address)').eq('id', slip.payrun_id).maybeSingle(),
@@ -42,9 +42,26 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     service.from('hr_employees').select('employee_code, full_name, bank_account_no').eq('id', (slip.employee_id as string) ?? '00000000-0000-0000-0000-000000000000').maybeSingle(),
     // HR one-time bonus for this (payrun, profile) — pre-fills the bonus box
     service.from('hr_payslip_bonuses').select('amount_satang, label').eq('payrun_id', slip.payrun_id).eq('profile_id', slip.user_id).maybeSingle(),
+    // free-form register remark (legacy Payment file Remark column)
+    service.from('hr_payrun_remarks').select('remark').eq('payrun_id', slip.payrun_id).eq('profile_id', slip.user_id).maybeSingle(),
   ]);
   if (earnRes.error || dedRes.error) {
     return NextResponse.json({ error: 'Failed to load payslip lines' }, { status: 500 });
+  }
+
+  // Adjustment lines carry ref = hr_payrun_adjustments.id; surface each line's mandatory reason
+  // so the slip shows WHO-typed-WHY next to the number (the whole point of the narrowed rule).
+  type Line = { type: string; label: string; amount_satang: number; ref?: string | null; reason?: string | null; sort: number };
+  let earnLines = (earnRes.data ?? []) as Line[];
+  let dedLines = (dedRes.data ?? []) as Line[];
+  const adjRefs = [...earnLines, ...dedLines].filter((l) => l.type === 'adjustment' && l.ref).map((l) => l.ref as string);
+  if (adjRefs.length > 0) {
+    const { data: adjRows } = await service.from('hr_payrun_adjustments').select('id, reason').in('id', adjRefs);
+    const reasonById = new Map(((adjRows ?? []) as { id: string; reason: string }[]).map((a) => [a.id, a.reason]));
+    const attach = (l: Line): Line =>
+      l.type === 'adjustment' && l.ref && reasonById.has(l.ref) ? { ...l, reason: reasonById.get(l.ref) } : l;
+    earnLines = earnLines.map(attach);
+    dedLines = dedLines.map(attach);
   }
 
   const emp = empRes.data as { employee_code: string | null; full_name: string | null; bank_account_no: string | null } | null;
@@ -101,14 +118,16 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
         bank_account_no: emp?.bank_account_no ?? null,
       },
       payrun: payrunRes.data ?? null,
-      earnings: earnRes.data ?? [],
-      deductions: dedRes.data ?? [],
+      earnings: earnLines,
+      deductions: dedLines,
       // official figure from the accounting office (null = engine estimate is in effect)
       tax_override: ovrRes.data ?? null,
       // HR one-time bonus for this payrun (null = none)
       bonus: bonusRes.data ?? null,
       // Service Charge (SV) detail for the month (null = none)
       service_charge: serviceCharge,
+      // free-form register remark (null = none)
+      remark: (remarkRes.data?.remark as string | undefined) ?? null,
     },
   });
 }

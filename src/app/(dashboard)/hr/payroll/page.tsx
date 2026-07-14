@@ -1,9 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
-import { Loader2, Wallet, Play, Lock, LockOpen, Printer, X, FileText, Settings2, Percent, GitCompareArrows, Users, Coins, Send, Megaphone, RefreshCw, CheckCircle2, ChevronRight, ArrowRight, BookOpen } from 'lucide-react';
+import { Loader2, Wallet, Play, Lock, LockOpen, Printer, X, FileText, Settings2, Percent, GitCompareArrows, Users, Coins, Send, Megaphone, RefreshCw, CheckCircle2, ChevronRight, ArrowRight, BookOpen, StickyNote } from 'lucide-react';
 import { Button, EmptyState, Modal, ModalFooter, PageHeader, KpiRow, StatTile, MoneyValue, StatusBadge, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { formatBaht } from '@/lib/pos/money';
@@ -33,6 +33,10 @@ interface PayslipSummary {
   name: string;
   employee_id?: string | null;
   pay_type: string;
+  tax_mode?: string;
+  worked_days?: number;
+  position?: string | null;
+  employee_code?: string | null;
   gross_satang: number;
   sso_satang: number;
   tax_satang: number;
@@ -40,6 +44,12 @@ interface PayslipSummary {
   total_deduction_satang: number;
   sc_net_satang: number;
   sv_deduct_satang: number;
+  salary_satang?: number;
+  ot_satang?: number;
+  allowance_satang?: number;
+  other_ded_satang?: number;
+  has_tax_override?: boolean;
+  remark?: string | null;
 }
 interface ReviewInfo {
   created_at: string;
@@ -55,7 +65,10 @@ interface PoolSummary {
 interface PayrunDetail {
   payrun: PayrunRow & { company_id: string; cycle_start: string; cycle_end: string; finalized_at?: string | null };
   payslips: PayslipSummary[];
-  totals: { gross: number; net: number; sso: number; tax: number; sc_net: number; sv_deduct: number };
+  totals: {
+    gross: number; net: number; sso: number; tax: number; sc_net: number; sv_deduct: number;
+    salary?: number; ot?: number; allowance?: number; other_ded?: number;
+  };
   review: ReviewInfo | null;
   pools?: { month: string; sc: PoolSummary; tip: PoolSummary };
 }
@@ -121,6 +134,31 @@ export default function HrPayrollPage() {
   const [printSlip, setPrintSlip] = useState<PayslipDetailData | null>(null);
   const [recurringFor, setRecurringFor] = useState<{ employeeId: string; name: string } | null>(null);
   const [taxAllowFor, setTaxAllowFor] = useState<{ employeeId: string; name: string } | null>(null);
+
+  // Expandable register rows: full itemized slip inline (lazy-loaded, cached per payslip id;
+  // ids change on recompute so stale cache entries are simply never hit again).
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [expandedData, setExpandedData] = useState<Map<string, PayslipDetailData>>(new Map());
+  const toggleExpand = useCallback(
+    async (payslipId: string) => {
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        if (next.has(payslipId)) next.delete(payslipId);
+        else next.add(payslipId);
+        return next;
+      });
+      if (!expandedData.has(payslipId)) {
+        try {
+          const res = await fetch(`/api/hr/payslips/${payslipId}`);
+          const json = await res.json();
+          if (res.ok) setExpandedData((prev) => new Map(prev).set(payslipId, json.data as PayslipDetailData));
+        } catch {
+          // row stays expandable; the modal path still works
+        }
+      }
+    },
+    [expandedData]
+  );
 
   // companies → default first
   useEffect(() => {
@@ -277,6 +315,32 @@ export default function HrPayrollPage() {
       setRecomputing(false);
     }
   }, [detail, loadPayruns, openPayrun, t]);
+
+  // Free-form register remark (legacy Payment file Remark column) — annotation only, so it is
+  // editable on finalized runs too.
+  const editRemark = useCallback(
+    async (s: PayslipSummary) => {
+      if (!detail) return;
+      const next = window.prompt(t('remarkPrompt', { name: s.name }), s.remark ?? '');
+      if (next === null) return;
+      try {
+        const res = await fetch(`/api/hr/payruns/${detail.payrun.id}/remarks`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ profile_id: s.user_id, remark: next }),
+        });
+        if (!res.ok) {
+          toast({ type: 'error', title: t('actionFailed') });
+          return;
+        }
+        toast({ type: 'success', title: t('remarkSaved') });
+        await openPayrun(detail.payrun.id);
+      } catch {
+        toast({ type: 'error', title: t('actionFailed') });
+      }
+    },
+    [detail, t, openPayrun]
+  );
 
   const finalize = useCallback(async () => {
     if (!detail) return;
@@ -539,6 +603,16 @@ export default function HrPayrollPage() {
                     {detail.payrun.pay_date ? ` · ${t('payDate')} ${dmy(detail.payrun.pay_date)}` : ''}
                   </div>
                   <div className="flex gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      icon={<FileText className="h-4 w-4" />}
+                      onClick={() => window.open(`/api/hr/payruns/${detail.payrun.id}/export`, '_blank')}
+                      disabled={detail.payslips.length === 0}
+                      title={t('exportHint')}
+                    >
+                      {t('exportExcel')}
+                    </Button>
                     <Button variant="ghost" size="sm" icon={<Printer className="h-4 w-4" />} onClick={() => doPrint(CALIBRATE_DATA)} title={t('printCalibrateHint')}>
                       {t('printCalibrate')}
                     </Button>
@@ -599,21 +673,41 @@ export default function HrPayrollPage() {
                   </KpiRow>
 
                   <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
-                    <table className="w-full min-w-[36rem] text-sm">
+                    <table className="w-full min-w-[64rem] text-sm">
                       <thead className="bg-gray-50 text-left text-xs font-medium text-gray-500 dark:bg-gray-800/50 dark:text-gray-400">
                         <tr>
+                          <th className="w-8 px-2 py-2" />
                           <th className="px-3 py-2">{t('colEmployee')}</th>
-                          <th className="px-3 py-2 text-right">{t('colGross')}</th>
-                          <th className="px-3 py-2 text-right">{t('colSso')}</th>
-                          <th className="px-3 py-2 text-right">{t('colTax')}</th>
-                          <th className="px-3 py-2 text-right">{t('colSv')}</th>
-                          <th className="px-3 py-2 text-right">{t('colNet')}</th>
+                          <th className="px-2 py-2 text-right">{t('colDays')}</th>
+                          <th className="px-2 py-2 text-right">{t('colSalary')}</th>
+                          <th className="px-2 py-2 text-right">OT</th>
+                          <th className="px-2 py-2 text-right">{t('colAllowance')}</th>
+                          <th className="px-2 py-2 text-right">{t('colGross')}</th>
+                          <th className="px-2 py-2 text-right">{t('colOtherDed')}</th>
+                          <th className="px-2 py-2 text-right">{t('colSso')}</th>
+                          <th className="px-2 py-2 text-right">{t('colTax')}</th>
+                          <th className="px-2 py-2 text-right">{t('colSv')}</th>
+                          <th className="px-2 py-2 text-right">{t('colNet')}</th>
                           <th className="px-3 py-2" />
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                        {detail.payslips.map((s) => (
-                          <tr key={s.id} className="bg-white dark:bg-gray-800">
+                        {detail.payslips.map((s, idx) => {
+                          const isOpen = expanded.has(s.id);
+                          const exp = expandedData.get(s.id);
+                          return (
+                          <Fragment key={s.id}>
+                          <tr className="bg-white dark:bg-gray-800">
+                            <td className="px-2 py-2">
+                              <button
+                                onClick={() => toggleExpand(s.id)}
+                                title={t('expandRow')}
+                                aria-label={t('expandRow')}
+                                className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-700"
+                              >
+                                <ChevronRight className={cn('h-4 w-4 transition-transform', isOpen && 'rotate-90')} />
+                              </button>
+                            </td>
                             <td className="px-3 py-2">
                               <button
                                 type="button"
@@ -623,11 +717,25 @@ export default function HrPayrollPage() {
                               >
                                 {s.name}
                               </button>
+                              <div className="text-[10px] text-gray-400">
+                                {idx + 1}{s.employee_code ? ` · ${s.employee_code}` : ''}{s.position ? ` · ${s.position}` : ''}
+                              </div>
                             </td>
-                            <td className="px-3 py-2 text-right tabular-nums">{formatBaht(s.gross_satang)}</td>
-                            <td className="px-3 py-2 text-right tabular-nums text-gray-500">{formatBaht(s.sso_satang)}</td>
-                            <td className="px-3 py-2 text-right tabular-nums text-gray-500">{formatBaht(s.tax_satang)}</td>
-                            <td className="px-3 py-2 text-right tabular-nums">
+                            <td className="px-2 py-2 text-right tabular-nums text-gray-500">{s.worked_days ?? '—'}</td>
+                            <td className="px-2 py-2 text-right tabular-nums">{formatBaht(s.salary_satang ?? 0)}</td>
+                            <td className="px-2 py-2 text-right tabular-nums text-gray-500">{(s.ot_satang ?? 0) > 0 ? formatBaht(s.ot_satang as number) : '—'}</td>
+                            <td className="px-2 py-2 text-right tabular-nums text-gray-500">{(s.allowance_satang ?? 0) > 0 ? formatBaht(s.allowance_satang as number) : '—'}</td>
+                            <td className="px-2 py-2 text-right font-medium tabular-nums">{formatBaht(s.gross_satang)}</td>
+                            <td className="px-2 py-2 text-right tabular-nums text-red-500">{(s.other_ded_satang ?? 0) > 0 ? `−${formatBaht(s.other_ded_satang as number)}` : '—'}</td>
+                            <td className="px-2 py-2 text-right tabular-nums text-gray-500">{formatBaht(s.sso_satang)}</td>
+                            <td className="px-2 py-2 text-right tabular-nums text-gray-500">
+                              {formatBaht(s.tax_satang)}
+                              <div className="text-[9px] leading-tight text-gray-400">
+                                {s.tax_mode === 'withholding_3pct' ? t('taxBadge3') : s.tax_mode === 'progressive' ? t('taxBadgeProg') : ''}
+                                {s.has_tax_override ? ' ✓' : ''}
+                              </div>
+                            </td>
+                            <td className="px-2 py-2 text-right tabular-nums">
                               {s.sc_net_satang > 0 || s.sv_deduct_satang > 0 ? (
                                 <>
                                   <span className="text-violet-700 dark:text-violet-300">{formatBaht(s.sc_net_satang)}</span>
@@ -639,9 +747,17 @@ export default function HrPayrollPage() {
                                 <span className="text-gray-300 dark:text-gray-600">—</span>
                               )}
                             </td>
-                            <td className="px-3 py-2 text-right font-semibold tabular-nums text-gray-900 dark:text-white">{formatBaht(s.net_satang)}</td>
+                            <td className="px-2 py-2 text-right font-semibold tabular-nums text-gray-900 dark:text-white">{formatBaht(s.net_satang)}</td>
                             <td className="px-3 py-2">
                               <div className="flex justify-end gap-1">
+                                <button
+                                  onClick={() => editRemark(s)}
+                                  title={s.remark || t('remarkAdd')}
+                                  aria-label={t('remarkAdd')}
+                                  className={cn('rounded p-1 hover:bg-gray-100 dark:hover:bg-gray-700', s.remark ? 'text-amber-500 hover:text-amber-600' : 'text-gray-300 hover:text-indigo-600 dark:text-gray-600')}
+                                >
+                                  <StickyNote className="h-4 w-4" />
+                                </button>
                                 <button onClick={() => openSlip(s.id)} title={t('viewSlip')} aria-label={t('viewSlip')} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-700">
                                   <FileText className="h-4 w-4" />
                                 </button>
@@ -658,16 +774,37 @@ export default function HrPayrollPage() {
                               </div>
                             </td>
                           </tr>
-                        ))}
+                          {isOpen && (
+                            <tr className="bg-gray-50/70 dark:bg-gray-900/30">
+                              <td colSpan={13} className="px-4 py-3">
+                                {exp ? (
+                                  <div className="max-w-2xl">
+                                    <PayslipView data={exp} />
+                                  </div>
+                                ) : (
+                                  <div className="flex justify-center py-4 text-gray-400"><Loader2 className="h-5 w-5 animate-spin" /></div>
+                                )}
+                              </td>
+                            </tr>
+                          )}
+                          </Fragment>
+                          );
+                        })}
                       </tbody>
                       <tfoot className="border-t-2 border-gray-200 bg-gray-50 font-semibold dark:border-gray-600 dark:bg-gray-800/50">
                         <tr>
+                          <td />
                           <td className="px-3 py-2 text-gray-900 dark:text-white">{t('totals')}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{formatBaht(detail.totals.gross)}</td>
-                          <td className="px-3 py-2 text-right tabular-nums text-gray-500">{formatBaht(detail.totals.sso)}</td>
-                          <td className="px-3 py-2 text-right tabular-nums text-gray-500">{formatBaht(detail.totals.tax)}</td>
-                          <td className="px-3 py-2 text-right tabular-nums text-violet-700 dark:text-violet-300">{formatBaht(detail.totals.sc_net)}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{formatBaht(detail.totals.net)}</td>
+                          <td />
+                          <td className="px-2 py-2 text-right tabular-nums">{formatBaht(detail.totals.salary ?? 0)}</td>
+                          <td className="px-2 py-2 text-right tabular-nums text-gray-500">{formatBaht(detail.totals.ot ?? 0)}</td>
+                          <td className="px-2 py-2 text-right tabular-nums text-gray-500">{formatBaht(detail.totals.allowance ?? 0)}</td>
+                          <td className="px-2 py-2 text-right tabular-nums">{formatBaht(detail.totals.gross)}</td>
+                          <td className="px-2 py-2 text-right tabular-nums text-red-500">−{formatBaht(detail.totals.other_ded ?? 0)}</td>
+                          <td className="px-2 py-2 text-right tabular-nums text-gray-500">{formatBaht(detail.totals.sso)}</td>
+                          <td className="px-2 py-2 text-right tabular-nums text-gray-500">{formatBaht(detail.totals.tax)}</td>
+                          <td className="px-2 py-2 text-right tabular-nums text-violet-700 dark:text-violet-300">{formatBaht(detail.totals.sc_net)}</td>
+                          <td className="px-2 py-2 text-right tabular-nums">{formatBaht(detail.totals.net)}</td>
                           <td />
                         </tr>
                       </tfoot>

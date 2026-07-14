@@ -82,10 +82,12 @@ export async function loadReviewLink(service: SupabaseClient, rawToken: string):
 
 export interface ReviewRow {
   payslip_id: string;
+  user_id: string;
   name: string;
   employee_code: string | null;
   pay_type: string;
   tax_mode: string;
+  worked_days: number;
   salary_satang: number;
   ot_satang: number;
   allowance_satang: number; // recurring allowances + other earnings (excl salary/ot/SC/tip)
@@ -152,7 +154,7 @@ async function ytdBeforePayrun(
 export async function buildPayrunReviewRows(service: SupabaseClient, payrunId: string): Promise<ReviewRow[] | null> {
   const { data: slips, error: slipErr } = await service
     .from('hr_payslips')
-    .select('id, user_id, employee_id, pay_type, tax_mode, gross_satang, sso_satang, tax_satang, total_deduction_satang, net_satang')
+    .select('id, user_id, employee_id, pay_type, tax_mode, worked_days, gross_satang, sso_satang, tax_satang, total_deduction_satang, net_satang')
     .eq('payrun_id', payrunId);
   if (slipErr) return null;
   const slipList = slips ?? [];
@@ -206,10 +208,12 @@ export async function buildPayrunReviewRows(service: SupabaseClient, payrunId: s
     const tax = Number(s.tax_satang) || 0;
     return {
       payslip_id: s.id as string,
+      user_id: s.user_id as string,
       name: emp?.full_name || prof?.display_name || prof?.username || '—',
       employee_code: emp?.employee_code ?? null,
       pay_type: s.pay_type as string,
       tax_mode: s.tax_mode as string,
+      worked_days: Number(s.worked_days) || 0,
       salary_satang: salary,
       ot_satang: ot,
       allowance_satang: allowance,

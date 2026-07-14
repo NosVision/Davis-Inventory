@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManagerForStore } from '@/lib/hr/route-auth';
+import { buildPayrunReviewRows } from '@/lib/hr/review-link';
 
 interface ProfileRow {
   id: string;
@@ -38,9 +39,11 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
   // Names (prefer the real full name), Service-Charge net + SV-deductions for the month, and the
   // accountant review link's status (powers the status stepper + the finalize gate).
-  const [profsRes, empsRes, scRes, linkRes, scPoolsRes, tipPoolsRes] = await Promise.all([
+  // reviewRows adds the money split (salary/OT/allowance/other-deduction) the register renders —
+  // the same aggregation the accountant portal shows, finally visible to HR (redesign 2026-07-14).
+  const [profsRes, empsRes, scRes, linkRes, scPoolsRes, tipPoolsRes, reviewRows, remarksRes] = await Promise.all([
     service.from('profiles').select('id, username, display_name').in('id', userIds),
-    service.from('hr_employees').select('profile_id, full_name').in('profile_id', userIds),
+    service.from('hr_employees').select('profile_id, full_name, position:hr_positions(name)').in('profile_id', userIds),
     service
       .from('hr_sc_allocations')
       .select('user_id, allocated_satang, pool:hr_sc_pools!inner(period_month), hr_sc_deductions(amount_satang)')
@@ -57,14 +60,22 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     // SC + tip pool readiness for the month (feeds the "จัดสรร SC/ทิป" strip on the payroll page).
     service.from('hr_sc_pools').select('status, store_id').eq('period_month', periodMonth),
     service.from('hr_tip_pools').select('status, store_id').eq('period_month', periodMonth),
+    buildPayrunReviewRows(service, id),
+    service.from('hr_payrun_remarks').select('profile_id, remark').eq('payrun_id', id),
   ]);
 
   const nameById = new Map<string, string>();
   for (const p of (profsRes.data ?? []) as ProfileRow[]) nameById.set(p.id, p.display_name || p.username || '—');
   const fullNameById = new Map<string, string>();
-  for (const e of (empsRes.data ?? []) as { profile_id: string; full_name: string | null }[]) {
+  const positionById = new Map<string, string>();
+  for (const e of (empsRes.data ?? []) as unknown as { profile_id: string; full_name: string | null; position: { name: string | null } | null }[]) {
     if (e.full_name?.trim()) fullNameById.set(e.profile_id, e.full_name.trim());
+    if (e.position?.name) positionById.set(e.profile_id, e.position.name);
   }
+  const reviewBySlip = new Map((reviewRows ?? []).map((r) => [r.payslip_id, r]));
+  const remarkByUser = new Map<string, string>(
+    ((remarksRes.data ?? []) as { profile_id: string; remark: string }[]).map((r) => [r.profile_id, r.remark])
+  );
   const scByUser = new Map<string, { net: number; deducted: number }>();
   for (const a of (scRes.data ?? []) as { user_id: string; allocated_satang: number; hr_sc_deductions: { amount_satang: number }[] }[]) {
     const ded = (a.hr_sc_deductions ?? []).reduce((s, d) => s + Math.max(0, Number(d.amount_satang) || 0), 0);
@@ -76,11 +87,21 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   const payslips = slipRows
     .map((s) => {
       const sc = scByUser.get(s.user_id);
+      const rr = reviewBySlip.get(s.id as string);
       return {
         ...s,
         name: fullNameById.get(s.user_id) || nameById.get(s.user_id) || '—',
+        position: positionById.get(s.user_id) ?? null,
+        employee_code: rr?.employee_code ?? null,
         sc_net_satang: sc?.net ?? 0,
         sv_deduct_satang: sc?.deducted ?? 0,
+        // register money split (same aggregation as the accountant portal)
+        salary_satang: rr?.salary_satang ?? 0,
+        ot_satang: rr?.ot_satang ?? 0,
+        allowance_satang: rr?.allowance_satang ?? 0,
+        other_ded_satang: rr?.deduction_satang ?? 0,
+        has_tax_override: rr?.has_override ?? false,
+        remark: remarkByUser.get(s.user_id) ?? null,
       };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -92,8 +113,12 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       tax: acc.tax + s.tax_satang,
       sc_net: acc.sc_net + s.sc_net_satang,
       sv_deduct: acc.sv_deduct + s.sv_deduct_satang,
+      salary: acc.salary + s.salary_satang,
+      ot: acc.ot + s.ot_satang,
+      allowance: acc.allowance + s.allowance_satang,
+      other_ded: acc.other_ded + s.other_ded_satang,
     }),
-    { gross: 0, net: 0, sso: 0, tax: 0, sc_net: 0, sv_deduct: 0 }
+    { gross: 0, net: 0, sso: 0, tax: 0, sc_net: 0, sv_deduct: 0, salary: 0, ot: 0, allowance: 0, other_ded: 0 }
   );
 
   const review = linkRes.data
