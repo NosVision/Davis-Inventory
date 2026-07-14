@@ -47,7 +47,9 @@ const styles = StyleSheet.create({
   headName: { fontSize: 16, fontWeight: 700, color: NAVY },
   headNameEn: { fontSize: 14, fontWeight: 700, color: NAVY },
   title: { fontSize: 17, fontWeight: 700, textAlign: 'center', marginTop: 26 },
-  dateLine: { fontSize: 13, textAlign: 'center', marginTop: 4, marginBottom: 22 },
+  // right-aligned, centered over the same 250pt column as the signature block so the
+  // date sits directly above "ฝ่ายทรัพยากรบุคคล" (owner ask 2026-07-15)
+  dateLine: { fontSize: 13, textAlign: 'center', width: 250, alignSelf: 'flex-end', marginRight: 6, marginTop: 4, marginBottom: 22 },
   para: { textIndent: 48, marginBottom: 12 },
   bold: { fontWeight: 700 },
   signBlock: { marginTop: 52, alignSelf: 'flex-end', alignItems: 'center', width: 250, marginRight: 6 },
@@ -92,8 +94,10 @@ function CertificateDocument({ data }: { data: HrCertificateData }) {
         <Text style={styles.dateLine}>{thaiSafe(`วันที่ ${data.issue_date_label}`)}</Text>
 
         <Text style={styles.para}>
+          {/* one string run: a run boundary inside "เป็น…ของ" lets react-pdf break mid-phrase
+              with a stray hyphen ("เป็น-"); a single token wraps whole to the next line */}
           หนังสือฉบับนี้ให้ไว้เพื่อรับรองว่า <Text style={styles.bold}>{data.employee_name}</Text>
-          {' '}เป็น{data.employment_type_label}ของ <Text style={styles.bold}>{thaiSafe(data.company_name)}</Text>
+          {' '}{`เป็น${data.employment_type_label}ของ`} <Text style={styles.bold}>{thaiSafe(data.company_name)}</Text>
         </Text>
 
         <Text style={styles.para}>

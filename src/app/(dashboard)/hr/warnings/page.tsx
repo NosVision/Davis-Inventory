@@ -52,6 +52,7 @@ interface Warning {
   user_id: string;
   issued_by: string;
   store_id: string | null;
+  company_id: string | null;
   level: Level;
   sc_deduct_percent: number | null;
   amount_satang: number | null;
@@ -67,13 +68,14 @@ interface Warning {
   signatures: Signature[];
 }
 
-interface StoreOpt {
+interface CompanyOpt {
   id: string;
-  store_name: string;
+  name: string;
 }
 interface Employee {
   profile: Person;
-  stores: StoreOpt[];
+  full_name: string | null;
+  company: CompanyOpt | null;
 }
 
 // Money is stored in satang (integer). Baht input × 100 = satang.
@@ -124,7 +126,17 @@ function formatDate(value: string | null): string {
   return Number.isNaN(d.getTime()) ? '—' : formatThaiDate(d);
 }
 
-const PRINT_CSS = `@media print { @page { margin: 1.6cm; } }`;
+// Print isolation: window.print() otherwise prints the whole dashboard (sidebar/header from the
+// shared layout) around the letter. Hide EVERYTHING, then reveal only the warning print root and
+// pin it to the page origin — same pattern as the payslip print (owner report 2026-07-15).
+const PRINT_CSS = `
+@media print {
+  @page { margin: 1.6cm; }
+  html, body { background: #fff !important; }
+  body * { visibility: hidden !important; }
+  #warning-print-root, #warning-print-root * { visibility: visible !important; }
+  #warning-print-root { position: absolute !important; left: 0; top: 0; width: 100%; display: block !important; }
+}`;
 
 export default function HrWarningsPage() {
   const t = useTranslations('hr.warnings');
@@ -134,15 +146,15 @@ export default function HrWarningsPage() {
   const [loading, setLoading] = useState(true);
 
   // filters
-  const [filterStore, setFilterStore] = useState('');
+  const [filterCompany, setFilterCompany] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [view, setView] = useViewMode('hr-warnings');
 
   // issue modal
   const [issueOpen, setIssueOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [companyId, setCompanyId] = useState('');
   const [employeeId, setEmployeeId] = useState('');
-  const [storeId, setStoreId] = useState('');
   const [level, setLevel] = useState<Level>('verbal');
   const [amountBaht, setAmountBaht] = useState('');
   const [reason, setReason] = useState('');
@@ -171,7 +183,7 @@ export default function HrWarningsPage() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch('/api/hr/employees');
+        const res = await fetch('/api/hr/employees?limit=200');
         const json = await res.json().catch(() => ({}));
         setEmployees((json.data ?? []) as Employee[]);
       } catch {
@@ -184,7 +196,6 @@ export default function HrWarningsPage() {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      if (filterStore) params.set('store_id', filterStore);
       if (filterStatus !== 'all') params.set('status', filterStatus);
       const qs = params.toString();
       const res = await fetch(`/api/hr/warnings${qs ? `?${qs}` : ''}`);
@@ -196,32 +207,47 @@ export default function HrWarningsPage() {
     } finally {
       setLoading(false);
     }
-  }, [filterStore, filterStatus]);
+  }, [filterStatus]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  const selectedEmployee = useMemo(
-    () => employees.find((e) => e.profile.id === employeeId) ?? null,
-    [employees, employeeId]
+  // Registry full name per profile — the roster name (ชื่อ นามสกุล), not the login name.
+  const fullNameByProfile = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const e of employees) if (e.full_name) map.set(e.profile.id, e.full_name);
+    return map;
+  }, [employees]);
+  const personName = useCallback(
+    (userId: string, p: Person | null) => fullNameByProfile.get(userId) || p?.display_name || p?.username || '—',
+    [fullNameByProfile]
   );
 
-  // Store filter options: unique stores across all manageable employees.
-  const filterStoreOptions = useMemo(() => {
+  // Company options: unique companies across all manageable employees.
+  const companyOptions = useMemo(() => {
     const map = new Map<string, string>();
-    for (const e of employees) {
-      for (const s of e.stores ?? []) map.set(s.id, s.store_name);
-    }
-    return [
-      { value: '', label: t('allStores') },
-      ...Array.from(map, ([value, label]) => ({ value, label })),
-    ];
-  }, [employees, t]);
+    for (const e of employees) if (e.company) map.set(e.company.id, e.company.name);
+    return Array.from(map, ([value, label]) => ({ value, label }));
+  }, [employees]);
+
+  const companyNameById = useMemo(() => new Map(companyOptions.map((c) => [c.value, c.label])), [companyOptions]);
+
+  // Modal employee list, narrowed by the chosen company (default: everyone).
+  const employeeOptions = useMemo(
+    () => (companyId ? employees.filter((e) => e.company?.id === companyId) : employees),
+    [employees, companyId]
+  );
+
+  // List filter is client-side: warnings carry company_id (derived server-side at issue time).
+  const visibleRows = useMemo(
+    () => (filterCompany ? rows.filter((w) => w.company_id === filterCompany) : rows),
+    [rows, filterCompany]
+  );
 
   const openIssue = () => {
+    setCompanyId('');
     setEmployeeId('');
-    setStoreId('');
     setLevel('verbal');
     setAmountBaht('');
     setReason('');
@@ -245,7 +271,6 @@ export default function HrWarningsPage() {
     try {
       const fd = new FormData();
       fd.append('user_id', employeeId);
-      if (storeId) fd.append('store_id', storeId);
       fd.append('level', level);
       if (level === 'amount_baht') {
         fd.append('amount_satang', String(Math.round(Number(amountBaht) * SATANG_PER_BAHT)));
@@ -265,7 +290,7 @@ export default function HrWarningsPage() {
     } finally {
       setSubmitting(false);
     }
-  }, [employeeId, storeId, level, amountBaht, reason, detail, evidence, t, load]);
+  }, [employeeId, level, amountBaht, reason, detail, evidence, t, load]);
 
   // ── Sign (manager / hr) ───────────────────────────────────────────────────
   const submitSign = useCallback(async () => {
@@ -381,10 +406,10 @@ export default function HrWarningsPage() {
         {/* filters */}
         <div className="grid grid-cols-2 gap-3">
           <Select
-            label={t('filterStore')}
-            value={filterStore}
-            onChange={(e) => setFilterStore(e.target.value)}
-            options={filterStoreOptions}
+            label={t('company')}
+            value={filterCompany}
+            onChange={(e) => setFilterCompany(e.target.value)}
+            options={[{ value: '', label: t('allCompanies') }, ...companyOptions]}
           />
           <Select
             label={t('filterStatus')}
@@ -395,18 +420,18 @@ export default function HrWarningsPage() {
         </div>
 
         {/* KPI summary — lead with the counts that matter */}
-        {!loading && rows.length > 0 && (
+        {!loading && visibleRows.length > 0 && (
           <KpiRow cols={3}>
-            <StatTile label={t('statusAll')} value={rows.length} icon={ShieldAlert} />
+            <StatTile label={t('statusAll')} value={visibleRows.length} icon={ShieldAlert} />
             <StatTile
               label={statusLabel('active')}
-              value={rows.filter((w) => w.status === 'active').length}
+              value={visibleRows.filter((w) => w.status === 'active').length}
               icon={AlertTriangle}
               tone="warn"
             />
             <StatTile
               label={statusLabel('acknowledged')}
-              value={rows.filter((w) => w.status === 'acknowledged').length}
+              value={visibleRows.filter((w) => w.status === 'acknowledged').length}
               icon={CheckCircle2}
               tone="good"
             />
@@ -418,14 +443,14 @@ export default function HrWarningsPage() {
           <div className="flex items-center justify-center py-12 text-gray-400">
             <Loader2 className="h-6 w-6 animate-spin" />
           </div>
-        ) : rows.length === 0 ? (
+        ) : visibleRows.length === 0 ? (
           <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-gray-300 px-4 py-12 text-center text-sm text-gray-400 dark:border-gray-700">
             <Inbox className="h-8 w-8" />
             {t('noWarnings')}
           </div>
         ) : (
           <DataList compact={view === 'compact'}>
-            {rows.map((w) => {
+            {visibleRows.map((w) => {
               const signed = signedRoles(w);
               return (
                 <DataCard
@@ -433,7 +458,7 @@ export default function HrWarningsPage() {
                   accent={w.status === 'void' ? 'neutral' : w.status === 'acknowledged' ? 'good' : 'warn'}
                   title={
                     <span className="flex flex-wrap items-center gap-2">
-                      <span>{w.employee?.display_name ?? w.employee?.username ?? '—'}</span>
+                      <span>{personName(w.user_id, w.employee)}</span>
                       <StatusBadge tone={LEVEL_TONE[w.level]} label={levelLabel(w.level)} />
                     </span>
                   }
@@ -526,14 +551,20 @@ export default function HrWarningsPage() {
       </div>
 
       {/* Print-only detail (single warning) */}
-      <div className="hidden print:block">
+      <div id="warning-print-root" className="hidden print:block">
         {printRow && (
-          <div id="warning-print-area" className="text-black">
-            <h1 className="mb-1 text-lg font-bold">{t('printTitle')}</h1>
-            <p className="mb-4 text-xs text-gray-600">{t('printSubtitle')}</p>
+          <div className="text-black">
+            {printRow.company_id && (
+              <p className="mb-1 text-base font-bold">{companyNameById.get(printRow.company_id) ?? ''}</p>
+            )}
+            <h1 className="mb-1 text-center text-lg font-bold">{t('printTitle')}</h1>
+            <p className="mb-4 text-center text-xs text-gray-600">{t('printSubtitle')}</p>
             <table className="w-full border-collapse text-sm">
               <tbody>
-                <PrintRow label={t('employee')} value={printRow.employee?.display_name ?? printRow.employee?.username ?? '—'} />
+                <PrintRow label={t('employee')} value={personName(printRow.user_id, printRow.employee)} />
+                {printRow.company_id && (
+                  <PrintRow label={t('company')} value={companyNameById.get(printRow.company_id) ?? '—'} />
+                )}
                 <PrintRow label={t('issuedBy')} value={printRow.issuer?.display_name ?? printRow.issuer?.username ?? '—'} />
                 <PrintRow label={t('level')} value={levelLabel(printRow.level)} />
                 <PrintRow label={t('scEffect')} value={scEffect(printRow)} />
@@ -567,37 +598,38 @@ export default function HrWarningsPage() {
       {/* Issue modal */}
       <Modal isOpen={issueOpen} onClose={() => !submitting && setIssueOpen(false)} title={t('issueTitle')} size="lg">
         <div className="space-y-4">
+          {/* Company first — narrows the employee list (default: everyone). The warning's
+              company_id is derived server-side from the employee record, so this is a filter. */}
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-            {t('employee')}
+            {t('company')}
             <select
-              value={employeeId}
+              value={companyId}
               onChange={(e) => {
-                setEmployeeId(e.target.value);
-                setStoreId('');
+                setCompanyId(e.target.value);
+                setEmployeeId('');
               }}
               className="control mt-1 w-full"
             >
-              <option value="">{t('selectEmployee')}</option>
-              {employees.map((emp) => (
-                <option key={emp.profile.id} value={emp.profile.id}>
-                  {emp.profile.display_name ?? emp.profile.username ?? emp.profile.id}
+              <option value="">{t('allCompanies')}</option>
+              {companyOptions.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.label}
                 </option>
               ))}
             </select>
           </label>
 
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-            {t('store')}
+            {t('employee')}
             <select
-              value={storeId}
-              onChange={(e) => setStoreId(e.target.value)}
+              value={employeeId}
+              onChange={(e) => setEmployeeId(e.target.value)}
               className="control mt-1 w-full"
-              disabled={!selectedEmployee}
             >
-              <option value="">{t('storeCompanyWide')}</option>
-              {(selectedEmployee?.stores ?? []).map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.store_name}
+              <option value="">{t('selectEmployee')}</option>
+              {employeeOptions.map((emp) => (
+                <option key={emp.profile.id} value={emp.profile.id}>
+                  {emp.full_name || emp.profile.display_name || emp.profile.username || emp.profile.id}
                 </option>
               ))}
             </select>

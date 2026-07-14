@@ -3503,6 +3503,8 @@
       "subtitle": "Issue and track warnings; each is signed by employee, manager, and HR.",
       "issue": "Issue warning",
       "issueTitle": "Issue disciplinary warning",
+      "company": "Company",
+      "allCompanies": "All companies",
       "filterStore": "Store",
       "allStores": "All stores",
       "filterStatus": "Status",
