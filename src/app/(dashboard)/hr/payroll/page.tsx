@@ -340,30 +340,37 @@ export default function HrPayrollPage() {
 
   // Free-form register remark (legacy Payment file Remark column) — annotation only, so it is
   // editable on finalized runs too.
-  const editRemark = useCallback(
-    async (s: PayslipSummary) => {
-      if (!detail) return;
-      const next = window.prompt(t('remarkPrompt', { name: s.name }), s.remark ?? '');
-      if (next === null) return;
-      try {
-        const res = await fetch(`/api/hr/payruns/${detail.payrun.id}/remarks`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ profile_id: s.user_id, remark: next }),
-        });
-        if (!res.ok) {
-          toast({ type: 'error', title: t('actionFailed') });
-          return;
-        }
-        toast({ type: 'success', title: t('remarkSaved') });
-        await openPayrun(detail.payrun.id);
-        await refreshExpanded(s.id);
-      } catch {
+  const [remarkFor, setRemarkFor] = useState<PayslipSummary | null>(null);
+  const [remarkText, setRemarkText] = useState('');
+  const [remarkSaving, setRemarkSaving] = useState(false);
+  const editRemark = useCallback((s: PayslipSummary) => {
+    setRemarkFor(s);
+    setRemarkText(s.remark ?? '');
+  }, []);
+  const saveRemark = useCallback(async () => {
+    if (!detail || !remarkFor) return;
+    setRemarkSaving(true);
+    try {
+      const res = await fetch(`/api/hr/payruns/${detail.payrun.id}/remarks`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profile_id: remarkFor.user_id, remark: remarkText }),
+      });
+      if (!res.ok) {
         toast({ type: 'error', title: t('actionFailed') });
+        return;
       }
-    },
-    [detail, t, openPayrun, refreshExpanded]
-  );
+      toast({ type: 'success', title: t('remarkSaved') });
+      const slipId = remarkFor.id;
+      setRemarkFor(null);
+      await openPayrun(detail.payrun.id);
+      await refreshExpanded(slipId);
+    } catch {
+      toast({ type: 'error', title: t('actionFailed') });
+    } finally {
+      setRemarkSaving(false);
+    }
+  }, [detail, remarkFor, remarkText, t, openPayrun, refreshExpanded]);
 
   const finalize = useCallback(async () => {
     if (!detail) return;
@@ -1090,6 +1097,28 @@ export default function HrPayrollPage() {
           <ModalFooter>
             <Button variant="outline" onClick={() => doPrint(slip)} icon={<Printer className="h-4 w-4" />}>{t('print')}</Button>
             <Button variant="ghost" onClick={() => setSlip(null)} icon={<X className="h-4 w-4" />}>{t('close')}</Button>
+          </ModalFooter>
+        </Modal>
+      )}
+
+      {/* per-person register remark (legacy Payment Remark column) */}
+      {remarkFor && (
+        <Modal isOpen onClose={() => setRemarkFor(null)} title={`${t('remarkAdd')} · ${remarkFor.name}`} size="sm">
+          <div className="space-y-2">
+            <textarea
+              value={remarkText}
+              onChange={(e) => setRemarkText(e.target.value)}
+              maxLength={500}
+              rows={3}
+              autoFocus
+              placeholder={t('remarkPlaceholder')}
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+            />
+            <p className="text-xs text-gray-400">{t('remarkHint')}</p>
+          </div>
+          <ModalFooter>
+            <Button variant="ghost" onClick={() => setRemarkFor(null)}>{t('close')}</Button>
+            <Button onClick={saveRemark} isLoading={remarkSaving}>{t('remarkSave')}</Button>
           </ModalFooter>
         </Modal>
       )}
