@@ -3,7 +3,7 @@
 import { useCallback, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { CalendarOff, Plus, Trash2 } from 'lucide-react';
-import { Button, Modal, ModalFooter, Badge, toast } from '@/components/ui';
+import { Button, Modal, ModalFooter, Badge, toast, useConfirm, usePromptDialog } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { formatBaht, bahtToSatang } from '@/lib/pos/money';
 import type { GridEmployee, RecurringItem } from './types';
@@ -33,6 +33,8 @@ function windowText(it: RecurringItem, t: (k: string) => string): string {
 export function CellEditorModal({ employee, kind, code, currentPeriod, items, onClose, onChanged }: CellEditorModalProps) {
   const t = useTranslations('hr.payroll.recurringPage.editor');
   const tCode = useTranslations('hr.payroll.recurringModal');
+  const { confirm, dialog: confirmDialog } = useConfirm();
+  const { prompt, dialog: promptDialog } = usePromptDialog();
   const [busy, setBusy] = useState(false);
 
   const [label, setLabel] = useState('');
@@ -106,7 +108,13 @@ export function CellEditorModal({ employee, kind, code, currentPeriod, items, on
 
   const editAmount = useCallback(
     async (it: RecurringItem) => {
-      const raw = window.prompt(t('amountPrompt'), (it.amount_satang / 100).toFixed(2));
+      const raw = await prompt({
+        title: t('amountPrompt'),
+        inputType: 'number',
+        initialValue: (it.amount_satang / 100).toFixed(2),
+        confirmLabel: t('save'),
+        cancelLabel: t('cancel'),
+      });
       if (raw === null) return;
       const amt = Number(raw);
       if (!Number.isFinite(amt) || amt <= 0) {
@@ -115,7 +123,7 @@ export function CellEditorModal({ employee, kind, code, currentPeriod, items, on
       }
       await patch(it.id, { amount_satang: bahtToSatang(amt) }, t('updated'));
     },
-    [patch, t]
+    [patch, prompt, t]
   );
 
   const endNow = useCallback(
@@ -125,16 +133,24 @@ export function CellEditorModal({ employee, kind, code, currentPeriod, items, on
 
   const remove = useCallback(
     async (it: RecurringItem) => {
-      if (!window.confirm(t('deleteConfirm'))) return;
+      const ok = await confirm({
+        title: t('delete'),
+        message: t('deleteConfirm'),
+        tone: 'danger',
+        confirmLabel: tCode('remove'),
+        cancelLabel: t('cancel'),
+      });
+      if (!ok) return;
       await run(() => fetch(`${api}?item_id=${it.id}`, { method: 'DELETE' }), t('removed'));
     },
-    [api, run, t]
+    [api, run, confirm, t, tCode]
   );
 
   const isLive = (it: RecurringItem) =>
     it.active && (!it.start_period || it.start_period <= currentPeriod) && (!it.end_period || it.end_period >= currentPeriod);
 
   return (
+    <>
     <Modal isOpen onClose={onClose} title={`${tCode(`code.${code}`)} · ${employee.name}`} size="md">
       <div className="space-y-3">
         <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
@@ -215,5 +231,9 @@ export function CellEditorModal({ employee, kind, code, currentPeriod, items, on
         <Button variant="ghost" onClick={onClose}>{t('close')}</Button>
       </ModalFooter>
     </Modal>
+    {/* rendered after (not inside) the editor modal so the overlay stacks on top */}
+    {confirmDialog}
+    {promptDialog}
+    </>
   );
 }

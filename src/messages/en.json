@@ -2848,6 +2848,7 @@
       "setQuotaPrompt": "Set this year's quota — {name} · {type} ({year}); leave blank to use the leave type's default",
       "quotaSaved": "Quota saved",
       "quotaSaveFailed": "Failed to save quota",
+      "save": "Save",
       "quotaInvalid": "Quota must be a number between 0 and 366",
       "noEmployees": "No employees",
       "summaryHeading": "Leave summary {year}",
@@ -3016,6 +3017,8 @@
       "slipTitle": "Payslip",
       "print": "Print",
       "close": "Close",
+      "confirm": "Confirm",
+      "cancel": "Cancel",
       "recurringModal": {
         "title": "Recurring items",
         "applyNote": "Applied to every payrun automatically — closing this window recomputes the draft for you",
@@ -3074,6 +3077,7 @@
         "added": "Item added — payslips recomputed automatically",
         "removed": "Item removed — payslips recomputed automatically",
         "remove": "Remove",
+        "cancel": "Cancel",
         "deleteConfirm": "Remove this line? Payslips will be recomputed automatically",
         "copyFromPrevious": "Copy from previous period ({n} items)",
         "copied": "Copied {n} items",
@@ -3120,6 +3124,8 @@
           "removed": "Item removed",
           "invalid": "Enter a label and a positive amount",
           "failed": "Save failed",
+          "save": "Save",
+          "cancel": "Cancel",
           "close": "Close"
         },
         "bulk": {

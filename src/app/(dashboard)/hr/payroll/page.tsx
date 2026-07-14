@@ -4,7 +4,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
 import { Loader2, Wallet, Play, Lock, LockOpen, Printer, X, FileText, Settings2, Percent, GitCompareArrows, Users, Coins, Send, Megaphone, RefreshCw, CheckCircle2, ChevronRight, ChevronDown, ArrowRight, BookOpen, StickyNote, type LucideIcon } from 'lucide-react';
-import { Button, EmptyState, Modal, ModalFooter, PageHeader, KpiRow, StatTile, MoneyValue, StatusBadge, Skeleton, toast } from '@/components/ui';
+import { Button, EmptyState, Modal, ModalFooter, PageHeader, KpiRow, StatTile, MoneyValue, StatusBadge, Skeleton, toast, useConfirm, usePromptDialog } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { formatBaht } from '@/lib/pos/money';
 import { PayslipView, type PayslipDetailData } from '@/components/hr/payslip-view';
@@ -119,6 +119,9 @@ function dmy(d?: string | null): string {
 
 export default function HrPayrollPage() {
   const t = useTranslations('hr.payroll');
+  // in-app replacements for window.confirm / window.prompt (finalize, reopen, announce-resend)
+  const { confirm, dialog: confirmDialog } = useConfirm();
+  const { prompt, dialog: promptDialog } = usePromptDialog();
 
   const [companies, setCompanies] = useState<CompanyOpt[]>([]);
   const [companyId, setCompanyId] = useState('');
@@ -376,7 +379,7 @@ export default function HrPayrollPage() {
     if (!detail) return;
     // Forget-guard: last period had one-off adjustments and this one has none — a common miss
     // when items like กยศ recur monthly with changing amounts. Warn (never block) in the confirm.
-    let confirmMsg = t('finalizeConfirm');
+    let warnMsg: string | undefined;
     try {
       const adjRes = await fetch(`/api/hr/payruns/${detail.payrun.id}/adjustments`);
       const adjJson = (await adjRes.json().catch(() => ({}))) as {
@@ -385,12 +388,19 @@ export default function HrPayrollPage() {
       const cur = adjJson.data?.adjustments?.length ?? 0;
       const prev = adjJson.data?.previous;
       if (adjRes.ok && cur === 0 && prev && prev.count > 0) {
-        confirmMsg += `\n\n${t('finalizeAdjWarn', { n: prev.count, period: `${prev.period_month}/${prev.period_year}` })}`;
+        warnMsg = t('finalizeAdjWarn', { n: prev.count, period: `${prev.period_month}/${prev.period_year}` });
       }
     } catch {
       // guard is best-effort — a fetch failure must never stop a finalize
     }
-    if (!window.confirm(confirmMsg)) return;
+    const ok = await confirm({
+      title: t('finalizeConfirm'),
+      message: warnMsg,
+      tone: 'danger',
+      confirmLabel: t('finalize'),
+      cancelLabel: t('cancel'),
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       // Up to two attempts: a plain finalize, then — if the server blocks because the accountant
@@ -404,7 +414,12 @@ export default function HrPayrollPage() {
         });
         const json = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
         if (res.status === 409 && json?.code === 'accountant_not_confirmed' && attempt === 0) {
-          const reason = window.prompt(t('finalizeOverridePrompt'));
+          const reason = await prompt({
+            title: t('finalizeOverridePrompt'),
+            required: true,
+            confirmLabel: t('finalize'),
+            cancelLabel: t('cancel'),
+          });
           if (!reason || !reason.trim()) return; // HR cancelled the override
           overrideReason = reason.trim();
           continue;
@@ -421,11 +436,16 @@ export default function HrPayrollPage() {
     } finally {
       setBusy(false);
     }
-  }, [detail, t, loadPayruns, openPayrun]);
+  }, [detail, t, confirm, prompt, loadPayruns, openPayrun]);
 
   const reopen = useCallback(async () => {
     if (!detail) return;
-    const reason = window.prompt(t('reopenReason'));
+    const reason = await prompt({
+      title: t('reopenReason'),
+      required: true,
+      confirmLabel: t('reopen'),
+      cancelLabel: t('cancel'),
+    });
     if (!reason || !reason.trim()) return;
     setBusy(true);
     try {
@@ -444,7 +464,7 @@ export default function HrPayrollPage() {
     } finally {
       setBusy(false);
     }
-  }, [detail, t, loadPayruns, openPayrun]);
+  }, [detail, t, prompt, loadPayruns, openPayrun]);
 
   // accountant review link — mint (revokes any previous), show once, copy, revoke
   const [reviewLink, setReviewLink] = useState<{ url: string; expires_at: string; passcode: string } | null>(null);
@@ -502,7 +522,11 @@ export default function HrPayrollPage() {
   const announce = useCallback(async () => {
     if (!detail) return;
     const resend = !!detail.payrun.announced_at;
-    if (resend && !window.confirm(t('announceResendConfirm'))) return;
+    if (
+      resend &&
+      !(await confirm({ title: t('announceResendConfirm'), confirmLabel: t('confirm'), cancelLabel: t('cancel') }))
+    )
+      return;
     setBusy(true);
     try {
       const res = await fetch(`/api/hr/payruns/${detail.payrun.id}/announce`, {
@@ -519,7 +543,7 @@ export default function HrPayrollPage() {
     } finally {
       setBusy(false);
     }
-  }, [detail, t, openPayrun]);
+  }, [detail, t, confirm, openPayrun]);
 
   const openSlip = useCallback(async (id: string) => {
     try {
@@ -1155,6 +1179,10 @@ export default function HrPayrollPage() {
           </div>
         </div>
       )}
+
+      {/* confirm/prompt dialogs (finalize, override reason, reopen reason, announce resend) */}
+      {confirmDialog}
+      {promptDialog}
 
       {/* print-only slip — fixed-position 9×5.5" security-form layout */}
       <div id="payslip-print-root" className="hidden print:block">

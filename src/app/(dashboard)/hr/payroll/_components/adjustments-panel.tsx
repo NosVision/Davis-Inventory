@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { ClipboardPaste, Loader2, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
-import { Button, Badge, toast } from '@/components/ui';
+import { Button, Badge, toast, useConfirm } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { formatBaht, bahtToSatang } from '@/lib/pos/money';
 
@@ -43,6 +43,7 @@ const inputCls =
 // an earning adjustment is the new bonus. Read-only once finalized.
 export function AdjustmentsPanel({ payrunId, isDraft, slips, onChanged }: AdjustmentsPanelProps) {
   const t = useTranslations('hr.payroll.adjustments');
+  const { confirm, dialog: confirmDialog } = useConfirm();
   const [rows, setRows] = useState<AdjustmentRow[]>([]);
   const [previous, setPrevious] = useState<AdjustmentsPrevious | null>(null);
   const [loading, setLoading] = useState(true);
@@ -122,7 +123,14 @@ export function AdjustmentsPanel({ payrunId, isDraft, slips, onChanged }: Adjust
 
   const remove = useCallback(
     async (row: AdjustmentRow) => {
-      if (!window.confirm(t('deleteConfirm'))) return;
+      const ok = await confirm({
+        title: t('remove'),
+        message: t('deleteConfirm'),
+        tone: 'danger',
+        confirmLabel: t('remove'),
+        cancelLabel: t('cancel'),
+      });
+      if (!ok) return;
       setBusy(true);
       try {
         const res = await fetch(`/api/hr/payruns/${payrunId}/adjustments?adjustment_id=${row.id}`, { method: 'DELETE' });
@@ -139,7 +147,7 @@ export function AdjustmentsPanel({ payrunId, isDraft, slips, onChanged }: Adjust
         setBusy(false);
       }
     },
-    [payrunId, t, load, onChanged]
+    [payrunId, t, confirm, load, onChanged]
   );
 
   const copyFromPrevious = useCallback(async () => {
@@ -251,6 +259,8 @@ export function AdjustmentsPanel({ payrunId, isDraft, slips, onChanged }: Adjust
           <Button size="sm" onClick={add} isLoading={busy} icon={<Plus className="h-4 w-4" />}>{t('add')}</Button>
         </div>
       )}
+
+      {confirmDialog}
     </div>
   );
 }

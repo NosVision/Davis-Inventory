@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2, Inbox, FileText, CalendarRange, ListChecks } from 'lucide-react';
-import { Button, Select, PageHeader, ViewToggle, useViewMode, DataList, DataCard, StatusBadge, SkeletonList, toast } from '@/components/ui';
+import { Button, Select, PageHeader, ViewToggle, useViewMode, DataList, DataCard, StatusBadge, SkeletonList, toast, usePromptDialog } from '@/components/ui';
 import { formatThaiDate } from '@/lib/utils/format';
 
 interface StoreOpt {
@@ -78,6 +78,8 @@ function fmtDays(n: number): string {
 
 export default function HrLeavesPage() {
   const t = useTranslations('hr.leaves');
+  // in-app replacement for the window.prompt quota editor
+  const { prompt, dialog: promptDialog } = usePromptDialog();
 
   const [stores, setStores] = useState<StoreOpt[]>([]);
   const [storeId, setStoreId] = useState(''); // '' = company-wide (no store_id)
@@ -224,10 +226,15 @@ export default function HrLeavesPage() {
     async (emp: QuotaEmployee, ty: QuotaType) => {
       if (!quota) return;
       const current = balanceMap.get(`${emp.employee_id}|${ty.id}`);
-      const input = window.prompt(
-        t('setQuotaPrompt', { name: emp.name, type: ty.name_th, year: String(quota.year) }),
-        current != null ? fmtDays(current) : ''
-      );
+      // NOT required: submitting an empty value clears the override (falls back to the type default)
+      const input = await prompt({
+        title: t('setQuotaTitle'),
+        message: t('setQuotaPrompt', { name: emp.name, type: ty.name_th, year: String(quota.year) }),
+        inputType: 'number',
+        initialValue: current != null ? fmtDays(current) : '',
+        confirmLabel: t('save'),
+        cancelLabel: t('cancel'),
+      });
       if (input === null) return;
       const trimmed = input.trim();
       let quotaDays: number | null = null;
@@ -257,7 +264,7 @@ export default function HrLeavesPage() {
         toast({ type: 'error', title: t('quotaSaveFailed') });
       }
     },
-    [quota, balanceMap, t, loadQuota]
+    [quota, balanceMap, t, prompt, loadQuota]
   );
 
   const decide = useCallback(
@@ -583,6 +590,8 @@ export default function HrLeavesPage() {
           )}
         </>
       )}
+
+      {promptDialog}
     </div>
   );
 }

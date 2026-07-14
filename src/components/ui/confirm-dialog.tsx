@@ -39,7 +39,7 @@ export function useConfirm() {
 
   const dialog = opts ? (
     <Modal isOpen onClose={() => settle(false)} title={opts.title} size="sm">
-      {opts.message && <p className="text-sm text-gray-600 dark:text-gray-300">{opts.message}</p>}
+      {opts.message && <p className="whitespace-pre-line text-sm text-gray-600 dark:text-gray-300">{opts.message}</p>}
       <ModalFooter>
         <Button variant="ghost" onClick={() => settle(false)}>
           {opts.cancelLabel ?? 'ยกเลิก'}
@@ -58,6 +58,10 @@ interface PromptOpts {
   title: string;
   message?: string;
   placeholder?: string;
+  /** pre-filled value (window.prompt's second argument) */
+  initialValue?: string;
+  /** 'number' renders a single-line numeric input instead of the multiline textarea */
+  inputType?: 'text' | 'number';
   /** block confirm until non-empty (for required reasons) */
   required?: boolean;
   confirmLabel?: string;
@@ -71,7 +75,7 @@ export function usePromptDialog() {
 
   const prompt = useCallback((next: PromptOpts) => {
     setOpts(next);
-    setValue('');
+    setValue(next.initialValue ?? '');
     return new Promise<string | null>((resolve) => {
       resolver.current = resolve;
     });
@@ -86,15 +90,32 @@ export function usePromptDialog() {
   const trimmed = value.trim();
   const dialog = opts ? (
     <Modal isOpen onClose={() => settle(null)} title={opts.title} size="sm">
-      {opts.message && <p className="mb-2 text-sm text-gray-600 dark:text-gray-300">{opts.message}</p>}
-      <textarea
-        autoFocus
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        placeholder={opts.placeholder}
-        rows={3}
-        className="control w-full"
-      />
+      {opts.message && <p className="mb-2 whitespace-pre-line text-sm text-gray-600 dark:text-gray-300">{opts.message}</p>}
+      {opts.inputType === 'number' ? (
+        <input
+          type="number"
+          inputMode="decimal"
+          step="any"
+          autoFocus
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            // window.prompt submits on Enter — keep that for the single-line numeric variant
+            if (e.key === 'Enter' && !(opts.required && !trimmed)) settle(trimmed);
+          }}
+          placeholder={opts.placeholder}
+          className="control w-full"
+        />
+      ) : (
+        <textarea
+          autoFocus
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder={opts.placeholder}
+          rows={3}
+          className="control w-full"
+        />
+      )}
       <ModalFooter>
         <Button variant="ghost" onClick={() => settle(null)}>
           {opts.cancelLabel ?? 'ยกเลิก'}
