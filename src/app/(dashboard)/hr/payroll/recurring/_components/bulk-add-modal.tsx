@@ -142,7 +142,7 @@ export function BulkAddModal({ companyId, employees, currentPeriod, onClose, onC
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <input
                 type="text" value={search} onChange={(e) => setSearch(e.target.value)}
-                placeholder={t('searchPlaceholder')} className={cn('w-full pl-8', inputCls)}
+                placeholder={t('searchPlaceholder')} className={cn(inputCls, 'w-full !pl-9')}
               />
             </div>
             <button onClick={toggleAllVisible} className="whitespace-nowrap text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">

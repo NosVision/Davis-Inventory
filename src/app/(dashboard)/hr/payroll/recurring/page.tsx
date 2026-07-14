@@ -1,9 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { ArrowLeft, Loader2, Plus, Search } from 'lucide-react';
+import { Loader2, Plus, Search } from 'lucide-react';
 import { Button, PageHeader } from '@/components/ui';
 import { formatBaht } from '@/lib/pos/money';
 import { RECURRING_EARNING_CODES, RECURRING_DEDUCTION_CODES } from '@/lib/hr/recurring';
@@ -131,10 +130,6 @@ export default function RecurringGridPage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-4 p-4 sm:p-6">
-      <Link href="/hr/payroll" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-indigo-600 dark:text-gray-400">
-        <ArrowLeft className="h-4 w-4" /> {t('backToPayroll')}
-      </Link>
-
       <PageHeader
         title={t('title')}
         subtitle={t('subtitle')}
@@ -158,14 +153,14 @@ export default function RecurringGridPage() {
 
       {/* toolbar: search + filter + monthly commitment chips */}
       <div className="flex flex-wrap items-center gap-3">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+        <div className="relative w-full sm:w-64">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={t('searchPlaceholder')}
-            className="control pl-8"
+            className="control w-full !pl-9"
           />
         </div>
         <label className="flex items-center gap-1.5 text-sm text-gray-600 dark:text-gray-300">
