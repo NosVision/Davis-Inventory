@@ -3139,7 +3139,15 @@
       },
       "recurringGridLink": "รายการประจำทั้งบริษัท",
       "flowLink": "โฟลการทำเงินเดือน",
-      "compareLink": "เทียบสลิประหว่างงวด"
+      "compareLink": "เทียบสลิประหว่างงวด",
+      "moreActions": "เพิ่มเติม",
+      "loadingPayrun": "กำลังโหลดข้อมูลรอบจ่าย…",
+      "recomputingPill": "กำลังคำนวณใหม่…",
+      "nextActionSend": "ส่งให้บัญชี",
+      "nextActionFinalize": "ปิดยอด",
+      "nextActionAnnounce": "ประกาศเงินเดือนออก",
+      "announcedBadge": "ประกาศแล้ว",
+      "printQueueSummary": "คิวปริ้นสลิปกระดาษ · รอพิมพ์ {n}"
     },
     "payslip": {
       "title": "สลิปเงินเดือน",

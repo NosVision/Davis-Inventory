@@ -3138,7 +3138,15 @@
       },
       "recurringGridLink": "Company-wide recurring items",
       "flowLink": "Payroll flow guide",
-      "compareLink": "Compare payslips across periods"
+      "compareLink": "Compare payslips across periods",
+      "moreActions": "More",
+      "loadingPayrun": "Loading payrun…",
+      "recomputingPill": "Recomputing…",
+      "nextActionSend": "Send to accountant",
+      "nextActionFinalize": "Finalize",
+      "nextActionAnnounce": "Announce payday",
+      "announcedBadge": "Announced",
+      "printQueueSummary": "Paper slip print queue · {n} waiting"
     },
     "payslip": {
       "title": "Payslip",

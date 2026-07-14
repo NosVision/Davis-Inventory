@@ -1,10 +1,10 @@
 'use client';
 
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
-import { Loader2, Wallet, Play, Lock, LockOpen, Printer, X, FileText, Settings2, Percent, GitCompareArrows, Users, Coins, Send, Megaphone, RefreshCw, CheckCircle2, ChevronRight, ArrowRight, BookOpen, StickyNote } from 'lucide-react';
-import { Button, EmptyState, Modal, ModalFooter, PageHeader, KpiRow, StatTile, MoneyValue, StatusBadge, toast } from '@/components/ui';
+import { Loader2, Wallet, Play, Lock, LockOpen, Printer, X, FileText, Settings2, Percent, GitCompareArrows, Users, Coins, Send, Megaphone, RefreshCw, CheckCircle2, ChevronRight, ChevronDown, ArrowRight, BookOpen, StickyNote, type LucideIcon } from 'lucide-react';
+import { Button, EmptyState, Modal, ModalFooter, PageHeader, KpiRow, StatTile, MoneyValue, StatusBadge, Skeleton, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { formatBaht } from '@/lib/pos/money';
 import { PayslipView, type PayslipDetailData } from '@/components/hr/payslip-view';
@@ -129,6 +129,8 @@ export default function HrPayrollPage() {
   const [generating, setGenerating] = useState(false);
   const [recomputing, setRecomputing] = useState(false);
   const [busy, setBusy] = useState(false);
+  // which payrun is currently being fetched — drives the in-chip spinner + detail skeleton
+  const [openingId, setOpeningId] = useState<string | null>(null);
 
   const [slip, setSlip] = useState<PayslipDetailData | null>(null);
   const [printSlip, setPrintSlip] = useState<PayslipDetailData | null>(null);
@@ -215,6 +217,7 @@ export default function HrPayrollPage() {
 
   const openPayrun = useCallback(async (id: string) => {
     setBusy(true);
+    setOpeningId(id);
     try {
       const res = await fetch(`/api/hr/payruns/${id}`);
       const json = await res.json();
@@ -232,6 +235,7 @@ export default function HrPayrollPage() {
       toast({ type: 'error', title: t('loadFailed') });
     } finally {
       setBusy(false);
+      setOpeningId(null);
     }
   }, [t]);
 
@@ -525,6 +529,37 @@ export default function HrPayrollPage() {
   }, []);
 
   const isFinalized = detail?.payrun.status === 'finalized';
+  const accountantConfirmed = !!detail?.review?.confirmed_at;
+  const isAnnounced = !!detail?.payrun.announced_at;
+  const hasSlips = (detail?.payslips.length ?? 0) > 0;
+  // skeleton only when the fetch is for a DIFFERENT payrun than the one on screen —
+  // same-id refreshes (after finalize/remark/recompute) keep the current detail visible
+  const openingNew = openingId !== null && openingId !== detail?.payrun.id;
+
+  // Everything that is NOT the single context-aware primary action lives in the "เพิ่มเติม" menu.
+  const menuActions: MoreMenuAction[] = detail
+    ? [
+        ...(!isFinalized
+          ? [{ key: 'recompute', label: t('recompute'), icon: RefreshCw, onClick: () => regenerateCurrent(), disabled: busy || recomputing, title: t('recomputeHint') }]
+          : []),
+        { key: 'excel', label: t('exportExcel'), icon: FileText, onClick: () => window.open(`/api/hr/payruns/${detail.payrun.id}/export`, '_blank'), disabled: !hasSlips, title: t('exportHint') },
+        { key: 'calibrate', label: t('printCalibrate'), icon: Printer, onClick: () => doPrint(CALIBRATE_DATA), title: t('printCalibrateHint') },
+        // ส่งให้บัญชี-again — only when it is not already the hero primary
+        ...(isFinalized || accountantConfirmed
+          ? [{ key: 'send', label: t('sendToAccountant'), icon: Send, onClick: openReviewLink, disabled: busy || !hasSlips }]
+          : []),
+        // finalize without accountant confirm (override flow) — red, since it locks the run
+        ...(!isFinalized && !accountantConfirmed
+          ? [{ key: 'finalize', label: t('finalize'), icon: Lock, onClick: finalize, disabled: busy || recomputing || !hasSlips, danger: true }]
+          : []),
+        ...(isFinalized && isAnnounced
+          ? [{ key: 'announceAgain', label: t('announceAgain'), icon: Megaphone, onClick: announce, disabled: busy }]
+          : []),
+        ...(isFinalized
+          ? [{ key: 'reopen', label: t('reopen'), icon: LockOpen, onClick: reopen, disabled: busy }]
+          : []),
+      ]
+    : [];
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-4">
@@ -536,20 +571,20 @@ export default function HrPayrollPage() {
           subtitle={t('subtitle')}
           actions={
             <>
-              <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
+              <label className="flex w-full flex-col text-xs font-medium text-gray-600 sm:w-auto dark:text-gray-400">
                 {t('company')}
-                <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} className="control mt-1">
+                <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} className="control mt-1 w-full sm:w-48">
                   {companies.length === 0 && <option value="">{t('noCompanies')}</option>}
                   {companies.map((c) => (
                     <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
                 </select>
               </label>
-              <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
+              <label className="flex w-full flex-col text-xs font-medium text-gray-600 sm:w-auto dark:text-gray-400">
                 {t('period')}
-                <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="control mt-1" />
+                <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="control mt-1 w-full sm:w-auto" />
               </label>
-              <Button onClick={generate} isLoading={generating} disabled={!companyId || generating} icon={<Play className="h-4 w-4" />}>
+              <Button onClick={generate} isLoading={generating} disabled={!companyId || generating} icon={<Play className="h-4 w-4" />} className="w-full sm:w-auto">
                 {t('generate')}
               </Button>
             </>
@@ -568,13 +603,17 @@ export default function HrPayrollPage() {
           </div>
         </PageHeader>
 
-        {/* payrun history + detail */}
-        <div className="grid gap-4 md:grid-cols-[16rem_1fr]">
-          {/* history */}
-          <div className="space-y-1">
+        {/* payrun history + detail — vertical sidebar on xl+, horizontal chip strip below */}
+        <div className="grid gap-4 xl:grid-cols-[16rem_1fr]">
+          {/* history — vertical sidebar (xl+ only) */}
+          <div className="hidden xl:block">
             <h2 className="mb-1 text-sm font-semibold text-gray-700 dark:text-gray-200">{t('history')}</h2>
             {loading ? (
-              <div className="flex justify-center py-6 text-gray-400"><Loader2 className="h-5 w-5 animate-spin" /></div>
+              <div className="space-y-1">
+                <Skeleton className="h-10 w-full rounded-lg" />
+                <Skeleton className="h-10 w-full rounded-lg" />
+                <Skeleton className="h-10 w-full rounded-lg" />
+              </div>
             ) : payruns.length === 0 ? (
               <p className="text-xs text-gray-400">{t('noPayruns')}</p>
             ) : (
@@ -583,6 +622,7 @@ export default function HrPayrollPage() {
                   <li key={p.id}>
                     <button
                       onClick={() => openPayrun(p.id)}
+                      aria-current={detail?.payrun.id === p.id || undefined}
                       className={cn(
                         'flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm',
                         detail?.payrun.id === p.id
@@ -593,11 +633,15 @@ export default function HrPayrollPage() {
                       <span className="font-medium text-gray-900 dark:text-white">
                         {String(p.period_month).padStart(2, '0')}/{p.period_year}
                       </span>
-                      <StatusBadge
-                        tone={p.status === 'finalized' ? 'good' : 'warn'}
-                        label={p.status === 'finalized' ? t('statusFinalized') : t('statusDraft')}
-                        icon={p.status === 'finalized' ? Lock : undefined}
-                      />
+                      {openingId === p.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-indigo-500" aria-label={t('loadingPayrun')} />
+                      ) : (
+                        <StatusBadge
+                          tone={p.status === 'finalized' ? 'good' : 'warn'}
+                          label={p.status === 'finalized' ? t('statusFinalized') : t('statusDraft')}
+                          icon={p.status === 'finalized' ? Lock : undefined}
+                        />
+                      )}
                     </button>
                   </li>
                 ))}
@@ -605,70 +649,98 @@ export default function HrPayrollPage() {
             )}
           </div>
 
-          {/* detail */}
-          <div className="min-w-0">
-            {!detail ? (
+          {/* right column: chip strip (below xl) + detail */}
+          <div className="min-w-0 space-y-3">
+            {/* history — horizontal scrollable chip strip (hidden on xl+) */}
+            <div className="xl:hidden">
+              <h2 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{t('history')}</h2>
+              {loading ? (
+                <div className="flex gap-2">
+                  <Skeleton className="h-9 w-24 rounded-full" />
+                  <Skeleton className="h-9 w-24 rounded-full" />
+                  <Skeleton className="h-9 w-24 rounded-full" />
+                </div>
+              ) : payruns.length === 0 ? (
+                <p className="text-xs text-gray-400">{t('noPayruns')}</p>
+              ) : (
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {payruns.map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => openPayrun(p.id)}
+                      aria-current={detail?.payrun.id === p.id || undefined}
+                      className={cn(
+                        'flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors',
+                        detail?.payrun.id === p.id
+                          ? 'border-indigo-500 bg-indigo-50 font-semibold text-indigo-700 dark:border-indigo-400 dark:bg-indigo-900/30 dark:text-indigo-300'
+                          : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700/50'
+                      )}
+                    >
+                      {openingId === p.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-500" aria-label={t('loadingPayrun')} />
+                      ) : (
+                        <span
+                          className={cn('h-2 w-2 rounded-full', p.status === 'finalized' ? 'bg-emerald-500' : 'bg-amber-400')}
+                          title={p.status === 'finalized' ? t('statusFinalized') : t('statusDraft')}
+                        />
+                      )}
+                      {String(p.period_month).padStart(2, '0')}/{p.period_year}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* detail */}
+            {openingNew ? (
+              <DetailSkeleton label={t('loadingPayrun')} />
+            ) : !detail ? (
               <EmptyState icon={Wallet} title={t('selectPayrun')} />
             ) : (
               <div className="space-y-3">
-                <PayrunStepper detail={detail} />
-                <PoolStrip detail={detail} />
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-sm text-gray-600 dark:text-gray-300">
-                    {t('cycle')}: {dmy(detail.payrun.cycle_start)} → {dmy(detail.payrun.cycle_end)}
-                    {detail.payrun.pay_date ? ` · ${t('payDate')} ${dmy(detail.payrun.pay_date)}` : ''}
+                {/* status hero — period + status + stepper + ONE context-aware primary action */}
+                <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="text-lg font-bold text-gray-900 dark:text-white">
+                          {String(detail.payrun.period_month).padStart(2, '0')}/{detail.payrun.period_year}
+                        </h2>
+                        <StatusBadge
+                          tone={isFinalized ? 'good' : 'warn'}
+                          label={isFinalized ? t('statusFinalized') : t('statusDraft')}
+                          icon={isFinalized ? Lock : undefined}
+                        />
+                        {isAnnounced && <StatusBadge tone="info" label={t('announcedBadge')} icon={Megaphone} />}
+                      </div>
+                      <p className="mt-0.5 text-sm text-gray-600 dark:text-gray-300">
+                        {t('cycle')}: {dmy(detail.payrun.cycle_start)} → {dmy(detail.payrun.cycle_end)}
+                        {detail.payrun.pay_date ? ` · ${t('payDate')} ${dmy(detail.payrun.pay_date)}` : ''}
+                      </p>
+                    </div>
+                    <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+                      {!isFinalized && !accountantConfirmed && (
+                        <Button size="sm" icon={<Send className="h-4 w-4" />} onClick={openReviewLink} disabled={busy || !hasSlips}>
+                          {t('nextActionSend')}
+                        </Button>
+                      )}
+                      {!isFinalized && accountantConfirmed && (
+                        <Button variant="danger" size="sm" icon={<Lock className="h-4 w-4" />} onClick={finalize} disabled={busy || recomputing || !hasSlips}>
+                          {t('nextActionFinalize')}
+                        </Button>
+                      )}
+                      {isFinalized && !isAnnounced && (
+                        <Button size="sm" icon={<Megaphone className="h-4 w-4" />} onClick={announce} disabled={busy}>
+                          {t('nextActionAnnounce')}
+                        </Button>
+                      )}
+                      <MoreMenu label={t('moreActions')} actions={menuActions} />
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      icon={<FileText className="h-4 w-4" />}
-                      onClick={() => window.open(`/api/hr/payruns/${detail.payrun.id}/export`, '_blank')}
-                      disabled={detail.payslips.length === 0}
-                      title={t('exportHint')}
-                    >
-                      {t('exportExcel')}
-                    </Button>
-                    <Button variant="ghost" size="sm" icon={<Printer className="h-4 w-4" />} onClick={() => doPrint(CALIBRATE_DATA)} title={t('printCalibrateHint')}>
-                      {t('printCalibrate')}
-                    </Button>
-                    <Button variant="outline" size="sm" icon={<Send className="h-4 w-4" />} onClick={openReviewLink} disabled={busy || detail.payslips.length === 0}>
-                      {t('sendToAccountant')}
-                    </Button>
-                    {isFinalized ? (
-                      <>
-                        <Button
-                          variant={detail.payrun.announced_at ? 'ghost' : 'primary'}
-                          size="sm"
-                          icon={<Megaphone className="h-4 w-4" />}
-                          onClick={announce}
-                          disabled={busy}
-                        >
-                          {detail.payrun.announced_at ? t('announceAgain') : t('announce')}
-                        </Button>
-                        <Button variant="outline" size="sm" icon={<LockOpen className="h-4 w-4" />} onClick={reopen} disabled={busy}>
-                          {t('reopen')}
-                        </Button>
-                      </>
-                    ) : (
-                      <>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          icon={<RefreshCw className="h-4 w-4" />}
-                          onClick={() => regenerateCurrent()}
-                          isLoading={recomputing}
-                          disabled={busy || recomputing}
-                          title={t('recomputeHint')}
-                        >
-                          {t('recompute')}
-                        </Button>
-                        <Button variant="danger" size="sm" icon={<Lock className="h-4 w-4" />} onClick={finalize} disabled={busy || recomputing || detail.payslips.length === 0}>
-                          {t('finalize')}
-                        </Button>
-                      </>
-                    )}
+                  <div className="mt-4">
+                    <PayrunStepper detail={detail} />
                   </div>
+                  <PoolStrip detail={detail} />
                 </div>
 
                 {detail.payslips.length === 0 ? (
@@ -835,25 +907,26 @@ export default function HrPayrollPage() {
                     onChanged={() => regenerateCurrent(true)}
                   />
 
-                  {/* ④ paper print queue: standing prefs + per-slip requests */}
+                  {/* ④ paper print queue: standing prefs + per-slip requests — collapsed by default */}
                   {printQueue.length > 0 && (
-                    <div className="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
-                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-800 dark:text-gray-100">
-                          <Printer className="h-4 w-4 text-indigo-500" /> {t('printQueue')} ({printQueue.filter((q) => q.status !== 'printed').length})
-                        </h3>
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setQueueSelected(new Set(printQueue.filter((q) => q.status !== 'printed').map((q) => q.payslip_id)))}
-                          >
-                            {t('queueSelectAll')}
-                          </Button>
-                          <Button size="sm" disabled={queueSelected.size === 0 || queueBusy} isLoading={queueBusy} icon={<Printer className="h-4 w-4" />} onClick={printSelected}>
-                            {t('queuePrintSelected', { n: queueSelected.size })}
-                          </Button>
-                        </div>
+                    <details className="group rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+                      <summary className="flex cursor-pointer select-none items-center gap-1.5 px-3 py-2.5 text-sm font-semibold text-gray-800 [&::-webkit-details-marker]:hidden dark:text-gray-100">
+                        <Printer className="h-4 w-4 shrink-0 text-indigo-500" />
+                        <span className="min-w-0 truncate">{t('printQueueSummary', { n: printQueue.filter((q) => q.status !== 'printed').length })}</span>
+                        <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-gray-400 transition-transform group-open:rotate-90" />
+                      </summary>
+                      <div className="border-t border-gray-100 px-3 pb-3 dark:border-gray-700">
+                      <div className="mb-1 mt-2 flex flex-wrap justify-end gap-2">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setQueueSelected(new Set(printQueue.filter((q) => q.status !== 'printed').map((q) => q.payslip_id)))}
+                        >
+                          {t('queueSelectAll')}
+                        </Button>
+                        <Button size="sm" disabled={queueSelected.size === 0 || queueBusy} isLoading={queueBusy} icon={<Printer className="h-4 w-4" />} onClick={printSelected}>
+                          {t('queuePrintSelected', { n: queueSelected.size })}
+                        </Button>
                       </div>
                       <ul className="divide-y divide-gray-100 dark:divide-gray-700">
                         {printQueue.map((q) => (
@@ -885,7 +958,8 @@ export default function HrPayrollPage() {
                           </li>
                         ))}
                       </ul>
-                    </div>
+                      </div>
+                    </details>
                   )}
                   </div>
                 )}
@@ -1033,6 +1107,18 @@ export default function HrPayrollPage() {
         />
       )}
 
+      {/* floating progress pill — `recomputing` (incl. the silent post-adjustment recompute) and
+          any `busy` action that is NOT already covered by the detail skeleton always get visible
+          feedback, so the screen never looks frozen */}
+      {(recomputing || (busy && !openingNew)) && (
+        <div className="pointer-events-none fixed bottom-5 left-1/2 z-50 -translate-x-1/2 print:hidden" role="status" aria-live="polite">
+          <div className="flex items-center gap-2 rounded-full bg-gray-900/90 px-4 py-2 text-sm font-medium text-white shadow-lg dark:bg-gray-700/95">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            {recomputing ? t('recomputingPill') : t('loadingPayrun')}
+          </div>
+        </div>
+      )}
+
       {/* print-only slip — fixed-position 9×5.5" security-form layout */}
       <div id="payslip-print-root" className="hidden print:block">
         {printSlip && printBatch.length === 0 && (
@@ -1076,13 +1162,14 @@ function PayrunStepper({ detail }: { detail: PayrunDetail }) {
   ];
   const currentIndex = steps.findIndex((s) => !s.done);
 
+  // bare (no own card/scroller — it lives inside the status hero): 2×2 grid on mobile so the
+  // register table stays the page's only horizontal scroller, single row with chevrons on sm+
   return (
-    <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
-      <div className="flex min-w-[34rem] items-stretch">
+    <div className="grid grid-cols-2 gap-x-2 gap-y-3 sm:flex sm:items-stretch">
         {steps.map((s, i) => {
           const state = s.done ? 'done' : i === currentIndex ? 'current' : 'pending';
           return (
-            <div key={s.key} className="flex flex-1 items-center">
+            <div key={s.key} className="flex items-center sm:flex-1">
               <div className="flex flex-1 items-start gap-2">
                 <span
                   className={cn(
@@ -1105,12 +1192,11 @@ function PayrunStepper({ detail }: { detail: PayrunDetail }) {
                 </div>
               </div>
               {i < steps.length - 1 && (
-                <ChevronRight className={cn('mx-1 h-4 w-4 shrink-0 self-center', s.done ? 'text-emerald-400' : 'text-gray-300 dark:text-gray-600')} />
+                <ChevronRight className={cn('mx-1 hidden h-4 w-4 shrink-0 self-center sm:block', s.done ? 'text-emerald-400' : 'text-gray-300 dark:text-gray-600')} />
               )}
             </div>
           );
         })}
-      </div>
     </div>
   );
 }
@@ -1141,11 +1227,110 @@ function PoolStrip({ detail }: { detail: PayrunDetail }) {
     );
   };
 
+  // slim line at the bottom of the status hero (no own card)
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-800">
+    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-3 dark:border-gray-700">
       <span className="text-xs font-medium text-gray-500 dark:text-gray-400">{isTh ? 'จัดสรรเดือนนี้' : 'This month'}:</span>
       {chip('SC', pools.sc, '/hr/service-charge')}
       {chip(isTh ? 'ทิป' : 'Tip', pools.tip, '/hr/tip-pool')}
+    </div>
+  );
+}
+
+// Secondary-actions dropdown ("เพิ่มเติม ▾") — simple headless menu: useState + click-outside.
+// Holds everything that is not the single context-aware primary action of the status hero.
+interface MoreMenuAction {
+  key: string;
+  label: string;
+  icon: LucideIcon;
+  onClick: () => void;
+  disabled?: boolean;
+  /** destructive styling (e.g. finalize when it is not the primary action) */
+  danger?: boolean;
+  title?: string;
+}
+
+function MoreMenu({ label, actions }: { label: string; actions: MoreMenuAction[] }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
+
+  if (actions.length === 0) return null;
+
+  return (
+    <div ref={ref} className="relative">
+      <Button variant="outline" size="sm" onClick={() => setOpen((o) => !o)} aria-haspopup="menu" aria-expanded={open}>
+        {label}
+        <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-180')} />
+      </Button>
+      {open && (
+        <div role="menu" className="absolute right-0 z-30 mt-1 w-60 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-800">
+          {actions.map((a) => (
+            <button
+              key={a.key}
+              role="menuitem"
+              disabled={a.disabled}
+              title={a.title}
+              onClick={() => {
+                setOpen(false);
+                a.onClick();
+              }}
+              className={cn(
+                'flex w-full items-center gap-2 px-3 py-2 text-left text-sm disabled:cursor-not-allowed disabled:opacity-50',
+                a.danger
+                  ? 'text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20'
+                  : 'text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-700/50'
+              )}
+            >
+              <a.icon className="h-4 w-4 shrink-0" />
+              {a.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Pulse-skeleton stand-in for the whole detail column while openPayrun fetches a different
+// payrun — mirrors hero / KPI row / register table so the layout doesn't jump when data lands.
+function DetailSkeleton({ label }: { label: string }) {
+  return (
+    <div className="space-y-3" role="status" aria-live="polite">
+      <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-2">
+            <Skeleton className="h-6 w-40" />
+            <Skeleton className="h-4 w-56" />
+          </div>
+          <Skeleton className="h-8 w-36" />
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <Skeleton className="h-10" />
+          <Skeleton className="h-10" />
+          <Skeleton className="h-10" />
+          <Skeleton className="h-10" />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Skeleton className="h-20 rounded-xl" />
+        <Skeleton className="h-20 rounded-xl" />
+        <Skeleton className="h-20 rounded-xl" />
+        <Skeleton className="h-20 rounded-xl" />
+      </div>
+      <Skeleton className="h-72 w-full rounded-xl" />
+      <div className="flex items-center justify-center gap-2 py-1 text-sm text-gray-400">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        {label}
+      </div>
     </div>
   );
 }
