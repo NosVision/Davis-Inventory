@@ -1,5 +1,3 @@
-import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
 import { PageHeader } from '@/components/ui';
 
 // HR reference: the end-to-end payroll flow (rhythm → inputs → formula → operational steps →
@@ -29,7 +27,7 @@ function Meta({ tone, children }: { tone: 'api' | 'notify' | 'gate'; children: R
 
 interface Step { t: string; b: React.ReactNode; meta?: React.ReactNode }
 const STEPS: Step[] = [
-  { t: 'เลือกบริษัท + เดือนจ่าย', b: <>ประวัติรอบเงินเดือนของบริษัทแสดงด้านซ้าย (ใหม่สุดบน) · แถบ PoolStrip เตือนความพร้อมของกอง SV/ทิปเดือนนั้น · ทะเบียนแจกแจงต่อคน (วัน/เงินเดือน/OT/เบี้ย/หักอื่น/สปส./ภาษี/SV/สุทธิ) กดลูกศรหน้าชื่อ<b>กางดูทุกบรรทัด</b>ได้ · ปุ่ม <b>Excel</b> โหลดทะเบียน Payment เต็ม (แยก SS5/SS3 + Remark)</> },
+  { t: 'เลือกบริษัท + เดือนจ่าย', b: <>เลือกงวดจากประวัติ (จอใหญ่ = รายการซ้าย · จอเล็ก = แถบ chip เลื่อนด้านบน) · <b>การ์ดสถานะ</b>บนสุดสรุปงวด/สถานะ/ขั้นตอน พร้อม<b>ปุ่มหลักปุ่มเดียว</b>ที่พาไปขั้นถัดไปเสมอ (ส่งให้บัญชี → ปิดยอด → ประกาศ) — ปุ่มอื่นทั้งหมดอยู่ในเมนู <b>"เพิ่มเติม ▾"</b> (คำนวณใหม่ · Excel · พิมพ์ทดสอบ · Reopen) · ทะเบียนแจกแจงต่อคน (วัน/เงินเดือน/OT/เบี้ย/หักอื่น/สปส./ภาษี/SV/สุทธิ) กดลูกศรหน้าชื่อ<b>กางดูทุกบรรทัด</b>ได้ · ปุ่ม <b>Excel</b> ในเมนูโหลดทะเบียน Payment เต็ม (แยก SS5/SS3 + Remark)</> },
   { t: 'Generate — สร้างรอบ (draft)', b: <>คำนวณสลิปทุกคนตาม input ข้างบน · <b>ดึง SV เดือน N−1</b> เข้ามา · เป็น draft (กด Recompute สร้างใหม่ได้เรื่อยๆ ตราบยังไม่ปิดยอด)</>, meta: <><Meta tone="api">POST /api/hr/payruns</Meta><Meta tone="gate">รอบที่ปิดแล้ว → 409</Meta></> },
   { t: 'ตรวจ/แก้ระหว่าง draft', b: <>แก้<b>รายการประจำ</b> (หน้า "รายการประจำทั้งบริษัท" — ตั้งครั้งเดียว ใช้ทุกเดือน) · ล.ย.01 · <b>รายการเฉพาะงวด</b>: เพิ่ม/ลบรายการรับ-หักครั้งเดียว (กยศ, ค่าเสียหาย, โบนัส) <b>บังคับใส่เหตุผล</b> + ปุ่มคัดลอกจากงวดก่อนแล้วแก้เฉพาะยอด · หมายเหตุ (Remark) ต่อคน · ใส่ภาษีเองเป็น fallback — ทุกการแก้คำนวณสลิปใหม่ให้อัตโนมัติ</>, meta: <Meta tone="api">recurring · tax-allowance · adjustments · remarks · tax-override</Meta> },
   { t: 'ส่งให้บัญชี — สร้างลิงก์ตรวจ', b: <>สร้างลิงก์ <code className="rounded bg-gray-100 px-1 font-mono text-[0.85em] dark:bg-gray-700">/review/&lt;token&gt;</code> + รหัสผ่าน 6 หลัก (อายุ 14 วัน · เก็บเฉพาะ hash) · โชว์ token ครั้งเดียว · ยกเลิกได้</>, meta: <Meta tone="api">GET/POST/DELETE review-link</Meta> },
@@ -64,10 +62,6 @@ const KEY_PTS: [string, React.ReactNode][] = [
 export default function PayrollFlowPage() {
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
-      <Link href="/hr/payroll" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-indigo-600 dark:text-gray-400">
-        <ArrowLeft className="h-4 w-4" /> กลับหน้าเงินเดือน
-      </Link>
-
       <PageHeader
         title="โฟลการทำเงินเดือน"
         subtitle="รอบ 26 (เดือนก่อน) → 25 · จ่ายสิ้นเดือน · SV/ทิป จ่ายแยกวันที่ 15 และไม่รวมในยอดโอนธนาคาร แต่โชว์ในสลิป"
