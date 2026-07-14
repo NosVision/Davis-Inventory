@@ -11,6 +11,13 @@
  * linked profile's display_name/username) using the same normalization as
  * import-historical-payslips.
  *
+ * Names that match NO employee but DO match an hr_pending_identities row (the
+ * imported roster of people who have not registered yet) are STAGED into
+ * hr_pending_leave_balances (migration 00166) — they materialize into
+ * hr_leave_balances automatically when the person registers/claims and their
+ * identity is linked to a real hr_employees row. Names matching neither are
+ * reported only.
+ *
  * The workbook is parsed with jszip (already a repo dependency — the repo has
  * no xlsx/exceljs reader; src/lib/xlsx.ts is a writer only).
  *
@@ -241,6 +248,13 @@ interface Profile {
   display_name: string | null;
   username: string | null;
 }
+interface PendingIdentity {
+  id: string;
+  full_name_th: string | null;
+  full_name_en: string | null;
+  company_id: string | null;
+  status: string;
+}
 
 async function main() {
   console.log(`Target year: CE ${year} = BE ${beYear} (header suffix "${beShort}")`);
@@ -274,17 +288,19 @@ async function main() {
   }
 
   // --- load db reference data ---
-  const [empRes, profRes, typeRes, coRes] = await Promise.all([
+  const [empRes, profRes, typeRes, coRes, pendRes] = await Promise.all([
     db.from('hr_employees').select('id, profile_id, company_id, full_name, status'),
     db.from('profiles').select('id, display_name, username'),
     db.from('hr_leave_types').select('id, company_id, code').eq('code', 'vacation'),
     db.from('hr_companies').select('id, name'),
+    db.from('hr_pending_identities').select('id, full_name_th, full_name_en, company_id, status'),
   ]);
   for (const [label, res] of [
     ['hr_employees', empRes],
     ['profiles', profRes],
     ['hr_leave_types', typeRes],
     ['hr_companies', coRes],
+    ['hr_pending_identities', pendRes],
   ] as const) {
     if (res.error) throw new Error(`Failed to load ${label}: ${res.error.message}`);
   }
@@ -292,7 +308,11 @@ async function main() {
   const profiles = new Map(((profRes.data ?? []) as Profile[]).map((p) => [p.id, p]));
   const vacationTypes = (typeRes.data ?? []) as { id: string; company_id: string | null; code: string }[];
   const companyName = new Map(((coRes.data ?? []) as { id: string; name: string }[]).map((c) => [c.id, c.name]));
-  console.log(`\nLoaded ${employees.length} employees, ${profiles.size} profiles, ${vacationTypes.length} vacation leave type(s)`);
+  const pendingIdentities = (pendRes.data ?? []) as PendingIdentity[];
+  console.log(
+    `\nLoaded ${employees.length} employees, ${profiles.size} profiles, ${vacationTypes.length} vacation leave type(s), ` +
+      `${pendingIdentities.length} pending identities`
+  );
   for (const t of vacationTypes) {
     console.log(`  vacation type ${t.id} — company: ${t.company_id ? companyName.get(t.company_id) ?? t.company_id : '(shared/null)'}`);
   }
@@ -309,6 +329,19 @@ async function main() {
     add(norm(e.full_name), e);
     const p = profiles.get(e.profile_id);
     add(norm(p?.display_name), e);
+  }
+
+  // pending-identity name index (fallback for names with no hr_employees match)
+  const pendingIndex = new Map<string, PendingIdentity[]>();
+  const addPending = (n: string, pi: PendingIdentity) => {
+    if (!n) return;
+    const arr = pendingIndex.get(n) ?? [];
+    if (!arr.includes(pi)) arr.push(pi);
+    pendingIndex.set(n, arr);
+  };
+  for (const pi of pendingIdentities) {
+    addPending(norm(pi.full_name_th), pi);
+    addPending(norm(pi.full_name_en), pi);
   }
 
   // vacation type per company: prefer company-scoped, else shared (company_id null)
@@ -329,10 +362,20 @@ async function main() {
     quota_days: number;
     note: string;
   }
+  interface StagedRow {
+    pending_identity_id: string;
+    leave_type_code: string;
+    year: number;
+    quota_days: number;
+    note: string;
+  }
   const plan: PlanRow[] = [];
   const planMeta = new Map<string, { sheet: string; empName: string; company: string }>(); // employee_id → display info
+  const stagedPlan: StagedRow[] = [];
+  const stagedMeta = new Map<string, { sheet: string; name: string; company: string; status: string }>(); // pending_identity_id → display info
   const unmatched: SheetRow[] = [];
   const ambiguous: { row: SheetRow; candidates: string[] }[] = [];
+  const pendingAmbiguous: { row: SheetRow; candidates: string[] }[] = [];
   const noLeaveType: { row: SheetRow; emp: Employee }[] = [];
   const dupPlan: { row: SheetRow; empName: string; firstSheet: string }[] = [];
   const matchedBySheet = new Map<string, number>();
@@ -359,7 +402,41 @@ async function main() {
     }
 
     if (cands.length === 0) {
-      unmatched.push(row);
+      // No employee — fall back to the imported roster (hr_pending_identities) and STAGE the
+      // balance so it materializes when the person registers and gets linked (00166).
+      let pend = pendingIndex.get(norm(row.nameTH)) ?? [];
+      if (pend.length === 0 && row.nameEN) pend = pendingIndex.get(norm(row.nameEN)) ?? [];
+      if (pend.length === 0) {
+        unmatched.push(row);
+        continue;
+      }
+      if (pend.length > 1) {
+        pendingAmbiguous.push({
+          row,
+          candidates: pend.map(
+            (pi) => `${pi.full_name_th ?? pi.full_name_en ?? '?'} [${pi.status}] (${pi.company_id ? companyName.get(pi.company_id) ?? '?' : 'no company'})`
+          ),
+        });
+        continue;
+      }
+      const pi = pend[0];
+      if (stagedMeta.has(pi.id)) {
+        dupPlan.push({ row, empName: pi.full_name_th ?? row.nameTH, firstSheet: stagedMeta.get(pi.id)!.sheet });
+        continue;
+      }
+      stagedPlan.push({
+        pending_identity_id: pi.id,
+        leave_type_code: 'vacation',
+        year,
+        quota_days: row.balance,
+        note: `sheet import: พักร้อนคงเหลือ สิ้นสุด ธ.ค. ${beShort} (${row.sheet})`,
+      });
+      stagedMeta.set(pi.id, {
+        sheet: row.sheet,
+        name: pi.full_name_th ?? row.nameTH,
+        company: pi.company_id ? companyName.get(pi.company_id) ?? pi.company_id : '(no company)',
+        status: pi.status,
+      });
       continue;
     }
     if (cands.length > 1) {
@@ -412,8 +489,10 @@ async function main() {
     console.log(`  ${sheet}: ${matchedBySheet.get(sheet) ?? 0}/${total} matched`);
   }
   console.log(`planned upserts:   ${plan.length}`);
+  console.log(`staged (pending):  ${stagedPlan.length}`);
   console.log(`unmatched:         ${unmatched.length}`);
   console.log(`ambiguous:         ${ambiguous.length}`);
+  console.log(`ambiguous pending: ${pendingAmbiguous.length}`);
   console.log(`no leave type:     ${noLeaveType.length}`);
   console.log(`duplicate planned: ${dupPlan.length}`);
 
@@ -423,13 +502,28 @@ async function main() {
     console.log(`  ${m.sheet.padEnd(15)} | ${m.empName.padEnd(40)} | ${m.company.padEnd(30)} | ${p.quota_days}`);
   }
 
+  if (stagedPlan.length) {
+    console.log('\n=== STAGED (no employee yet — hr_pending_leave_balances, materializes on link) ===');
+    for (const s of stagedPlan) {
+      const m = stagedMeta.get(s.pending_identity_id)!;
+      console.log(`  ${m.sheet.padEnd(15)} | ${m.name.padEnd(40)} | ${m.company.padEnd(30)} | ${s.quota_days} [identity: ${m.status}]`);
+    }
+  }
+
   if (unmatched.length) {
-    console.log('\n=== UNMATCHED (no hr_employee by normalized name) ===');
+    console.log('\n=== UNMATCHED (matches neither hr_employees nor hr_pending_identities) ===');
     for (const u of unmatched) console.log(`  ${u.sheet} R${u.rowNo}: ${u.nameTH}${u.pos ? ` (${u.pos})` : ''} → balance ${u.balance}`);
   }
   if (ambiguous.length) {
     console.log('\n=== AMBIGUOUS (multiple employees share the normalized name) ===');
     for (const a of ambiguous) {
+      console.log(`  ${a.row.sheet} R${a.row.rowNo}: ${a.row.nameTH} → balance ${a.row.balance}`);
+      for (const c of a.candidates) console.log(`      candidate: ${c}`);
+    }
+  }
+  if (pendingAmbiguous.length) {
+    console.log('\n=== AMBIGUOUS PENDING (multiple pending identities share the normalized name) ===');
+    for (const a of pendingAmbiguous) {
       console.log(`  ${a.row.sheet} R${a.row.rowNo}: ${a.row.nameTH} → balance ${a.row.balance}`);
       for (const c of a.candidates) console.log(`      candidate: ${c}`);
     }
@@ -452,7 +546,7 @@ async function main() {
     return;
   }
 
-  if (!plan.length) {
+  if (!plan.length && !stagedPlan.length) {
     console.log('\nNothing to upsert.');
     return;
   }
@@ -466,7 +560,19 @@ async function main() {
     upserted += chunk.length;
     console.log(`upserted ${upserted}/${plan.length}`);
   }
-  console.log(`\nDONE. Upserted ${upserted} hr_leave_balances rows for year ${year}.`);
+  let stagedUpserted = 0;
+  for (let i = 0; i < stagedPlan.length; i += 200) {
+    const chunk = stagedPlan.slice(i, i + 200);
+    const { error } = await db
+      .from('hr_pending_leave_balances')
+      .upsert(chunk, { onConflict: 'pending_identity_id,leave_type_code,year' });
+    if (error) throw error;
+    stagedUpserted += chunk.length;
+    console.log(`staged ${stagedUpserted}/${stagedPlan.length}`);
+  }
+  console.log(
+    `\nDONE. Upserted ${upserted} hr_leave_balances row(s) + staged ${stagedUpserted} hr_pending_leave_balances row(s) for year ${year}.`
+  );
 }
 
 main().catch((e) => {

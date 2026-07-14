@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient as createSbClient } from '@supabase/supabase-js';
 import { createServiceClient } from '@/lib/supabase/server';
+import { applyPendingLeaveBalances } from '@/lib/hr/leave-balance-link';
 
 // Verify an existing login (username + password) WITHOUT persisting a session — used when a
 // self-registering hire matches an account that already exists, so they can link their imported
@@ -151,24 +152,44 @@ export async function POST(request: NextRequest) {
       if (!co) linkCompanyId = null;
     }
 
-    const { data: existingEmp } = await service.from('hr_employees').select('id').eq('profile_id', userId).maybeSingle();
+    const { data: existingEmp } = await service.from('hr_employees').select('id, company_id').eq('profile_id', userId).maybeSingle();
     const empFields: Record<string, unknown> = { full_name: fullName };
     if (bankAccountNo) empFields.bank_account_no = bankAccountNo;
     if (bankName) empFields.bank_name = bankName;
     if (positionId) empFields.position_id = positionId;
     if (linkCompanyId) empFields.company_id = linkCompanyId;
+    let employeeId: string | null = null;
+    let employeeCompanyId: string | null = null;
     if (existingEmp) {
       await service.from('hr_employees').update(empFields).eq('id', existingEmp.id);
+      employeeId = existingEmp.id as string;
+      employeeCompanyId = linkCompanyId ?? ((existingEmp.company_id as string | null) ?? null);
     } else {
-      await service.from('hr_employees').insert({ profile_id: userId, status: 'probation', created_by: link.created_by, ...empFields });
+      const { data: newEmp } = await service
+        .from('hr_employees')
+        .insert({ profile_id: userId, status: 'probation', created_by: link.created_by, ...empFields })
+        .select('id, company_id')
+        .single();
+      employeeId = (newEmp?.id as string | undefined) ?? null;
+      employeeCompanyId = (newEmp?.company_id as string | null | undefined) ?? null;
     }
 
     if (pendingIdentityId) {
-      await service
+      const { data: flipped } = await service
         .from('hr_pending_identities')
         .update({ status: 'linked', claimed_by: userId, claimed_at: new Date().toISOString() })
         .eq('id', pendingIdentityId)
-        .eq('status', 'unclaimed');
+        .eq('status', 'unclaimed')
+        .select('id');
+      // Materialize staged sheet-imported leave balances for this identity (00166) — best-effort,
+      // a failure here must never break the link flow.
+      if (flipped?.length && employeeId) {
+        try {
+          await applyPendingLeaveBalances(service, { pendingIdentityId, employeeId, companyId: employeeCompanyId });
+        } catch (e) {
+          console.error('[hr-register] staged leave balances failed:', e);
+        }
+      }
     }
     await service.from('hr_registration_links').update({ used_count: link.used_count + 1 }).eq('id', link.id);
     await service.from('audit_logs').insert({
@@ -229,16 +250,20 @@ export async function POST(request: NextRequest) {
     .eq('id', userId);
 
   // 3. Create the linked hr_employees record (pending an HR role/salary review).
-  const { error: empErr } = await service.from('hr_employees').insert({
-    profile_id: userId,
-    company_id: companyId,
-    position_id: positionId,
-    full_name: fullName,
-    bank_account_no: bankAccountNo || null,
-    bank_name: bankName || null,
-    status: 'probation',
-    created_by: link.created_by,
-  });
+  const { data: newEmp, error: empErr } = await service
+    .from('hr_employees')
+    .insert({
+      profile_id: userId,
+      company_id: companyId,
+      position_id: positionId,
+      full_name: fullName,
+      bank_account_no: bankAccountNo || null,
+      bank_name: bankName || null,
+      status: 'probation',
+      created_by: link.created_by,
+    })
+    .select('id, company_id')
+    .single();
   if (empErr) {
     // The account exists but the HR record failed — surface it so HR can complete it manually.
     console.error('[hr-register] hr_employees insert failed:', empErr.message);
@@ -246,11 +271,25 @@ export async function POST(request: NextRequest) {
 
   // 4. Link an imported identity, if the hire matched one.
   if (pendingIdentityId) {
-    await service
+    const { data: flipped } = await service
       .from('hr_pending_identities')
       .update({ status: 'linked', claimed_by: userId, claimed_at: new Date().toISOString() })
       .eq('id', pendingIdentityId)
-      .eq('status', 'unclaimed');
+      .eq('status', 'unclaimed')
+      .select('id');
+    // Materialize staged sheet-imported leave balances for this identity (00166) — best-effort,
+    // a failure here must never break registration.
+    if (flipped?.length && newEmp?.id) {
+      try {
+        await applyPendingLeaveBalances(service, {
+          pendingIdentityId,
+          employeeId: newEmp.id as string,
+          companyId: (newEmp.company_id as string | null) ?? null,
+        });
+      } catch (e) {
+        console.error('[hr-register] staged leave balances failed:', e);
+      }
+    }
   }
 
   // 5. Bump the link's use count + audit.

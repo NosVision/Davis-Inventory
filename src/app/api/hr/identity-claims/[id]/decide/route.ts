@@ -4,6 +4,7 @@ import { requireHrManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import { computeProbationEnd } from '@/lib/hr/employees';
 import { getHrPolicies } from '@/lib/hr/policy';
+import { applyPendingLeaveBalances } from '@/lib/hr/leave-balance-link';
 import { notifyUser } from '@/lib/notifications/service';
 
 // POST /api/hr/identity-claims/[id]/decide { decision: approve|reject, note? } — HR verifies an
@@ -174,6 +175,18 @@ export async function POST(
     // lost the race after inserting the employee — roll the employee back to stay consistent
     await service.from('hr_employees').delete().eq('id', emp.id);
     return NextResponse.json({ error: 'Claim was already decided' }, { status: 409 });
+  }
+
+  // Materialize staged sheet-imported leave balances for this identity (00166) — best-effort,
+  // a failure here must never block onboarding.
+  try {
+    await applyPendingLeaveBalances(service, {
+      pendingIdentityId: id,
+      employeeId: emp.id as string,
+      companyId: (ident.company_id as string | null) ?? null,
+    });
+  } catch (e) {
+    console.error('[identity-claims/decide] staged leave balances failed:', e);
   }
 
   await logHrAudit(service, {

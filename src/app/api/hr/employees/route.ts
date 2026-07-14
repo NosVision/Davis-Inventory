@@ -10,6 +10,7 @@ import {
   computeProbationEnd,
 } from '@/lib/hr/employees';
 import { getHrPolicies } from '@/lib/hr/policy';
+import { applyPendingLeaveBalances } from '@/lib/hr/leave-balance-link';
 import {
   type EmployeeDocument,
 } from '@/lib/hr/employees';
@@ -330,6 +331,16 @@ export async function POST(request: NextRequest) {
         .update({ employee_id: emp.id })
         .eq('pending_identity_id', pendingIdentityId);
       if (histErr) warnings.push('Historical payslips were not back-linked — link them manually');
+      // Materialize staged sheet-imported leave balances for this identity (00166) — best-effort.
+      try {
+        await applyPendingLeaveBalances(service, {
+          pendingIdentityId,
+          employeeId: emp.id as string,
+          companyId: (emp.company_id as string | null) ?? null,
+        });
+      } catch (e) {
+        console.error('hr onboarding: staged leave balances failed', e);
+      }
     } else {
       warnings.push('Imported identity was already taken — check for a duplicate record');
     }
