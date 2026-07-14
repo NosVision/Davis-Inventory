@@ -2854,7 +2854,9 @@
       "summaryHeading": "Leave summary {year}",
       "remainingOf": "{remaining} of {quota} days left · used {used}",
       "usedOnly": "Used {used} days",
-      "monthlyStripHeading": "Leave days by month"
+      "monthlyStripHeading": "Leave days by month",
+      "showAllTypes": "Show all types (+{count})",
+      "hideUnusedTypes": "Hide unused types"
     },
     "leaveTypes": {
       "title": "Leave Types & Holidays",

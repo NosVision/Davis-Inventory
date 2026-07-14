@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Loader2, CalendarOff, Send } from 'lucide-react';
+import { Loader2, CalendarOff, Send, ChevronDown, ChevronUp } from 'lucide-react';
 import { TileNotices } from '../_components/tile-notices';
 import {
   Button,
@@ -94,6 +94,9 @@ export default function MyLeavesPage() {
   const [types, setTypes] = useState<LeaveType[]>([]);
   const [rows, setRows] = useState<LeaveRow[]>([]);
   const [summary, setSummary] = useState<LeaveSummary | null>(null);
+  // Small screens: unused quota types are collapsed by default (owner ask 2026-07-15) —
+  // only types with actual usage show, the rest unfold behind "show all".
+  const [showAllTypes, setShowAllTypes] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [view, setView] = useViewMode('me-leaves');
@@ -122,6 +125,10 @@ export default function MyLeavesPage() {
     () => types.find((ty) => ty.id === typeId) ?? null,
     [types, typeId]
   );
+  const quotaTypes = useMemo(() => (summary?.types ?? []).filter((ty) => ty.quota != null), [summary]);
+  const usedQuotaTypes = useMemo(() => quotaTypes.filter((ty) => ty.used > 0), [quotaTypes]);
+  const visibleQuotaTypes = showAllTypes ? quotaTypes : usedQuotaTypes;
+  const collapsedCount = quotaTypes.length - usedQuotaTypes.length;
   const requiresCert = Boolean(selectedType?.requires_cert);
   // reason mandatory unless the type opts out (requires_reason=false)
   const requiresReason = selectedType?.requires_reason !== false;
@@ -244,8 +251,7 @@ export default function MyLeavesPage() {
           </h2>
 
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {summary.types
-              .filter((ty) => ty.quota != null)
+            {visibleQuotaTypes
               .map((ty) => {
                 const quotaDays = ty.quota as number;
                 const remaining = ty.remaining ?? 0;
@@ -279,6 +285,17 @@ export default function MyLeavesPage() {
                 );
               })}
           </div>
+
+          {collapsedCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowAllTypes((v) => !v)}
+              className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+            >
+              {showAllTypes ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+              {showAllTypes ? t('hideUnusedTypes') : t('showAllTypes', { count: collapsedCount })}
+            </button>
+          )}
 
           {summary.types
             .filter((ty) => ty.quota == null && ty.used > 0)
