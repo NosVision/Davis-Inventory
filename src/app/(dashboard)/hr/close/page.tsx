@@ -87,12 +87,12 @@ export default function HrClosePage() {
   }, [ym, lang, now]);
 
   const stages: Stage[] = [
-    { n: 1, icon: CalendarClock, th: 'ตรวจเวลางาน', en: 'Attendance', period: 'N', href: '/hr/timesheet', digestTh: 'ยืนยันวัน/สาย/ลา/ขาด ของรอบนี้', digestEn: 'Verify days / late / leave / absent' },
-    { n: 2, icon: Star, th: 'ปิดผลประเมิน', en: 'Evaluation', period: 'N-1', href: '/hr/evaluation', digestTh: 'ปิดงวดประเมินเดือนก่อน → ป้อน SV', digestEn: 'Close last month eval → feeds SV' },
-    { n: 3, icon: Coins, th: 'ยอดกอง SV', en: 'SV pool', period: 'N-1', href: '/hr/service-charge', digestTh: 'กรอกยอด 7% ต่อร้าน (เดือนก่อน)', digestEn: 'Enter each store 7% pool (last month)' },
-    { n: 4, icon: AlertTriangle, th: 'หักจาก HQ', en: 'HQ deductions', period: 'N-1', href: '/hr/stock-deductions', digestTh: 'ค่าปรับสต๊อก + ใบเตือน → หัก SV', digestEn: 'Stock fines + warnings → dock SV' },
-    { n: 5, icon: SlidersHorizontal, th: 'จัดสรร + คำนวณ SV', en: 'Allocate + recompute', period: 'N-1', href: '/hr/service-charge', digestTh: 'หยอดรายคน แล้วคำนวณหักลา ÷30', digestEn: 'Allocate per person, recompute leave dock' },
-    { n: 6, icon: Lock, th: 'ล็อกกอง SV', en: 'Finalize SV', period: 'N-1', href: '/hr/service-charge', digestTh: 'ล็อกทุกร้านก่อนสร้างรอบเงินเดือน', digestEn: 'Lock all stores before generating payroll' },
+    { n: 1, icon: Star, th: 'ปิดผลประเมิน', en: 'Evaluation', period: 'N-1', href: '/hr/evaluation', digestTh: 'ปิดงวดประเมินเดือนก่อน → ป้อน SV', digestEn: 'Close last month eval → feeds SV' },
+    { n: 2, icon: Coins, th: 'ยอดกอง SV', en: 'SV pool', period: 'N-1', href: '/hr/service-charge', digestTh: 'กรอกยอด 7% ต่อร้าน (เดือนก่อน)', digestEn: 'Enter each store 7% pool (last month)' },
+    { n: 3, icon: AlertTriangle, th: 'หักจาก HQ', en: 'HQ deductions', period: 'N-1', href: '/hr/stock-deductions', digestTh: 'ค่าปรับสต๊อก + ใบเตือน → หัก SV', digestEn: 'Stock fines + warnings → dock SV' },
+    { n: 4, icon: SlidersHorizontal, th: 'จัดสรร + คำนวณ SV', en: 'Allocate + recompute', period: 'N-1', href: '/hr/service-charge', digestTh: 'หยอดรายคน แล้วคำนวณหักลา ÷30', digestEn: 'Allocate per person, recompute leave dock' },
+    { n: 5, icon: Lock, th: 'ล็อกกอง SV', en: 'Finalize SV', period: 'N-1', href: '/hr/service-charge', digestTh: 'ล็อกทุกร้านก่อนสร้างรอบเงินเดือน', digestEn: 'Lock all stores before generating payroll' },
+    { n: 6, icon: CalendarClock, th: 'ตรวจเวลางาน', en: 'Attendance', period: 'N', href: '/hr/timesheet', digestTh: 'ยืนยันวัน/สาย/ลา/ขาด ของรอบนี้ (หลังรอบปิด 25) ก่อนทำเงินเดือน', digestEn: 'Verify days / late / leave / absent (after the 25th cutoff) before payroll' },
     { n: 7, icon: Wallet, th: 'สร้างรอบเงินเดือน', en: 'Generate payroll', period: 'N', href: '/hr/payroll', digestTh: 'ดึง SV เดือนก่อนเข้าสลิป', digestEn: 'Pulls last month SV into slips' },
     { n: 8, icon: FileCheck2, th: 'ตรวจทาน + ส่งบัญชี', en: 'Review + accountant', period: 'N', href: '/hr/payroll', digestTh: '26–29 ส่งลิงก์บัญชีกรอกภาษี แล้วปิดยอด', digestEn: '26–29 send accountant tax link, then lock' },
     { n: 9, icon: Banknote, th: 'ไฟล์ธนาคาร + ประกาศ', en: 'Bank file + announce', period: 'N', href: '/hr/payroll', digestTh: '30/31 โหลด CSV โอนเงิน + แจ้งพนักงาน', digestEn: '30/31 download transfer CSV + announce' },
