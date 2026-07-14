@@ -596,7 +596,7 @@ export default function HrPayrollPage() {
     : [];
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 p-4">
+    <div className="mx-auto max-w-6xl space-y-4 p-4 2xl:max-w-[96rem]">
       <style>{PRINT_CSS}</style>
 
       <div className="space-y-4 print:hidden">
@@ -638,7 +638,7 @@ export default function HrPayrollPage() {
         </PageHeader>
 
         {/* payrun history + detail — vertical sidebar on xl+, horizontal chip strip below */}
-        <div className="grid gap-4 xl:grid-cols-[16rem_1fr]">
+        <div className="grid gap-4 xl:grid-cols-[16rem_1fr] 2xl:grid-cols-[18rem_1fr]">
           {/* history — vertical sidebar (xl+ only) */}
           <div className="hidden xl:block">
             <h2 className="mb-1 text-sm font-semibold text-gray-700 dark:text-gray-200">{t('history')}</h2>
@@ -729,7 +729,9 @@ export default function HrPayrollPage() {
             {openingNew ? (
               <DetailSkeleton label={t('loadingPayrun')} />
             ) : !detail ? (
-              <EmptyState icon={Wallet} title={t('selectPayrun')} />
+              <div className="flex min-h-[50vh] items-center justify-center rounded-xl border border-dashed border-gray-300 dark:border-gray-700">
+                <EmptyState icon={Wallet} title={t('selectPayrun')} description={t('selectPayrunHint')} />
+              </div>
             ) : (
               <div className="space-y-3">
                 {/* status hero — period + status + stepper + ONE context-aware primary action */}
@@ -778,7 +780,9 @@ export default function HrPayrollPage() {
                 </div>
 
                 {detail.payslips.length === 0 ? (
-                  <EmptyState icon={Wallet} title={t('noPayslips')} />
+                  <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700">
+                    <EmptyState icon={Wallet} title={t('noPayslips')} />
+                  </div>
                 ) : (
                   <div className="space-y-3">
                   {/* Key figures — lead with NET as the hero; gross/deductions are secondary */}

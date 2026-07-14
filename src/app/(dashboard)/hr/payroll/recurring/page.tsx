@@ -129,7 +129,7 @@ export default function RecurringGridPage() {
   const monthlyDeduction = COLUMNS.filter((c) => c.kind === 'deduction').reduce((s, c) => s + (columnTotals.get(`${c.kind}|${c.code}`) ?? 0), 0);
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4 p-4 sm:p-6">
+    <div className="mx-auto max-w-7xl space-y-4 p-4 sm:p-6 2xl:max-w-[96rem]">
       <PageHeader
         title={t('title')}
         subtitle={t('subtitle')}

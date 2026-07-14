@@ -2927,6 +2927,7 @@
       "history": "Payruns",
       "noPayruns": "No payruns yet",
       "selectPayrun": "Select a payrun",
+      "selectPayrunHint": "Pick a period from the payrun list, or press Generate to start a new one",
       "noPayslips": "No payslips",
       "cycle": "Cycle",
       "payDate": "Pay date",
