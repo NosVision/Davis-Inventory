@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
   // The caller must be a registered employee — that row fixes company + work hours.
   const { data: emp, error: empErr } = await service
     .from('hr_employees')
-    .select('company_id, work_hours_per_day, probation_end')
+    .select('id, company_id, work_hours_per_day, probation_end')
     .eq('profile_id', user.id)
     .maybeSingle();
   if (empErr) return NextResponse.json({ error: 'Failed to load employee' }, { status: 500 });
@@ -173,8 +173,22 @@ export async function POST(request: NextRequest) {
     usedDaysThisYear = usedRows.reduce((sum, r) => sum + Number(r.days ?? 0), 0);
   }
 
+  // Per-employee quota override (hr_leave_balances, 00165) — the legacy sheet's per-person
+  // "พักร้อนคงเหลือ" beats the type-wide default when a row exists for this year.
+  let effectiveType = leaveType;
+  const { data: balance } = await service
+    .from('hr_leave_balances')
+    .select('quota_days')
+    .eq('employee_id', emp.id as string)
+    .eq('leave_type_id', leaveTypeId)
+    .eq('year', Number(year))
+    .maybeSingle();
+  if (balance) {
+    effectiveType = { ...leaveType, annual_quota_days: Number(balance.quota_days) };
+  }
+
   const validation = validateLeaveRequest({
-    leaveType,
+    leaveType: effectiveType,
     fromDate,
     toDate,
     days,

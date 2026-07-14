@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Loader2, Inbox, FileText } from 'lucide-react';
+import { Loader2, Inbox, FileText, CalendarRange, ListChecks } from 'lucide-react';
 import { Button, Select, PageHeader, ViewToggle, useViewMode, DataList, DataCard, StatusBadge, SkeletonList, toast } from '@/components/ui';
 import { formatThaiDate } from '@/lib/utils/format';
 
@@ -35,6 +35,47 @@ const STATUS_TONE: Record<Status, 'warn' | 'good' | 'critical' | 'neutral'> = {
 };
 const STATUS_FILTERS = ['all', 'pending', 'approved', 'rejected', 'cancelled'] as const;
 
+// ── Quota & stats view (per-year quota overrides + usage matrix) ───────────────
+interface QuotaType {
+  id: string;
+  code: string;
+  name_th: string;
+  name_en: string;
+  annual_quota_days: number | null;
+}
+interface QuotaEmployee {
+  employee_id: string;
+  profile_id: string;
+  name: string;
+  position: string | null;
+}
+interface QuotaBalance {
+  employee_id: string;
+  leave_type_id: string;
+  quota_days: number;
+}
+interface QuotaUsed {
+  user_id: string;
+  leave_type_id: string;
+  month: number; // 1-12
+  days: number;
+}
+interface QuotaData {
+  year: number;
+  types: QuotaType[];
+  employees: QuotaEmployee[];
+  balances: QuotaBalance[];
+  used: QuotaUsed[];
+}
+
+const MONTHS_TH = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+const MAX_QUOTA_DAYS = 366;
+
+// Day counts can be half-days (numeric): whole numbers plain, otherwise 1 decimal.
+function fmtDays(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
 export default function HrLeavesPage() {
   const t = useTranslations('hr.leaves');
 
@@ -49,6 +90,12 @@ export default function HrLeavesPage() {
   const [rejectNote, setRejectNote] = useState('');
   const [certLoadingId, setCertLoadingId] = useState<string | null>(null);
   const [view, setView] = useViewMode('hr-leaves');
+
+  // Quota & stats: fetched once (cross-company — no company selector on this page,
+  // so the quota API is called WITHOUT company_id and returns every visible company).
+  const [quota, setQuota] = useState<QuotaData | null>(null);
+  const [quotaLoading, setQuotaLoading] = useState(true);
+  const [mode, setMode] = useState<'requests' | 'quota'>('requests');
 
   const statusLabel = useCallback(
     (s: Status) =>
@@ -98,6 +145,120 @@ export default function HrLeavesPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const loadQuota = useCallback(async () => {
+    setQuotaLoading(true);
+    try {
+      const res = await fetch('/api/hr/leaves/quota');
+      if (!res.ok) throw new Error();
+      const json = await res.json();
+      setQuota((json.data ?? null) as QuotaData | null);
+    } catch {
+      // Silent: chips simply don't render and the quota view shows the empty state.
+      setQuota(null);
+    } finally {
+      setQuotaLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadQuota();
+  }, [loadQuota]);
+
+  // Lookup maps for the quota payload.
+  const employeeByProfile = useMemo(() => {
+    const map = new Map<string, QuotaEmployee>();
+    (quota?.employees ?? []).forEach((e) => map.set(e.profile_id, e));
+    return map;
+  }, [quota]);
+  const balanceMap = useMemo(() => {
+    const map = new Map<string, number>();
+    (quota?.balances ?? []).forEach((b) => map.set(`${b.employee_id}|${b.leave_type_id}`, b.quota_days));
+    return map;
+  }, [quota]);
+  const usedByUserType = useMemo(() => {
+    const map = new Map<string, number>();
+    (quota?.used ?? []).forEach((u) => {
+      const key = `${u.user_id}|${u.leave_type_id}`;
+      map.set(key, Math.round(((map.get(key) ?? 0) + u.days) * 10) / 10);
+    });
+    return map;
+  }, [quota]);
+  const monthlyByUser = useMemo(() => {
+    const map = new Map<string, number[]>();
+    (quota?.used ?? []).forEach((u) => {
+      const months = map.get(u.user_id) ?? Array.from({ length: 12 }, () => 0);
+      months[u.month - 1] = Math.round((months[u.month - 1] + u.days) * 10) / 10;
+      map.set(u.user_id, months);
+    });
+    return map;
+  }, [quota]);
+  // Types worth a quota column: a type-wide default OR at least one per-employee override.
+  const quotaTypes = useMemo(
+    () =>
+      (quota?.types ?? []).filter(
+        (ty) =>
+          ty.annual_quota_days != null ||
+          (quota?.balances ?? []).some((b) => b.leave_type_id === ty.id)
+      ),
+    [quota]
+  );
+
+  // Effective quota/used/remaining for one employee × leave type; null when unlimited.
+  const quotaInfo = useCallback(
+    (profileId: string | undefined, leaveTypeId: string) => {
+      if (!quota || !profileId) return null;
+      const emp = employeeByProfile.get(profileId);
+      const type = quota.types.find((ty) => ty.id === leaveTypeId);
+      if (!type) return null;
+      const override = emp ? balanceMap.get(`${emp.employee_id}|${leaveTypeId}`) : undefined;
+      const effective = override ?? type.annual_quota_days;
+      if (effective == null) return null;
+      const used = usedByUserType.get(`${profileId}|${leaveTypeId}`) ?? 0;
+      return { quota: effective, used, remaining: Math.round((effective - used) * 10) / 10 };
+    },
+    [quota, employeeByProfile, balanceMap, usedByUserType]
+  );
+
+  const editQuota = useCallback(
+    async (emp: QuotaEmployee, ty: QuotaType) => {
+      if (!quota) return;
+      const current = balanceMap.get(`${emp.employee_id}|${ty.id}`);
+      const input = window.prompt(
+        t('setQuotaPrompt', { name: emp.name, type: ty.name_th, year: String(quota.year) }),
+        current != null ? fmtDays(current) : ''
+      );
+      if (input === null) return;
+      const trimmed = input.trim();
+      let quotaDays: number | null = null;
+      if (trimmed !== '') {
+        const n = Number(trimmed);
+        if (!Number.isFinite(n) || n < 0 || n > MAX_QUOTA_DAYS) {
+          toast({ type: 'error', title: t('quotaInvalid') });
+          return;
+        }
+        quotaDays = n;
+      }
+      try {
+        const res = await fetch('/api/hr/leaves/quota', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            employee_id: emp.employee_id,
+            leave_type_id: ty.id,
+            year: quota.year,
+            quota_days: quotaDays,
+          }),
+        });
+        if (!res.ok) throw new Error();
+        toast({ type: 'success', title: t('quotaSaved') });
+        await loadQuota();
+      } catch {
+        toast({ type: 'error', title: t('quotaSaveFailed') });
+      }
+    },
+    [quota, balanceMap, t, loadQuota]
+  );
 
   const decide = useCallback(
     async (id: string, decision: 'approved' | 'rejected', note?: string) => {
@@ -194,80 +355,233 @@ export default function HrLeavesPage() {
       </>
     ));
 
+  const renderQuotaChip = (r: LeaveRow) => {
+    if (r.status !== 'pending') return null;
+    const info = quotaInfo(r.requester?.id, r.leave_type_id);
+    if (!info) return null;
+    const over = info.remaining < r.days;
+    return (
+      <span
+        className={`mt-1 inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-[11px] font-medium tabular-nums ${
+          over
+            ? 'border-red-200 bg-red-50 text-red-600 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400'
+            : 'border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-600 dark:bg-gray-700/60 dark:text-gray-300'
+        }`}
+      >
+        {t('quotaChip', {
+          quota: fmtDays(info.quota),
+          used: fmtDays(info.used),
+          remaining: fmtDays(info.remaining),
+        })}
+      </span>
+    );
+  };
+
+  const remainingClass = (remaining: number) =>
+    remaining > 0
+      ? 'text-emerald-600 dark:text-emerald-400'
+      : remaining === 0
+        ? 'text-amber-600 dark:text-amber-400'
+        : 'text-red-600 dark:text-red-400';
+
+  const renderQuotaView = () => {
+    if (quotaLoading) return <SkeletonList rows={5} />;
+    if (!quota || quota.employees.length === 0) {
+      return (
+        <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-gray-300 px-4 py-12 text-center text-sm text-gray-400 dark:border-gray-700">
+          <Inbox className="h-8 w-8" />
+          {t('noEmployees')}
+        </div>
+      );
+    }
+    return (
+      <div className="space-y-2">
+        <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
+          {t('quotaYearHeading', { year: String(quota.year) })}
+        </h2>
+        <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
+          <table className="w-full min-w-max border-collapse text-xs">
+            <thead className="bg-gray-50 text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">
+              <tr>
+                <th
+                  rowSpan={2}
+                  className="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left font-medium dark:bg-gray-800"
+                >
+                  {t('employeeCol')}
+                </th>
+                {quotaTypes.map((ty) => (
+                  <th key={ty.id} rowSpan={2} className="whitespace-nowrap px-2 py-2 text-center font-medium">
+                    {ty.name_th}
+                  </th>
+                ))}
+                <th colSpan={12} className="border-l border-gray-200 px-2 py-1.5 text-center font-medium dark:border-gray-700">
+                  {t('monthlyTotalCol')}
+                </th>
+              </tr>
+              <tr>
+                {MONTHS_TH.map((m, i) => (
+                  <th
+                    key={m}
+                    className={`px-1.5 py-1 text-center font-normal ${i === 0 ? 'border-l border-gray-200 dark:border-gray-700' : ''}`}
+                  >
+                    {m}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="bg-white dark:bg-gray-800">
+              {quota.employees.map((emp) => {
+                const months = monthlyByUser.get(emp.profile_id);
+                return (
+                  <tr key={emp.employee_id} className="border-t border-gray-100 dark:border-gray-700/60">
+                    <td className="sticky left-0 z-10 whitespace-nowrap bg-white px-3 py-1.5 dark:bg-gray-800">
+                      <span className="font-medium text-gray-900 dark:text-white">{emp.name}</span>
+                      {emp.position && (
+                        <span className="block text-[10px] text-gray-400 dark:text-gray-500">{emp.position}</span>
+                      )}
+                    </td>
+                    {quotaTypes.map((ty) => {
+                      const override = balanceMap.get(`${emp.employee_id}|${ty.id}`);
+                      const effective = override ?? ty.annual_quota_days;
+                      const used = usedByUserType.get(`${emp.profile_id}|${ty.id}`) ?? 0;
+                      const remaining = effective == null ? null : Math.round((effective - used) * 10) / 10;
+                      return (
+                        <td key={ty.id} className="px-2 py-1.5 text-center">
+                          <button
+                            type="button"
+                            onClick={() => editQuota(emp, ty)}
+                            title={t('setQuotaTitle')}
+                            className={`font-medium tabular-nums hover:underline ${
+                              remaining == null ? 'text-gray-400 dark:text-gray-500' : remainingClass(remaining)
+                            }`}
+                          >
+                            {effective != null ? `${fmtDays(used)}/${fmtDays(effective)}` : '—'}
+                          </button>
+                        </td>
+                      );
+                    })}
+                    {MONTHS_TH.map((m, i) => {
+                      const d = months?.[i] ?? 0;
+                      return (
+                        <td
+                          key={m}
+                          className={`px-1.5 py-1.5 text-center tabular-nums ${
+                            i === 0 ? 'border-l border-gray-100 dark:border-gray-700/60' : ''
+                          } ${d > 0 ? 'text-gray-700 dark:text-gray-200' : 'text-gray-300 dark:text-gray-600'}`}
+                        >
+                          {d > 0 ? fmtDays(d) : '·'}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="mx-auto max-w-4xl space-y-4 p-4">
       <PageHeader
         title={t('hrTitle')}
         subtitle={t('hrSubtitle')}
-        actions={<ViewToggle value={view} onChange={setView} />}
+        actions={
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setMode((m) => (m === 'requests' ? 'quota' : 'requests'))}
+              icon={
+                mode === 'requests' ? (
+                  <CalendarRange className="h-4 w-4" />
+                ) : (
+                  <ListChecks className="h-4 w-4" />
+                )
+              }
+            >
+              {mode === 'requests' ? t('quotaViewBtn') : t('requestsViewBtn')}
+            </Button>
+            {mode === 'requests' && <ViewToggle value={view} onChange={setView} />}
+          </div>
+        }
       />
 
-      {/* filters */}
-      <div className="grid grid-cols-2 gap-3">
-        <Select
-          label={t('storeLabel')}
-          value={storeId}
-          onChange={(e) => setStoreId(e.target.value)}
-          options={storeOptions}
-        />
-        <Select
-          label={t('status')}
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          options={statusOptions}
-        />
-      </div>
-
-      {loading ? (
-        <SkeletonList rows={5} />
-      ) : rows.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-gray-300 px-4 py-12 text-center text-sm text-gray-400 dark:border-gray-700">
-          <Inbox className="h-8 w-8" />
-          {t('noRequests')}
-        </div>
+      {mode === 'quota' ? (
+        renderQuotaView()
       ) : (
-        <DataList compact={view === 'compact'}>
-          {rows.map((r) => (
-            <DataCard
-              key={r.id}
-              accent={STATUS_TONE[r.status]}
-              title={
-                <>
-                  {r.requester?.display_name ?? r.requester?.username ?? '—'}
-                  {' · '}
-                  {r.leave_type?.name_th ?? r.leave_type?.name_en ?? '—'}
-                </>
-              }
-              subtitle={
-                <>
-                  {formatThaiDate(r.from_date)}
-                  {r.to_date !== r.from_date && ` → ${formatThaiDate(r.to_date)}`}
-                  {' · '}
-                  {t('daysPreview', { days: r.days })}
-                </>
-              }
-              status={<StatusBadge tone={STATUS_TONE[r.status]} label={statusLabel(r.status)} />}
-              actions={renderDecideBar(r.id, r.status)}
-            >
-              <p>{r.reason}</p>
-              {r.cert_path && (
-                <button
-                  type="button"
-                  onClick={() => viewCert(r.id)}
-                  disabled={certLoadingId === r.id}
-                  className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline disabled:opacity-60 dark:text-indigo-400"
+        <>
+          {/* filters */}
+          <div className="grid grid-cols-2 gap-3">
+            <Select
+              label={t('storeLabel')}
+              value={storeId}
+              onChange={(e) => setStoreId(e.target.value)}
+              options={storeOptions}
+            />
+            <Select
+              label={t('status')}
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              options={statusOptions}
+            />
+          </div>
+
+          {loading ? (
+            <SkeletonList rows={5} />
+          ) : rows.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-gray-300 px-4 py-12 text-center text-sm text-gray-400 dark:border-gray-700">
+              <Inbox className="h-8 w-8" />
+              {t('noRequests')}
+            </div>
+          ) : (
+            <DataList compact={view === 'compact'}>
+              {rows.map((r) => (
+                <DataCard
+                  key={r.id}
+                  accent={STATUS_TONE[r.status]}
+                  title={
+                    <>
+                      {r.requester?.display_name ?? r.requester?.username ?? '—'}
+                      {' · '}
+                      {r.leave_type?.name_th ?? r.leave_type?.name_en ?? '—'}
+                    </>
+                  }
+                  subtitle={
+                    <>
+                      {formatThaiDate(r.from_date)}
+                      {r.to_date !== r.from_date && ` → ${formatThaiDate(r.to_date)}`}
+                      {' · '}
+                      {t('daysPreview', { days: r.days })}
+                    </>
+                  }
+                  status={<StatusBadge tone={STATUS_TONE[r.status]} label={statusLabel(r.status)} />}
+                  actions={renderDecideBar(r.id, r.status)}
                 >
-                  {certLoadingId === r.id ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <FileText className="h-3.5 w-3.5" />
+                  <p>{r.reason}</p>
+                  {renderQuotaChip(r)}
+                  {r.cert_path && (
+                    <button
+                      type="button"
+                      onClick={() => viewCert(r.id)}
+                      disabled={certLoadingId === r.id}
+                      className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline disabled:opacity-60 dark:text-indigo-400"
+                    >
+                      {certLoadingId === r.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <FileText className="h-3.5 w-3.5" />
+                      )}
+                      {t('viewCert')}
+                    </button>
                   )}
-                  {t('viewCert')}
-                </button>
-              )}
-            </DataCard>
-          ))}
-        </DataList>
+                </DataCard>
+              ))}
+            </DataList>
+          )}
+        </>
       )}
     </div>
   );

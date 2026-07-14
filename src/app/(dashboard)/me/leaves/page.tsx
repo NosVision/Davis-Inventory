@@ -55,6 +55,29 @@ const STATUS_TONE: Record<Status, 'neutral' | 'good' | 'warn' | 'critical'> = {
   cancelled: 'neutral',
 };
 
+// ── Yearly quota summary (/api/hr/ess/leaves/summary) ─────────────────────────
+interface SummaryType {
+  id: string;
+  code: string;
+  name_th: string;
+  name_en: string;
+  quota: number | null; // effective (override ?? type default); null = unlimited
+  used: number;
+  remaining: number | null;
+}
+interface LeaveSummary {
+  year: number;
+  types: SummaryType[];
+  monthly: number[]; // 12 entries, index 0 = January
+}
+
+const MONTHS_TH = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+
+// Day counts can be half-days (numeric): whole numbers plain, otherwise 1 decimal.
+function fmtDays(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
 // Inclusive day count between two YYYY-MM-DD strings; 0 when invalid.
 function inclusiveDays(from: string, to: string): number {
   if (!from || !to) return 0;
@@ -70,11 +93,13 @@ export default function MyLeavesPage() {
 
   const [types, setTypes] = useState<LeaveType[]>([]);
   const [rows, setRows] = useState<LeaveRow[]>([]);
+  const [summary, setSummary] = useState<LeaveSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [view, setView] = useViewMode('me-leaves');
 
   const today = todayBangkok();
+  const currentMonthIdx = Number(today.slice(5, 7)) - 1;
   const [typeId, setTypeId] = useState('');
   const [fromDate, setFromDate] = useState(today);
   const [toDate, setToDate] = useState(today);
@@ -129,10 +154,23 @@ export default function MyLeavesPage() {
     }
   }, []);
 
+  const fetchSummary = useCallback(async () => {
+    try {
+      const res = await fetch('/api/hr/ess/leaves/summary');
+      if (!res.ok) throw new Error('load failed');
+      const json = await res.json();
+      setSummary((json.data ?? null) as LeaveSummary | null);
+    } catch {
+      // Silent: the summary section simply doesn't render.
+      setSummary(null);
+    }
+  }, []);
+
   useEffect(() => {
     fetchTypes();
     fetchRows();
-  }, [fetchTypes, fetchRows]);
+    fetchSummary();
+  }, [fetchTypes, fetchRows, fetchSummary]);
 
   const submit = useCallback(async () => {
     if (!typeId || !fromDate || !toDate || dayCount <= 0) return;
@@ -197,6 +235,102 @@ export default function MyLeavesPage() {
       />
 
       <TileNotices tile="leaves" />
+
+      {/* Yearly quota summary */}
+      {summary && (summary.types.some((ty) => ty.quota != null || ty.used > 0) || summary.monthly.some((d) => d > 0)) && (
+        <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
+            {t('summaryHeading', { year: String(summary.year) })}
+          </h2>
+
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {summary.types
+              .filter((ty) => ty.quota != null)
+              .map((ty) => {
+                const quotaDays = ty.quota as number;
+                const remaining = ty.remaining ?? 0;
+                const depleted = remaining <= 0;
+                const pct =
+                  quotaDays > 0 ? Math.min(100, Math.max(0, (ty.used / quotaDays) * 100)) : 100;
+                return (
+                  <div
+                    key={ty.id}
+                    className="rounded-lg border border-gray-100 p-3 dark:border-gray-700"
+                  >
+                    <p className="text-xs font-medium text-gray-900 dark:text-white">{ty.name_th}</p>
+                    <p
+                      className={`mt-0.5 text-[11px] tabular-nums ${
+                        depleted ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'
+                      }`}
+                    >
+                      {t('remainingOf', {
+                        remaining: fmtDays(remaining),
+                        quota: fmtDays(quotaDays),
+                        used: fmtDays(ty.used),
+                      })}
+                    </p>
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
+                      <div
+                        className={`h-full rounded-full ${depleted ? 'bg-red-500' : 'bg-indigo-500'}`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+
+          {summary.types
+            .filter((ty) => ty.quota == null && ty.used > 0)
+            .map((ty) => (
+              <p key={ty.id} className="text-[11px] tabular-nums text-gray-500 dark:text-gray-400">
+                {ty.name_th} · {t('usedOnly', { used: fmtDays(ty.used) })}
+              </p>
+            ))}
+
+          {/* 12-month strip (current year, all types) */}
+          <div>
+            <p className="mb-1 text-[11px] font-medium text-gray-500 dark:text-gray-400">
+              {t('monthlyStripHeading')}
+            </p>
+            <div className="grid grid-cols-12 gap-1">
+              {MONTHS_TH.map((m, i) => {
+                const d = summary.monthly[i] ?? 0;
+                const isCurrent = i === currentMonthIdx;
+                const max = Math.max(...summary.monthly, 1);
+                return (
+                  <div key={m} className="flex flex-col items-center gap-0.5">
+                    <div className="flex h-10 w-full items-end">
+                      <div
+                        className={`w-full rounded-sm ${
+                          d > 0
+                            ? isCurrent
+                              ? 'bg-indigo-500'
+                              : 'bg-indigo-300 dark:bg-indigo-700'
+                            : 'bg-gray-100 dark:bg-gray-700'
+                        }`}
+                        style={{ height: d > 0 ? `${Math.max(15, (d / max) * 100)}%` : '4px' }}
+                      />
+                    </div>
+                    <span
+                      className={`text-[9px] tabular-nums ${
+                        isCurrent
+                          ? 'font-semibold text-indigo-600 dark:text-indigo-400'
+                          : 'text-gray-400 dark:text-gray-500'
+                      }`}
+                    >
+                      {m}
+                    </span>
+                    <span className="h-3 text-[9px] tabular-nums text-gray-500 dark:text-gray-400">
+                      {d > 0 ? fmtDays(d) : ''}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* File form */}
       <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
