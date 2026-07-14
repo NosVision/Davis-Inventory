@@ -3018,6 +3018,7 @@
       "close": "Close",
       "recurringModal": {
         "title": "Recurring items",
+        "applyNote": "Applied to every payrun automatically — closing this window recomputes the draft for you",
         "empty": "No recurring items",
         "earning": "Allowance",
         "deduction": "Deduction",

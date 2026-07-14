@@ -19,6 +19,8 @@ interface RecurringModalProps {
   employeeId: string;
   name: string;
   onClose: () => void;
+  /** fired after any successful add/remove — lets the payroll page auto-recompute on close */
+  onChanged?: () => void;
 }
 
 const EARNING_CODES = ['cost_of_living', 'housing', 'phone', 'travel', 'holiday_comp', 'other'];
@@ -26,7 +28,7 @@ const DEDUCTION_CODES = ['student_loan', 'advance', 'guarantee', 'loan', 'other'
 const inputCls =
   'rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white';
 
-export function RecurringModal({ employeeId, name, onClose }: RecurringModalProps) {
+export function RecurringModal({ employeeId, name, onClose, onChanged }: RecurringModalProps) {
   const t = useTranslations('hr.payroll.recurringModal');
   const [items, setItems] = useState<RecurringItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -81,11 +83,12 @@ export function RecurringModal({ employeeId, name, onClose }: RecurringModalProp
       toast({ type: 'success', title: t('added') });
       setLabel('');
       setAmountBaht('');
+      onChanged?.();
       await load();
     } finally {
       setSaving(false);
     }
-  }, [amountBaht, label, kind, code, employeeId, t, load]);
+  }, [amountBaht, label, kind, code, employeeId, t, load, onChanged]);
 
   const remove = useCallback(async (id: string) => {
     try {
@@ -95,15 +98,17 @@ export function RecurringModal({ employeeId, name, onClose }: RecurringModalProp
         return;
       }
       toast({ type: 'success', title: t('removed') });
+      onChanged?.();
       await load();
     } catch {
       toast({ type: 'error', title: t('saveFailed') });
     }
-  }, [employeeId, t, load]);
+  }, [employeeId, t, load, onChanged]);
 
   return (
     <Modal isOpen onClose={onClose} title={`${t('title')} · ${name}`} size="md">
       <div className="space-y-3">
+        <p className="text-xs text-gray-400">{t('applyNote')}</p>
         {loading ? (
           <div className="flex justify-center py-6 text-gray-400"><Loader2 className="h-5 w-5 animate-spin" /></div>
         ) : items.length === 0 ? (

@@ -135,6 +135,9 @@ export default function HrPayrollPage() {
   const [slip, setSlip] = useState<PayslipDetailData | null>(null);
   const [printSlip, setPrintSlip] = useState<PayslipDetailData | null>(null);
   const [recurringFor, setRecurringFor] = useState<{ employeeId: string; name: string } | null>(null);
+  // Recurring items only reach the slips at generate time — when the modal changed anything on a
+  // draft payrun, recompute silently on close so ค่าเดินทาง ฯลฯ shows up without a hidden button.
+  const [recurringDirty, setRecurringDirty] = useState(false);
   const [taxAllowFor, setTaxAllowFor] = useState<{ employeeId: string; name: string } | null>(null);
 
   // Expandable register rows: full itemized slip inline (lazy-loaded, cached per payslip id;
@@ -1095,7 +1098,12 @@ export default function HrPayrollPage() {
         <RecurringModal
           employeeId={recurringFor.employeeId}
           name={recurringFor.name}
-          onClose={() => setRecurringFor(null)}
+          onChanged={() => setRecurringDirty(true)}
+          onClose={() => {
+            setRecurringFor(null);
+            if (recurringDirty && detail?.payrun.status === 'draft') void regenerateCurrent(true);
+            setRecurringDirty(false);
+          }}
         />
       )}
 
