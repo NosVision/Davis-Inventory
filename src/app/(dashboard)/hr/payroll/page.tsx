@@ -459,6 +459,9 @@ export default function HrPayrollPage() {
           }
         >
           <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
+            <Link href="/hr/payroll/recurring" className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">
+              <Settings2 className="h-3.5 w-3.5" /> {t('recurringGridLink')}
+            </Link>
             <Link href="/hr/payroll/compare" className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">
               <GitCompareArrows className="h-3.5 w-3.5" /> {t('compareLink')}
             </Link>

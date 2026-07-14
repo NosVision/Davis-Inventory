@@ -68,9 +68,19 @@ export async function applyTaxOverride(
   if (upErr) return { ok: false, status: 500, error: upErr.message };
 
   // 2) patch the persisted slip: replace the tax line, re-derive totals from stored gross.
+  // Net must mirror the engine exactly: gross − deductions − (SC + tip), because SV/tip are paid
+  // in a separate mid-month transfer and never sit inside the end-of-month net (payroll.ts §net).
+  const { data: svLines, error: svErr } = await service
+    .from('hr_payslip_earnings')
+    .select('amount_satang')
+    .eq('payslip_id', slip.id)
+    .in('type', ['service_charge', 'tip']);
+  if (svErr) return { ok: false, status: 500, error: 'Failed to load payslip earnings' };
+  const svTipSatang = (svLines ?? []).reduce((s, l) => s + (Number(l.amount_satang) || 0), 0);
+
   const oldTax = Number(slip.tax_satang) || 0;
   const newTotalDed = Number(slip.total_deduction_satang) - oldTax + taxSatang;
-  const newNet = Number(slip.gross_satang) - newTotalDed;
+  const newNet = Number(slip.gross_satang) - newTotalDed - svTipSatang;
 
   const { data: taxLine } = await service
     .from('hr_payslip_deductions')

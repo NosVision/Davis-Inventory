@@ -263,7 +263,16 @@ export async function POST(request: NextRequest) {
         .gte('to_date', start),
       service.from('hr_leave_types').select('id, code, paid'),
       service.from('hr_holidays').select('holiday_date').eq('company_id', companyId).eq('active', true),
-      service.from('hr_employee_recurring').select('employee_id, kind, code, label, amount_satang').eq('active', true),
+      // Recurring items: only THIS run's employees (was an unscoped all-tenant scan), and only rows
+      // whose period window covers this payrun period. Window sides are 'YYYY-MM' text (00162);
+      // null start = since forever, null end = perpetual — expiry is enforced here, not by memory.
+      service
+        .from('hr_employee_recurring')
+        .select('employee_id, kind, code, label, amount_satang')
+        .eq('active', true)
+        .in('employee_id', employees.map((e) => e.id))
+        .or(`start_period.is.null,start_period.lte.${year}-${pad(month)}`)
+        .or(`end_period.is.null,end_period.gte.${year}-${pad(month)}`),
       // Net SC for the PREVIOUS month's pool (N−1) — carried into this payslip.
       service
         .from('hr_sc_allocations')
