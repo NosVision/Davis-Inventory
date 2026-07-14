@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManagerForStore } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
-import { RECURRING_CODES, parsePeriodInput } from '@/lib/hr/recurring';
+import { RECURRING_CODES, MAX_ITEM_AMOUNT_SATANG, parsePeriodInput } from '@/lib/hr/recurring';
 
 const TABLE = 'hr_employee_recurring';
 const ITEM_COLS = 'id, employee_id, kind, code, label, amount_satang, active, note, start_period, end_period';
@@ -90,8 +90,8 @@ export async function POST(request: NextRequest) {
   if (!KINDS.includes(kind)) return NextResponse.json({ error: 'kind must be earning or deduction' }, { status: 400 });
   if (!RECURRING_CODES.includes(code)) return NextResponse.json({ error: 'invalid code' }, { status: 400 });
   if (!label) return NextResponse.json({ error: 'label is required' }, { status: 400 });
-  if (!Number.isInteger(amount) || amount <= 0) {
-    return NextResponse.json({ error: 'amount_satang must be a positive integer' }, { status: 400 });
+  if (!Number.isInteger(amount) || amount <= 0 || amount > MAX_ITEM_AMOUNT_SATANG) {
+    return NextResponse.json({ error: 'amount_satang must be a positive integer within the allowed range' }, { status: 400 });
   }
   const periods = parsePeriodInput(body);
   if (!periods.ok) return NextResponse.json({ error: periods.error }, { status: 400 });

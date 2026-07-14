@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManagerForStore } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
+import { MAX_ITEM_AMOUNT_SATANG } from '@/lib/hr/recurring';
+import { isUniqueViolation } from '@/lib/hr/db-errors';
 
 const TABLE = 'hr_payrun_adjustments';
 const COLS = 'id, payrun_id, profile_id, kind, label, amount_satang, reason, created_by, created_at';
@@ -105,8 +107,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   }
   if (!label) return NextResponse.json({ error: 'label is required' }, { status: 400 });
   if (!reason) return NextResponse.json({ error: 'reason is required' }, { status: 400 });
-  if (!Number.isInteger(amount) || amount <= 0) {
-    return NextResponse.json({ error: 'amount_satang must be a positive integer' }, { status: 400 });
+  if (!Number.isInteger(amount) || amount <= 0 || amount > MAX_ITEM_AMOUNT_SATANG) {
+    return NextResponse.json({ error: 'amount_satang must be a positive integer within the allowed range' }, { status: 400 });
+  }
+  // Self-dealing block: a store-scoped manager (not full HR) must never write a money line onto
+  // their OWN payslip — the exact fraud path the "attributed + reasoned" rule cannot audit away.
+  if (!auth.fullHr && profileId === auth.userId) {
+    return NextResponse.json({ error: 'A store-scoped manager cannot adjust their own payslip' }, { status: 403 });
   }
 
   const { data: slip, error: slipErr } = await service
@@ -123,7 +130,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     .insert({ payrun_id: id, profile_id: profileId, kind, label, amount_satang: amount, reason, created_by: auth.userId })
     .select(COLS)
     .single();
-  if (error) return NextResponse.json({ error: 'Failed to add adjustment' }, { status: 500 });
+  if (error) {
+    // 00164 dedupe index: an identical line (same person/kind/label/amount) already exists —
+    // almost always a double-submit. Vary the label to add a genuine second identical line.
+    if (isUniqueViolation(error)) {
+      return NextResponse.json({ error: 'An identical adjustment already exists (change the label to add another)' }, { status: 409 });
+    }
+    return NextResponse.json({ error: 'Failed to add adjustment' }, { status: 500 });
+  }
 
   await logHrAudit(service, {
     actorId: auth.userId, action: 'create', table: TABLE, recordId: data.id as string,
@@ -150,6 +164,11 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 
   const { data: before } = await service.from(TABLE).select(COLS).eq('id', adjustmentId).eq('payrun_id', id).maybeSingle();
   if (!before) return NextResponse.json({ error: 'Adjustment not found' }, { status: 404 });
+  // Self-dealing block (mirror of POST): a scoped manager must not delete a deduction line
+  // that targets themselves either.
+  if (!auth.fullHr && (before.profile_id as string) === auth.userId) {
+    return NextResponse.json({ error: 'A store-scoped manager cannot adjust their own payslip' }, { status: 403 });
+  }
 
   const { error } = await service.from(TABLE).delete().eq('id', adjustmentId).eq('payrun_id', id);
   if (error) return NextResponse.json({ error: 'Failed to remove adjustment' }, { status: 500 });

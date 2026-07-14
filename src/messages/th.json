@@ -3122,6 +3122,7 @@
         }
       },
       "recurringGridLink": "รายการประจำทั้งบริษัท",
+      "flowLink": "โฟลการทำเงินเดือน",
       "compareLink": "เทียบสลิประหว่างงวด"
     },
     "payslip": {
@@ -3155,13 +3156,13 @@
       },
       "twoRounds": "ยอดนี้จ่าย 2 รอบ: เซอร์วิสชาร์จ/ทิป {sv} ฿ (โอนรอบวันที่ 15) · เงินเดือน {salary} ฿ (โอนสิ้นเดือน)",
       "metaRate": "อัตราจ้าง",
-      "metaDailyRate": "อัตรารายวัน (÷30)",
+      "metaDailyRate": "อัตรารายวัน (÷{divisor})",
       "metaWorkedDays": "วันทำงาน",
       "adjBadge": "เฉพาะงวด",
       "formula": {
         "absent": "ขาด {days} วัน × อัตรารายวัน",
-        "leave": "{days} วัน × {daily} ฿ (เงินเดือน÷30)",
-        "travel": "หักค่าเดินทาง {days} วัน (÷30/วัน)",
+        "leave": "{days} วัน × {daily} ฿ (เงินเดือน÷{divisor})",
+        "travel": "หักค่าเดินทาง {days} วัน (÷{divisor}/วัน)",
         "days": "{days} วัน"
       },
       "print": "พิมพ์",

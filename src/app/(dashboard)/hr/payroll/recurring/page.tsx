@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { ArrowLeft, Loader2, Plus, Search } from 'lucide-react';
@@ -66,19 +66,25 @@ export default function RecurringGridPage() {
     })();
   }, []);
 
+  // Monotonic sequence: a slow response for a previous company must never overwrite the
+  // currently-selected company's grid.
+  const loadSeq = useRef(0);
   const load = useCallback(async () => {
     if (!companyId) return;
+    const seq = ++loadSeq.current;
     setLoading(true);
     try {
       const res = await fetch(`/api/hr/payroll/recurring?company_id=${companyId}`);
       const json = await res.json();
+      if (seq !== loadSeq.current) return; // superseded by a newer load
       setEmployees((json.data?.employees ?? []) as GridEmployee[]);
       setItems((json.data?.items ?? []) as RecurringItem[]);
     } catch {
+      if (seq !== loadSeq.current) return;
       setEmployees([]);
       setItems([]);
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
   }, [companyId]);
 

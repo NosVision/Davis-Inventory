@@ -26,7 +26,10 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
   // Ownership/scope gate: an employee sees only their own; otherwise the caller must be HR for the
   // payrun's store (company-wide HR, or a manager scoped to a store-scoped payrun's store).
-  if (slip.user_id !== user.id) {
+  // isHrViewer distinguishes the two paths: HR-internal fields (the register remark) are stripped
+  // from the employee's own ESS view.
+  const isHrViewer = slip.user_id !== user.id;
+  if (isHrViewer) {
     const { data: pr } = await service.from('hr_payruns').select('store_id').eq('id', slip.payrun_id).maybeSingle();
     const auth = await requireHrManagerForStore((pr?.store_id as string | null | undefined) ?? null);
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
@@ -35,7 +38,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   const [earnRes, dedRes, payrunRes, profRes, ovrRes, empRes, bonusRes, remarkRes] = await Promise.all([
     service.from('hr_payslip_earnings').select('type, label, amount_satang, ref, sort').eq('payslip_id', id).order('sort'),
     service.from('hr_payslip_deductions').select('type, label, amount_satang, reason, ref, sort').eq('payslip_id', id).order('sort'),
-    service.from('hr_payruns').select('id, company_id, period_year, period_month, cycle_start, cycle_end, pay_date, status, company:hr_companies(name, address)').eq('id', slip.payrun_id).maybeSingle(),
+    service.from('hr_payruns').select('id, company_id, period_year, period_month, cycle_start, cycle_end, pay_date, status, company:hr_companies(name, address, day_divisor)').eq('id', slip.payrun_id).maybeSingle(),
     service.from('profiles').select('username, display_name').eq('id', slip.user_id).maybeSingle(),
     service.from('hr_payslip_tax_overrides').select('tax_satang, note, set_via, updated_at').eq('payrun_id', slip.payrun_id).eq('profile_id', slip.user_id).maybeSingle(),
     // slip-form print header fields (§ dot-matrix form): code / formal name / bank account
@@ -126,8 +129,9 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       bonus: bonusRes.data ?? null,
       // Service Charge (SV) detail for the month (null = none)
       service_charge: serviceCharge,
-      // free-form register remark (null = none)
-      remark: (remarkRes.data?.remark as string | undefined) ?? null,
+      // free-form register remark — HR-internal annotation, never shown to the slip's own
+      // employee (an HR note like "หัก SV 100%" is register context, not employee-facing text)
+      remark: isHrViewer ? ((remarkRes.data?.remark as string | undefined) ?? null) : null,
     },
   });
 }

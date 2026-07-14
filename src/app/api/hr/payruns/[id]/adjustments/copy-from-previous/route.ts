@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManagerForStore } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
+import { isUniqueViolation } from '@/lib/hr/db-errors';
 
 const TABLE = 'hr_payrun_adjustments';
 
@@ -61,7 +62,10 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
   const rows = [];
   let skipped = 0;
   for (const a of prevAdj as { profile_id: string; kind: string; label: string; amount_satang: number; reason: string }[]) {
-    if (!inRun.has(a.profile_id) || existing.has(`${a.profile_id}|${a.kind}|${a.label}|${a.amount_satang}`)) {
+    // Self-dealing block (mirrors POST/DELETE): a scoped manager never writes their own lines,
+    // not even by replaying last period's.
+    const selfDeal = !auth.fullHr && a.profile_id === auth.userId;
+    if (selfDeal || !inRun.has(a.profile_id) || existing.has(`${a.profile_id}|${a.kind}|${a.label}|${a.amount_satang}`)) {
       skipped++;
       continue;
     }
@@ -76,15 +80,25 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
     });
   }
 
-  if (rows.length > 0) {
-    const { error } = await service.from(TABLE).insert(rows);
-    if (error) return NextResponse.json({ error: 'Failed to copy adjustments' }, { status: 500 });
+  // Insert row-by-row so a concurrent copy (two tabs) degrades to skips via the 00164 dedupe
+  // index instead of double-charging or failing the whole batch.
+  let copied = 0;
+  for (const row of rows) {
+    const { error } = await service.from(TABLE).insert(row);
+    if (error) {
+      if (isUniqueViolation(error)) {
+        skipped++;
+        continue;
+      }
+      return NextResponse.json({ error: 'Failed to copy adjustments' }, { status: 500 });
+    }
+    copied++;
   }
 
   await logHrAudit(service, {
     actorId: auth.userId, action: 'create', table: TABLE, recordId: id,
-    before: null, after: { from_payrun: prev.id, copied: rows.length, skipped },
+    before: null, after: { from_payrun: prev.id, copied, skipped },
     reason: `adjustments copied from previous payrun (${prev.period_year}-${prev.period_month})`,
   });
-  return NextResponse.json({ data: { copied: rows.length, skipped } });
+  return NextResponse.json({ data: { copied, skipped } });
 }

@@ -28,6 +28,17 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   const remark = typeof body.remark === 'string' ? body.remark.trim().slice(0, REMARK_MAX) : '';
   if (!profileId) return NextResponse.json({ error: 'profile_id is required' }, { status: 400 });
 
+  // The target must actually be on this payrun (same rule as adjustments) — otherwise a scoped
+  // manager could attach rows to arbitrary profiles.
+  const { data: slip, error: slipErr } = await service
+    .from('hr_payslips')
+    .select('id')
+    .eq('payrun_id', id)
+    .eq('user_id', profileId)
+    .maybeSingle();
+  if (slipErr) return NextResponse.json({ error: 'Failed to verify payslip' }, { status: 500 });
+  if (!slip) return NextResponse.json({ error: 'Employee has no payslip in this payrun' }, { status: 400 });
+
   const { data: before } = await service
     .from(TABLE)
     .select('remark')

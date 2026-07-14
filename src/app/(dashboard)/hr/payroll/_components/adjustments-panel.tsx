@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { ClipboardPaste, Loader2, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { Button, Badge, toast } from '@/components/ui';
@@ -56,11 +56,16 @@ export function AdjustmentsPanel({ payrunId, isDraft, slips, onChanged }: Adjust
 
   const nameByProfile = new Map(slips.map((s) => [s.user_id, s.name]));
 
+  // Monotonic sequence: a slow response for a previous payrun must never overwrite the state of
+  // the currently-selected one (rapid payrun switching keeps this component mounted).
+  const loadSeq = useRef(0);
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
     setLoading(true);
     try {
       const res = await fetch(`/api/hr/payruns/${payrunId}/adjustments`);
       const json = await res.json();
+      if (seq !== loadSeq.current) return; // superseded by a newer load
       if (res.ok) {
         setRows((json.data?.adjustments ?? []) as AdjustmentRow[]);
         setPrevious((json.data?.previous ?? null) as AdjustmentsPrevious | null);
@@ -69,10 +74,11 @@ export function AdjustmentsPanel({ payrunId, isDraft, slips, onChanged }: Adjust
         setPrevious(null);
       }
     } catch {
+      if (seq !== loadSeq.current) return;
       setRows([]);
       setPrevious(null);
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
   }, [payrunId]);
 

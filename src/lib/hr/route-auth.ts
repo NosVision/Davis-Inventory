@@ -2,7 +2,15 @@ import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { canManageHr } from '@/lib/hr/access';
 
 export type HrAuthResult =
-  | { ok: true; userId: string; role: string }
+  | {
+      ok: true;
+      userId: string;
+      role: string;
+      /** true when the caller passed via company-wide HR (owner / can_manage_hr); false when they
+       *  passed only via a store scope (hr_manager_scopes). Lets money routes apply stricter rules
+       *  to scoped managers (e.g. the self-dealing block on payroll adjustments). */
+      fullHr: boolean;
+    }
   | { ok: false; error: string; status: number };
 
 /**
@@ -40,7 +48,7 @@ export async function requireHrManager(): Promise<HrAuthResult> {
   if (!canManageHr({ role, permissions })) {
     return { ok: false, error: 'Forbidden — requires can_manage_hr', status: 403 };
   }
-  return { ok: true, userId: user.id, role };
+  return { ok: true, userId: user.id, role, fullHr: true };
 }
 
 /**
@@ -74,7 +82,7 @@ export async function requireStoreManager(storeId: string): Promise<HrAuthResult
   const permissions = (permsRes.data ?? []).map((p) => p.permission as string);
 
   // Company-wide HR may manage any store's schedule.
-  if (canManageHr({ role, permissions })) return { ok: true, userId: user.id, role };
+  if (canManageHr({ role, permissions })) return { ok: true, userId: user.id, role, fullHr: true };
 
   // Otherwise the caller must be a manager scoped to this specific store.
   const service = createServiceClient();
@@ -91,7 +99,7 @@ export async function requireStoreManager(storeId: string): Promise<HrAuthResult
   if (!scope) {
     return { ok: false, error: 'Forbidden — not a manager of this store', status: 403 };
   }
-  return { ok: true, userId: user.id, role };
+  return { ok: true, userId: user.id, role, fullHr: false };
 }
 
 /**
@@ -122,7 +130,7 @@ export async function requireScheduler(): Promise<HrAuthResult> {
   const role = (profileRes.data?.role as string) ?? '';
   const permissions = (permsRes.data ?? []).map((p) => p.permission as string);
   if (role === 'hq' || canManageHr({ role, permissions })) {
-    return { ok: true, userId: user.id, role };
+    return { ok: true, userId: user.id, role, fullHr: canManageHr({ role, permissions }) };
   }
   return { ok: false, error: 'Forbidden — requires scheduling access (HQ / HR)', status: 403 };
 }
@@ -191,7 +199,7 @@ async function requireHrManagerForEmployee(
   }
   const role = (profileRes.data?.role as string) ?? '';
   const permissions = (permsRes.data ?? []).map((p) => p.permission as string);
-  if (canManageHr({ role, permissions })) return { ok: true, userId: user.id, role };
+  if (canManageHr({ role, permissions })) return { ok: true, userId: user.id, role, fullHr: true };
 
   const service = createServiceClient();
   let employeeProfileId: string | null;
@@ -217,7 +225,7 @@ async function requireHrManagerForEmployee(
   const scopeSet = new Set((scopesRes.data ?? []).map((s) => s.store_id as string));
   const inScope = (empStoresRes.data ?? []).some((s) => scopeSet.has(s.store_id as string));
   if (!inScope) return { ok: false, error: 'Forbidden — employee not in your stores', status: 403 };
-  return { ok: true, userId: user.id, role };
+  return { ok: true, userId: user.id, role, fullHr: false };
 }
 
 /**

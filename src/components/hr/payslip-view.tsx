@@ -32,7 +32,7 @@ export interface PayslipDetailData {
     period_month: number;
     pay_date: string | null;
     status?: string;
-    company?: { name: string | null; address: string | null } | null;
+    company?: { name: string | null; address: string | null; day_divisor?: number | null } | null;
   } | null;
   earnings: PayslipLine[];
   deductions: PayslipLine[];
@@ -103,8 +103,11 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
 
   // The formula behind a computed line, rendered from the stored machine ref — the number's
   // provenance at a glance (HR ask 2026-07-14: "อยากเห็นการแจกแจงทุกตัวเลข"). The engine docks
-  // leave at rate÷30 × days and travel at allowance÷30 × days (payroll.ts).
-  const dailyRateSatang = payslip.rate_satang ? payslip.rate_satang / 30 : 0;
+  // leave at rate÷day_divisor × days and travel at allowance÷day_divisor × days (payroll.ts);
+  // the divisor is per-company config (default 30), so it must come from the payload, not a
+  // hardcoded 30.
+  const dayDivisor = payrun?.company?.day_divisor || 30;
+  const dailyRateSatang = payslip.rate_satang ? payslip.rate_satang / dayDivisor : 0;
   const lineFormula = (l: PayslipLine): string | null => {
     if (l.type === 'ot' && l.ref) return l.ref; // "12.50h"
     if (l.type === 'late' && l.ref) return l.ref; // "3x"
@@ -112,13 +115,13 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
     if (l.type === 'leave_unpaid') {
       const days = leaveDaysFromRef(l.ref);
       if (days != null && dailyRateSatang > 0) {
-        return t('formula.leave', { days, daily: formatBaht(Math.round(dailyRateSatang)) });
+        return t('formula.leave', { days, daily: formatBaht(Math.round(dailyRateSatang)), divisor: dayDivisor });
       }
       if (days != null) return t('formula.days', { days });
     }
     if (l.type === 'travel_leave') {
       const days = leaveDaysFromRef(l.ref);
-      if (days != null) return t('formula.travel', { days });
+      if (days != null) return t('formula.travel', { days, divisor: dayDivisor });
     }
     return null;
   };
@@ -164,7 +167,7 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
         {!print && (payslip.rate_satang ?? 0) > 0 && (
           <>
             <Meta label={t('metaRate')} value={`${formatBaht(payslip.rate_satang as number)} ฿`} print={print} />
-            <Meta label={t('metaDailyRate')} value={`${formatBaht(Math.round((payslip.rate_satang as number) / 30))} ฿`} print={print} />
+            <Meta label={t('metaDailyRate', { divisor: dayDivisor })} value={`${formatBaht(Math.round((payslip.rate_satang as number) / dayDivisor))} ฿`} print={print} />
           </>
         )}
         {!print && payslip.worked_days != null && (

@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManagerForEmployeeId } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
-import { RECURRING_CODES, PERIOD_RE, parsePeriodInput } from '@/lib/hr/recurring';
+import { RECURRING_CODES, MAX_ITEM_AMOUNT_SATANG, parsePeriodInput } from '@/lib/hr/recurring';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 const KINDS = ['earning', 'deduction'];
 const TABLE = 'hr_employee_recurring';
@@ -11,6 +12,22 @@ const COLS = 'id, employee_id, kind, code, label, amount_satang, active, note, s
 // Per-employee recurring monthly payroll items (allowances = earnings; fixed deductions).
 // HR only — these feed the payroll engine, so they are salary-sensitive. [id] = hr_employees.id.
 // v2 (00162): items carry an optional period window ('YYYY-MM'); null end_period = perpetual.
+
+/** Self-dealing block: a store-scoped manager (not full HR) must never write/remove a recurring
+ *  money item on their OWN employee record — it silently re-posts on every future payrun. */
+async function rejectSelfDealing(
+  service: SupabaseClient,
+  employeeId: string,
+  auth: { userId: string; fullHr: boolean }
+): Promise<NextResponse | null> {
+  if (auth.fullHr) return null;
+  const { data: emp, error } = await service.from('hr_employees').select('profile_id').eq('id', employeeId).maybeSingle();
+  if (error) return NextResponse.json({ error: 'Failed to verify employee' }, { status: 500 });
+  if ((emp?.profile_id as string | undefined) === auth.userId) {
+    return NextResponse.json({ error: 'A store-scoped manager cannot edit their own recurring items' }, { status: 403 });
+  }
+  return null;
+}
 
 // GET /api/hr/employees/[id]/recurring — list the employee's recurring items.
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -38,16 +55,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!KINDS.includes(kind)) return NextResponse.json({ error: 'kind must be earning or deduction' }, { status: 400 });
   if (!RECURRING_CODES.includes(code)) return NextResponse.json({ error: 'invalid code' }, { status: 400 });
   if (!label) return NextResponse.json({ error: 'label is required' }, { status: 400 });
-  if (!Number.isInteger(amount) || amount <= 0) {
-    return NextResponse.json({ error: 'amount_satang must be a positive integer' }, { status: 400 });
+  if (!Number.isInteger(amount) || amount <= 0 || amount > MAX_ITEM_AMOUNT_SATANG) {
+    return NextResponse.json({ error: 'amount_satang must be a positive integer within the allowed range' }, { status: 400 });
   }
   const periods = parsePeriodInput(body);
   if (!periods.ok) return NextResponse.json({ error: periods.error }, { status: 400 });
 
   const service = createServiceClient();
-  const { data: emp, error: empErr } = await service.from('hr_employees').select('id').eq('id', id).maybeSingle();
+  const { data: emp, error: empErr } = await service.from('hr_employees').select('id, profile_id').eq('id', id).maybeSingle();
   if (empErr) return NextResponse.json({ error: 'Failed to verify employee' }, { status: 500 });
   if (!emp) return NextResponse.json({ error: 'Employee not found' }, { status: 404 });
+  if (!auth.fullHr && (emp.profile_id as string) === auth.userId) {
+    return NextResponse.json({ error: 'A store-scoped manager cannot edit their own recurring items' }, { status: 403 });
+  }
 
   const { data, error } = await service
     .from(TABLE)
@@ -81,8 +101,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   if (body.amount_satang !== undefined) {
     const amount = Number(body.amount_satang);
-    if (!Number.isInteger(amount) || amount <= 0) {
-      return NextResponse.json({ error: 'amount_satang must be a positive integer' }, { status: 400 });
+    if (!Number.isInteger(amount) || amount <= 0 || amount > MAX_ITEM_AMOUNT_SATANG) {
+      return NextResponse.json({ error: 'amount_satang must be a positive integer within the allowed range' }, { status: 400 });
     }
     patch.amount_satang = amount;
   }
@@ -109,6 +129,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   }
 
   const service = createServiceClient();
+  const selfBlock = await rejectSelfDealing(service, id, auth);
+  if (selfBlock) return selfBlock;
   const { data: before } = await service.from(TABLE).select(COLS).eq('id', itemId).eq('employee_id', id).maybeSingle();
   if (!before) return NextResponse.json({ error: 'Item not found' }, { status: 404 });
 
@@ -145,6 +167,8 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   if (!itemId) return NextResponse.json({ error: 'item_id is required' }, { status: 400 });
 
   const service = createServiceClient();
+  const selfBlock = await rejectSelfDealing(service, id, auth);
+  if (selfBlock) return selfBlock;
   const { data: before } = await service.from(TABLE).select(COLS).eq('id', itemId).eq('employee_id', id).maybeSingle();
   if (!before) return NextResponse.json({ error: 'Item not found' }, { status: 404 });
 

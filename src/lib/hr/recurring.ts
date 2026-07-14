@@ -9,6 +9,10 @@ export const RECURRING_CODES: string[] = [...new Set([...RECURRING_EARNING_CODES
 
 export const PERIOD_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 
+/** Sanity ceiling for a single recurring/adjustment line: ฿10,000,000 in satang. Keeps a fat-
+ *  finger (or a malicious caller) from feeding absurd bigints into the satang math. */
+export const MAX_ITEM_AMOUNT_SATANG = 1_000_000_000;
+
 export type PeriodInputResult =
   | { ok: true; start_period: string | null; end_period: string | null }
   | { ok: false; error: string };

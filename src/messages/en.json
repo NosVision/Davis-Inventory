@@ -3121,6 +3121,7 @@
         }
       },
       "recurringGridLink": "Company-wide recurring items",
+      "flowLink": "Payroll flow guide",
       "compareLink": "Compare payslips across periods"
     },
     "payslip": {
@@ -3154,13 +3155,13 @@
       },
       "twoRounds": "Paid in 2 transfers: service charge/tip {sv} ฿ (mid-month, 15th) · salary {salary} ฿ (month end)",
       "metaRate": "Rate",
-      "metaDailyRate": "Daily rate (÷30)",
+      "metaDailyRate": "Daily rate (÷{divisor})",
       "metaWorkedDays": "Worked days",
       "adjBadge": "One-off",
       "formula": {
         "absent": "absent {days}d × daily rate",
-        "leave": "{days}d × {daily} ฿ (salary÷30)",
-        "travel": "travel docked {days}d (÷30/day)",
+        "leave": "{days}d × {daily} ฿ (salary÷{divisor})",
+        "travel": "travel docked {days}d (÷{divisor}/day)",
         "days": "{days}d"
       },
       "print": "Print",

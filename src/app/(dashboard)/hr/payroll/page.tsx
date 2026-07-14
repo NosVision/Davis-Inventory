@@ -159,6 +159,21 @@ export default function HrPayrollPage() {
     },
     [expandedData]
   );
+  // In-place slip mutations (remark edit, tax override) keep the payslip id — refetch the cached
+  // expanded view so an open row never shows a pre-edit snapshot.
+  const refreshExpanded = useCallback(
+    async (payslipId: string) => {
+      if (!expandedData.has(payslipId)) return;
+      try {
+        const res = await fetch(`/api/hr/payslips/${payslipId}`);
+        const json = await res.json();
+        if (res.ok) setExpandedData((prev) => new Map(prev).set(payslipId, json.data as PayslipDetailData));
+      } catch {
+        // stale cache is refreshed on the next toggle
+      }
+    },
+    [expandedData]
+  );
 
   // companies → default first
   useEffect(() => {
@@ -335,11 +350,12 @@ export default function HrPayrollPage() {
         }
         toast({ type: 'success', title: t('remarkSaved') });
         await openPayrun(detail.payrun.id);
+        await refreshExpanded(s.id);
       } catch {
         toast({ type: 'error', title: t('actionFailed') });
       }
     },
-    [detail, t, openPayrun]
+    [detail, t, openPayrun, refreshExpanded]
   );
 
   const finalize = useCallback(async () => {
@@ -547,7 +563,7 @@ export default function HrPayrollPage() {
               <GitCompareArrows className="h-3.5 w-3.5" /> {t('compareLink')}
             </Link>
             <Link href="/hr/payroll/flow" className="inline-flex items-center gap-1 text-xs font-medium text-teal-600 hover:underline dark:text-teal-400">
-              <BookOpen className="h-3.5 w-3.5" /> โฟลการทำเงินเดือน
+              <BookOpen className="h-3.5 w-3.5" /> {t('flowLink')}
             </Link>
           </div>
         </PageHeader>
@@ -989,6 +1005,7 @@ export default function HrPayrollPage() {
                 onSaved={async () => {
                   await openSlip(slip.payslip.id);
                   if (detail) await openPayrun(detail.payrun.id);
+                  await refreshExpanded(slip.payslip.id);
                 }}
               />
             )}
