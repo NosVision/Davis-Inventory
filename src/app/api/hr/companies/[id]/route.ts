@@ -25,7 +25,9 @@ export async function PUT(
     if (!name) errors.push('name must not be empty');
     else fields.name = name;
   }
+  if ('name_en' in body) fields.name_en = body.name_en === null || body.name_en === '' ? null : String(body.name_en).trim();
   if ('address' in body) fields.address = body.address === null || body.address === '' ? null : String(body.address);
+  if ('phone' in body) fields.phone = body.phone === null || body.phone === '' ? null : String(body.phone).trim();
   if ('tax_id' in body) {
     const t = String(body.tax_id ?? '').trim();
     if (t !== '' && !/^\d{13}$/.test(t)) errors.push('tax_id must be 13 digits');

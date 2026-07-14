@@ -11,7 +11,9 @@ import { Button, Modal, ModalFooter, PageHeader, StatusBadge, toast } from '@/co
 interface Company {
   id: string;
   name: string;
+  name_en: string | null;
   address: string | null;
+  phone: string | null;
   tax_id: string | null;
   payslip_paper: string | null;
   sso_rate: number;
@@ -26,14 +28,14 @@ interface Company {
 export default function HrCompaniesPage() {
   const isTh = useLocale() === 'th';
   const L = isTh
-    ? { title: 'บริษัท & กติกาเงินเดือน', subtitle: 'ค่าเหล่านี้ใช้คำนวณเงินเดือนจริงของแต่ละบริษัท — แก้ได้โดยไม่ต้องแก้โค้ด', edit: 'แก้ไข', name: 'ชื่อบริษัท', address: 'ที่อยู่ (หัวสลิป/รายงาน)', taxId: 'เลขผู้เสียภาษี (13 หลัก)', paper: 'ขนาดกระดาษสลิป', ssoRate: 'อัตรา สปส. (%)', ssoCeiling: 'เพดานค่าจ้าง สปส. (บาท/เดือน)', dayDivisor: 'ตัวหารรายวัน (÷)', ot1: 'ตัวคูณ OT วันปกติ (×)', whtRate: 'อัตราภาษีหัก ณ ที่จ่าย 3% (%)', ssoProrate: 'คิด สปส. ตามยอด prorate (เข้า/ออกกลางเดือน)', ssoProrateHint: 'ปิด = คิดจากเรตเต็ม · เปิด = คิดจากเงินเดือนที่ได้จริงตามวันทำงาน (เหมือน PVD)', reason: 'เหตุผล (บังคับเมื่อแก้ค่าที่มีผลต่อเงินเดือน)', save: 'บันทึก', cancel: 'ยกเลิก', saved: 'บันทึกแล้ว', failed: 'บันทึกไม่สำเร็จ', loadFailed: 'โหลดไม่สำเร็จ', inactive: 'ปิดใช้งาน', needReason: 'กรุณากรอกเหตุผลเมื่อแก้ค่าเงินเดือน', hintMoney: 'มีผลกับสลิปตั้งแต่รอบถัดไปที่กด "สร้าง/คำนวณใหม่"' }
-    : { title: 'Companies & payroll parameters', subtitle: 'These values drive real payslip math per entity — editable without code changes', edit: 'Edit', name: 'Company name', address: 'Address (slip/report header)', taxId: 'Tax ID (13 digits)', paper: 'Payslip paper', ssoRate: 'SSO rate (%)', ssoCeiling: 'SSO wage ceiling (THB/month)', dayDivisor: 'Daily divisor (÷)', ot1: 'Weekday OT multiplier (×)', whtRate: 'Withholding tax rate 3% (%)', ssoProrate: 'Prorate SSO for mid-month hires/leavers', ssoProrateHint: 'Off = full monthly rate · On = the salary actually earned by days worked (like PVD)', reason: 'Reason (required when changing payroll values)', save: 'Save', cancel: 'Cancel', saved: 'Saved', failed: 'Save failed', loadFailed: 'Load failed', inactive: 'Inactive', needReason: 'A reason is required when changing payroll values', hintMoney: 'Applies to slips from the next generate/recompute' };
+    ? { title: 'บริษัท & กติกาเงินเดือน', subtitle: 'ค่าเหล่านี้ใช้คำนวณเงินเดือนจริงของแต่ละบริษัท — แก้ได้โดยไม่ต้องแก้โค้ด', edit: 'แก้ไข', name: 'ชื่อบริษัท', nameEn: 'ชื่อบริษัท (อังกฤษ — หัวหนังสือรับรอง)', phone: 'เบอร์โทร (ท้ายหนังสือรับรอง)', address: 'ที่อยู่ (หัวสลิป/รายงาน)', taxId: 'เลขผู้เสียภาษี (13 หลัก)', paper: 'ขนาดกระดาษสลิป', ssoRate: 'อัตรา สปส. (%)', ssoCeiling: 'เพดานค่าจ้าง สปส. (บาท/เดือน)', dayDivisor: 'ตัวหารรายวัน (÷)', ot1: 'ตัวคูณ OT วันปกติ (×)', whtRate: 'อัตราภาษีหัก ณ ที่จ่าย 3% (%)', ssoProrate: 'คิด สปส. ตามยอด prorate (เข้า/ออกกลางเดือน)', ssoProrateHint: 'ปิด = คิดจากเรตเต็ม · เปิด = คิดจากเงินเดือนที่ได้จริงตามวันทำงาน (เหมือน PVD)', reason: 'เหตุผล (บังคับเมื่อแก้ค่าที่มีผลต่อเงินเดือน)', save: 'บันทึก', cancel: 'ยกเลิก', saved: 'บันทึกแล้ว', failed: 'บันทึกไม่สำเร็จ', loadFailed: 'โหลดไม่สำเร็จ', inactive: 'ปิดใช้งาน', needReason: 'กรุณากรอกเหตุผลเมื่อแก้ค่าเงินเดือน', hintMoney: 'มีผลกับสลิปตั้งแต่รอบถัดไปที่กด "สร้าง/คำนวณใหม่"' }
+    : { title: 'Companies & payroll parameters', subtitle: 'These values drive real payslip math per entity — editable without code changes', edit: 'Edit', name: 'Company name', nameEn: 'Company name (English — certificate letterhead)', phone: 'Phone (certificate footer)', address: 'Address (slip/report header)', taxId: 'Tax ID (13 digits)', paper: 'Payslip paper', ssoRate: 'SSO rate (%)', ssoCeiling: 'SSO wage ceiling (THB/month)', dayDivisor: 'Daily divisor (÷)', ot1: 'Weekday OT multiplier (×)', whtRate: 'Withholding tax rate 3% (%)', ssoProrate: 'Prorate SSO for mid-month hires/leavers', ssoProrateHint: 'Off = full monthly rate · On = the salary actually earned by days worked (like PVD)', reason: 'Reason (required when changing payroll values)', save: 'Save', cancel: 'Cancel', saved: 'Saved', failed: 'Save failed', loadFailed: 'Load failed', inactive: 'Inactive', needReason: 'A reason is required when changing payroll values', hintMoney: 'Applies to slips from the next generate/recompute' };
 
   const [rows, setRows] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Company | null>(null);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ name: '', address: '', tax_id: '', payslip_paper: '', sso_pct: '', ceiling_baht: '', day_divisor: '', ot1: '', wht_pct: '', reason: '' });
+  const [form, setForm] = useState({ name: '', name_en: '', address: '', phone: '', tax_id: '', payslip_paper: '', sso_pct: '', ceiling_baht: '', day_divisor: '', ot1: '', wht_pct: '', reason: '' });
   const [ssoProrate, setSsoProrate] = useState(false);
 
   const load = useCallback(async () => {
@@ -55,7 +57,9 @@ export default function HrCompaniesPage() {
   const openEdit = (c: Company) => {
     setForm({
       name: c.name,
+      name_en: c.name_en ?? '',
       address: c.address ?? '',
+      phone: c.phone ?? '',
       tax_id: c.tax_id ?? '',
       payslip_paper: c.payslip_paper ?? '',
       sso_pct: String((Number(c.sso_rate) || 0) * 100),
@@ -91,7 +95,9 @@ export default function HrCompaniesPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: form.name,
+          name_en: form.name_en,
           address: form.address,
+          phone: form.phone,
           tax_id: form.tax_id,
           payslip_paper: form.payslip_paper,
           sso_rate: (Number(form.sso_pct) || 0) / 100,
@@ -151,8 +157,14 @@ export default function HrCompaniesPage() {
           <label className="sm:col-span-2 text-xs font-medium text-gray-600 dark:text-gray-300">{L.name}
             <input value={form.name} onChange={upd('name')} className="control mt-1 w-full" />
           </label>
+          <label className="sm:col-span-2 text-xs font-medium text-gray-600 dark:text-gray-300">{L.nameEn}
+            <input value={form.name_en} onChange={upd('name_en')} className="control mt-1 w-full" placeholder="COMPANY CO., LTD." />
+          </label>
           <label className="sm:col-span-2 text-xs font-medium text-gray-600 dark:text-gray-300">{L.address}
             <input value={form.address} onChange={upd('address')} className="control mt-1 w-full" />
+          </label>
+          <label className="text-xs font-medium text-gray-600 dark:text-gray-300">{L.phone}
+            <input value={form.phone} onChange={upd('phone')} className="control mt-1 w-full" placeholder="02-000-0000" />
           </label>
           <label className="text-xs font-medium text-gray-600 dark:text-gray-300">{L.taxId}
             <input value={form.tax_id} onChange={upd('tax_id')} maxLength={13} className="control mt-1 w-full" placeholder="0105500000000" />

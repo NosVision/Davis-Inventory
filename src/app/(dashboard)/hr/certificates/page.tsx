@@ -4,12 +4,15 @@ import { useCallback, useEffect, useState } from 'react';
 import { useLocale } from 'next-intl';
 import { Loader2, FileText, Download } from 'lucide-react';
 import { Button, PageHeader, toast } from '@/components/ui';
+import { bahtText } from '@/lib/hr/baht-text';
 
 // §J9 P5.2 — HR issues หนังสือรับรองการทำงาน/เงินเดือน on request. Pick company → employee →
-// salary toggle → generate a Thai PDF (react-pdf, lazy-loaded). Self-contained locale strings.
-interface Company { id: string; name: string; address: string | null }
+// certificate type → generate a Thai PDF (react-pdf, lazy-loaded). Self-contained locale strings.
+// The dropdown shows the employee's REAL full name (hr_employees.full_name), not the login name.
+interface Company { id: string; name: string; name_en: string | null; address: string | null; phone: string | null }
 interface EmployeeRow {
   profile_id: string;
+  full_name: string | null;
   rate_satang: number;
   pay_type: string;
   start_date: string | null;
@@ -24,21 +27,27 @@ function toThaiDate(iso: string): string {
   if (Number.isNaN(d.getTime())) return iso;
   return `${d.getDate()} ${TH_MONTHS[d.getMonth()]} ${d.getFullYear() + 543}`;
 }
-const nameOf = (p: EmployeeRow['profile']) => p?.display_name || p?.username || '—';
+// legacy body format: "วันที่ 1 เดือน เมษายน พ.ศ. 2568"
+function toThaiDateFormal(iso: string): string {
+  const d = new Date(`${iso}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return iso;
+  return `วันที่ ${d.getDate()} เดือน ${TH_MONTHS[d.getMonth()]} พ.ศ. ${d.getFullYear() + 543}`;
+}
+const nameOf = (e: EmployeeRow) => e.full_name || e.profile?.display_name || e.profile?.username || '—';
 
 export default function HrCertificatesPage() {
   const isTh = useLocale() === 'th';
   const L = isTh
-    ? { title: 'ออกหนังสือรับรอง', subtitle: 'หนังสือรับรองการทำงาน / เงินเดือน (ออกเป็น PDF)', company: 'บริษัท', employee: 'พนักงาน', pick: '—', withSalary: 'รวมเงินเดือน (หนังสือรับรองเงินเดือน)', issuer: 'ผู้ลงนาม', issuerRole: 'ตำแหน่งผู้ลงนาม', issuerPh: 'ชื่อผู้มีอำนาจลงนาม', rolePh: 'เช่น ผู้จัดการฝ่ายบุคคล', generate: 'ออก PDF', loadFailed: 'โหลดไม่สำเร็จ', pickEmp: 'เลือกพนักงานก่อน', done: 'สร้าง PDF แล้ว', genFailed: 'สร้าง PDF ไม่สำเร็จ', fullTime: 'พนักงานประจำ', partTime: 'พนักงานพาร์ทไทม์', perMonth: 'บาท/เดือน', perDay: 'บาท/วัน', perHour: 'บาท/ชั่วโมง' }
-    : { title: 'Issue certificate', subtitle: 'Work / salary certificate (PDF)', company: 'Company', employee: 'Employee', pick: '—', withSalary: 'Include salary (salary certificate)', issuer: 'Signatory', issuerRole: 'Signatory title', issuerPh: 'Authorized signatory name', rolePh: 'e.g. HR Manager', generate: 'Generate PDF', loadFailed: 'Load failed', pickEmp: 'Pick an employee first', done: 'PDF created', genFailed: 'PDF generation failed', fullTime: 'Full-time employee', partTime: 'Part-time employee', perMonth: 'THB/month', perDay: 'THB/day', perHour: 'THB/hour' };
+    ? { title: 'ออกหนังสือรับรอง', subtitle: 'หนังสือรับรองการทำงาน / เงินเดือน (ออกเป็น PDF)', company: 'บริษัท', employee: 'พนักงาน', pick: '—', certType: 'ประเภทหนังสือรับรอง', typeWork: 'หนังสือรับรองการทำงาน', typeSalary: 'หนังสือรับรองเงินเดือน', issuer: 'ผู้ลงนาม', issuerRole: 'ตำแหน่งผู้ลงนาม', issuerPh: 'ชื่อผู้มีอำนาจลงนาม', rolePh: 'เช่น ฝ่ายทรัพยากรบุคคล', generate: 'ออก PDF', loadFailed: 'โหลดไม่สำเร็จ', pickEmp: 'เลือกพนักงานก่อน', done: 'สร้าง PDF แล้ว', genFailed: 'สร้าง PDF ไม่สำเร็จ', fullTime: 'พนักงานประจำ', partTime: 'พนักงานพาร์ทไทม์', perMonth: 'เดือนละ', perDay: 'วันละ', perHour: 'ชั่วโมงละ' }
+    : { title: 'Issue certificate', subtitle: 'Work / salary certificate (PDF)', company: 'Company', employee: 'Employee', pick: '—', certType: 'Certificate type', typeWork: 'Work certificate', typeSalary: 'Salary certificate', issuer: 'Signatory', issuerRole: 'Signatory title', issuerPh: 'Authorized signatory name', rolePh: 'e.g. Human Resources', generate: 'Generate PDF', loadFailed: 'Load failed', pickEmp: 'Pick an employee first', done: 'PDF created', genFailed: 'PDF generation failed', fullTime: 'Full-time employee', partTime: 'Part-time employee', perMonth: 'เดือนละ', perDay: 'วันละ', perHour: 'ชั่วโมงละ' };
 
   const [companies, setCompanies] = useState<Company[]>([]);
   const [companyId, setCompanyId] = useState('');
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [profileId, setProfileId] = useState('');
-  const [withSalary, setWithSalary] = useState(false);
+  const [certType, setCertType] = useState<'work' | 'salary'>('work');
   const [issuerName, setIssuerName] = useState('');
-  const [issuerRole, setIssuerRole] = useState(isTh ? 'ผู้จัดการฝ่ายบุคคล' : 'HR Manager');
+  const [issuerRole, setIssuerRole] = useState('ฝ่ายทรัพยากรบุคคล');
   const [loadingEmp, setLoadingEmp] = useState(false);
   const [generating, setGenerating] = useState(false);
 
@@ -64,16 +73,11 @@ export default function HrCertificatesPage() {
 
   useEffect(() => { loadEmployees(companyId); }, [companyId, loadEmployees]);
 
-  const salaryLabel = (e: EmployeeRow): string => {
-    const baht = (e.rate_satang / 100).toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-    const unit = e.pay_type === 'daily' ? L.perDay : e.pay_type === 'hourly' ? L.perHour : L.perMonth;
-    return `${baht} ${unit}`;
-  };
-
   const generate = async () => {
     const emp = employees.find((e) => e.profile_id === profileId);
     const company = companies.find((c) => c.id === companyId);
     if (!emp || !company) { toast({ type: 'warning', title: L.pickEmp }); return; }
+    const withSalary = certType === 'salary';
     setGenerating(true);
     try {
       const { buildHrCertificatePdf, downloadBlob } = await import('./_components/hr-certificate-pdf');
@@ -84,15 +88,21 @@ export default function HrCertificatesPage() {
         doc_no: docNo,
         issue_date_label: toThaiDate(isoToday),
         company_name: company.name,
+        company_name_en: company.name_en,
         company_address: company.address,
-        employee_name: nameOf(emp.profile),
+        company_phone: company.phone,
+        employee_name: nameOf(emp),
         position_name: emp.position?.name ?? null,
-        start_date_label: emp.start_date ? toThaiDate(emp.start_date) : null,
+        start_date_label: emp.start_date ? toThaiDateFormal(emp.start_date) : null,
         employment_type_label: emp.pay_type === 'monthly' ? L.fullTime : L.partTime,
         with_salary: withSalary,
-        salary_label: withSalary ? salaryLabel(emp) : null,
+        salary_period_word: emp.pay_type === 'daily' ? L.perDay : emp.pay_type === 'hourly' ? L.perHour : L.perMonth,
+        salary_number: withSalary
+          ? (emp.rate_satang / 100).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+          : null,
+        salary_words: withSalary ? bahtText(emp.rate_satang) : null,
         issuer_name: issuerName.trim() || '—',
-        issuer_role: issuerRole.trim() || (isTh ? 'ฝ่ายบุคคล' : 'HR'),
+        issuer_role: issuerRole.trim() || 'ฝ่ายทรัพยากรบุคคล',
       });
       downloadBlob(blob, `${docNo}.pdf`);
       toast({ type: 'success', title: L.done });
@@ -118,14 +128,16 @@ export default function HrCertificatesPage() {
           <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">{L.employee}
             <select value={profileId} onChange={(e) => setProfileId(e.target.value)} disabled={!companyId || loadingEmp} className="control mt-1">
               <option value="">{L.pick}</option>
-              {employees.map((e) => (<option key={e.profile_id} value={e.profile_id}>{nameOf(e.profile)}</option>))}
+              {employees.map((e) => (<option key={e.profile_id} value={e.profile_id}>{nameOf(e)}</option>))}
             </select>
           </label>
         </div>
 
-        <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
-          <input type="checkbox" checked={withSalary} onChange={(e) => setWithSalary(e.target.checked)} className="h-4 w-4 rounded border-gray-300" />
-          {L.withSalary}
+        <label className="flex flex-col text-xs text-gray-600 dark:text-gray-400">{L.certType}
+          <select value={certType} onChange={(e) => setCertType(e.target.value as 'work' | 'salary')} className="control mt-1">
+            <option value="work">{L.typeWork}</option>
+            <option value="salary">{L.typeSalary}</option>
+          </select>
         </label>
 
         <div className="grid gap-3 sm:grid-cols-2">

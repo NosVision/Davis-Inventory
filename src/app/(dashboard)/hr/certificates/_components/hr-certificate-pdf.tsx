@@ -2,10 +2,13 @@
 
 /**
  * HR certificate PDF (P5.2 §J9) — หนังสือรับรองการทำงาน / รับรองเงินเดือน.
- * A one-page Thai letter an employee can request and HR issues on demand.
- * `withSalary=false` → work-only certificate (no pay figure). Thai fonts +
- * whole-word hyphenation callback avoid the last-glyph clipping that bites
- * wrapped Thai lines (there are no inter-word spaces to break on).
+ * Layout mirrors the group's legacy letter (Upper House template, owner ask 2026-07-15):
+ * navy letterhead with Thai + English company name, centered title + date, indented body
+ * with the salary amount in Thai words, signer-over-dotted-line block, and a navy company
+ * footer (name/address/tel). Sarabun (looped Thai, the official-document standard) replaces
+ * Noto Sans Thai. A trailing space on every Thai run (thaiSafe) stops @react-pdf from
+ * clipping the final glyph — the hyphenation callback alone is not enough (same fix as
+ * KPServicePro's PDFs).
  *
  * Lazy-loaded via dynamic import so the ~600 KB react-pdf bundle stays out
  * of the /hr/certificates route chunk.
@@ -20,44 +23,58 @@ function fontUrl(file: string): string {
 }
 
 Font.register({
-  family: 'NotoSansThai',
+  family: 'Sarabun',
   fonts: [
-    { src: fontUrl('NotoSansThai-Regular.ttf'), fontWeight: 400 },
-    { src: fontUrl('NotoSansThai-Bold.ttf'), fontWeight: 700 },
+    { src: fontUrl('Sarabun-Regular.ttf'), fontWeight: 400 },
+    { src: fontUrl('Sarabun-Bold.ttf'), fontWeight: 700 },
   ],
 });
 // Thai has no inter-word spaces → treat each run as one unbreakable word so the
 // layout engine doesn't clip the final glyph of a wrapped line.
 Font.registerHyphenationCallback((word) => [word]);
 
+// A trailing space stops @react-pdf from clipping the final Thai glyph
+// (e.g. "จำกัด" rendering as "จำกั"). Left/center-aligned text only.
+function thaiSafe(s: string | null | undefined): string {
+  const v = (s ?? '').toString();
+  return v.length ? `${v} ` : v;
+}
+
+const NAVY = '#1e3a8a';
+
 const styles = StyleSheet.create({
-  page: { fontFamily: 'NotoSansThai', fontSize: 12, paddingTop: 48, paddingBottom: 56, paddingHorizontal: 56, color: '#111827', lineHeight: 1.7 },
-  companyName: { fontSize: 15, fontWeight: 700, color: '#0f766e' },
-  companyAddr: { fontSize: 10, color: '#6b7280', marginTop: 2 },
-  rule: { borderBottomWidth: 1.5, borderBottomColor: '#0d9488', marginTop: 8, marginBottom: 18 },
-  docNo: { fontSize: 10, color: '#6b7280', textAlign: 'right' },
-  title: { fontSize: 16, fontWeight: 700, textAlign: 'center', marginTop: 8, marginBottom: 20 },
-  para: { marginBottom: 10, textIndent: 36 },
+  page: { fontFamily: 'Sarabun', fontSize: 13, paddingTop: 52, paddingBottom: 130, paddingHorizontal: 64, color: '#111827', lineHeight: 1.8 },
+  headName: { fontSize: 16, fontWeight: 700, color: NAVY },
+  headNameEn: { fontSize: 14, fontWeight: 700, color: NAVY },
+  title: { fontSize: 17, fontWeight: 700, textAlign: 'center', marginTop: 26 },
+  dateLine: { fontSize: 13, textAlign: 'center', marginTop: 4, marginBottom: 22 },
+  para: { textIndent: 48, marginBottom: 12 },
   bold: { fontWeight: 700 },
-  spacer: { height: 8 },
-  signBlock: { marginTop: 48, alignItems: 'flex-end', paddingRight: 24 },
-  signLine: { width: 200, borderBottomWidth: 0.75, borderColor: '#9ca3af', height: 28 },
-  signName: { marginTop: 4, fontSize: 11, textAlign: 'center', width: 200 },
-  signRole: { fontSize: 10, color: '#6b7280', textAlign: 'center', width: 200 },
-  foot: { position: 'absolute', bottom: 24, left: 56, right: 56, fontSize: 8, color: '#9ca3af', textAlign: 'center' },
+  signBlock: { marginTop: 52, alignSelf: 'flex-end', alignItems: 'center', width: 250, marginRight: 6 },
+  signName: { fontSize: 13, textAlign: 'center' },
+  signDots: { fontSize: 13, textAlign: 'center', marginTop: 2 },
+  signRole: { fontSize: 13, textAlign: 'center', marginTop: 2 },
+  foot: { position: 'absolute', bottom: 40, left: 64, right: 64, color: NAVY },
+  footName: { fontSize: 14, fontWeight: 700 },
+  footNameEn: { fontSize: 12, fontWeight: 700 },
+  footSmall: { fontSize: 10, marginTop: 1 },
 });
 
 export interface HrCertificateData {
   doc_no: string;
-  issue_date_label: string; // Thai e.g. "4 กรกฎาคม 2569"
+  issue_date_label: string; // Thai e.g. "15 กรกฎาคม 2569"
   company_name: string;
+  company_name_en: string | null;
   company_address: string | null;
+  company_phone: string | null;
   employee_name: string;
   position_name: string | null;
-  start_date_label: string | null; // Thai
+  start_date_label: string | null; // formal Thai e.g. "วันที่ 1 เดือน เมษายน พ.ศ. 2568"
   employment_type_label: string; // e.g. "พนักงานประจำ" / "พนักงานพาร์ทไทม์"
   with_salary: boolean;
-  salary_label: string | null; // e.g. "18,000 บาท/เดือน" (only if with_salary)
+  salary_period_word: string; // "เดือนละ" / "วันละ" / "ชั่วโมงละ"
+  salary_number: string | null; // e.g. "17,500.00" (only if with_salary)
+  salary_words: string | null; // e.g. "หนึ่งหมื่นเจ็ดพันห้าร้อยบาทถ้วน"
   issuer_name: string;
   issuer_role: string;
 }
@@ -67,42 +84,47 @@ function CertificateDocument({ data }: { data: HrCertificateData }) {
   return (
     <Document title={`${kind} — ${data.employee_name}`}>
       <Page size="A4" style={styles.page}>
-        <Text style={styles.companyName}>{data.company_name}</Text>
-        {data.company_address ? <Text style={styles.companyAddr}>{data.company_address}</Text> : null}
-        <View style={styles.rule} />
+        {/* letterhead — Thai + English legal name, navy (legacy Upper House template) */}
+        <Text style={styles.headName}>{thaiSafe(data.company_name)}</Text>
+        {data.company_name_en ? <Text style={styles.headNameEn}>{thaiSafe(data.company_name_en)}</Text> : null}
 
-        <Text style={styles.docNo}>เลขที่ {data.doc_no}</Text>
-        <Text style={styles.docNo}>วันที่ {data.issue_date_label}</Text>
-
-        <Text style={styles.title}>{kind}</Text>
+        <Text style={styles.title}>{thaiSafe(kind)}</Text>
+        <Text style={styles.dateLine}>{thaiSafe(`วันที่ ${data.issue_date_label}`)}</Text>
 
         <Text style={styles.para}>
           หนังสือฉบับนี้ให้ไว้เพื่อรับรองว่า <Text style={styles.bold}>{data.employee_name}</Text>
-          {' '}เป็น{data.employment_type_label}ของ <Text style={styles.bold}>{data.company_name}</Text>
-          {data.position_name ? <>{' '}ตำแหน่ง <Text style={styles.bold}>{data.position_name}</Text></> : null}
-          {data.start_date_label ? <>{' '}โดยเริ่มปฏิบัติงานตั้งแต่วันที่ <Text style={styles.bold}>{data.start_date_label}</Text> จนถึงปัจจุบัน</> : null}
-          {' '}และยังคงปฏิบัติงานอยู่ ณ วันที่ออกหนังสือฉบับนี้
+          {' '}เป็น{data.employment_type_label}ของ <Text style={styles.bold}>{thaiSafe(data.company_name)}</Text>
         </Text>
-
-        {data.with_salary && data.salary_label ? (
-          <Text style={styles.para}>
-            โดยได้รับค่าจ้าง/เงินเดือนในอัตรา <Text style={styles.bold}>{data.salary_label}</Text>
-          </Text>
-        ) : null}
 
         <Text style={styles.para}>
-          จึงออกหนังสือฉบับนี้ให้ไว้เพื่อเป็นหลักฐาน
+          {data.position_name ? <>ตำแหน่ง <Text style={styles.bold}>{data.position_name}</Text>{' '}</> : null}
+          {data.start_date_label ? <>โดยเริ่มปฏิบัติงานตั้งแต่ {data.start_date_label} จนถึงปัจจุบัน</> : <>ปัจจุบันยังคงปฏิบัติงานอยู่</>}
+          {data.with_salary && data.salary_number ? (
+            <>
+              {' '}ซึ่งปัจจุบันมีอัตราเงินเดือน {data.salary_period_word}{' '}
+              <Text style={styles.bold}>{data.salary_number}</Text> บาท
+              {data.salary_words ? ` (${data.salary_words})` : ''} ซึ่งอัตรานี้ไม่รวมค่าตอบแทนและเงินพิเศษอื่นๆ{' '}
+            </>
+          ) : (
+            ' '
+          )}
         </Text>
+
+        <Text style={styles.para}>{thaiSafe('ขอรับรองว่าข้อความข้างต้นเป็นความจริงทุกประการ')}</Text>
 
         <View style={styles.signBlock}>
-          <View style={styles.signLine} />
-          <Text style={styles.signName}>({data.issuer_name})</Text>
-          <Text style={styles.signRole}>{data.issuer_role}</Text>
+          <Text style={styles.signName}>{thaiSafe(data.issuer_name)}</Text>
+          <Text style={styles.signDots}>(.................................................)</Text>
+          <Text style={styles.signRole}>{thaiSafe(data.issuer_role)}</Text>
         </View>
 
-        <Text style={styles.foot}>
-          เอกสารนี้ออกโดยระบบบุคคล · เลขที่ {data.doc_no} · {data.issue_date_label}
-        </Text>
+        {/* company footer — navy block, same as the legacy letter's bottom letterhead */}
+        <View style={styles.foot}>
+          <Text style={styles.footName}>{thaiSafe(data.company_name)}</Text>
+          {data.company_name_en ? <Text style={styles.footNameEn}>{thaiSafe(data.company_name_en)}</Text> : null}
+          {data.company_address ? <Text style={styles.footSmall}>{thaiSafe(data.company_address)}</Text> : null}
+          {data.company_phone ? <Text style={styles.footSmall}>{thaiSafe(`Tel : ${data.company_phone}`)}</Text> : null}
+        </View>
       </Page>
     </Document>
   );
