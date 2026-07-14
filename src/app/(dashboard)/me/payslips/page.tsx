@@ -2,10 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
-import { Loader2, Wallet, Printer, X, FileText } from 'lucide-react';
+import { Loader2, Wallet, X, FileText } from 'lucide-react';
 import { Button, EmptyState, Modal, ModalFooter, PageHeader, DataList, DataCard, MoneyValue, StatusBadge, ViewToggle, useViewMode, toast } from '@/components/ui';
 import { PayslipView, type PayslipDetailData } from '@/components/hr/payslip-view';
-import { PayslipFormPrint } from '@/components/hr/payslip-form-print';
 import { ImportedPayslipView, periodLabel, type ImportedSlip } from '@/components/hr/imported-payslip-view';
 import { TileNotices } from '../_components/tile-notices';
 
@@ -19,8 +18,6 @@ interface MyPayslip {
   paper_status: string | null; // requested | printed | null (④ paper-slip request)
 }
 
-const PRINT_CSS = `@media print { @page { size: 9in 5.5in; margin: 0.3in; } }`;
-
 export default function MyPayslipsPage() {
   const t = useTranslations('hr.payslip');
   const isTh = useLocale() === 'th';
@@ -31,7 +28,6 @@ export default function MyPayslipsPage() {
   const [loading, setLoading] = useState(true);
   const [slip, setSlip] = useState<PayslipDetailData | null>(null);
   const [importedSlip, setImportedSlip] = useState<ImportedSlip | null>(null);
-  const [printSlip, setPrintSlip] = useState<PayslipDetailData | null>(null);
   const [paperBusy, setPaperBusy] = useState<string | null>(null);
   const [view, setView] = useViewMode('me-payslips');
 
@@ -66,11 +62,6 @@ export default function MyPayslipsPage() {
       toast({ type: 'error', title: t('loadFailed') });
     }
   }, [t]);
-
-  const doPrint = useCallback((data: PayslipDetailData) => {
-    setPrintSlip(data);
-    setTimeout(() => window.print(), 50);
-  }, []);
 
   // ④ standing "รับกระดาษทุกเดือน" preference
   const toggleStanding = useCallback(async () => {
@@ -123,8 +114,7 @@ export default function MyPayslipsPage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-4 p-4">
-      <style>{PRINT_CSS}</style>
-      <div className="print:hidden">
+      <div>
         <PageHeader
           title={t('myTitle')}
           subtitle={t('mySubtitle')}
@@ -199,7 +189,6 @@ export default function MyPayslipsPage() {
             <PayslipView data={slip} />
           </div>
           <ModalFooter>
-            <Button variant="outline" onClick={() => doPrint(slip)} icon={<Printer className="h-4 w-4" />}>{t('print')}</Button>
             <Button variant="ghost" onClick={() => setSlip(null)} icon={<X className="h-4 w-4" />}>{t('close')}</Button>
           </ModalFooter>
         </Modal>
@@ -215,10 +204,6 @@ export default function MyPayslipsPage() {
           </ModalFooter>
         </Modal>
       )}
-
-      <div className="hidden print:block">
-        {printSlip && <PayslipFormPrint data={printSlip} />}
-      </div>
     </div>
   );
 }
