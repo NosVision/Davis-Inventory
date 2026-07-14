@@ -401,6 +401,20 @@ export async function POST(request: NextRequest) {
     bonusByUser.set(b.profile_id, list);
   }
 
+  // One-off adjustment lines for this payrun (hr_payrun_adjustments) — the third durable
+  // survivor keyed by (payrun, profile); each row re-posts as an 'adjustment' line every rebuild.
+  const { data: adjRows, error: adjErr } = await service
+    .from('hr_payrun_adjustments')
+    .select('id, profile_id, kind, label, amount_satang')
+    .eq('payrun_id', payrunId);
+  if (adjErr) return NextResponse.json({ error: 'Failed to load adjustments' }, { status: 500 });
+  const adjByUser = new Map<string, { id: string; kind: string; label: string; amount_satang: number }[]>();
+  for (const a of (adjRows ?? []) as { id: string; profile_id: string; kind: string; label: string; amount_satang: number }[]) {
+    const list = adjByUser.get(a.profile_id) ?? [];
+    list.push(a);
+    adjByUser.set(a.profile_id, list);
+  }
+
   // Per-employee: assemble → compute → collect for insert.
   const assembled: { emp: EmployeeFull; slip: AssembledLine; claimIds: string[] }[] = [];
   for (const emp of employees) {
@@ -490,6 +504,7 @@ export async function POST(request: NextRequest) {
 
     const claimList = claimsByUser.get(uid) ?? [];
     const evalBonusList = evalBonusByUser.get(uid) ?? [];
+    const adjList = adjByUser.get(uid) ?? [];
     const extraEarnings = [
       ...claimList.map((c) => ({
         type: 'claim' as const, label: c.description || 'claim', amount_satang: c.amount_satang, ref: c.id,
@@ -500,7 +515,13 @@ export async function POST(request: NextRequest) {
       ...(bonusByUser.get(uid) ?? []).map((b) => ({
         type: 'bonus' as const, label: b.label || 'bonus', amount_satang: b.amount_satang, ref: null,
       })),
+      ...adjList
+        .filter((a) => a.kind === 'earning')
+        .map((a) => ({ type: 'adjustment' as const, label: a.label, amount_satang: a.amount_satang, ref: a.id })),
     ];
+    const extraDeductions = adjList
+      .filter((a) => a.kind === 'deduction')
+      .map((a) => ({ type: 'adjustment' as const, label: a.label, amount_satang: a.amount_satang, ref: a.id }));
 
     const input: PayrollInput = {
       employee: {
@@ -527,6 +548,7 @@ export async function POST(request: NextRequest) {
       allowances,
       recurringDeductions,
       extraEarnings,
+      extraDeductions,
       scNetSatang: scNetByUser.get(uid) ?? 0,
       tipNetSatang: tipNetByUser.get(uid) ?? 0,
       lateTiers: policies.late_tiers,

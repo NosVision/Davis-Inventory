@@ -161,7 +161,8 @@ export type EarningType =
   | 'commission'
   | 'eval_bonus'
   | 'bonus'
-  | 'claim';
+  | 'claim'
+  | 'adjustment';
 export type DeductionType =
   | 'sso'
   | 'tax'
@@ -174,7 +175,8 @@ export type DeductionType =
   | 'guarantee'
   | 'loan'
   | 'provident_fund'
-  | 'other';
+  | 'other'
+  | 'adjustment';
 
 export interface PayslipLine {
   type: EarningType | DeductionType;
@@ -195,9 +197,17 @@ export interface RecurringDeduction {
   label: string;
   amount_satang: number;
 }
-/** An ad-hoc earning resolved elsewhere (approved claim, commission, eval bonus). */
+/** An ad-hoc earning resolved elsewhere (approved claim, commission, eval bonus, adjustment). */
 export interface ExtraEarning {
   type: EarningType;
+  label: string;
+  amount_satang: number;
+  ref?: string | null;
+}
+/** An ad-hoc one-off deduction (hr_payrun_adjustments) — appended as its own attributed line;
+ *  the "no manual numbers" rule is narrowed, never repealed: computed lines stay machine-only. */
+export interface ExtraDeduction {
+  type: DeductionType;
   label: string;
   amount_satang: number;
   ref?: string | null;
@@ -211,6 +221,8 @@ export interface PayrollInput {
   allowances: RecurringEarning[];
   recurringDeductions: RecurringDeduction[];
   extraEarnings: ExtraEarning[];
+  /** One-off payrun adjustments (deduction side); earning-side adjustments ride extraEarnings. */
+  extraDeductions?: ExtraDeduction[];
   scNetSatang: number; // net Service Charge for the period (P4.1); 0 for part-time
   tipNetSatang?: number; // net Tip pool for the period (P4.4, same mechanism as SC); 0/undefined = none
   lateTiers?: LateTiers; // owner-tunable late-fine table (hr_policy_settings); default = sheet-calibrated
@@ -422,6 +434,13 @@ export function computePayslip(input: PayrollInput): Payslip {
   for (const d of input.recurringDeductions) {
     if (d.amount_satang > 0) {
       deductions.push({ type: d.type, label: d.label, amount_satang: d.amount_satang });
+    }
+  }
+
+  // One-off adjustments (attributed HR entries; ref carries the hr_payrun_adjustments id).
+  for (const d of input.extraDeductions ?? []) {
+    if (d.amount_satang > 0) {
+      deductions.push({ type: d.type, label: d.label, amount_satang: d.amount_satang, ref: d.ref ?? null });
     }
   }
 

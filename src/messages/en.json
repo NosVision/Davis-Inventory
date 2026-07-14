@@ -3026,6 +3026,29 @@
           "other": "Other"
         }
       },
+      "adjustments": {
+        "title": "This-period items",
+        "hint": "One-off earning/deduction lines for this payrun (e.g. student loan, damage, bonus) — reason is mandatory, every entry is attributed, computed lines stay untouchable",
+        "colEmployee": "Employee",
+        "colItem": "Item",
+        "colAmount": "Amount",
+        "colReason": "Reason",
+        "earning": "Earning",
+        "deduction": "Deduction",
+        "pickEmployee": "Pick employee…",
+        "labelPlaceholder": "Label (e.g. Student loan Jul)",
+        "reasonPlaceholder": "Reason (required)",
+        "add": "Add",
+        "added": "Item added — payslips recomputed automatically",
+        "removed": "Item removed — payslips recomputed automatically",
+        "remove": "Remove",
+        "deleteConfirm": "Remove this line? Payslips will be recomputed automatically",
+        "copyFromPrevious": "Copy from previous period ({n} items)",
+        "copied": "Copied {n} items",
+        "invalid": "Pick an employee and fill label, amount, and reason",
+        "failed": "Save failed"
+      },
+      "finalizeAdjWarn": "⚠ The previous period ({period}) had {n} this-period items but this one has none — forgotten? (OK continues the finalize)",
       "recurringPage": {
         "title": "Company-wide recurring items",
         "subtitle": "Set once — every payrun pulls them automatically. Give an end month (auto-stops) or leave perpetual",

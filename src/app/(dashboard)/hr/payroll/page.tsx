@@ -11,6 +11,7 @@ import { PayslipView, type PayslipDetailData } from '@/components/hr/payslip-vie
 import { PayslipFormPrint } from '@/components/hr/payslip-form-print';
 import { RecurringModal } from './_components/recurring-modal';
 import { TaxAllowanceModal } from './_components/tax-allowance-modal';
+import { AdjustmentsPanel, type AdjustmentRow, type AdjustmentsPrevious } from './_components/adjustments-panel';
 
 interface CompanyOpt {
   id: string;
@@ -279,7 +280,23 @@ export default function HrPayrollPage() {
 
   const finalize = useCallback(async () => {
     if (!detail) return;
-    if (!window.confirm(t('finalizeConfirm'))) return;
+    // Forget-guard: last period had one-off adjustments and this one has none — a common miss
+    // when items like กยศ recur monthly with changing amounts. Warn (never block) in the confirm.
+    let confirmMsg = t('finalizeConfirm');
+    try {
+      const adjRes = await fetch(`/api/hr/payruns/${detail.payrun.id}/adjustments`);
+      const adjJson = (await adjRes.json().catch(() => ({}))) as {
+        data?: { adjustments?: AdjustmentRow[]; previous?: AdjustmentsPrevious | null };
+      };
+      const cur = adjJson.data?.adjustments?.length ?? 0;
+      const prev = adjJson.data?.previous;
+      if (adjRes.ok && cur === 0 && prev && prev.count > 0) {
+        confirmMsg += `\n\n${t('finalizeAdjWarn', { n: prev.count, period: `${prev.period_month}/${prev.period_year}` })}`;
+      }
+    } catch {
+      // guard is best-effort — a fetch failure must never stop a finalize
+    }
+    if (!window.confirm(confirmMsg)) return;
     setBusy(true);
     try {
       // Up to two attempts: a plain finalize, then — if the server blocks because the accountant
@@ -657,6 +674,14 @@ export default function HrPayrollPage() {
                     </table>
                   </div>
 
+                  {/* รายการเฉพาะงวด — one-off adjustment lines (supersedes the per-slip bonus box) */}
+                  <AdjustmentsPanel
+                    payrunId={detail.payrun.id}
+                    isDraft={detail.payrun.status === 'draft'}
+                    slips={detail.payslips.map((s) => ({ user_id: s.user_id, name: s.name }))}
+                    onChanged={() => regenerateCurrent(true)}
+                  />
+
                   {/* ④ paper print queue: standing prefs + per-slip requests */}
                   {printQueue.length > 0 && (
                     <div className="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
@@ -822,22 +847,13 @@ export default function HrPayrollPage() {
           <div className="max-h-[70vh] overflow-y-auto">
             <PayslipView data={slip} />
             {slip.payrun?.status === 'draft' && (
-              <>
-                <BonusBox
-                  slip={slip}
-                  onSaved={async () => {
-                    setSlip(null);
-                    await regenerateCurrent(true); // silent — the bonus box shows its own toast
-                  }}
-                />
-                <TaxOverrideBox
-                  slip={slip}
-                  onSaved={async () => {
-                    await openSlip(slip.payslip.id);
-                    if (detail) await openPayrun(detail.payrun.id);
-                  }}
-                />
-              </>
+              <TaxOverrideBox
+                slip={slip}
+                onSaved={async () => {
+                  await openSlip(slip.payslip.id);
+                  if (detail) await openPayrun(detail.payrun.id);
+                }}
+              />
             )}
           </div>
           <ModalFooter>
@@ -980,64 +996,9 @@ function PoolStrip({ detail }: { detail: PayrunDetail }) {
   );
 }
 
-// HR one-time bonus for one employee on this payrun. Draft only; saving upserts the durable
-// bonus row then regenerates so the engine folds it into gross → 3% tax → net correctly.
-function BonusBox({ slip, onSaved }: { slip: PayslipDetailData; onSaved: () => Promise<void> }) {
-  const t = useTranslations('hr.payroll');
-  const [baht, setBaht] = useState<string>(() => (slip.bonus ? String(slip.bonus.amount_satang / 100) : ''));
-  const [label, setLabel] = useState<string>(slip.bonus?.label ?? '');
-  const [saving, setSaving] = useState(false);
-
-  const save = async () => {
-    const n = Number(baht || '0');
-    if (!Number.isFinite(n) || n < 0) {
-      toast({ type: 'error', title: t('bonusInvalid') });
-      return;
-    }
-    setSaving(true);
-    try {
-      const res = await fetch(`/api/hr/payslips/${slip.payslip.id}/bonus`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount_satang: Math.round(n * 100), label: label.trim() || undefined }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(typeof json.error === 'string' ? json.error : undefined);
-      toast({ type: 'success', title: t('bonusSaved') });
-      await onSaved();
-    } catch (e) {
-      toast({ type: 'error', title: t('actionFailed'), message: e instanceof Error ? e.message : undefined });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 dark:border-emerald-800 dark:bg-emerald-900/10">
-      <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">{t('bonus')}</p>
-      <p className="mb-2 text-[11px] text-emerald-600/80 dark:text-emerald-400/80">{t('bonusHint')}</p>
-      <div className="flex flex-wrap items-end gap-2">
-        <label className="text-[11px] font-medium text-gray-600 dark:text-gray-300">
-          {t('bonusAmount')}
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={baht}
-            onChange={(e) => setBaht(e.target.value)}
-            className="control mt-0.5 block w-36"
-            placeholder="0.00"
-          />
-        </label>
-        <label className="min-w-40 flex-1 text-[11px] font-medium text-gray-600 dark:text-gray-300">
-          {t('bonusLabel')}
-          <input value={label} onChange={(e) => setLabel(e.target.value)} className="control mt-0.5 block w-full" />
-        </label>
-        <Button size="sm" onClick={save} isLoading={saving}>{t('bonusSave')}</Button>
-      </div>
-    </div>
-  );
-}
+// (BonusBox removed 2026-07-14: superseded by the payrun-level AdjustmentsPanel — an earning
+// adjustment is the new bonus, with a mandatory reason. hr_payslip_bonuses stays readable in the
+// generate loop so any pre-existing bonus rows keep applying.)
 
 // HR fallback for the accounting office's official tax figure (primary path = review link).
 // Shown on draft payruns only; saving patches the slip immediately and survives regenerates.
