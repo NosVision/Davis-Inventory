@@ -42,6 +42,12 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
     try {
       await recomputePoolDeductions(service, poolId, auth.userId);
     } catch {
+      // A concurrent finalize may have locked the pool mid-recompute (00104 triggers then block the
+      // deduction writes). Re-check: if it's now finalized, that's a clean double-finalize → 409, not 500.
+      const { data: cur } = await service.from(POOLS).select('status').eq('id', poolId).maybeSingle();
+      if ((cur?.status as string | undefined) === 'finalized') {
+        return NextResponse.json({ error: 'pool is already finalized' }, { status: 409 });
+      }
       return NextResponse.json({ error: 'Failed to recompute deductions before finalize' }, { status: 500 });
     }
   }
