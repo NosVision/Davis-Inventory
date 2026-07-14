@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
-import { Loader2, Wallet, Play, Lock, LockOpen, Printer, X, FileText, Settings2, Percent, GitCompareArrows, Users, Coins, Send, Megaphone, RefreshCw, CheckCircle2, ChevronRight, ArrowRight } from 'lucide-react';
+import { Loader2, Wallet, Play, Lock, LockOpen, Printer, X, FileText, Settings2, Percent, GitCompareArrows, Users, Coins, Send, Megaphone, RefreshCw, CheckCircle2, ChevronRight, ArrowRight, BookOpen } from 'lucide-react';
 import { Button, EmptyState, Modal, ModalFooter, PageHeader, KpiRow, StatTile, MoneyValue, StatusBadge, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { formatBaht } from '@/lib/pos/money';
@@ -458,9 +458,14 @@ export default function HrPayrollPage() {
             </>
           }
         >
-          <Link href="/hr/payroll/compare" className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">
-            <GitCompareArrows className="h-3.5 w-3.5" /> {t('compareLink')}
-          </Link>
+          <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
+            <Link href="/hr/payroll/compare" className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">
+              <GitCompareArrows className="h-3.5 w-3.5" /> {t('compareLink')}
+            </Link>
+            <Link href="/hr/payroll/flow" className="inline-flex items-center gap-1 text-xs font-medium text-teal-600 hover:underline dark:text-teal-400">
+              <BookOpen className="h-3.5 w-3.5" /> โฟลการทำเงินเดือน
+            </Link>
+          </div>
         </PageHeader>
 
         {/* payrun history + detail */}
