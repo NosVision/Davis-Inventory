@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireStoreManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
+import { recomputePoolDeductions } from '@/lib/hr/sc-recompute';
 
 const POOLS = 'hr_sc_pools';
 const ALLOCS = 'hr_sc_allocations';
@@ -76,6 +77,15 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     before: null,
     after: { pool_id: poolId, allocations },
   });
+
+  // Auto-recompute so warnings/leave + any prior-month carry are pulled in and the shared-balance
+  // deferral is applied without HR pressing "Recompute". The allocations are already saved; if the
+  // recompute fails, surface it so HR can retry (a manual Recompute recovers).
+  try {
+    await recomputePoolDeductions(service, poolId, auth.userId);
+  } catch {
+    return NextResponse.json({ error: 'Allocations saved, but recompute failed — press Recompute to retry' }, { status: 500 });
+  }
 
   return NextResponse.json({ data: data ?? [] });
 }
