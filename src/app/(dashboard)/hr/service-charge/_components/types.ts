@@ -17,6 +17,8 @@ export interface ScPool {
   status: ScStatus;
   pay_date: string | null;
   notes: string | null;
+  announced_at?: string | null;
+  announce_message?: string | null;
 }
 
 export type ScSourceType =

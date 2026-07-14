@@ -103,6 +103,10 @@ export function resolveNotificationUrl(
     case 'hr_payslip_ready':
       return '/me/payslips';
 
+    // Service Charge งวดนี้สรุปแล้ว (ยอดอยู่ในเนื้อความ; จ่ายแยกวันที่ 15)
+    case 'hr_sc_ready':
+      return '/me';
+
     // ศูนย์คำขอเอกสาร (HR คิว / พนักงานผลคำขอ)
     case 'hr_doc_request':
       return '/hr/document-requests';

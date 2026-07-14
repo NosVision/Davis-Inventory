@@ -8,6 +8,7 @@ export const NOTIF_TILE: Record<string, string> = {
   hr_attendance_reminder: 'checkin',
   hr_payslip_ready: 'payslips',
   hr_paper_ready: 'payslips',
+  hr_sc_ready: 'payslips',
   hr_doc_ready: 'documents',
   hr_swap_result: 'swaps',
   hr_identity_result: 'profile',

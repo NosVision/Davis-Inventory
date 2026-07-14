@@ -14,6 +14,7 @@ import {
   RefreshCw,
   Printer,
   Lock,
+  Megaphone,
 } from 'lucide-react';
 import {
   Button,
@@ -24,6 +25,8 @@ import {
   StatTile,
   MoneyValue,
   StatusBadge,
+  Modal,
+  ModalFooter,
   useConfirm,
   toast,
 } from '@/components/ui';
@@ -306,6 +309,95 @@ export default function HrServiceChargePage() {
     }
   };
 
+  // "ประกาศ SV" — manual send with an editable message template (owner ask 2026-07-15).
+  const [annOpen, setAnnOpen] = useState(false);
+  const [annMessage, setAnnMessage] = useState('');
+  const [annDefault, setAnnDefault] = useState('');
+  const [annSaving, setAnnSaving] = useState(false);
+  const [annSending, setAnnSending] = useState(false);
+
+  const openAnnounce = async () => {
+    if (!pool) return;
+    try {
+      const res = await fetch(`/api/hr/service-charge/${pool.id}/announce`);
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error();
+      const d = (json.data ?? {}) as { message?: string | null; default_message?: string };
+      setAnnDefault(d.default_message ?? '');
+      setAnnMessage(d.message ?? d.default_message ?? '');
+      setAnnOpen(true);
+    } catch {
+      toast({ type: 'error', title: t('loadFailed') });
+    }
+  };
+
+  const saveAnnounceMessage = async () => {
+    if (!pool) return;
+    setAnnSaving(true);
+    try {
+      const res = await fetch(`/api/hr/service-charge/${pool.id}/announce`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: annMessage }),
+      });
+      if (!res.ok) throw new Error();
+      toast({ type: 'success', title: t('announceMsgSaved') });
+      await load();
+    } catch {
+      toast({ type: 'error', title: t('saveFailed') });
+    } finally {
+      setAnnSaving(false);
+    }
+  };
+
+  const resetAnnounceMessage = async () => {
+    if (!pool) return;
+    setAnnSaving(true);
+    try {
+      const res = await fetch(`/api/hr/service-charge/${pool.id}/announce`, { method: 'DELETE' });
+      if (!res.ok) throw new Error();
+      setAnnMessage(annDefault);
+      toast({ type: 'success', title: t('announceMsgReset') });
+      await load();
+    } catch {
+      toast({ type: 'error', title: t('saveFailed') });
+    } finally {
+      setAnnSaving(false);
+    }
+  };
+
+  const sendAnnounce = async () => {
+    if (!pool) return;
+    const resend = !!pool.announced_at;
+    if (resend && !(await confirm({ title: t('announceResendConfirm'), confirmLabel: t('announceSend') }))) return;
+    setAnnSending(true);
+    try {
+      // save the (possibly edited) message first so what is sent is what is on screen
+      await fetch(`/api/hr/service-charge/${pool.id}/announce`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: annMessage }),
+      });
+      const res = await fetch(`/api/hr/service-charge/${pool.id}/announce`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resend }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast({ type: 'error', title: typeof json.error === 'string' ? json.error : t('saveFailed') });
+        return;
+      }
+      toast({ type: 'success', title: t('announced', { n: json.data?.notified ?? 0 }) });
+      setAnnOpen(false);
+      await load();
+    } catch {
+      toast({ type: 'error', title: t('saveFailed') });
+    } finally {
+      setAnnSending(false);
+    }
+  };
+
   const toggleRow = (userId: string) =>
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -518,6 +610,17 @@ export default function HrServiceChargePage() {
                       {t('finalize')}
                     </Button>
                   )}
+                  {isFinalized && (
+                    <Button
+                      size="sm"
+                      type="button"
+                      icon={<Megaphone className="h-4 w-4" />}
+                      onClick={openAnnounce}
+                      disabled={busy}
+                    >
+                      {pool?.announced_at ? t('announceAgain') : t('announce')}
+                    </Button>
+                  )}
                 </div>
               }
             />
@@ -710,6 +813,44 @@ export default function HrServiceChargePage() {
           load();
         }}
       />
+
+      {/* ประกาศ SV — editable template, sent manually (never auto on finalize) */}
+      {annOpen && pool && (
+        <Modal isOpen onClose={() => !annSending && setAnnOpen(false)} title={t('announceTitle')} size="md">
+          <div className="space-y-3">
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {t('announceHint', { n: rows.filter((r) => (r.allocation?.allocated_satang ?? 0) > 0).length, payDate: payDateDisplay })}
+            </p>
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-300">
+              {t('announceMsgLabel')}
+              <textarea
+                value={annMessage}
+                onChange={(e) => setAnnMessage(e.target.value)}
+                rows={4}
+                maxLength={500}
+                className="control mt-1 w-full"
+              />
+            </label>
+            <p className="text-[11px] text-gray-400">{t('announceVarsHint')}</p>
+            {pool.announced_at && (
+              <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                {t('announceLastSent', { at: new Date(pool.announced_at).toLocaleString('th-TH') })}
+              </p>
+            )}
+          </div>
+          <ModalFooter>
+            <Button variant="ghost" size="sm" onClick={resetAnnounceMessage} disabled={annSaving || annSending}>
+              {t('announceReset')}
+            </Button>
+            <Button variant="outline" size="sm" onClick={saveAnnounceMessage} isLoading={annSaving} disabled={annSending}>
+              {t('announceSaveMsg')}
+            </Button>
+            <Button size="sm" icon={<Megaphone className="h-4 w-4" />} onClick={sendAnnounce} isLoading={annSending} disabled={annSaving}>
+              {t('announceSend')}
+            </Button>
+          </ModalFooter>
+        </Modal>
+      )}
       {dialog}
     </div>
   );

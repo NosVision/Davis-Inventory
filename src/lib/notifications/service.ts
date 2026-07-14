@@ -54,7 +54,8 @@ export type NotificationType =
   | 'hr_warning_issued'       // ได้รับใบเตือน (for the employee) — เช่น แต้มความผิดสต๊อกครบเกณฑ์
   | 'hr_close_reminder'       // เตือนรอบปิดยอดประจำเดือน (ปิด SV / ทำเงินเดือน / ปิดยอด / ประเมิน) (for HR)
   | 'hr_schedule_published'   // HQ เผยแพร่ตารางกะของร้าน รอ HR รับทราบ (for HR)
-  | 'hr_eval_assigned';       // ได้รับมอบหมายให้ประเมินพนักงาน (for the evaluator)
+  | 'hr_eval_assigned'        // ได้รับมอบหมายให้ประเมินพนักงาน (for the evaluator)
+  | 'hr_sc_ready';            // Service Charge งวดนี้สรุปแล้ว — ยอด+วันจ่ายของคุณ (for the employee)
 
 export interface NotifyUserParams {
   userId: string;
@@ -167,6 +168,7 @@ const TYPE_TO_PREF: Record<NotificationType, keyof NotificationPreferences> = {
   hr_close_reminder: 'notify_approval_request',
   hr_schedule_published: 'notify_approval_request',
   hr_eval_assigned: 'notify_approval_request',
+  hr_sc_ready: 'notify_approval_request',
 };
 
 // Customer-facing notification types that respect store_settings toggles
