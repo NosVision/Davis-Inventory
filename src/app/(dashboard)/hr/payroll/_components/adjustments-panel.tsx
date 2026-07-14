@@ -33,6 +33,8 @@ interface AdjustmentsPanelProps {
   slips: SlipRef[];
   /** silent recompute after any change — the engine must fold adjustments into gross/tax/net */
   onChanged: () => Promise<void> | void;
+  /** single-employee mode (the per-row modal): lock rows + the add form to this profile */
+  fixedProfile?: SlipRef;
 }
 
 const inputCls =
@@ -41,7 +43,7 @@ const inputCls =
 // รายการเฉพาะงวด — one-off attributed earning/deduction lines on a draft payrun (the legacy
 // Payment file's manual "Other" column, now typed + reasoned + audited). Supersedes BonusBox:
 // an earning adjustment is the new bonus. Read-only once finalized.
-export function AdjustmentsPanel({ payrunId, isDraft, slips, onChanged }: AdjustmentsPanelProps) {
+export function AdjustmentsPanel({ payrunId, isDraft, slips, onChanged, fixedProfile }: AdjustmentsPanelProps) {
   const t = useTranslations('hr.payroll.adjustments');
   const { confirm, dialog: confirmDialog } = useConfirm();
   const [rows, setRows] = useState<AdjustmentRow[]>([]);
@@ -49,13 +51,16 @@ export function AdjustmentsPanel({ payrunId, isDraft, slips, onChanged }: Adjust
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
-  const [profileId, setProfileId] = useState('');
+  const [profileId, setProfileId] = useState(fixedProfile?.user_id ?? '');
   const [kind, setKind] = useState<'earning' | 'deduction'>('deduction');
   const [label, setLabel] = useState('');
   const [amountBaht, setAmountBaht] = useState('');
   const [reason, setReason] = useState('');
 
   const nameByProfile = new Map(slips.map((s) => [s.user_id, s.name]));
+  // single-employee mode narrows the visible rows; the whole payrun still loads (cheap, and the
+  // copy/count semantics on the main page stay payrun-wide)
+  const shownRows = fixedProfile ? rows.filter((r) => r.profile_id === fixedProfile.user_id) : rows;
 
   // Monotonic sequence: a slow response for a previous payrun must never overwrite the state of
   // the currently-selected one (rapid payrun switching keeps this component mounted).
@@ -182,9 +187,9 @@ export function AdjustmentsPanel({ payrunId, isDraft, slips, onChanged }: Adjust
     <div className="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold text-gray-800 dark:text-gray-100">
-          <SlidersHorizontal className="h-4 w-4 text-indigo-500" /> {t('title')} ({rows.length})
+          <SlidersHorizontal className="h-4 w-4 text-indigo-500" /> {t('title')} ({shownRows.length})
         </h3>
-        {isDraft && previous && previous.count > 0 && (
+        {isDraft && !fixedProfile && previous && previous.count > 0 && (
           <Button size="sm" variant="ghost" onClick={copyFromPrevious} disabled={busy} icon={<ClipboardPaste className="h-4 w-4" />}>
             {t('copyFromPrevious', { n: previous.count })}
           </Button>
@@ -192,12 +197,12 @@ export function AdjustmentsPanel({ payrunId, isDraft, slips, onChanged }: Adjust
       </div>
       <p className="mb-2 text-xs text-gray-400">{t('hint')}</p>
 
-      {rows.length > 0 && (
+      {shownRows.length > 0 && (
         <div className="mb-3 overflow-x-auto">
-          <table className="w-full min-w-[34rem] text-sm">
+          <table className={cn('w-full text-sm', fixedProfile ? 'min-w-[26rem]' : 'min-w-[34rem]')}>
             <thead className="text-left text-xs font-medium text-gray-500 dark:text-gray-400">
               <tr>
-                <th className="py-1 pr-2">{t('colEmployee')}</th>
+                {!fixedProfile && <th className="py-1 pr-2">{t('colEmployee')}</th>}
                 <th className="py-1 pr-2">{t('colItem')}</th>
                 <th className="py-1 pr-2 text-right">{t('colAmount')}</th>
                 <th className="py-1 pr-2">{t('colReason')}</th>
@@ -205,9 +210,11 @@ export function AdjustmentsPanel({ payrunId, isDraft, slips, onChanged }: Adjust
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700/60">
-              {rows.map((r) => (
+              {shownRows.map((r) => (
                 <tr key={r.id}>
-                  <td className="py-1.5 pr-2 text-gray-900 dark:text-white">{nameByProfile.get(r.profile_id) ?? '—'}</td>
+                  {!fixedProfile && (
+                    <td className="py-1.5 pr-2 text-gray-900 dark:text-white">{nameByProfile.get(r.profile_id) ?? '—'}</td>
+                  )}
                   <td className="py-1.5 pr-2">
                     <Badge variant={r.kind === 'earning' ? 'success' : 'danger'} size="sm">
                       {r.kind === 'earning' ? t('earning') : t('deduction')}
@@ -239,13 +246,15 @@ export function AdjustmentsPanel({ payrunId, isDraft, slips, onChanged }: Adjust
       )}
 
       {isDraft && (
-        <div className="grid grid-cols-2 gap-2 rounded-lg border border-dashed border-gray-300 p-3 sm:grid-cols-6 dark:border-gray-600">
-          <select value={profileId} onChange={(e) => setProfileId(e.target.value)} className={inputCls}>
-            <option value="">{t('pickEmployee')}</option>
-            {slips.map((s) => (
-              <option key={s.user_id} value={s.user_id}>{s.name}</option>
-            ))}
-          </select>
+        <div className={cn('grid grid-cols-2 gap-2 rounded-lg border border-dashed border-gray-300 p-3 dark:border-gray-600', fixedProfile ? 'sm:grid-cols-5' : 'sm:grid-cols-6')}>
+          {!fixedProfile && (
+            <select value={profileId} onChange={(e) => setProfileId(e.target.value)} className={inputCls}>
+              <option value="">{t('pickEmployee')}</option>
+              {slips.map((s) => (
+                <option key={s.user_id} value={s.user_id}>{s.name}</option>
+              ))}
+            </select>
+          )}
           <select value={kind} onChange={(e) => setKind(e.target.value as 'earning' | 'deduction')} className={inputCls}>
             <option value="deduction">{t('deduction')}</option>
             <option value="earning">{t('earning')}</option>

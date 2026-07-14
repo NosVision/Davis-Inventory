@@ -1,9 +1,9 @@
 'use client';
 
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
-import { Loader2, Wallet, Play, Lock, LockOpen, Printer, X, FileText, Settings2, Percent, GitCompareArrows, Users, Coins, Send, Megaphone, RefreshCw, CheckCircle2, ChevronRight, ChevronDown, ArrowRight, BookOpen, StickyNote, type LucideIcon } from 'lucide-react';
+import { Loader2, Wallet, Play, Lock, LockOpen, Printer, X, FileText, Settings2, SlidersHorizontal, Percent, GitCompareArrows, Users, Coins, Send, Megaphone, RefreshCw, CheckCircle2, ChevronRight, ChevronDown, ArrowRight, BookOpen, StickyNote, type LucideIcon } from 'lucide-react';
 import { Button, EmptyState, Modal, ModalFooter, PageHeader, KpiRow, StatTile, MoneyValue, StatusBadge, Skeleton, toast, useConfirm, usePromptDialog } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { formatBaht } from '@/lib/pos/money';
@@ -12,6 +12,7 @@ import { PayslipFormPrint } from '@/components/hr/payslip-form-print';
 import { RecurringModal } from './_components/recurring-modal';
 import { TaxAllowanceModal } from './_components/tax-allowance-modal';
 import { AdjustmentsPanel, type AdjustmentRow, type AdjustmentsPrevious } from './_components/adjustments-panel';
+import { RecurringGrid } from './recurring/_components/recurring-grid';
 
 interface CompanyOpt {
   id: string;
@@ -137,7 +138,11 @@ export default function HrPayrollPage() {
 
   const [slip, setSlip] = useState<PayslipDetailData | null>(null);
   const [printSlip, setPrintSlip] = useState<PayslipDetailData | null>(null);
-  const [recurringFor, setRecurringFor] = useState<{ employeeId: string; name: string } | null>(null);
+  const [recurringFor, setRecurringFor] = useState<{ employeeId: string; profileId: string; name: string } | null>(null);
+  // company-wide item modals (one obvious spot in the hero, owner ask 2026-07-15)
+  const [recurringGridOpen, setRecurringGridOpen] = useState(false);
+  const [adjOpen, setAdjOpen] = useState(false);
+  const [adjCount, setAdjCount] = useState(0);
   // Recurring items only reach the slips at generate time — when the modal changed anything on a
   // draft payrun, recompute silently on close so ค่าเดินทาง ฯลฯ shows up without a hidden button.
   const [recurringDirty, setRecurringDirty] = useState(false);
@@ -236,6 +241,14 @@ export default function HrPayrollPage() {
         setQueueSelected(new Set());
       } catch {
         setPrintQueue([]);
+      }
+      // one-off adjustment count for the hero button badge (best-effort)
+      try {
+        const aRes = await fetch(`/api/hr/payruns/${id}/adjustments`);
+        const aJson = (await aRes.json().catch(() => ({}))) as { data?: { adjustments?: unknown[] } };
+        setAdjCount(aRes.ok ? (aJson.data?.adjustments?.length ?? 0) : 0);
+      } catch {
+        setAdjCount(0);
       }
     } catch {
       toast({ type: 'error', title: t('loadFailed') });
@@ -562,6 +575,18 @@ export default function HrPayrollPage() {
     setTimeout(() => window.print(), 50);
   }, []);
 
+  // Context-aware generate button: the same POST regenerates an existing draft, so the
+  // label must say so — "สร้างรอบจ่าย" implied a new run and confused HR (owner ask 2026-07-15).
+  const selectedPeriodRun = useMemo(() => {
+    const [y, m] = month.split('-').map(Number);
+    return payruns.find((p) => p.period_year === y && p.period_month === m) ?? null;
+  }, [payruns, month]);
+  const generateLabel = !selectedPeriodRun
+    ? t('generate')
+    : selectedPeriodRun.status === 'draft'
+      ? t('generateUpdate')
+      : t('generateLocked');
+
   const isFinalized = detail?.payrun.status === 'finalized';
   const accountantConfirmed = !!detail?.review?.confirmed_at;
   const isAnnounced = !!detail?.payrun.announced_at;
@@ -618,16 +643,19 @@ export default function HrPayrollPage() {
                 {t('period')}
                 <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="control mt-1 w-full sm:w-auto" />
               </label>
-              <Button onClick={generate} isLoading={generating} disabled={!companyId || generating} icon={<Play className="h-4 w-4" />} className="w-full sm:w-auto">
-                {t('generate')}
+              <Button
+                onClick={generate}
+                isLoading={generating}
+                disabled={!companyId || generating || selectedPeriodRun?.status === 'finalized'}
+                icon={selectedPeriodRun?.status === 'finalized' ? <Lock className="h-4 w-4" /> : selectedPeriodRun ? <RefreshCw className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                className="w-full sm:w-auto"
+              >
+                {generateLabel}
               </Button>
             </>
           }
         >
           <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
-            <Link href="/hr/payroll/recurring" className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">
-              <Settings2 className="h-3.5 w-3.5" /> {t('recurringGridLink')}
-            </Link>
             <Link href="/hr/payroll/compare" className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">
               <GitCompareArrows className="h-3.5 w-3.5" /> {t('compareLink')}
             </Link>
@@ -777,6 +805,16 @@ export default function HrPayrollPage() {
                     <PayrunStepper detail={detail} />
                   </div>
                   <PoolStrip detail={detail} />
+                  {/* money-item shortcuts — both open as modals from ONE obvious spot instead of a
+                      header link + a panel buried under a 100-row register (owner ask 2026-07-15) */}
+                  <div className="mt-3 flex flex-wrap gap-2 border-t border-gray-100 pt-3 dark:border-gray-700">
+                    <Button size="sm" variant="outline" icon={<Settings2 className="h-4 w-4" />} onClick={() => setRecurringGridOpen(true)}>
+                      {t('recurringGridLink')}
+                    </Button>
+                    <Button size="sm" variant="outline" icon={<SlidersHorizontal className="h-4 w-4" />} onClick={() => setAdjOpen(true)}>
+                      {t('adjustments.title')} ({adjCount})
+                    </Button>
+                  </div>
                 </div>
 
                 {detail.payslips.length === 0 ? (
@@ -888,7 +926,7 @@ export default function HrPayrollPage() {
                                   <FileText className="h-4 w-4" />
                                 </button>
                                 {s.employee_id && (
-                                  <button onClick={() => setRecurringFor({ employeeId: s.employee_id as string, name: s.name })} title={t('recurring')} aria-label={t('recurring')} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-700">
+                                  <button onClick={() => setRecurringFor({ employeeId: s.employee_id as string, profileId: s.user_id, name: s.name })} title={t('rowItems')} aria-label={t('rowItems')} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-700">
                                     <Settings2 className="h-4 w-4" />
                                   </button>
                                 )}
@@ -936,14 +974,6 @@ export default function HrPayrollPage() {
                       </tfoot>
                     </table>
                   </div>
-
-                  {/* รายการเฉพาะงวด — one-off adjustment lines (supersedes the per-slip bonus box) */}
-                  <AdjustmentsPanel
-                    payrunId={detail.payrun.id}
-                    isDraft={detail.payrun.status === 'draft'}
-                    slips={detail.payslips.map((s) => ({ user_id: s.user_id, name: s.name }))}
-                    onChanged={() => regenerateCurrent(true)}
-                  />
 
                   {/* ④ paper print queue: standing prefs + per-slip requests — collapsed by default */}
                   {printQueue.length > 0 && (
@@ -1155,6 +1185,10 @@ export default function HrPayrollPage() {
         <RecurringModal
           employeeId={recurringFor.employeeId}
           name={recurringFor.name}
+          payrunId={detail?.payrun.id}
+          profileId={recurringFor.profileId}
+          isDraft={detail?.payrun.status === 'draft'}
+          onAdjustChanged={() => regenerateCurrent(true)}
           onChanged={() => setRecurringDirty(true)}
           onClose={() => {
             setRecurringFor(null);
@@ -1162,6 +1196,35 @@ export default function HrPayrollPage() {
             setRecurringDirty(false);
           }}
         />
+      )}
+
+      {/* company-wide recurring grid — same grid as /hr/payroll/recurring, opened in place */}
+      {recurringGridOpen && (
+        <Modal
+          isOpen
+          onClose={() => {
+            setRecurringGridOpen(false);
+            if (recurringDirty && detail?.payrun.status === 'draft') void regenerateCurrent(true);
+            setRecurringDirty(false);
+          }}
+          title={t('recurringGridLink')}
+          size="full"
+          className="max-w-6xl"
+        >
+          <RecurringGrid initialCompanyId={companyId} onChanged={() => setRecurringDirty(true)} />
+        </Modal>
+      )}
+
+      {/* รายการเฉพาะงวด — one-off adjustment lines, payrun-wide (supersedes the inline panel) */}
+      {adjOpen && detail && (
+        <Modal isOpen onClose={() => setAdjOpen(false)} title={t('adjustments.title')} size="full">
+          <AdjustmentsPanel
+            payrunId={detail.payrun.id}
+            isDraft={detail.payrun.status === 'draft'}
+            slips={detail.payslips.map((s) => ({ user_id: s.user_id, name: s.name }))}
+            onChanged={() => regenerateCurrent(true)}
+          />
+        </Modal>
       )}
 
       {taxAllowFor && (
