@@ -14,12 +14,9 @@ import {
   FileCheck2,
   Banknote,
   ArrowRight,
-  CalendarRange,
-  ChevronDown,
   type LucideIcon,
 } from 'lucide-react';
 import { PageHeader } from '@/components/ui';
-import ScheduleWorkspace from '@/app/(dashboard)/hr/schedule/page';
 
 // HR "ปิดยอดประจำเดือน / Monthly Close" hub (Phase 2). One place that makes the two things the
 // old flow hid explicit: (1) the month RHYTHM — SV closes on the 1st–15th, payroll runs 26th–29th
@@ -62,7 +59,6 @@ export default function HrClosePage() {
   const lang = (useLocale() as Lang) === TH ? TH : 'en';
   const now = new Date();
   const [ym, setYm] = useState(`${now.getFullYear()}-${pad(now.getMonth() + 1)}`);
-  const [showRoster, setShowRoster] = useState(false);
 
   const period = useMemo(() => {
     const [y, m] = ym.split('-').map(Number);
@@ -112,8 +108,7 @@ export default function HrClosePage() {
   };
 
   return (
-    <div className="px-4 py-6">
-      <div className="mx-auto max-w-4xl">
+    <div className="mx-auto max-w-4xl px-4 py-6">
       <PageHeader
         title={tt(lang, 'ปิดยอดประจำเดือน', 'Monthly Close')}
         subtitle={tt(lang, 'จัดการ Service Charge + เงินเดือน ในที่เดียว', 'Service charge + payroll close in one place')}
@@ -227,32 +222,6 @@ export default function HrClosePage() {
         })}
       </div>
 
-      {/* item 3: edit the roster inline — no need to bounce to /schedule mid-close */}
-      <button
-        type="button"
-        onClick={() => setShowRoster((v) => !v)}
-        className="mt-4 flex w-full items-center gap-3 rounded-xl border border-gray-200 bg-white px-3 py-3 text-left shadow-sm transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700/50"
-        aria-expanded={showRoster}
-      >
-        <CalendarRange className="h-4 w-4 flex-shrink-0 text-gray-400" />
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-bold text-gray-900 dark:text-gray-100">
-            {tt(lang, 'แก้ตารางกะ (ในหน้านี้)', 'Edit shift roster (here)')}
-          </div>
-          <div className="text-xs text-gray-500 dark:text-gray-400">
-            {tt(lang, 'ปรับกะก่อนตรวจเวลางาน โดยไม่ต้องออกจากหน้าปิดยอด', 'Fix shifts before verifying attendance — without leaving the close page')}
-          </div>
-        </div>
-        <ChevronDown className={`h-4 w-4 flex-shrink-0 text-gray-400 transition-transform ${showRoster ? 'rotate-180' : ''}`} />
-      </button>
-      </div>
-
-      {/* full-width so the roster grid has room; opens at the close month, re-mounts if it changes */}
-      {showRoster && (
-        <div className="mx-auto mt-4 max-w-7xl">
-          <ScheduleWorkspace key={ym} initialMonth={ym} embedded />
-        </div>
-      )}
     </div>
   );
 }
