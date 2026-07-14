@@ -3149,6 +3149,8 @@
       "srcLate": "มาสาย",
       "srcEval": "ประเมินผล",
       "srcEvalCarry": "ประเมินผล (ยกมา)",
+      "srcStockPenalty": "ค่าปรับสต๊อก",
+      "srcStockPenaltyCarry": "ค่าปรับสต๊อก (ยกมา)",
       "srcManual": "หักเอง"
     },
     "offboarding": {

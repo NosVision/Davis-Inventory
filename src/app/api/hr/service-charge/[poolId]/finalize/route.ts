@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireStoreManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
+import { reconcilePoolDeductions } from '@/lib/hr/sc-reconcile';
 
 const POOLS = 'hr_sc_pools';
 
@@ -32,6 +33,17 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const payDate = payDateFor(before.period_month as string);
+
+  // §H: reconcile the shared-balance deferral one last time while the pool is still editable, so the
+  // locked pool never carries a silently-dropped overflow. (Skip if already finalized — the DB
+  // triggers block deduction writes, and the compare-and-set below will 409.)
+  if ((before.status as string) === 'draft') {
+    try {
+      await reconcilePoolDeductions(service, poolId);
+    } catch {
+      return NextResponse.json({ error: 'Failed to reconcile deductions before finalize' }, { status: 500 });
+    }
+  }
 
   // Compare-and-set: only a draft pool can be finalized. 0 rows → already finalized.
   const { data, error } = await service

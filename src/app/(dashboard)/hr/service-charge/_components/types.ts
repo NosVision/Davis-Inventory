@@ -19,7 +19,12 @@ export interface ScPool {
   notes: string | null;
 }
 
-export type ScSourceType = 'warning' | 'warning_carry' | 'leave' | 'late' | 'eval' | 'eval_carry' | 'manual';
+export type ScSourceType =
+  | 'warning' | 'warning_carry'
+  | 'leave' | 'late'
+  | 'eval' | 'eval_carry'
+  | 'stock_penalty' | 'stock_penalty_carry'
+  | 'manual';
 
 export interface ScDeduction {
   id: string;

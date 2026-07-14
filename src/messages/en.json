@@ -3148,6 +3148,8 @@
       "srcLate": "Late",
       "srcEval": "Evaluation",
       "srcEvalCarry": "Evaluation (carried)",
+      "srcStockPenalty": "Stock penalty",
+      "srcStockPenaltyCarry": "Stock penalty (carried)",
       "srcManual": "Manual"
     },
     "offboarding": {

@@ -49,6 +49,8 @@ const SOURCE_STYLES: Record<ScSourceType, string> = {
   late: 'bg-orange-50 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
   eval: 'bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
   eval_carry: 'bg-fuchsia-50 text-fuchsia-700 dark:bg-fuchsia-900/30 dark:text-fuchsia-400',
+  stock_penalty: 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300',
+  stock_penalty_carry: 'bg-orange-50 text-orange-600 dark:bg-orange-900/25 dark:text-orange-400',
   manual: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
 };
 
@@ -312,20 +314,18 @@ export default function HrServiceChargePage() {
       return next;
     });
 
-  const sourceLabel = (s: ScSourceType) =>
-    s === 'warning'
-      ? t('srcWarning')
-      : s === 'warning_carry'
-        ? t('srcWarningCarry')
-        : s === 'leave'
-        ? t('srcLeave')
-        : s === 'late'
-          ? t('srcLate')
-          : s === 'eval'
-            ? t('srcEval')
-            : s === 'eval_carry'
-              ? t('srcEvalCarry')
-              : t('srcManual');
+  const SOURCE_LABEL_KEY: Record<ScSourceType, string> = {
+    warning: 'srcWarning',
+    warning_carry: 'srcWarningCarry',
+    leave: 'srcLeave',
+    late: 'srcLate',
+    eval: 'srcEval',
+    eval_carry: 'srcEvalCarry',
+    stock_penalty: 'srcStockPenalty',
+    stock_penalty_carry: 'srcStockPenaltyCarry',
+    manual: 'srcManual',
+  };
+  const sourceLabel = (s: ScSourceType) => t(SOURCE_LABEL_KEY[s] ?? 'srcManual');
 
   const payDateDisplay = pool?.pay_date ?? `${month}-15`;
   const busy = savingPool || savingAlloc || recomputing || finalizing;

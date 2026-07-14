@@ -10,6 +10,7 @@ import {
   computeCarryScDeduction,
   computeNetSc,
 } from '@/lib/hr/service-charge';
+import { reconcilePoolDeductions } from '@/lib/hr/sc-reconcile';
 
 const POOL = 'hr_sc_pools';
 const ALLOC = 'hr_sc_allocations';
@@ -261,12 +262,21 @@ export async function POST(_request: Request, { params }: { params: Promise<{ po
     }
   }
 
+  // §H aggregate deferral: now that every source's lines exist, re-split applied vs carried against
+  // each person's shared balance so combined deductions that exceed the pool DEFER the excess
+  // (previously silently dropped).
+  try {
+    await reconcilePoolDeductions(service, poolId);
+  } catch {
+    return NextResponse.json({ error: 'Failed to reconcile deductions' }, { status: 500 });
+  }
+
   await logHrAudit(service, {
     actorId: auth.userId,
     action: 'update',
     table: POOL,
     recordId: poolId,
-    reason: 'Recomputed auto SC deductions (warnings + leave)',
+    reason: 'Recomputed auto SC deductions (warnings + leave) + reconciled shared balance',
   });
 
   // Return the refreshed detail (allocations + deductions + net).

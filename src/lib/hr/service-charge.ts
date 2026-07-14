@@ -104,3 +104,72 @@ export function computeNetSc(allocated: number, deductions: { amount_satang: num
   const total = deductions.reduce((s, d) => s + Math.max(0, d.amount_satang), 0);
   return Math.max(0, allocated - total);
 }
+
+// ── Aggregate insufficient-balance deferral (§H) ────────────────────────────────────────────────
+// Each source above clamps its own overflow against the FULL allocation independently. But when
+// SEVERAL sources hit one person in a month, their COMBINED total can exceed the SC pool — and the
+// excess used to be silently dropped (net floored at 0). This reconciles all of a person's lines
+// against ONE shrinking balance so the collective overflow is DEFERRED (carried), never lost.
+//
+// Order (applied first → last): reductions that CANNOT carry go first so they consume the balance
+// while it lasts (leave is a genuine earnings reduction, not a debt; manual is HR's own call); then
+// the carryable DEBTS — warning → stock penalty → evaluation — whose overflow carries to next month
+// in that priority (so warnings collect first, eval defers first).
+//
+// A NON-carry source keeps its FULL intended amount_satang (it is never truncated — there's nowhere
+// to defer it, and truncating would silently lose an HR-entered manual deduction that must re-apply
+// if the balance later frees up). It still consumes the shared balance in full, so the carryable
+// debts defer correctly, and computeNetSc floors the person's net at 0. This also makes the split
+// idempotent for every source (amount+carry always re-equals the intended total).
+
+const SC_CARRY_ELIGIBLE = new Set([
+  'warning', 'warning_carry', 'stock_penalty', 'stock_penalty_carry', 'eval', 'eval_carry',
+]);
+// Lower rank = applied earlier against the balance.
+const SC_RECONCILE_RANK: Record<string, number> = {
+  leave: 0, manual: 1, late: 1,
+  warning: 2, warning_carry: 2,
+  stock_penalty: 3, stock_penalty_carry: 3,
+  eval: 4, eval_carry: 4,
+};
+
+/** Whether a deduction source can defer (carry) its unpaid overflow to the next period. */
+export function isScCarryEligible(sourceType: string): boolean {
+  return SC_CARRY_ELIGIBLE.has(sourceType);
+}
+
+export interface ScReconcileLine {
+  source_type: string;
+  /** the FULL intended deduction for this line (= its amount_satang + carry_satang) */
+  intended_satang: number;
+}
+
+/**
+ * Split every line's applied vs carried amount against a single shared, shrinking balance, in
+ * priority order. Returns results in the SAME order as the input. Pure + satang-exact + idempotent
+ * for carry-eligible lines (amount+carry always re-equals intended).
+ */
+export function reconcileScDeductions(allocated: number, lines: ScReconcileLine[]): ScDeductionResult[] {
+  const order = lines.map((_, i) => i).sort((a, b) => {
+    const ra = SC_RECONCILE_RANK[lines[a].source_type] ?? 9;
+    const rb = SC_RECONCILE_RANK[lines[b].source_type] ?? 9;
+    return ra - rb || a - b; // stable within a rank by original index
+  });
+  const out: ScDeductionResult[] = lines.map(() => ({ amount_satang: 0, carry_satang: 0 }));
+  let remaining = Math.max(0, Math.round(allocated));
+  for (const i of order) {
+    const intended = Math.max(0, Math.round(lines[i].intended_satang));
+    if (SC_CARRY_ELIGIBLE.has(lines[i].source_type)) {
+      // Debt: apply what fits against the remaining balance, defer the rest to next month.
+      const applied = Math.min(intended, Math.max(0, remaining));
+      remaining -= applied;
+      out[i] = { amount_satang: applied, carry_satang: intended - applied };
+    } else {
+      // Reduction (leave/manual/late): keep the full amount, never truncate; it still draws down the
+      // shared balance (may go negative) so debts below defer correctly, and net floors at 0 elsewhere.
+      remaining -= intended;
+      out[i] = { amount_satang: intended, carry_satang: 0 };
+    }
+  }
+  return out;
+}
