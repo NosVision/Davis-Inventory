@@ -73,19 +73,22 @@ export function ImportedPayslipView({ data }: { data: ImportedSlip }) {
         archive: 'ข้อมูลนำเข้า (ย้อนหลัง)', name: 'ชื่อ', position: 'ตำแหน่ง', period: 'งวด',
         earnings: 'รายได้', salary: 'เงินเดือน', workedDays: 'วันทำงาน', otHours: 'ชม. OT',
         otPay: 'ค่า OT', holidayPay: 'ค่าทำงานวันหยุด', transport: 'ค่าเดินทาง', service: 'ค่าเซอร์วิส',
-        deductions: 'รายการหัก', sso: 'ประกันสังคม', tax: 'ภาษี (หัก ณ ที่จ่าย)', otherDed: 'หักอื่นๆ',
+        deductions: 'รายการหัก', sso: 'ประกันสังคม', wht3: 'ภาษีหัก ณ ที่จ่าย 3%', tax: 'ภาษีเงินได้ (ภ.ง.ด.1)', otherDed: 'หักอื่นๆ',
         gross: 'รวมรายได้', net: 'เงินสุทธิ', days: 'วัน', hours: 'ชม.',
       }
     : {
         archive: 'Imported (historical)', name: 'Name', position: 'Position', period: 'Period',
         earnings: 'Earnings', salary: 'Salary', workedDays: 'Worked days', otHours: 'OT hours',
         otPay: 'OT pay', holidayPay: 'Holiday pay', transport: 'Transport', service: 'Service charge',
-        deductions: 'Deductions', sso: 'Social security', tax: 'Withholding tax', otherDed: 'Other deductions',
+        deductions: 'Deductions', sso: 'Social security', wht3: 'Withholding tax 3%', tax: 'Income tax (PND1)', otherDed: 'Other deductions',
         gross: 'Gross', net: 'Net pay', days: 'd', hours: 'h',
       };
 
   const name = data.name_th || data.name_en || data.nickname || '—';
-  const ssoSatang = (data.sso5_satang ?? 0) + (data.sso3_satang ?? 0);
+  // sso5 = real social security (5%); sso3 = the foreigner withholding-tax 3% group — NOT social
+  // security (the legacy sheet's "SS 3%" column is a misnomer), so it renders as withholding tax.
+  const ssoSatang = data.sso5_satang ?? 0;
+  const wht3Satang = data.sso3_satang ?? 0;
 
   return (
     <div className="space-y-4">
@@ -120,6 +123,7 @@ export function ImportedPayslipView({ data }: { data: ImportedSlip }) {
         <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-400">{L.deductions}</h4>
         <div className="divide-y divide-gray-100 dark:divide-gray-800">
           {ssoSatang > 0 && <SlipRow label={L.sso} value={baht(ssoSatang)} tone="critical" />}
+          {wht3Satang > 0 && <SlipRow label={L.wht3} value={baht(wht3Satang)} tone="critical" />}
           {(data.tax_satang ?? 0) > 0 && <SlipRow label={L.tax} value={baht(data.tax_satang)} tone="critical" />}
           {(data.deduction_satang ?? 0) > 0 && <SlipRow label={L.otherDed} value={baht(data.deduction_satang)} tone="critical" />}
         </div>
