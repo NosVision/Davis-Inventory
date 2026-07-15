@@ -6,10 +6,10 @@ import { buildXlsx } from '@/lib/xlsx';
 
 const b = (satang: number) => Math.round(satang) / 100;
 
-// GET /api/hr/payruns/[id]/export — the HR-side full "Payment" register as .xlsx, in the legacy
-// file's shape: SS 5% and SS 3% as TWO columns (the system stores the 3% group's money under
-// tax_mode='withholding_3pct'; accountants reconciling against the old file expect it in its own
-// column), plus POSITION / DAYS / SERVICE / REMARK. HR-gated (unlike the token-gated portal export).
+// GET /api/hr/payruns/[id]/export — the HR-side full "Payment" register as .xlsx. Two withholding
+// columns: SS 5% = real social security, and WHT 3% = the foreigner withholding-tax group (stored
+// under tax_mode='withholding_3pct'; the legacy sheet mislabelled it "SS 3%" but it is NOT social
+// security), plus POSITION / DAYS / SERVICE / REMARK. HR-gated (unlike the token-gated portal export).
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const service = createServiceClient();
@@ -42,7 +42,8 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     ((remarkRes.data ?? []) as { profile_id: string; remark: string }[]).map((r) => [r.profile_id, r.remark])
   );
 
-  // SS5 vs SS3 split by tax_mode: the withholding-3% group's amount lives in tax_satang.
+  // SS5 (social security) vs WHT3 (foreigner 3% withholding) split by tax_mode: the 3% group's
+  // amount lives in tax_satang.
   const ss3 = (r: (typeof rows)[number]) => (r.tax_mode === 'withholding_3pct' ? r.tax_satang : 0);
   const pnd = (r: (typeof rows)[number]) => (r.tax_mode === 'withholding_3pct' ? 0 : r.tax_satang);
 
@@ -53,7 +54,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     [`งวด ${period} · รอบ ${payrun.cycle_start ?? ''} – ${payrun.cycle_end ?? ''} · จ่าย ${payrun.pay_date ?? ''}`],
     [],
     ['NO.', 'CODE', 'NAME', 'POSITION', 'DAYS', 'SALARY', 'OT', 'ALLOWANCES', 'TOTAL', 'YTD BEFORE',
-     'OTHER DEDUCTIONS', 'SS 5%', 'SS 3%', 'TAX', 'NET', 'SERVICE', 'REMARK'],
+     'OTHER DEDUCTIONS', 'SS 5%', 'WHT 3%', 'TAX', 'NET', 'SERVICE', 'REMARK'],
     ...rows.map((r, i) => [
       i + 1,
       r.employee_code ?? '',
