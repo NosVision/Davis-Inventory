@@ -178,7 +178,7 @@ export default function AttendanceReportPage() {
           if (r.review_status === 'pending') {
             return (
               <Button size="sm" onClick={() => setReviewRow({
-                id: r.id, employee_name: r.employee_name, type: r.type, ts: r.ts,
+                id: r.id, user_id: r.user_id, employee_name: r.employee_name, type: r.type, ts: r.ts,
                 distance_m: r.distance_m, is_vpn_suspect: r.is_vpn_suspect,
               })}>
                 {t('colReview')}

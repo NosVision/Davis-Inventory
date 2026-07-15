@@ -26,7 +26,7 @@ interface UseLeaveTypesResult {
   error: boolean;
 }
 
-export function useLeaveTypes(companyId?: string | null): UseLeaveTypesResult {
+export function useLeaveTypes(companyId?: string | null, userId?: string | null): UseLeaveTypesResult {
   const [leaveTypes, setLeaveTypes] = useState<LeaveTypeOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -35,7 +35,13 @@ export function useLeaveTypes(companyId?: string | null): UseLeaveTypesResult {
     let alive = true;
     setLoading(true);
     setError(false);
-    const qs = companyId ? `?company_id=${encodeURIComponent(companyId)}` : '';
+    // Company id wins; otherwise resolve the company from an employee (HR picking for that user);
+    // otherwise the endpoint uses the caller's own company.
+    const qs = companyId
+      ? `?company_id=${encodeURIComponent(companyId)}`
+      : userId
+        ? `?user_id=${encodeURIComponent(userId)}`
+        : '';
     (async () => {
       try {
         const res = await fetch(`/api/hr/leave-types/options${qs}`);
@@ -54,7 +60,7 @@ export function useLeaveTypes(companyId?: string | null): UseLeaveTypesResult {
     return () => {
       alive = false;
     };
-  }, [companyId]);
+  }, [companyId, userId]);
 
   return { leaveTypes, loading, error };
 }

@@ -4,10 +4,10 @@ import { requireHrManager, requireStoreManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import { notifyUser } from '@/lib/notifications/service';
 import { isDateInFinalizedPeriod, employeeStoreIds, FINALIZED_PERIOD_ERROR } from '@/lib/hr/period-lock';
+import { fetchLeaveTypeOptions } from '@/lib/hr/leave-types';
 
 const TABLE = 'hr_attendance';
 const OVERRIDE_TABLE = 'hr_timesheet_overrides';
-const DEFAULT_WORK_HOURS = 9;
 const TYPE_TH: Record<string, string> = {
   in: 'เข้างาน',
   out: 'ออกงาน',
@@ -57,7 +57,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       : body.decision === 'rejected' ? 'reject' : '';
   const action = ACTIONS.includes(rawAction as Action) ? (rawAction as Action) : null;
   const note = typeof body.note === 'string' ? body.note.slice(0, 300) : null;
+  const leaveTypeId = typeof body.leave_type_id === 'string' ? body.leave_type_id : null;
   if (!action) return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+  if (action === 'leave' && !leaveTypeId) {
+    return NextResponse.json({ error: 'leave_type_id is required for a leave outcome' }, { status: 400 });
+  }
 
   const userId = row.user_id as string;
   const businessDate = row.business_date as string;
@@ -107,28 +111,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: 'Already decided' }, { status: 409 });
   }
 
-  // ---- absent / leave: write a timesheet override for the day (recomputes pay) ----
+  // ---- absent → timesheet override; leave → a real typed hr_leaves record (recomputes pay) ----
   let overrideWarning: string | null = null;
-  if (action === 'absent' || action === 'leave') {
-    let workedMin = 0;
-    if (action === 'leave') {
-      const { data: emp } = await service
-        .from('hr_employees')
-        .select('work_hours_per_day')
-        .eq('profile_id', userId)
-        .maybeSingle();
-      workedMin = Math.round(((emp?.work_hours_per_day as number | null) ?? DEFAULT_WORK_HOURS) * 60);
-    }
+  if (action === 'absent') {
     const { error: ovErr } = await service.from(OVERRIDE_TABLE).upsert(
       {
         user_id: userId,
         business_date: businessDate,
         store_id: row.store_id,
-        worked_min: workedMin,
+        worked_min: 0,
         late_min: 0,
         ot_min: null,
-        absent: action === 'absent',
-        reason: `Attendance review: ${action}`,
+        absent: true,
+        reason: 'Attendance review: absent',
         edited_by: auth.userId,
       },
       { onConflict: 'user_id,business_date' }
@@ -136,6 +131,48 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (ovErr) {
       console.error('[attendance/review] override write failed:', ovErr.message);
       overrideWarning = 'Marked, but writing the timesheet override failed — set it manually.';
+    }
+  } else if (action === 'leave') {
+    // Create a real single-day approved leave of the chosen type (flows through the leave pay
+    // engine), replacing any coarse override or existing single-day leave on that day.
+    const { data: emp } = await service
+      .from('hr_employees')
+      .select('company_id')
+      .eq('profile_id', userId)
+      .maybeSingle();
+    const companyId = (emp?.company_id as string | null) ?? null;
+    const options = await fetchLeaveTypeOptions(service, companyId);
+    const valid = (options ?? []).some((o) => o.id === leaveTypeId);
+    if (!companyId || !valid) {
+      overrideWarning = 'Punch dismissed, but the leave type is not valid for this employee — file the leave manually.';
+    } else {
+      await service.from(OVERRIDE_TABLE).delete().eq('user_id', userId).eq('business_date', businessDate);
+      // Drop any existing single-day leave on the day, then insert the chosen one.
+      const { data: existing } = await service
+        .from('hr_leaves')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('status', 'approved')
+        .eq('from_date', businessDate)
+        .eq('to_date', businessDate);
+      if (existing?.length) await service.from('hr_leaves').delete().in('id', existing.map((r) => r.id as string));
+      const { error: lvErr } = await service.from('hr_leaves').insert({
+        user_id: userId,
+        store_id: row.store_id,
+        company_id: companyId,
+        leave_type_id: leaveTypeId,
+        from_date: businessDate,
+        to_date: businessDate,
+        days: 1,
+        reason: note ?? 'Attendance review',
+        status: 'approved',
+        approver_id: auth.userId,
+        decided_at: new Date().toISOString(),
+      });
+      if (lvErr) {
+        console.error('[attendance/review] leave create failed:', lvErr.message);
+        overrideWarning = 'Punch dismissed, but creating the leave failed — file it manually.';
+      }
     }
   }
 

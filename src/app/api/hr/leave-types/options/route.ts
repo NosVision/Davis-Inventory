@@ -16,12 +16,16 @@ export async function GET(request: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const service = createServiceClient();
-  let companyId = request.nextUrl.searchParams.get('company_id');
+  const sp = request.nextUrl.searchParams;
+  let companyId = sp.get('company_id');
   if (!companyId) {
+    // Resolve the company from an explicit user_id (HR picking a type for that employee) or,
+    // failing that, the caller's own employee record.
+    const forUserId = sp.get('user_id') || user.id;
     const { data: emp } = await service
       .from('hr_employees')
       .select('company_id')
-      .eq('profile_id', user.id)
+      .eq('profile_id', forUserId)
       .maybeSingle();
     companyId = (emp?.company_id as string | null) ?? null;
   }
