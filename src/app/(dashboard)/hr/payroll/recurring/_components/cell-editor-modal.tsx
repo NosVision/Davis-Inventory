@@ -6,6 +6,7 @@ import { CalendarOff, Plus, Trash2 } from 'lucide-react';
 import { Button, Modal, ModalFooter, Badge, toast, useConfirm, usePromptDialog } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { formatBaht, bahtToSatang } from '@/lib/pos/money';
+import { ScopePicker, resolveScope, type ScopeMode } from './scope-picker';
 import type { GridEmployee, RecurringItem } from './types';
 
 interface CellEditorModalProps {
@@ -39,6 +40,7 @@ export function CellEditorModal({ employee, kind, code, currentPeriod, items, on
 
   const [label, setLabel] = useState('');
   const [amountBaht, setAmountBaht] = useState('');
+  const [scopeMode, setScopeMode] = useState<ScopeMode>('current');
   const [startPeriod, setStartPeriod] = useState(currentPeriod);
   const [endPeriod, setEndPeriod] = useState('');
 
@@ -80,7 +82,7 @@ export function CellEditorModal({ employee, kind, code, currentPeriod, items, on
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             kind, code, label: label.trim(), amount_satang: bahtToSatang(amt),
-            start_period: startPeriod || null, end_period: endPeriod || null,
+            ...resolveScope(scopeMode, currentPeriod, startPeriod, endPeriod),
           }),
         }),
       t('added')
@@ -90,7 +92,7 @@ export function CellEditorModal({ employee, kind, code, currentPeriod, items, on
       setAmountBaht('');
       setEndPeriod('');
     }
-  }, [amountBaht, label, kind, code, startPeriod, endPeriod, api, run, t]);
+  }, [amountBaht, label, kind, code, scopeMode, currentPeriod, startPeriod, endPeriod, api, run, t]);
 
   const patch = useCallback(
     (id: string, body: Record<string, unknown>, okMsg: string) =>
@@ -206,16 +208,15 @@ export function CellEditorModal({ employee, kind, code, currentPeriod, items, on
         {/* add */}
         <div className="space-y-2 rounded-lg border border-dashed border-gray-300 p-3 dark:border-gray-600">
           <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} placeholder={t('labelPlaceholder')} className={cn('w-full', inputCls)} />
-          <div className="grid grid-cols-2 gap-2">
-            <label className="flex flex-col gap-1 text-[11px] text-gray-500 dark:text-gray-400">
-              {t('startPeriod')}
-              <input type="month" value={startPeriod} onChange={(e) => setStartPeriod(e.target.value)} className={inputCls} />
-            </label>
-            <label className="flex flex-col gap-1 text-[11px] text-gray-500 dark:text-gray-400">
-              {t('endPeriod')}
-              <input type="month" value={endPeriod} onChange={(e) => setEndPeriod(e.target.value)} min={startPeriod || undefined} className={inputCls} placeholder="" />
-            </label>
-          </div>
+          <ScopePicker
+            mode={scopeMode}
+            onModeChange={setScopeMode}
+            currentPeriod={currentPeriod}
+            startPeriod={startPeriod}
+            endPeriod={endPeriod}
+            onStartChange={setStartPeriod}
+            onEndChange={setEndPeriod}
+          />
           <p className="text-[11px] text-gray-400">{t('endHint')}</p>
           <div className="flex items-center gap-2">
             <input

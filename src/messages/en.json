@@ -3111,6 +3111,18 @@
         "totalPerMonth": "Total/mo",
         "noEmployees": "No employees in this company",
         "travelHint": "Travel allowance is docked automatically per leave day (÷30/day) at payroll time — the paid amount can be less than the entitlement",
+        "scope": {
+          "heading": "From which period does this item apply?",
+          "currentLabel": "From this period",
+          "currentHint": "Starts {period} onward (never touches already-paid months)",
+          "retroLabel": "All periods (retroactive)",
+          "retroHint": "Applies to every period, including past ones",
+          "customLabel": "Custom range",
+          "customHint": "Pick your own start–end period",
+          "retroWarning": "Careful: this also adds the item to earlier draft payruns — recomputing them will change totals you already prepared",
+          "startPeriod": "Start period",
+          "endPeriod": "End period (blank = perpetual)"
+        },
         "editor": {
           "applyNote": "Takes effect from the next generate/recompute",
           "empty": "No items in this cell yet",

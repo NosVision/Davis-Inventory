@@ -7,6 +7,7 @@ import { Button, Modal, ModalFooter, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { bahtToSatang } from '@/lib/pos/money';
 import { RECURRING_EARNING_CODES, RECURRING_DEDUCTION_CODES } from '@/lib/hr/recurring';
+import { ScopePicker, resolveScope, type ScopeMode } from './scope-picker';
 import type { GridEmployee } from './types';
 
 interface BulkAddModalProps {
@@ -30,6 +31,7 @@ export function BulkAddModal({ companyId, employees, currentPeriod, onClose, onC
   const [code, setCode] = useState<string>(RECURRING_EARNING_CODES[0]);
   const [label, setLabel] = useState('');
   const [amountBaht, setAmountBaht] = useState('');
+  const [scopeMode, setScopeMode] = useState<ScopeMode>('current');
   const [startPeriod, setStartPeriod] = useState(currentPeriod);
   const [endPeriod, setEndPeriod] = useState('');
   const [search, setSearch] = useState('');
@@ -83,7 +85,7 @@ export function BulkAddModal({ companyId, employees, currentPeriod, onClose, onC
           company_id: companyId,
           employee_ids: Array.from(selected),
           kind, code, label: label.trim(), amount_satang: bahtToSatang(amt),
-          start_period: startPeriod || null, end_period: endPeriod || null,
+          ...resolveScope(scopeMode, currentPeriod, startPeriod, endPeriod),
         }),
       });
       if (!res.ok) {
@@ -99,7 +101,7 @@ export function BulkAddModal({ companyId, employees, currentPeriod, onClose, onC
     } finally {
       setSaving(false);
     }
-  }, [amountBaht, label, selected, companyId, kind, code, startPeriod, endPeriod, onChanged, onClose, t]);
+  }, [amountBaht, label, selected, companyId, kind, code, scopeMode, currentPeriod, startPeriod, endPeriod, onChanged, onClose, t]);
 
   return (
     <Modal isOpen onClose={onClose} title={t('title')} size="lg">
@@ -123,16 +125,15 @@ export function BulkAddModal({ companyId, employees, currentPeriod, onClose, onC
             <span className="text-sm text-gray-500">฿</span>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          <label className="flex flex-col gap-1 text-[11px] text-gray-500 dark:text-gray-400">
-            {t('startPeriod')}
-            <input type="month" value={startPeriod} onChange={(e) => setStartPeriod(e.target.value)} className={inputCls} />
-          </label>
-          <label className="flex flex-col gap-1 text-[11px] text-gray-500 dark:text-gray-400">
-            {t('endPeriod')}
-            <input type="month" value={endPeriod} onChange={(e) => setEndPeriod(e.target.value)} min={startPeriod || undefined} className={inputCls} />
-          </label>
-        </div>
+        <ScopePicker
+          mode={scopeMode}
+          onModeChange={setScopeMode}
+          currentPeriod={currentPeriod}
+          startPeriod={startPeriod}
+          endPeriod={endPeriod}
+          onStartChange={setStartPeriod}
+          onEndChange={setEndPeriod}
+        />
         <p className="text-[11px] text-gray-400">{t('endHint')}</p>
 
         {/* employee picker */}
