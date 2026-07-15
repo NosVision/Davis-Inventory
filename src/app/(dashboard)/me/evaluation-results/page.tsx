@@ -48,8 +48,8 @@ const IMPROVE_BELOW_PCT = 90;
 export default function MyEvaluationResultsPage() {
   const isTh = useLocale() === 'th';
   const L = isTh
-    ? { title: 'ผลประเมินของฉัน', subtitle: 'คะแนนประเมินรายเดือน (เห็นได้หลังปิดงวด) · ผู้ประเมินไม่ระบุชื่อ', empty: 'ยังไม่มีผลประเมินที่ปิดงวดแล้ว', evaluators: 'ผู้ประเมิน', loadFailed: 'โหลดไม่สำเร็จ', people: 'คน', overview: 'ภาพรวมปี', yearAvg: 'เฉลี่ยปีนี้', improve: 'เรื่องที่ควรปรับปรุง (งวดล่าสุด)', allGood: 'ทำได้ดีทุกหัวข้อ 🎉', byCriteria: 'คะแนนเฉลี่ยรายหัวข้อ' }
-    : { title: 'My evaluation results', subtitle: 'Monthly review scores (visible after a period closes) · evaluators are anonymous', empty: 'No closed evaluation results yet', evaluators: 'Evaluators', loadFailed: 'Load failed', people: '', overview: 'Year overview', yearAvg: 'Year average', improve: 'Areas to improve (latest period)', allGood: 'Strong across the board 🎉', byCriteria: 'Average by criterion' };
+    ? { title: 'ผลประเมินของฉัน', subtitle: 'คะแนนประเมินรายเดือน (เห็นได้หลังปิดงวด)', empty: 'ยังไม่มีผลประเมินที่ปิดงวดแล้ว', evaluators: 'ผู้ประเมิน', loadFailed: 'โหลดไม่สำเร็จ', people: 'คน', overview: 'ภาพรวมปี', yearAvg: 'เฉลี่ยปีนี้', improve: 'เรื่องที่ควรปรับปรุง (งวดล่าสุด)', allGood: 'ทำได้ดีทุกหัวข้อ 🎉', byCriteria: 'คะแนนเฉลี่ยรายหัวข้อ' }
+    : { title: 'My evaluation results', subtitle: 'Monthly review scores (visible after a period closes)', empty: 'No closed evaluation results yet', evaluators: 'Evaluators', loadFailed: 'Load failed', people: '', overview: 'Year overview', yearAvg: 'Year average', improve: 'Areas to improve (latest period)', allGood: 'Strong across the board 🎉', byCriteria: 'Average by criterion' };
 
   const [results, setResults] = useState<MyResult[]>([]);
   const [loading, setLoading] = useState(true);
