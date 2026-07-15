@@ -1,7 +1,47 @@
 // HR leave-type field parsing + validation (P3.1 admin config).
 // Shared by POST (create) and PUT (update) so the two routes agree on ranges.
 
+import type { SupabaseClient } from '@supabase/supabase-js';
+
 const CODE_RE = /^[a-z_]+$/;
+
+// ---------------------------------------------------------------------------
+// Shared option source — the SINGLE definition of "which leave types can be
+// picked" used by every surface (employee filing, HR day-edit, backfill,
+// attendance review). ACTIVE only, the company's own types + global
+// (company_id IS NULL), ordered by sort_order.
+// ---------------------------------------------------------------------------
+
+export interface LeaveTypeOption {
+  id: string;
+  code: string;
+  name_th: string;
+  name_en: string;
+  company_id: string | null;
+  paid: boolean;
+  requires_cert: boolean;
+  requires_reason: boolean;
+  probational_allowed: boolean;
+  advance_notice_days: number | null;
+}
+
+const OPTION_SELECT =
+  'id, code, name_th, name_en, company_id, paid, requires_cert, requires_reason, probational_allowed, advance_notice_days';
+
+/** ACTIVE leave types available to `companyId` (own + global), ordered by sort_order.
+ *  Returns null on a query error so callers can 500 rather than silently show none. */
+export async function fetchLeaveTypeOptions(
+  service: SupabaseClient,
+  companyId: string | null
+): Promise<LeaveTypeOption[] | null> {
+  let query = service.from('hr_leave_types').select(OPTION_SELECT).eq('active', true);
+  query = companyId
+    ? query.or(`company_id.eq.${companyId},company_id.is.null`)
+    : query.is('company_id', null);
+  const { data, error } = await query.order('sort_order', { ascending: true });
+  if (error) return null;
+  return (data ?? []) as LeaveTypeOption[];
+}
 
 export interface LeaveTypeFieldResult {
   ok: boolean;
