@@ -163,6 +163,9 @@ export async function GET() {
   const todaySummary = days[days.length - 1] ?? null;
   const todayCell = schedByDate.get(today);
   const nextShiftCell = ((futureRes.data ?? []) as unknown as ScheduleCell[]).find((c) => !c.is_day_off && c.shift);
+  // Last punch today → lets the client tell "on duty" from "on break" (break_start vs break_end).
+  const todayPunches = (punchesByDate.get(today) ?? []).slice().sort((a, b) => (a.ts < b.ts ? -1 : 1));
+  const lastPunch = todayPunches[todayPunches.length - 1] ?? null;
 
   // ---- Pay history: finalized payruns + imported legacy slips, merged per period ----
   const slips = slipRes.data ?? [];
@@ -280,6 +283,7 @@ export async function GET() {
   return NextResponse.json({
     data: {
       today: todaySummary,
+      today_last_punch: lastPunch ? { type: lastPunch.type, ts: lastPunch.ts } : null,
       today_shift: todayCell && !todayCell.is_day_off ? todayCell.shift : null,
       next_shift: nextShiftCell ? { work_date: nextShiftCell.work_date, ...nextShiftCell.shift! } : null,
       cycle: { from: cycleFrom, to: cycleTo, scheduled_days: scheduledDays, totals: sumDays(days) },

@@ -17,6 +17,8 @@ import {
   CalendarRange,
   PieChart,
   Gauge,
+  Coffee,
+  HelpCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { formatTimeBangkok } from '@/lib/utils/date';
@@ -40,6 +42,7 @@ interface ShiftInfo {
 }
 interface Dashboard {
   today: DaySummary | null;
+  today_last_punch: { type: 'in' | 'out' | 'break_start' | 'break_end'; ts: string } | null;
   today_shift: ShiftInfo | null;
   next_shift: (ShiftInfo & { work_date: string }) | null;
   cycle: {
@@ -73,6 +76,20 @@ const LEAVE_SPOTLIGHT = ['vacation', 'sick', 'personal'];
 const toH = (min: number) => (min / 60).toFixed(1);
 const hhmm = (t: string) => t.slice(0, 5);
 const baht = (satang: number) => `฿${Math.round(satang / 100).toLocaleString()}`;
+
+// Absolute instant (ms) of a shift boundary on a business date. A small-hours time (before 06:00)
+// belongs to the NEXT calendar day, and an end at/before the start crosses midnight — same
+// convention as the server time engine, so the "forgot to clock out?" hint fires correctly on
+// overnight shifts too.
+function shiftInstantMs(businessDate: string, time: string, afterMs?: number): number {
+  const hhmmss = time.length === 5 ? `${time}:00` : time;
+  let ms = new Date(`${businessDate}T${hhmmss}+07:00`).getTime();
+  if (Number(time.slice(0, 2)) < 6) ms += 86_400_000;
+  if (afterMs != null && ms <= afterMs) ms += 86_400_000;
+  return ms;
+}
+const FORGOT_IN_GRACE_MS = 15 * 60_000; // nag only 15 min after shift start
+const FORGOT_OUT_GRACE_MS = 30 * 60_000; // nag only 30 min after shift end
 
 function monthLabel(month: number, isTh: boolean): string {
   return (isTh ? TH_MONTHS : EN_MONTHS)[month - 1] ?? String(month);
@@ -184,13 +201,14 @@ export function MeSummary() {
     };
   }, []);
 
-  // Live "worked so far" ticker — only ticks while actually clocked in.
+  // 30s clock tick — drives the live worked-hours counter AND the time-aware CTA/hints
+  // (break window, "forgot to clock in/out?"), so it runs whenever the card has data.
   const onDuty = Boolean(data?.today?.first_in && !data?.today?.last_out);
   useEffect(() => {
-    if (!onDuty) return;
+    if (!data) return;
     const id = setInterval(() => setNowMs(Date.now()), 30_000);
     return () => clearInterval(id);
-  }, [onDuty]);
+  }, [data]);
 
   const toggleMoney = () => {
     setHideMoney((prev) => {
@@ -217,10 +235,27 @@ export function MeSummary() {
   }
   if (!data) return null;
 
-  const { today, today_shift, next_shift, cycle, pay, leave, penalties } = data;
+  const { today, today_last_punch, today_shift, next_shift, cycle, pay, leave, penalties } = data;
+  const onBreak = onDuty && today_last_punch?.type === 'break_start';
 
-  // Today's headline state (same states as before the redesign).
+  // Shift boundary instants for the time-aware hints/buttons (null when no shift today).
+  const shiftStartMs = today && today_shift ? shiftInstantMs(today.business_date, today_shift.start_time) : null;
+  const shiftEndMs = today && today_shift ? shiftInstantMs(today.business_date, today_shift.end_time, shiftStartMs ?? undefined) : null;
+  const forgotIn = Boolean(today?.scheduled && !today?.first_in && shiftStartMs != null && nowMs > shiftStartMs + FORGOT_IN_GRACE_MS);
+  const forgotOut = Boolean(onDuty && shiftEndMs != null && nowMs > shiftEndMs + FORGOT_OUT_GRACE_MS);
+  const beforeShiftEnd = shiftEndMs == null || nowMs < shiftEndMs;
+
+  // Today's headline state (same states as before the redesign, plus "on break").
   const state = (() => {
+    if (onBreak && today_last_punch) {
+      return {
+        icon: Coffee,
+        tone: 'text-sky-600 dark:text-sky-400',
+        bg: 'bg-sky-50 dark:bg-sky-900/20',
+        label: isTh ? 'กำลังพัก' : 'On break',
+        detail: `${isTh ? 'เริ่มพัก' : 'since'} ${formatTimeBangkok(today_last_punch.ts)} · ${Math.max(0, Math.floor((nowMs - new Date(today_last_punch.ts).getTime()) / 60_000))} ${isTh ? 'นาที' : 'min'}`,
+      };
+    }
     if (today?.is_day_off) {
       return { icon: CalendarOff, tone: 'text-gray-500 dark:text-gray-400', bg: 'bg-gray-50 dark:bg-gray-900/40', label: isTh ? 'วันหยุด' : 'Day off', detail: '' };
     }
@@ -251,7 +286,6 @@ export function MeSummary() {
   const StateIcon = state.icon;
 
   const workedLiveMin = onDuty && today?.first_in ? Math.max(0, Math.floor((nowMs - new Date(today.first_in).getTime()) / 60_000)) : 0;
-  const ctaLabel = onDuty ? (isTh ? 'เช็คเอาท์' : 'Clock out') : today?.scheduled && !today?.first_in ? (isTh ? 'เช็คอินเข้างาน' : 'Clock in') : isTh ? 'เปิดหน้าเช็คอิน' : 'Open check-in';
 
   const attendPct = cycle.scheduled_days > 0 ? cycle.totals.work_days / cycle.scheduled_days : 0;
   const cycleLabel = `${Number(cycle.from.slice(8, 10))} ${monthLabel(Number(cycle.from.slice(5, 7)), isTh)} – ${Number(cycle.to.slice(8, 10))} ${monthLabel(Number(cycle.to.slice(5, 7)), isTh)}`;
@@ -279,7 +313,9 @@ export function MeSummary() {
             <span className="text-sm font-medium text-gray-400"> {isTh ? 'ชม.' : 'h'} </span>
             {workedLiveMin % 60}
             <span className="text-sm font-medium text-gray-400"> {isTh ? 'นาที' : 'm'}</span>
-            <span className="ml-2 align-middle text-[10px] font-medium uppercase text-emerald-500">● {isTh ? 'กำลังทำงาน' : 'on duty'}</span>
+            <span className={cn('ml-2 align-middle text-[10px] font-medium uppercase', onBreak ? 'text-sky-500' : 'text-emerald-500')}>
+              ● {onBreak ? (isTh ? 'พักอยู่' : 'on break') : isTh ? 'กำลังทำงาน' : 'on duty'}
+            </span>
           </p>
         )}
         <div className="space-y-1 text-xs text-gray-500 dark:text-gray-400">
@@ -298,17 +334,64 @@ export function MeSummary() {
             </span>
           </p>
         </div>
-        <Link
-          href="/me/checkin"
-          className={cn(
-            'mt-auto inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold transition-colors',
-            onDuty
-              ? 'border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-400'
-              : 'bg-teal-600 text-white hover:bg-teal-700'
-          )}
-        >
-          {ctaLabel}
-        </Link>
+        {(forgotIn || forgotOut) && (
+          <div className="flex items-start gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+            <HelpCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>
+              {forgotIn
+                ? isTh
+                  ? `ลืมเช็คอินหรือเปล่า? กะวันนี้เริ่ม ${today_shift ? hhmm(today_shift.start_time) : ''} น. แล้ว`
+                  : `Forgot to clock in? Your shift started at ${today_shift ? hhmm(today_shift.start_time) : ''}`
+                : isTh
+                  ? `ลืมเช็คเอาท์หรือเปล่า? กะจบ ${today_shift ? hhmm(today_shift.end_time) : ''} น. แล้ว`
+                  : `Forgot to clock out? Your shift ended at ${today_shift ? hhmm(today_shift.end_time) : ''}`}{' '}
+              <Link href="/me/attendance-requests" className="font-medium underline underline-offset-2">
+                {isTh ? 'ขอแก้เวลา' : 'Fix my time'}
+              </Link>
+            </span>
+          </div>
+        )}
+        {onBreak ? (
+          <Link
+            href="/me/checkin"
+            className="mt-auto inline-flex items-center justify-center gap-1.5 rounded-xl bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-sky-700"
+          >
+            <Coffee className="h-4 w-4" />
+            {isTh ? 'เลิกพัก' : 'End break'}
+          </Link>
+        ) : onDuty ? (
+          <div className="mt-auto flex gap-2">
+            {beforeShiftEnd && (
+              <Link
+                href="/me/checkin"
+                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-600 transition-colors hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-400"
+              >
+                <Coffee className="h-4 w-4" />
+                {isTh ? 'เริ่มพัก' : 'Start break'}
+              </Link>
+            )}
+            <Link
+              href="/me/checkin"
+              className="inline-flex flex-1 items-center justify-center rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-600 transition-colors hover:bg-rose-100 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-400"
+            >
+              {isTh ? 'เช็คเอาท์' : 'Clock out'}
+            </Link>
+          </div>
+        ) : today?.scheduled && !today?.first_in ? (
+          <Link
+            href="/me/checkin"
+            className="mt-auto inline-flex items-center justify-center rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-teal-700"
+          >
+            {isTh ? 'เช็คอินเข้างาน' : 'Clock in'}
+          </Link>
+        ) : (
+          <Link
+            href="/me/checkin"
+            className="mt-auto inline-flex items-center justify-center rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-500 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700/40"
+          >
+            {isTh ? 'เปิดหน้าเช็คอิน' : 'Open check-in'}
+          </Link>
+        )}
       </CardShell>
 
       {/* ② This pay cycle (26–25) */}
