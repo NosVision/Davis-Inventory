@@ -43,6 +43,10 @@ interface LeaveTypeRow {
   paid_percent: number | null;
   sort_order: number;
   active: boolean;
+  deduct_sc: boolean;
+  deduct_travel: boolean;
+  paid_with_cert: boolean;
+  cert_threshold_days: number | null;
 }
 
 interface HolidayRow {
@@ -80,6 +84,10 @@ interface LeaveTypeFormState {
   paid: boolean;
   requires_cert: boolean;
   probational_allowed: boolean;
+  deduct_sc: boolean;
+  deduct_travel: boolean;
+  paid_with_cert: boolean;
+  cert_threshold_days: string;
   annual_quota_days: string;
   advance_notice_days: string;
   max_consecutive_days: string;
@@ -93,6 +101,10 @@ const EMPTY_LEAVE_FORM: LeaveTypeFormState = {
   paid: true,
   requires_cert: false,
   probational_allowed: true,
+  deduct_sc: false,
+  deduct_travel: false,
+  paid_with_cert: false,
+  cert_threshold_days: '',
   annual_quota_days: '',
   advance_notice_days: '',
   max_consecutive_days: '',
@@ -122,6 +134,10 @@ function LeaveTypeModal({ open, editing, companyId, onClose, onSaved }: LeaveTyp
         paid: editing.paid,
         requires_cert: editing.requires_cert,
         probational_allowed: editing.probational_allowed,
+        deduct_sc: editing.deduct_sc,
+        deduct_travel: editing.deduct_travel,
+        paid_with_cert: editing.paid_with_cert,
+        cert_threshold_days: editing.cert_threshold_days != null ? String(editing.cert_threshold_days) : '',
         annual_quota_days: editing.annual_quota_days != null ? String(editing.annual_quota_days) : '',
         advance_notice_days: editing.advance_notice_days != null ? String(editing.advance_notice_days) : '',
         max_consecutive_days: editing.max_consecutive_days != null ? String(editing.max_consecutive_days) : '',
@@ -154,6 +170,10 @@ function LeaveTypeModal({ open, editing, companyId, onClose, onSaved }: LeaveTyp
         paid: form.paid,
         requires_cert: form.requires_cert,
         probational_allowed: form.probational_allowed,
+        deduct_sc: form.deduct_sc,
+        deduct_travel: form.deduct_travel,
+        paid_with_cert: form.paid_with_cert,
+        cert_threshold_days: numOrNull(form.cert_threshold_days),
         annual_quota_days: numOrNull(form.annual_quota_days),
         advance_notice_days: numOrNull(form.advance_notice_days),
         max_consecutive_days: numOrNull(form.max_consecutive_days),
@@ -239,6 +259,37 @@ function LeaveTypeModal({ open, editing, companyId, onClose, onSaved }: LeaveTyp
             />
             {t('probationalAllowed')}
           </label>
+        </div>
+
+        {/* Pay-effect config (00169) — drives docking instead of hardcoded codes */}
+        <div className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+          <p className="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">{t('effectHeading')}</p>
+          <div className="flex flex-wrap gap-4">
+            <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <input type="checkbox" checked={form.deduct_sc} onChange={(e) => set('deduct_sc', e.target.checked)} />
+              {t('deductSc')}
+            </label>
+            <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <input type="checkbox" checked={form.deduct_travel} onChange={(e) => set('deduct_travel', e.target.checked)} />
+              {t('deductTravel')}
+            </label>
+            <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <input type="checkbox" checked={form.paid_with_cert} onChange={(e) => set('paid_with_cert', e.target.checked)} />
+              {t('paidWithCert')}
+            </label>
+          </div>
+          {form.requires_cert && (
+            <div className="mt-3 max-w-[16rem]">
+              <Input
+                label={t('certThreshold')}
+                type="number"
+                min={0}
+                value={form.cert_threshold_days}
+                onChange={(e) => set('cert_threshold_days', e.target.value)}
+                hint={t('certThresholdHint')}
+              />
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

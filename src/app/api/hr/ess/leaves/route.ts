@@ -18,7 +18,7 @@ const MAX_CERT_BYTES = 10 * 1024 * 1024; // 10MB
 const LEAVE_TYPE_COLS =
   'id, company_id, code, name_th, name_en, paid, requires_cert, requires_reason, ' +
   'annual_quota_days, max_consecutive_days, probational_allowed, advance_notice_days, ' +
-  'paid_percent, sort_order, active';
+  'paid_percent, sort_order, active, deduct_sc, deduct_travel, paid_with_cert, cert_threshold_days';
 
 const COLS =
   'id, user_id, store_id, company_id, leave_type_id, from_date, to_date, days, reason, ' +

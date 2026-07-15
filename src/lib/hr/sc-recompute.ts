@@ -33,9 +33,10 @@ function clampMax(a: string, b: string): string { return a > b ? a : b; }
 function clampMin(a: string, b: string): string { return a < b ? a : b; }
 
 interface WarningRow { id: string; level: string; sc_deduct_percent: number | null; amount_satang: number | null }
+interface LeaveTypeEffect { code: string; paid: boolean; paid_with_cert: boolean; deduct_sc: boolean; deduct_travel: boolean }
 interface LeaveRow {
   id: string; from_date: string; to_date: string; cert_path: string | null;
-  leave_type: { code: string; paid: boolean } | { code: string; paid: boolean }[] | null;
+  leave_type: LeaveTypeEffect | LeaveTypeEffect[] | null;
 }
 
 /**
@@ -141,14 +142,14 @@ export async function recomputePoolDeductions(
 
     const { data: leaves, error: leaveErr } = await service
       .from('hr_leaves')
-      .select('id, from_date, to_date, cert_path, leave_type:hr_leave_types(code, paid)')
+      .select('id, from_date, to_date, cert_path, leave_type:hr_leave_types(code, paid, paid_with_cert, deduct_sc, deduct_travel)')
       .eq('user_id', userId).eq('status', 'approved')
       .lte('from_date', periodEnd).gte('to_date', periodStart);
     if (leaveErr) throw leaveErr;
     for (const lv of (leaves ?? []) as unknown as LeaveRow[]) {
       const lt = Array.isArray(lv.leave_type) ? lv.leave_type[0] : lv.leave_type;
       if (!lt) continue;
-      const effect = classifyLeaveEffect({ code: lt.code, paid: lt.paid }, Boolean(lv.cert_path));
+      const effect = classifyLeaveEffect(lt, Boolean(lv.cert_path));
       if (!effect.deductSc) continue;
       const from = clampMax(lv.from_date, periodStart);
       const to = clampMin(lv.to_date, periodEnd);

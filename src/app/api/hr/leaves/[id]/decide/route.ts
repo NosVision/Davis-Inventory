@@ -169,7 +169,7 @@ export async function POST(
 
   const { data: leaveType, error: ltErr } = await service
     .from('hr_leave_types')
-    .select('code, paid')
+    .select('code, paid, paid_with_cert, deduct_sc, deduct_travel')
     .eq('id', row.leave_type_id as string)
     .maybeSingle();
   if (ltErr || !leaveType) {
@@ -182,7 +182,15 @@ export async function POST(
 
   const code = leaveType.code as string;
   const hasCert = Boolean(row.cert_path);
-  const effect = classifyLeaveEffect({ code, paid: leaveType.paid as boolean }, hasCert);
+  const effect = classifyLeaveEffect(
+    {
+      paid: leaveType.paid as boolean,
+      paid_with_cert: leaveType.paid_with_cert as boolean,
+      deduct_sc: leaveType.deduct_sc as boolean,
+      deduct_travel: leaveType.deduct_travel as boolean,
+    },
+    hasCert
+  );
 
   // Company holidays (skipped — not scheduled work days for pay purposes).
   const { data: holidays } = await service

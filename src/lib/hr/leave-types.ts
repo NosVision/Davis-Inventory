@@ -104,7 +104,7 @@ export function collectLeaveTypeFields(
   }
 
   // booleans
-  for (const key of ['paid', 'requires_cert', 'requires_reason', 'probational_allowed'] as const) {
+  for (const key of ['paid', 'requires_cert', 'requires_reason', 'probational_allowed', 'deduct_sc', 'deduct_travel', 'paid_with_cert'] as const) {
     if (key in body) {
       if (typeof body[key] !== 'boolean') {
         return { ok: false, error: `${key} must be boolean`, fields };
@@ -134,11 +134,21 @@ export function collectLeaveTypeFields(
     ['max_consecutive_days', { min: 1 }],
     ['advance_notice_days', { min: 0 }],
     ['paid_percent', { min: 0, max: 100 }],
+    ['cert_threshold_days', { min: 0 }],
   ];
   for (const [key, range] of ranges) {
     const parsed = parseNullableInt(body[key], range);
     if (parsed.error) return { ok: false, error: `${key} ${parsed.error}`, fields };
     if (!parsed.skip) fields[key] = parsed.value;
+  }
+
+  // On create, when the SC/travel-dock flags aren't specified, default them to the type's paid
+  // state: a paid leave docks neither (its day is "earned"), an unpaid leave docks both (it reads
+  // as an absence). Keeps new types sensible without forcing HR to set every flag.
+  if (requireCore) {
+    const paid = fields.paid === undefined ? true : Boolean(fields.paid); // DB default paid = true
+    if (fields.deduct_sc === undefined) fields.deduct_sc = !paid;
+    if (fields.deduct_travel === undefined) fields.deduct_travel = !paid;
   }
 
   return { ok: true, fields };

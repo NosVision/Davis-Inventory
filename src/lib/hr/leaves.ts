@@ -62,6 +62,11 @@ export interface LeaveType {
   paid_percent: number | null;
   sort_order: number;
   active: boolean;
+  // Effect config (00169) — drives pay/cert behavior instead of hardcoded codes.
+  deduct_sc: boolean; // dock the day's Service-Charge share
+  deduct_travel: boolean; // dock the monthly travel allowance per day
+  paid_with_cert: boolean; // salary preserved when a cert is provided (e.g. sick)
+  cert_threshold_days: number | null; // requires_cert only beyond N days (null = always)
 }
 
 export interface Holiday {
@@ -116,18 +121,16 @@ export function countLeaveDays(from: string, to: string, holidayDates: Iterable<
 }
 
 /**
- * Whether a medical/other certificate is required for this leave.
- * §D/§E: sick leave requires a cert only when it spans more than 3 days; other
- * cert-flagged types (e.g. maternity) require one regardless of length.
+ * Whether a medical/other certificate is required for this leave — driven by config (00169),
+ * not by code. When `requires_cert` is set, a `cert_threshold_days` (e.g. 3 for sick) means the
+ * cert is needed only beyond that many days; a null threshold means it is always required.
  */
-export const SICK_CERT_THRESHOLD_DAYS = 3;
-
 export function isCertRequired(
-  leaveType: Pick<LeaveType, 'code' | 'requires_cert'>,
+  leaveType: Pick<LeaveType, 'requires_cert' | 'cert_threshold_days'>,
   days: number,
 ): boolean {
   if (!leaveType.requires_cert) return false;
-  if (leaveType.code === 'sick') return days > SICK_CERT_THRESHOLD_DAYS;
+  if (leaveType.cert_threshold_days != null) return days > leaveType.cert_threshold_days;
   return true;
 }
 
@@ -138,13 +141,16 @@ export function isCertRequired(
  *   - deductSc     : the day's Service-Charge share is docked
  *   - deductTravel : the monthly travel allowance is not paid for the day
  *
- * §H table (Davis handbook):
+ * Driven entirely by config columns (00169), not by code:
+ *   - deductSalary ← salary is docked unless the type is `paid`, OR it is `paid_with_cert` and a
+ *     valid cert was provided (the sick-with-cert rule).
+ *   - deductSc / deductTravel ← the type's `deduct_sc` / `deduct_travel` flags (SC and the travel
+ *     allowance are presence-based, so a leave day can dock them even when salary is preserved).
+ *
+ * §H table (Davis handbook), now expressed as config on each type:
  *   ลากิจ / ลาป่วยไม่มีใบรับรอง (= absent)  → salary หัก · SC หัก · travel หัก
- *   ลาป่วยมีใบรับรองถูกต้อง                → salary ไม่หัก · SC หัก · travel หัก
+ *   ลาป่วยมีใบรับรองถูกต้อง                → salary ไม่หัก · SC หัก · travel หัก  (paid_with_cert)
  *   พักร้อน / PH                          → ไม่หัก ทั้งหมด
- * Other configured types fall back to their `paid` flag: paid ⇒ no deductions,
- * unpaid ⇒ treated as an absent day (all three deducted). This default mapping is
- * intentionally simple; a per-type §H override can be added in P4 if the client asks.
  */
 export interface LeaveEffect {
   paid: boolean;
@@ -154,28 +160,16 @@ export interface LeaveEffect {
 }
 
 export function classifyLeaveEffect(
-  leaveType: Pick<LeaveType, 'code' | 'paid'>,
+  leaveType: Pick<LeaveType, 'paid' | 'paid_with_cert' | 'deduct_sc' | 'deduct_travel'>,
   hasCert: boolean,
 ): LeaveEffect {
-  const { code } = leaveType;
-
-  // Sick with a valid cert: salary preserved, but SC + travel still docked.
-  if (code === 'sick' && hasCert) {
-    return { paid: true, deductSalary: false, deductSc: true, deductTravel: true };
-  }
-  // Personal, or sick without a cert: counts as an absence — dock everything.
-  if (code === 'personal' || code === 'sick') {
-    return { paid: false, deductSalary: true, deductSc: true, deductTravel: true };
-  }
-  // Vacation / public-holiday leave: nothing docked.
-  if (code === 'vacation') {
-    return { paid: true, deductSalary: false, deductSc: false, deductTravel: false };
-  }
-  // Fallback by the type's paid flag.
-  if (leaveType.paid) {
-    return { paid: true, deductSalary: false, deductSc: false, deductTravel: false };
-  }
-  return { paid: false, deductSalary: true, deductSc: true, deductTravel: true };
+  const paid = leaveType.paid || (leaveType.paid_with_cert && hasCert);
+  return {
+    paid,
+    deductSalary: !paid,
+    deductSc: leaveType.deduct_sc,
+    deductTravel: leaveType.deduct_travel,
+  };
 }
 
 export interface LeaveValidationInput {

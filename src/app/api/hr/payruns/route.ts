@@ -261,7 +261,7 @@ export async function POST(request: NextRequest) {
         .eq('status', 'approved')
         .lte('from_date', end)
         .gte('to_date', start),
-      service.from('hr_leave_types').select('id, code, paid'),
+      service.from('hr_leave_types').select('id, code, paid, paid_with_cert, deduct_sc, deduct_travel'),
       service.from('hr_holidays').select('holiday_date').eq('company_id', companyId).eq('active', true),
       // Recurring items: only THIS run's employees (was an unscoped all-tenant scan), and only rows
       // whose period window covers this payrun period. Window sides are 'YYYY-MM' text (00162);
@@ -327,7 +327,7 @@ export async function POST(request: NextRequest) {
     ])
   );
   const leaveTypeById = new Map(
-    ((leaveTypesRes.data ?? []) as { id: string; code: string; paid: boolean }[]).map((t) => [t.id, t])
+    ((leaveTypesRes.data ?? []) as { id: string; code: string; paid: boolean; paid_with_cert: boolean; deduct_sc: boolean; deduct_travel: boolean }[]).map((t) => [t.id, t])
   );
   const holidaySet = new Set(((holidaysRes.data ?? []) as { holiday_date: string }[]).map((h) => h.holiday_date));
   const leavesByUser = new Map<string, LeaveRow[]>();
@@ -468,7 +468,15 @@ export async function POST(request: NextRequest) {
     const leaveCovered = new Set<string>();
     const engineLeaves = (leavesByUser.get(uid) ?? []).map((lv) => {
       const t = leaveTypeById.get(lv.leave_type_id);
-      const effect = classifyLeaveEffect({ code: t?.code ?? 'other', paid: t?.paid ?? false }, !!lv.cert_path);
+      const effect = classifyLeaveEffect(
+        {
+          paid: t?.paid ?? false,
+          paid_with_cert: t?.paid_with_cert ?? false,
+          deduct_sc: t?.deduct_sc ?? true,
+          deduct_travel: t?.deduct_travel ?? true,
+        },
+        !!lv.cert_path
+      );
       const from = lv.from_date < start ? start : lv.from_date;
       const to = lv.to_date > end ? end : lv.to_date;
       for (const d of enumerateDates(from, to)) if (!holidaySet.has(d)) leaveCovered.add(d);
