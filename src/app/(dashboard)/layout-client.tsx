@@ -12,6 +12,7 @@ import { ChatBadgeProvider } from '@/components/chat/chat-badge-provider';
 import { DesktopLayout } from '@/components/layout/desktop-layout';
 import { MobileLayout } from '@/components/layout/mobile-layout';
 import { InstallPrompt } from '@/components/pwa/install-prompt';
+import { PwaGate } from '@/components/pwa/pwa-gate';
 import { UserGuide } from '@/components/pwa/user-guide';
 import { Store, ArrowRight } from 'lucide-react';
 import type { AuthUser } from '@/lib/auth/permissions';
@@ -88,6 +89,7 @@ export function DashboardLayoutClient({
     <QueryClientProvider client={queryClient}>
       <ChatBadgeProvider />
       <InstallPrompt />
+      <PwaGate />
       <UserGuide />
       {showDesktop ? (
         <DesktopLayout stores={stores}>{content}</DesktopLayout>
