@@ -258,6 +258,10 @@ export default function MyLeavesPage() {
                 const depleted = remaining <= 0;
                 const pct =
                   quotaDays > 0 ? Math.min(100, Math.max(0, (ty.used / quotaDays) * 100)) : 100;
+                // Traffic-light bar by % remaining: >50% green, >20% amber, else red.
+                const remainPct = quotaDays > 0 ? Math.max(0, (remaining / quotaDays) * 100) : 0;
+                const barColor =
+                  remainPct > 50 ? 'bg-emerald-500' : remainPct > 20 ? 'bg-amber-500' : 'bg-red-500';
                 return (
                   <div
                     key={ty.id}
@@ -277,7 +281,7 @@ export default function MyLeavesPage() {
                     </p>
                     <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
                       <div
-                        className={`h-full rounded-full ${depleted ? 'bg-red-500' : 'bg-indigo-500'}`}
+                        className={`h-full rounded-full ${barColor}`}
                         style={{ width: `${pct}%` }}
                       />
                     </div>

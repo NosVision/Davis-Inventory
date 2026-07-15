@@ -385,11 +385,14 @@ export function MeSummary() {
           <div className="space-y-1.5">
             {spotlightLeaves.map((t) => {
               const pct = t.quota ? Math.min(1, t.used / t.quota) : 0;
+              // Traffic-light by % remaining, same thresholds as /me/leaves: >50% green, >20% amber, else red.
+              const remainPct = (1 - pct) * 100;
+              const barColor = remainPct > 50 ? 'bg-emerald-400' : remainPct > 20 ? 'bg-amber-400' : 'bg-rose-400';
               return (
                 <div key={t.id} className="flex items-center gap-2 text-xs">
                   <span className="w-16 shrink-0 truncate text-gray-500 dark:text-gray-400">{isTh ? t.name_th : t.name_en}</span>
                   <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
-                    <div className={cn('h-full rounded-full', pct >= 1 ? 'bg-rose-400' : 'bg-teal-400')} style={{ width: `${pct * 100}%` }} />
+                    <div className={cn('h-full rounded-full', barColor)} style={{ width: `${pct * 100}%` }} />
                   </div>
                   <span className="w-14 shrink-0 text-right tabular-nums text-gray-900 dark:text-white">
                     {t.remaining ?? '∞'}<span className="text-gray-400">/{t.quota ?? '∞'}</span>
