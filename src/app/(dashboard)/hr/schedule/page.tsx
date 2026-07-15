@@ -82,6 +82,7 @@ export default function SchedulePage({
   const [templates, setTemplates] = useState<Template[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [monthStatus, setMonthStatus] = useState<MonthStatus>('empty');
+  const [holidays, setHolidays] = useState<{ holiday_date: string; name_th: string; name_en: string }[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Draft (unsaved) edits + the paint brush + which employees the bulk tools act on.
@@ -124,6 +125,7 @@ export default function SchedulePage({
       setTemplates((j.templates ?? []) as Template[]);
       setEntries((j.entries ?? []) as Entry[]);
       setMonthStatus((j.monthStatus ?? 'empty') as MonthStatus);
+      setHolidays((j.holidays ?? []) as { holiday_date: string; name_th: string; name_en: string }[]);
     } catch {
       toast({ type: 'error', title: t('actionFailed') });
     } finally {
@@ -153,6 +155,11 @@ export default function SchedulePage({
 
   const days = useMemo(() => daysOfMonth(month), [month]);
   const tplById = useMemo(() => new Map(templates.map((x) => [x.id, x])), [templates]);
+  // Configured public holidays → the roster auto-shows them as day-off (no manual entry).
+  const holidayByDate = useMemo(
+    () => new Map(holidays.map((h) => [h.holiday_date, isTh ? h.name_th : h.name_en])),
+    [holidays, isTh]
+  );
   const entryByCell = useMemo(() => {
     const m = new Map<string, Entry>();
     for (const e of entries) m.set(key(e.user_id, e.work_date), e);
@@ -493,12 +500,16 @@ export default function SchedulePage({
                     {t('employee')}
                   </label>
                 </th>
-                {days.map((d) => (
-                  <th key={d} className="min-w-[38px] px-1 py-2 text-center font-medium text-gray-500 dark:text-gray-400">
-                    <div className="text-[10px] uppercase">{WEEKDAYS[getDay(d)]}</div>
-                    <div className="tabular-nums">{Number(d.split('-')[2])}</div>
-                  </th>
-                ))}
+                {days.map((d) => {
+                  const holiday = holidayByDate.get(d);
+                  return (
+                    <th key={d} className={`min-w-[38px] px-1 py-2 text-center font-medium ${holiday ? 'text-rose-500 dark:text-rose-400' : 'text-gray-500 dark:text-gray-400'}`} title={holiday || undefined}>
+                      <div className="text-[10px] uppercase">{WEEKDAYS[getDay(d)]}</div>
+                      <div className="tabular-nums">{Number(d.split('-')[2])}</div>
+                      {holiday && <div className="mx-auto mt-0.5 h-1 w-1 rounded-full bg-rose-500" />}
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
@@ -515,15 +526,27 @@ export default function SchedulePage({
                     const c = effectiveCell(emp.user_id, d);
                     const tpl = c?.shift_template_id ? tplById.get(c.shift_template_id) : null;
                     const isDirty = draft.has(key(emp.user_id, d));
+                    const holiday = holidayByDate.get(d);
+                    // A holiday with no explicit assignment shows an auto day-off (rose "หยุด")
+                    // — a manual shift/day-off still wins, so HR can override for anyone who works it.
+                    const autoHoliday = !c && holiday;
                     return (
                       <td key={d} className="p-0.5 text-center">
                         <button type="button" onClick={() => paintCell(emp.user_id, d)}
                           className={`flex h-8 w-full items-center justify-center rounded ${isDirty ? 'ring-2 ring-amber-400' : ''} ${
-                            c ? (c.is_day_off ? 'bg-gray-100 text-gray-400 dark:bg-gray-700/50' : 'text-white') : 'bg-transparent hover:bg-gray-100 dark:hover:bg-gray-700/50'
+                            c
+                              ? (c.is_day_off ? 'bg-gray-100 text-gray-400 dark:bg-gray-700/50' : 'text-white')
+                              : autoHoliday
+                                ? 'bg-rose-50 text-rose-400 dark:bg-rose-900/20 dark:text-rose-300'
+                                : 'bg-transparent hover:bg-gray-100 dark:hover:bg-gray-700/50'
                           }`}
                           style={!c || c.is_day_off ? undefined : { backgroundColor: tpl?.color || '#6366f1' }}
-                          title={c?.is_day_off ? t('dayOff') : tpl?.label}>
-                          {c ? (c.is_day_off ? <span className="text-[10px]">OFF</span> : <span className="hidden truncate px-0.5 text-[10px] font-medium sm:inline">{tpl?.label?.slice(0, 3)}</span>) : ''}
+                          title={autoHoliday ? holiday : c?.is_day_off ? t('dayOff') : tpl?.label}>
+                          {c
+                            ? (c.is_day_off ? <span className="text-[10px]">OFF</span> : <span className="hidden truncate px-0.5 text-[10px] font-medium sm:inline">{tpl?.label?.slice(0, 3)}</span>)
+                            : autoHoliday
+                              ? <span className="text-[9px]">{isTh ? 'หยุด' : 'PH'}</span>
+                              : ''}
                         </button>
                       </td>
                     );

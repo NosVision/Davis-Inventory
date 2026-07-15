@@ -22,6 +22,7 @@ interface EmployeeRow {
   work_hours_per_day: number | null;
   standard_days_off: number | null;
   status: string | null;
+  company_id: string | null;
 }
 interface TemplateRow {
   id: string;
@@ -88,7 +89,7 @@ export async function GET(request: NextRequest) {
     userIds.length
       ? service
           .from('hr_employees')
-          .select('profile_id, work_hours_per_day, standard_days_off, status')
+          .select('profile_id, work_hours_per_day, standard_days_off, status, company_id')
           .in('profile_id', userIds)
       : Promise.resolve({ data: [], error: null }),
     service
@@ -162,12 +163,29 @@ export async function GET(request: NextRequest) {
     monthStatus = statuses.size === 1 ? (entries[0].status as typeof monthStatus) : 'mixed';
   }
 
+  // Company public holidays for the month → the roster auto-marks them as day-off (they already
+  // skip payroll/leave counting; the roster used to require manual entry). Global holidays
+  // (company_id IS NULL) apply to every store; company holidays only to this store's company.
+  const companyId = employees.find((e) => e.company_id)?.company_id ?? null;
+  let holidayFilter = service
+    .from('hr_holidays')
+    .select('holiday_date, name_th, name_en')
+    .eq('active', true)
+    .gte('holiday_date', first)
+    .lte('holiday_date', last);
+  holidayFilter = companyId
+    ? holidayFilter.or(`company_id.eq.${companyId},company_id.is.null`)
+    : holidayFilter.is('company_id', null);
+  const { data: holidayRows } = await holidayFilter;
+  const holidays = (holidayRows ?? []) as { holiday_date: string; name_th: string; name_en: string }[];
+
   return NextResponse.json({
     employees: staff,
     templates,
     entries,
     balance,
     monthStatus,
+    holidays,
   });
 }
 

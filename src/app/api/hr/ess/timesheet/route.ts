@@ -80,7 +80,7 @@ export async function GET(request: NextRequest) {
   const [empRes, scheduleRes, attendanceRes, overridesRes] = await Promise.all([
     service
       .from('hr_employees')
-      .select('work_hours_per_day, ot_eligible')
+      .select('work_hours_per_day, ot_eligible, company_id')
       .eq('profile_id', user.id)
       .maybeSingle(),
     service
@@ -112,9 +112,18 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to load timesheet' }, { status: 500 });
   }
 
-  const emp = empRes.data as { work_hours_per_day: number | null; ot_eligible: boolean | null } | null;
+  const emp = empRes.data as { work_hours_per_day: number | null; ot_eligible: boolean | null; company_id: string | null } | null;
   const workHours = emp?.work_hours_per_day ?? DEFAULT_WORK_HOURS;
   const otEligible = emp?.ot_eligible ?? false;
+
+  // Company public holidays in range → treated as day-off so a holiday never derives as "absent"
+  // (matches the payroll path, which already skips holidays). Global holidays apply to everyone.
+  let holidayQuery = service.from('hr_holidays').select('holiday_date').eq('active', true).gte('holiday_date', from).lte('holiday_date', to);
+  holidayQuery = emp?.company_id
+    ? holidayQuery.or(`company_id.eq.${emp.company_id},company_id.is.null`)
+    : holidayQuery.is('company_id', null);
+  const { data: holidayRows } = await holidayQuery;
+  const holidaySet = new Set((holidayRows ?? []).map((h) => h.holiday_date as string));
 
   const schedule = (scheduleRes.data ?? []) as unknown as ScheduleCell[];
   const attendance = (attendanceRes.data ?? []) as AttendanceRow[];
@@ -138,7 +147,7 @@ export async function GET(request: NextRequest) {
     const derived = computeDaySummary({
       businessDate: date,
       shift: cell?.shift ?? null,
-      isDayOff: cell?.is_day_off ?? false,
+      isDayOff: (cell?.is_day_off ?? false) || holidaySet.has(date),
       hasSchedule: !!cell,
       punches: punchesByDate.get(date) ?? [],
       workHoursPerDay: workHours,
