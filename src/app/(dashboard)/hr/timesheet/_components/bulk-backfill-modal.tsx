@@ -5,10 +5,11 @@ import { useLocale } from 'next-intl';
 import { Loader2, X } from 'lucide-react';
 import { Modal, ModalFooter, Button, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
+import { useLeaveTypes } from '@/hooks/use-leave-types';
 
 type Status = 'normal' | 'absent' | 'leave' | 'late' | 'dayoff';
 type Brush = Status | 'ot' | 'clear';
-interface Cell { status: Status | 'clear'; late: number; ot: number }
+interface Cell { status: Status | 'clear'; late: number; ot: number; leave_type_id?: string | null }
 interface Employee { user_id: string; name: string }
 interface DetailTarget { user_id: string; name: string; date: string }
 
@@ -38,13 +39,13 @@ export function BulkBackfillModal({
     ? { title: 'ลงเวลาย้อนหลัง (ตารางทั้งสาขา)', desc: (s: string) => `สาขา “${s}” — เลือกสถานะแล้วเติมทั้งหมด/ทั้งแถว/ทั้งคอลัมน์ หรือคลิกช่องเพื่อดู–แก้รายวัน`,
         brush: 'สถานะที่จะระบาย', lateMin: 'สาย (นาที)', otMin: 'OT (นาที)', fillAll: 'เติมทั้งหมด', legend: 'สีสถานะ',
         rowHint: 'คลิกชื่อ = เติมทั้งแถว', colHint: 'คลิกวันที่ = เติมทั้งคอลัมน์', cellHint: 'คลิกเพื่อดู/แก้รายวัน',
-        detail: 'รายละเอียดวัน', empty: 'ว่าง (ไม่ระบุ)', apply: 'ตกลง', close: 'ปิด',
+        detail: 'รายละเอียดวัน', empty: 'ว่าง (ไม่ระบุ)', apply: 'ตกลง', close: 'ปิด', leaveType: 'ประเภทการลา', pickType: 'เลือกประเภทการลาก่อนบันทึก',
         save: 'บันทึก', cancel: 'ยกเลิก', saved: (w: number, c: number) => `บันทึกแล้ว: ${w} รายการ${c ? ` (ล้าง ${c})` : ''}`, none: 'ยังไม่ได้ระบุอะไร', fail: 'บันทึกไม่สำเร็จ', loadFail: 'โหลดไม่สำเร็จ', noEmp: 'ไม่มีพนักงานในสาขานี้', emp: 'พนักงาน',
         s: { normal: 'ปกติ', absent: 'ขาด', leave: 'ลา', late: 'มาสาย', dayoff: 'วันหยุด', ot: 'OT', clear: 'ล้าง' } as Record<Brush, string>, wd: ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'] }
     : { title: 'Bulk backfill (branch grid)', desc: (s: string) => `“${s}” — fill all/row/column with a status, or click a cell to view & edit the day`,
         brush: 'Status to paint', lateMin: 'Late (min)', otMin: 'OT (min)', fillAll: 'Fill all', legend: 'Legend',
         rowHint: 'Click name = fill row', colHint: 'Click date = fill column', cellHint: 'Click to view/edit day',
-        detail: 'Day detail', empty: 'Empty', apply: 'OK', close: 'Close',
+        detail: 'Day detail', empty: 'Empty', apply: 'OK', close: 'Close', leaveType: 'Leave type', pickType: 'Pick a leave type before saving',
         save: 'Save', cancel: 'Cancel', saved: (w: number, c: number) => `Saved: ${w}${c ? ` (cleared ${c})` : ''}`, none: 'Nothing set', fail: 'Save failed', loadFail: 'Load failed', noEmp: 'No staff in this store', emp: 'Employee',
         s: { normal: 'Normal', absent: 'Absent', leave: 'Leave', late: 'Late', dayoff: 'Day off', ot: 'OT', clear: 'Clear' } as Record<Brush, string>, wd: ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'] };
 
@@ -67,13 +68,25 @@ export function BulkBackfillModal({
 
   const dates = useMemo(() => rangeDates(defaultFrom, defaultTo), [defaultFrom, defaultTo]);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [companyId, setCompanyId] = useState<string | null>(null);
   const [grid, setGrid] = useState<Map<string, Cell>>(new Map());
   const [brush, setBrush] = useState<Brush>('normal');
   const [lateVal, setLateVal] = useState(30);
   const [otVal, setOtVal] = useState(120);
+  const [leaveTypeId, setLeaveTypeId] = useState('');
   const [detail, setDetail] = useState<DetailTarget | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  const { leaveTypes } = useLeaveTypes(companyId);
+  useEffect(() => {
+    // Default the leave-type picker to the first configured type once they load.
+    setLeaveTypeId((prev) => prev || leaveTypes[0]?.id || '');
+  }, [leaveTypes]);
+  const leaveName = (id: string | null | undefined) => {
+    const lt = leaveTypes.find((x) => x.id === id);
+    return lt ? (isTh ? lt.name_th : lt.name_en) : isTh ? 'ลา' : 'Leave';
+  };
 
   const load = useCallback(async () => {
     setLoading(true); setDetail(null);
@@ -82,9 +95,10 @@ export function BulkBackfillModal({
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json?.error || L.loadFail);
       setEmployees((json.data?.employees ?? []) as Employee[]);
+      setCompanyId((json.data?.company_id ?? null) as string | null);
       const m = new Map<string, Cell>();
-      const seed = (json.data?.cells ?? {}) as Record<string, { status: Status; late: number; ot: number }>;
-      for (const [k, v] of Object.entries(seed)) m.set(k, { status: v.status, late: v.late, ot: v.ot });
+      const seed = (json.data?.cells ?? {}) as Record<string, { status: Status; late: number; ot: number; leave_type_id?: string }>;
+      for (const [k, v] of Object.entries(seed)) m.set(k, { status: v.status, late: v.late, ot: v.ot, leave_type_id: v.leave_type_id ?? null });
       setGrid(m);
     } catch (e) {
       toast({ type: 'error', title: e instanceof Error ? e.message : L.loadFail });
@@ -99,12 +113,12 @@ export function BulkBackfillModal({
       case 'clear': return null;
       case 'normal': return { status: 'normal', late: 0, ot: cur?.ot ?? 0 };
       case 'absent': return { status: 'absent', late: 0, ot: 0 };
-      case 'leave': return { status: 'leave', late: 0, ot: cur?.ot ?? 0 };
+      case 'leave': return { status: 'leave', late: 0, ot: cur?.ot ?? 0, leave_type_id: leaveTypeId || cur?.leave_type_id || null };
       case 'dayoff': return { status: 'dayoff', late: 0, ot: 0 };
       case 'late': return { status: 'late', late: lateVal, ot: cur?.ot ?? 0 };
       case 'ot': return { status: cur && cur.status !== 'clear' ? cur.status : 'normal', late: cur?.late ?? 0, ot: otVal };
     }
-  }, [brush, lateVal, otVal]);
+  }, [brush, lateVal, otVal, leaveTypeId]);
 
   const fillKeys = useCallback((keys: string[]) => {
     setGrid((prev) => {
@@ -122,11 +136,16 @@ export function BulkBackfillModal({
 
   const save = async () => {
     const cells: Record<string, unknown>[] = [];
+    let missingType = 0;
     for (const [k, v] of grid) {
       const [user_id, business_date] = k.split('|');
       if (v.status === 'clear') cells.push({ user_id, business_date, status: 'clear' });
-      else cells.push({ user_id, business_date, status: v.status, late_min: v.late || undefined, ot_min: v.ot || undefined });
+      else if (v.status === 'leave') {
+        if (!v.leave_type_id) { missingType++; continue; }
+        cells.push({ user_id, business_date, status: 'leave', leave_type_id: v.leave_type_id });
+      } else cells.push({ user_id, business_date, status: v.status, late_min: v.late || undefined, ot_min: v.ot || undefined });
     }
+    if (missingType > 0) { toast({ type: 'warning', title: L.pickType }); return; }
     if (cells.length === 0) { toast({ type: 'warning', title: L.none }); return; }
     setSaving(true);
     try {
@@ -166,6 +185,16 @@ export function BulkBackfillModal({
             ))}
           </div>
         </div>
+        {brush === 'leave' && (
+          <label className="flex flex-col text-[11px] font-medium text-gray-500 dark:text-gray-400">{L.leaveType}
+            <select value={leaveTypeId} onChange={(e) => setLeaveTypeId(e.target.value)} className="control mt-0.5 w-40">
+              {leaveTypes.length === 0 && <option value="">—</option>}
+              {leaveTypes.map((lt) => (
+                <option key={lt.id} value={lt.id}>{isTh ? lt.name_th : lt.name_en}</option>
+              ))}
+            </select>
+          </label>
+        )}
         <label className="flex flex-col text-[11px] font-medium text-gray-500 dark:text-gray-400">{L.lateMin}
           <input type="number" min={0} value={lateVal} onChange={(e) => setLateVal(Math.max(0, Number(e.target.value) || 0))} className="control mt-0.5 w-20" />
         </label>
@@ -227,7 +256,7 @@ export function BulkBackfillModal({
                     return (
                       <td key={d} className="border-b border-gray-100 p-0.5 text-center dark:border-gray-700/60">
                         <button type="button" onClick={() => setDetail({ user_id: e.user_id, name: e.name, date: d })}
-                          title={st ? `${L.s[st]}${c && c.late ? ` · ${L.lateMin} ${c.late}` : ''}${c && c.ot ? ` · OT ${c.ot}` : ''}` : L.cellHint}
+                          title={st ? `${st === 'leave' ? leaveName(c?.leave_type_id) : L.s[st]}${c && c.late ? ` · ${L.lateMin} ${c.late}` : ''}${c && c.ot ? ` · OT ${c.ot}` : ''}` : L.cellHint}
                           className={cn('relative mx-auto flex h-7 w-7 items-center justify-center rounded-lg text-[11px] font-bold ring-1 transition-transform hover:scale-110',
                             st ? STYLE[st].block : 'bg-gray-50 text-transparent ring-gray-200 hover:bg-gray-100 dark:bg-gray-800 dark:ring-gray-700',
                             sel && 'ring-2 ring-indigo-500 ring-offset-1 dark:ring-offset-gray-900')}>
@@ -254,7 +283,7 @@ export function BulkBackfillModal({
           <div className="flex flex-wrap gap-1.5">
             {STATUSES.map((s) => (
               <button key={s} type="button"
-                onClick={() => setCell(detailKey, { status: s, late: s === 'late' ? (detailCell?.late || lateVal) : 0, ot: detailCell?.ot ?? 0 })}
+                onClick={() => setCell(detailKey, { status: s, late: s === 'late' ? (detailCell?.late || lateVal) : 0, ot: detailCell?.ot ?? 0, leave_type_id: s === 'leave' ? (detailCell?.leave_type_id || leaveTypeId || null) : null })}
                 className={cn('rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors',
                   detailStatus === s ? BRUSH_TONE[s] : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400')}>
                 {L.s[s]}
@@ -263,6 +292,16 @@ export function BulkBackfillModal({
             <button type="button" onClick={() => setCell(detailKey, null)}
               className="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800">{L.s.clear}</button>
           </div>
+          {detailStatus === 'leave' && (
+            <label className="mt-2 flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">{L.leaveType}
+              <select value={detailCell?.leave_type_id ?? ''} onChange={(ev) => setCell(detailKey, { status: 'leave', late: 0, ot: detailCell?.ot ?? 0, leave_type_id: ev.target.value || null })} className="control w-40">
+                {leaveTypes.length === 0 && <option value="">—</option>}
+                {leaveTypes.map((lt) => (
+                  <option key={lt.id} value={lt.id}>{isTh ? lt.name_th : lt.name_en}</option>
+                ))}
+              </select>
+            </label>
+          )}
           <div className="mt-2 flex flex-wrap gap-3">
             <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">{L.lateMin}
               <input type="number" min={0} value={detailCell?.late ?? 0}
