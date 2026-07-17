@@ -84,6 +84,15 @@ interface MoneyBreakdown {
   deducted: MoneyBucket;
 }
 
+// One person's pending fines in the "review before send" sheet.
+interface SendStaffGroup {
+  staff_id: string;
+  staff_name: string;
+  total: number;
+  ids: string[];
+  items: { code: string | null; amount: number; business_date: string | null }[];
+}
+
 interface SummaryResponse {
   sop_points: number;
   threshold: number;
@@ -233,6 +242,14 @@ export default function StockPenaltiesPage() {
         sendToHr: 'ส่งเรื่องหักให้ HR',
         sentToHrDone: (n: number) => `ส่งให้ HR แล้ว ${n} รายการ`,
         items: 'รายการ',
+        // Review-before-send sheet
+        reviewTitle: 'ตรวจก่อนส่งให้ HR',
+        reviewDesc: 'เลือกคนที่จะส่งเรื่องหัก — เอาเครื่องหมายออกถ้าไม่ต้องการปรับบางคน',
+        reviewEmpty: 'ไม่มีค่าปรับรอส่งในเดือนนี้',
+        selectAll: 'เลือกทั้งหมด',
+        clearAll: 'ล้างการเลือก',
+        reviewSelected: (n: number, baht: string) => `เลือก ${n} คน · ฿${baht}`,
+        confirmSend: (n: number) => `ส่งให้ HR (${n})`,
         // Recent split + status badges
         activeTitle: 'กำลังดำเนินการ',
         historyTitle: 'ประวัติ (หักแล้ว)',
@@ -324,6 +341,14 @@ export default function StockPenaltiesPage() {
         sendToHr: 'Send deduction to HR',
         sentToHrDone: (n: number) => `Sent ${n} item(s) to HR`,
         items: 'items',
+        // Review-before-send sheet
+        reviewTitle: 'Review before sending',
+        reviewDesc: 'Choose who to send — untick anyone you don’t want to charge',
+        reviewEmpty: 'No fines to send this month',
+        selectAll: 'Select all',
+        clearAll: 'Clear',
+        reviewSelected: (n: number, baht: string) => `${n} selected · ฿${baht}`,
+        confirmSend: (n: number) => `Send to HR (${n})`,
         // Recent split + status badges
         activeTitle: 'In progress',
         historyTitle: 'History (deducted)',
@@ -375,6 +400,15 @@ export default function StockPenaltiesPage() {
   const [editPen, setEditPen] = useState<{ id: string; amount: string; notes: string } | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+
+  // "Review before send to HR" sheet — pick exactly who gets charged (selection is by staff_id).
+  const [sendReview, setSendReview] = useState<{
+    loading: boolean;
+    staff: SendStaffGroup[];
+    selected: Set<string>;
+    totalCount: number;
+    totalBaht: number;
+  } | null>(null);
 
   // Stock SOP policy + its editor.
   const [sop, setSop] = useState<SopPolicyResponse | null>(null);
@@ -532,24 +566,85 @@ export default function StockPenaltiesPage() {
     }
   };
 
-  const handleSendToHr = async () => {
+  // Open the review sheet: fetch the full pending list (grouped by staff), everyone ticked by default.
+  const openSendReview = async () => {
+    if (!currentStoreId) return;
+    setSendReview({ loading: true, staff: [], selected: new Set(), totalCount: 0, totalBaht: 0 });
+    try {
+      const res = await fetch(
+        `/api/stock/penalties/send-to-hr?store_id=${encodeURIComponent(currentStoreId)}&month=${month}`,
+      );
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        data?: { staff?: SendStaffGroup[]; total_count?: number; total_baht?: number };
+      };
+      if (!res.ok) {
+        toast({ type: 'error', title: json.error || L.loadFail });
+        setSendReview(null);
+        return;
+      }
+      const staff = json.data?.staff ?? [];
+      setSendReview({
+        loading: false,
+        staff,
+        selected: new Set(staff.map((s) => s.staff_id)),
+        totalCount: json.data?.total_count ?? 0,
+        totalBaht: json.data?.total_baht ?? 0,
+      });
+    } catch {
+      toast({ type: 'error', title: L.loadFail });
+      setSendReview(null);
+    }
+  };
+
+  const toggleReviewStaff = (staffId: string) =>
+    setSendReview((prev) => {
+      if (!prev) return prev;
+      const next = new Set(prev.selected);
+      if (next.has(staffId)) next.delete(staffId);
+      else next.add(staffId);
+      return { ...prev, selected: next };
+    });
+
+  const setAllReview = (all: boolean) =>
+    setSendReview((prev) =>
+      prev ? { ...prev, selected: all ? new Set(prev.staff.map((s) => s.staff_id)) : new Set() } : prev,
+    );
+
+  // Selected roll-up: how many people + baht + the flat penalty-id list to send.
+  const reviewSel = useMemo(() => {
+    if (!sendReview) return { count: 0, baht: 0, ids: [] as string[] };
+    let baht = 0;
+    const ids: string[] = [];
+    for (const s of sendReview.staff) {
+      if (sendReview.selected.has(s.staff_id)) {
+        baht += s.total;
+        ids.push(...s.ids);
+      }
+    }
+    return { count: sendReview.selected.size, baht, ids };
+  }, [sendReview]);
+
+  const handleConfirmSend = async () => {
     if (!currentStoreId || sendingToHr) return;
+    if (reviewSel.ids.length === 0) {
+      toast({ type: 'error', title: L.reviewEmpty });
+      return;
+    }
     setSendingToHr(true);
     try {
       const res = await fetch('/api/stock/penalties/send-to-hr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ store_id: currentStoreId, month }),
+        body: JSON.stringify({ store_id: currentStoreId, month, penalty_ids: reviewSel.ids }),
       });
-      const json = (await res.json().catch(() => ({}))) as {
-        error?: string;
-        data?: { sent?: number };
-      };
+      const json = (await res.json().catch(() => ({}))) as { error?: string; data?: { sent?: number } };
       if (!res.ok) {
         toast({ type: 'error', title: json.error || L.loadFail });
         return;
       }
       toast({ type: 'success', title: L.sentToHrDone(json.data?.sent ?? 0) });
+      setSendReview(null);
       loadSummary();
     } finally {
       setSendingToHr(false);
@@ -993,15 +1088,8 @@ export default function StockPenaltiesPage() {
                   {money.pending.count > 0 && (
                     <Button
                       size="sm"
-                      icon={
-                        sendingToHr ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Send className="h-3.5 w-3.5" />
-                        )
-                      }
-                      disabled={sendingToHr}
-                      onClick={handleSendToHr}
+                      icon={<Send className="h-3.5 w-3.5" />}
+                      onClick={openSendReview}
                     >
                       {L.sendToHr}
                     </Button>
@@ -1145,6 +1233,102 @@ export default function StockPenaltiesPage() {
                 {L.save}
               </Button>
             </ModalFooter>
+          </div>
+        )}
+      </Modal>
+
+      {/* Review-before-send sheet: who gets charged + per-person tick to include/exclude. */}
+      <Modal isOpen={!!sendReview} onClose={() => setSendReview(null)} title={L.reviewTitle}>
+        {sendReview && (
+          <div className="space-y-3">
+            {sendReview.loading ? (
+              <div className="flex h-32 items-center justify-center">
+                <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
+              </div>
+            ) : sendReview.staff.length === 0 ? (
+              <p className="py-8 text-center text-sm text-gray-400">{L.reviewEmpty}</p>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{L.reviewDesc}</p>
+                  <div className="flex shrink-0 gap-2 text-xs font-medium">
+                    <button
+                      type="button"
+                      onClick={() => setAllReview(true)}
+                      className="text-indigo-600 hover:underline dark:text-indigo-400"
+                    >
+                      {L.selectAll}
+                    </button>
+                    <span className="text-gray-300">·</span>
+                    <button
+                      type="button"
+                      onClick={() => setAllReview(false)}
+                      className="text-gray-500 hover:underline dark:text-gray-400"
+                    >
+                      {L.clearAll}
+                    </button>
+                  </div>
+                </div>
+
+                <ul className="max-h-[45vh] divide-y divide-gray-100 overflow-y-auto rounded-lg border border-gray-200 dark:divide-gray-700 dark:border-gray-700">
+                  {sendReview.staff.map((s) => {
+                    const checked = sendReview.selected.has(s.staff_id);
+                    return (
+                      <li key={s.staff_id}>
+                        <label className="flex cursor-pointer items-center gap-3 px-3 py-2.5">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleReviewStaff(s.staff_id)}
+                            className="h-4 w-4 shrink-0 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-gray-900 dark:text-white">
+                              {s.staff_name}
+                            </p>
+                            <p className="mt-0.5 flex flex-wrap gap-1 text-[11px] text-gray-500 dark:text-gray-400">
+                              {s.items.map((it, i) => (
+                                <span key={i} className="font-mono">
+                                  {it.code ?? '—'}
+                                </span>
+                              ))}
+                            </p>
+                          </div>
+                          <span
+                            className={cn(
+                              'shrink-0 text-sm font-semibold tabular-nums',
+                              checked ? 'text-rose-600 dark:text-rose-400' : 'text-gray-300 dark:text-gray-600',
+                            )}
+                          >
+                            ฿{bahtLabel(s.total)}
+                          </span>
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+
+                <div className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 text-sm dark:bg-gray-700/40">
+                  <span className="text-gray-500 dark:text-gray-400">
+                    {L.reviewSelected(reviewSel.count, bahtLabel(reviewSel.baht))}
+                  </span>
+                </div>
+
+                <ModalFooter>
+                  <Button variant="outline" onClick={() => setSendReview(null)}>
+                    {L.cancel}
+                  </Button>
+                  <Button
+                    onClick={handleConfirmSend}
+                    isLoading={sendingToHr}
+                    disabled={reviewSel.count === 0}
+                    icon={<Send className="h-3.5 w-3.5" />}
+                  >
+                    {L.confirmSend(reviewSel.count)}
+                  </Button>
+                </ModalFooter>
+              </>
+            )}
           </div>
         )}
       </Modal>
