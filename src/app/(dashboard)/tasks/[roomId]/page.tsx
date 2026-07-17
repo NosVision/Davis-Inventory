@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
-import { ArrowLeft, Loader2, Users, ChevronDown, ChevronUp, Plus } from 'lucide-react';
+import { ArrowLeft, Loader2, Users, ChevronDown, ChevronUp, Plus, MessageCircle } from 'lucide-react';
 import { Tabs, Button } from '@/components/ui';
 import { createClient } from '@/lib/supabase/client';
 import { useAuthStore } from '@/stores/auth-store';
@@ -114,7 +114,12 @@ export default function RoomPage() {
           <RoomIcon name={room.icon} className="h-5 w-5" />
         </span>
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-lg font-bold text-gray-900 dark:text-white">{room.name}</h1>
+          <h1 className="flex items-center gap-1.5 truncate text-lg font-bold text-gray-900 dark:text-white">
+            <span className="truncate">{room.name}</span>
+            {room.line_notify_enabled && (
+              <MessageCircle className="h-4 w-4 shrink-0 text-green-500" aria-label="LINE" />
+            )}
+          </h1>
           {room.description && <p className="truncate text-xs text-gray-500">{room.description}</p>}
         </div>
         {/* ปุ่มสร้าง/แจ้งเรื่อง — อยู่บนหัวเพื่อกดได้จากทุกแท็บ */}

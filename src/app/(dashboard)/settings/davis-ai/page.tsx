@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { createClient } from '@/lib/supabase/client';
 import { useAuthStore } from '@/stores/auth-store';
+import { TaskLineBotConfig } from '@/components/tasks/task-line-bot-config';
 import {
   Button,
   Input,
@@ -303,6 +304,11 @@ export default function DavisAiSettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Section 3b: Central task LINE bot (Task Room notifications)        */}
+      {/* ------------------------------------------------------------------ */}
+      <TaskLineBotConfig />
 
       {/* ------------------------------------------------------------------ */}
       {/* Section 4: Keyword reference (read-only)                          */}

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
-import { Users, MapPin, Star } from 'lucide-react';
+import { Users, MapPin, Star, MessageCircle } from 'lucide-react';
 import { RoomIcon } from './room-icon';
 import { getRoomColor } from '@/lib/tasks/colors';
 import { cn } from '@/lib/utils/cn';
@@ -52,7 +52,12 @@ export function RoomCard({ room, onChanged }: { room: TaskRoomWithStats; onChang
           <RoomIcon name={room.icon} className="h-5 w-5" />
         </span>
         <div className="min-w-0 flex-1">
-          <h3 className="truncate font-semibold text-gray-900 dark:text-white">{room.name}</h3>
+          <h3 className="flex items-center gap-1.5 truncate font-semibold text-gray-900 dark:text-white">
+            <span className="truncate">{room.name}</span>
+            {room.line_notify_enabled && (
+              <MessageCircle className="h-3.5 w-3.5 shrink-0 text-green-500" aria-label="LINE" />
+            )}
+          </h3>
           {room.description && (
             <p className="truncate text-xs text-gray-500 dark:text-gray-400">{room.description}</p>
           )}

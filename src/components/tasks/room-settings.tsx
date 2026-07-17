@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Button, Input, Textarea, Select, toast } from '@/components/ui';
-import { Archive } from 'lucide-react';
+import { Archive, MessageCircle } from 'lucide-react';
 import { TargetPicker } from './target-picker';
 import { IconPicker, ColorPicker } from './icon-color-picker';
 import { ASSIGN_MODE_VALUES, RESPONSE_TYPE_VALUES } from '@/lib/tasks/room-options';
@@ -44,6 +44,8 @@ export function RoomSettings({ room, onUpdated, stores = [], members = [] }: Roo
   const [requireAttachmentDefault, setRequireAttachmentDefault] = useState(
     room.require_attachment_default ?? false,
   );
+  const [lineNotifyEnabled, setLineNotifyEnabled] = useState(room.line_notify_enabled ?? false);
+  const [lineGroupId, setLineGroupId] = useState(room.line_group_id ?? '');
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
@@ -62,6 +64,8 @@ export function RoomSettings({ room, onUpdated, stores = [], members = [] }: Roo
           responsibleTarget,
           creatorTarget,
           requireAttachmentDefault,
+          lineNotifyEnabled,
+          lineGroupId,
         }),
       });
       const data = await res.json();
@@ -157,6 +161,36 @@ export function RoomSettings({ room, onUpdated, stores = [], members = [] }: Roo
           />
           {t('settings.requireAttachmentDefault')}
         </label>
+      </div>
+
+      {/* ── แจ้งเตือนเข้ากลุ่ม LINE (ผ่านบอทกลางของห้องงาน) ── */}
+      <div className="space-y-3 rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+        <div className="flex items-center gap-2">
+          <MessageCircle className="h-4 w-4 text-green-500" />
+          <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">{t('settings.lineHeading')}</p>
+        </div>
+        <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+          <input
+            type="checkbox"
+            checked={lineNotifyEnabled}
+            onChange={(e) => setLineNotifyEnabled(e.target.checked)}
+            className="h-4 w-4 rounded"
+          />
+          {t('settings.lineEnable')}
+        </label>
+        {lineNotifyEnabled && (
+          <>
+            <Input
+              label={t('settings.lineGroupIdLabel')}
+              value={lineGroupId}
+              onChange={(e) => setLineGroupId(e.target.value)}
+              placeholder="Cxxxxxxxxxxxxxxxx"
+            />
+            <p className="rounded-lg bg-green-50 px-3 py-2 text-xs text-green-700 dark:bg-green-900/20 dark:text-green-300">
+              {t('settings.lineGroupIdHint')}
+            </p>
+          </>
+        )}
       </div>
 
       <div className="flex justify-end">
