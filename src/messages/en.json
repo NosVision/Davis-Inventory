@@ -2626,6 +2626,8 @@
     "pushDenied": "Blocked on this device — please enable Notification permission in browser settings",
     "pushGrantedNotRegistered": "Permission granted but device not registered — tap to enable",
     "pushDisabled": "Disabled on this device — tap to enable notifications",
+    "workHoursOnly": "Only during work hours",
+    "workHoursOnlyDesc": "Silence push outside your shift (still visible in the app)",
     "lineEnabled": "LINE notifications enabled",
     "lineDisabled": "LINE notifications disabled",
     "notificationTypes": "Notification Types",

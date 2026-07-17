@@ -24,6 +24,7 @@ import {
   Shield,
   Smartphone,
   Camera,
+  Clock,
   Pencil,
   Check,
   X,
@@ -37,6 +38,7 @@ import { ROLE_LABELS } from '@/types/roles';
 interface NotifPrefs {
   pwa_enabled: boolean;
   line_enabled: boolean;
+  notify_work_hours_only: boolean;
   notify_deposit_confirmed: boolean;
   notify_withdrawal_completed: boolean;
   notify_expiry_warning: boolean;
@@ -48,6 +50,7 @@ interface NotifPrefs {
 const defaultPrefs: NotifPrefs = {
   pwa_enabled: true,
   line_enabled: true,
+  notify_work_hours_only: false,
   notify_deposit_confirmed: true,
   notify_withdrawal_completed: true,
   notify_expiry_warning: true,
@@ -189,6 +192,7 @@ export default function ProfilePage() {
       setPrefs({
         pwa_enabled: data.pwa_enabled ?? true,
         line_enabled: data.line_enabled ?? true,
+        notify_work_hours_only: data.notify_work_hours_only ?? false,
         notify_deposit_confirmed: data.notify_deposit_confirmed ?? true,
         notify_withdrawal_completed: data.notify_withdrawal_completed ?? true,
         notify_expiry_warning: data.notify_expiry_warning ?? true,
@@ -434,6 +438,34 @@ export default function ProfilePage() {
               <span
                 className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
                   pushSub.isSubscribed ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* Work-hours-only quiet gate for push — suppresses push outside your shift. */}
+          <div className="flex items-center justify-between rounded-lg bg-gray-50 p-4 dark:bg-gray-700/50">
+            <div className="flex items-center gap-3">
+              <Clock className="h-5 w-5 text-indigo-500" />
+              <div>
+                <p className="text-sm font-medium text-gray-900 dark:text-white">
+                  {t('workHoursOnly')}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {t('workHoursOnlyDesc')}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => togglePref('notify_work_hours_only')}
+              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+                prefs.notify_work_hours_only ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-gray-600'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
+                  prefs.notify_work_hours_only ? 'translate-x-6' : 'translate-x-1'
                 }`}
               />
             </button>

@@ -6,6 +6,7 @@
 
 import webpush from 'web-push';
 import { createServiceClient } from '@/lib/supabase/server';
+import { isWithinWorkHours } from '@/lib/notifications/work-hours';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -126,6 +127,18 @@ export async function sendPushToUser(
 ): Promise<number> {
   try {
     const supabase = createServiceClient();
+
+    // Quiet gate: users who opted into "only during my work hours" get web push suppressed off-shift.
+    // In-app notifications are inserted separately by callers, so nothing is lost — only the popup.
+    const { data: pref } = await supabase
+      .from('notification_preferences')
+      .select('notify_work_hours_only')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if ((pref as { notify_work_hours_only?: boolean } | null)?.notify_work_hours_only) {
+      const working = await isWithinWorkHours(supabase, userId);
+      if (!working) return 0;
+    }
 
     const { data: subscriptions, error } = await supabase
       .from('push_subscriptions')
