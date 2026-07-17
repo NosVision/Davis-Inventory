@@ -281,7 +281,6 @@ export default function ProfilePage() {
 
   // Determine which notification types are relevant for this role
   const isStaffLike = ['staff', 'bar', 'head_bar', 'manager', 'owner'].includes(user.role);
-  const isOwnerOrManager = ['owner', 'manager'].includes(user.role);
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 pb-12">
@@ -529,8 +528,9 @@ export default function ProfilePage() {
             />
           )}
 
-          {/* Approval Request — for owner/manager */}
-          {isOwnerOrManager && (
+          {/* Approval / to-do pings — anyone on staff can silence these (new deposit, withdrawal
+              request, stock discrepancies, HR to-dos all share this preference). */}
+          {isStaffLike && (
             <ToggleRow
               label={t('approvalRequest')}
               description={t('approvalRequestDesc')}
