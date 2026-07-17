@@ -89,6 +89,7 @@ interface SendStaffGroup {
   staff_id: string;
   staff_name: string;
   total: number;
+  on_shift?: boolean;
   ids: string[];
   items: { code: string | null; amount: number; business_date: string | null }[];
 }
@@ -250,6 +251,10 @@ export default function StockPenaltiesPage() {
         clearAll: 'ล้างการเลือก',
         reviewSelected: (n: number, baht: string) => `เลือก ${n} คน · ฿${baht}`,
         confirmSend: (n: number) => `ส่งให้ HR (${n})`,
+        onShiftBadge: 'ในกะ',
+        offShiftBadge: 'นอกกะ?',
+        prefilteredHint: 'เลือกเฉพาะคนที่เข้ากะวันที่ตรวจให้แล้ว — ปรับได้',
+        noShiftDataHint: 'ไม่มีข้อมูลกะของวันที่ตรวจ — โปรดเลือกคนที่รับผิดชอบเอง',
         // Recent split + status badges
         activeTitle: 'กำลังดำเนินการ',
         historyTitle: 'ประวัติ (หักแล้ว)',
@@ -349,6 +354,10 @@ export default function StockPenaltiesPage() {
         clearAll: 'Clear',
         reviewSelected: (n: number, baht: string) => `${n} selected · ฿${baht}`,
         confirmSend: (n: number) => `Send to HR (${n})`,
+        onShiftBadge: 'On shift',
+        offShiftBadge: 'Off shift?',
+        prefilteredHint: 'Pre-selected only staff who worked the audited date — adjust as needed',
+        noShiftDataHint: 'No shift data for the audited date — please choose who is liable',
         // Recent split + status badges
         activeTitle: 'In progress',
         historyTitle: 'History (deducted)',
@@ -408,6 +417,7 @@ export default function StockPenaltiesPage() {
     selected: Set<string>;
     totalCount: number;
     totalBaht: number;
+    shiftDataAvailable: boolean;
   } | null>(null);
 
   // Stock SOP policy + its editor.
@@ -569,14 +579,14 @@ export default function StockPenaltiesPage() {
   // Open the review sheet: fetch the full pending list (grouped by staff), everyone ticked by default.
   const openSendReview = async () => {
     if (!currentStoreId) return;
-    setSendReview({ loading: true, staff: [], selected: new Set(), totalCount: 0, totalBaht: 0 });
+    setSendReview({ loading: true, staff: [], selected: new Set(), totalCount: 0, totalBaht: 0, shiftDataAvailable: false });
     try {
       const res = await fetch(
         `/api/stock/penalties/send-to-hr?store_id=${encodeURIComponent(currentStoreId)}&month=${month}`,
       );
       const json = (await res.json().catch(() => ({}))) as {
         error?: string;
-        data?: { staff?: SendStaffGroup[]; total_count?: number; total_baht?: number };
+        data?: { staff?: SendStaffGroup[]; total_count?: number; total_baht?: number; shift_data_available?: boolean };
       };
       if (!res.ok) {
         toast({ type: 'error', title: json.error || L.loadFail });
@@ -584,12 +594,19 @@ export default function StockPenaltiesPage() {
         return;
       }
       const staff = json.data?.staff ?? [];
+      const shiftDataAvailable = json.data?.shift_data_available ?? false;
+      // Default ticks reflect the owner rule: when we KNOW who worked, pre-select only them; when we
+      // have no shift data, leave everyone ticked so HQ can decide (they can't be auto-filtered).
+      const defaultSelected = shiftDataAvailable
+        ? staff.filter((s) => s.on_shift).map((s) => s.staff_id)
+        : staff.map((s) => s.staff_id);
       setSendReview({
         loading: false,
         staff,
-        selected: new Set(staff.map((s) => s.staff_id)),
+        selected: new Set(defaultSelected),
         totalCount: json.data?.total_count ?? 0,
         totalBaht: json.data?.total_baht ?? 0,
+        shiftDataAvailable,
       });
     } catch {
       toast({ type: 'error', title: L.loadFail });
@@ -1270,6 +1287,19 @@ export default function StockPenaltiesPage() {
                   </div>
                 </div>
 
+                {/* Shift-awareness banner: did we pre-filter to the on-shift crew, or is there no data? */}
+                <div
+                  className={cn(
+                    'flex items-start gap-2 rounded-lg px-3 py-2 text-xs',
+                    sendReview.shiftDataAvailable
+                      ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
+                      : 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300',
+                  )}
+                >
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>{sendReview.shiftDataAvailable ? L.prefilteredHint : L.noShiftDataHint}</span>
+                </div>
+
                 <ul className="max-h-[45vh] divide-y divide-gray-100 overflow-y-auto rounded-lg border border-gray-200 dark:divide-gray-700 dark:border-gray-700">
                   {sendReview.staff.map((s) => {
                     const checked = sendReview.selected.has(s.staff_id);
@@ -1283,9 +1313,23 @@ export default function StockPenaltiesPage() {
                             className="h-4 w-4 shrink-0 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700"
                           />
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-medium text-gray-900 dark:text-white">
-                              {s.staff_name}
-                            </p>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <p className="truncate text-sm font-medium text-gray-900 dark:text-white">
+                                {s.staff_name}
+                              </p>
+                              {sendReview.shiftDataAvailable && (
+                                <span
+                                  className={cn(
+                                    'rounded px-1.5 py-0.5 text-[10px] font-medium',
+                                    s.on_shift
+                                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                                      : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+                                  )}
+                                >
+                                  {s.on_shift ? L.onShiftBadge : L.offShiftBadge}
+                                </span>
+                              )}
+                            </div>
                             <p className="mt-0.5 flex flex-wrap gap-1 text-[11px] text-gray-500 dark:text-gray-400">
                               {s.items.map((it, i) => (
                                 <span key={i} className="font-mono">

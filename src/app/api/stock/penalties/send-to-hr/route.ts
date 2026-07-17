@@ -76,10 +76,47 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Group by staff (one card per person, with their fine breakdown + subtotal).
+  // Who actually worked the audited business date(s) — schedule first, then real check-ins. This is
+  // the owner rule (only the shift that was on is liable). We surface it so the review sheet can
+  // PRE-TICK just the on-shift people; when there is no shift data at all we leave everyone tickable.
+  const dates = [...new Set(rows.map((r) => r.business_date).filter((d): d is string => !!d))];
+  const onShiftKeys = new Set<string>(); // `${staff_id}|${business_date}`
+  let shiftDataAvailable = false;
+  if (dates.length > 0 && staffIds.length > 0) {
+    const { data: sched } = await service
+      .from('hr_schedule')
+      .select('user_id, work_date')
+      .eq('store_id', storeId)
+      .in('work_date', dates)
+      .eq('is_day_off', false)
+      .in('user_id', staffIds);
+    for (const s of (sched ?? []) as { user_id: string; work_date: string }[]) {
+      onShiftKeys.add(`${s.user_id}|${s.work_date}`);
+      shiftDataAvailable = true;
+    }
+    const { data: att } = await service
+      .from('hr_attendance')
+      .select('user_id, business_date')
+      .eq('store_id', storeId)
+      .in('business_date', dates)
+      .in('user_id', staffIds);
+    for (const a of (att ?? []) as { user_id: string; business_date: string }[]) {
+      onShiftKeys.add(`${a.user_id}|${a.business_date}`);
+      shiftDataAvailable = true;
+    }
+  }
+
+  // Group by staff (one card per person, with their fine breakdown + subtotal + on-shift flag).
   const groupMap = new Map<
     string,
-    { staff_id: string; staff_name: string; total: number; ids: string[]; items: { code: string | null; amount: number; business_date: string | null }[] }
+    {
+      staff_id: string;
+      staff_name: string;
+      total: number;
+      on_shift: boolean;
+      ids: string[];
+      items: { code: string | null; amount: number; business_date: string | null }[];
+    }
   >();
   for (const r of rows) {
     const amt = Number(r.amount) || 0;
@@ -87,18 +124,22 @@ export async function GET(req: NextRequest) {
       staff_id: r.staff_id,
       staff_name: nameById.get(r.staff_id) ?? '—',
       total: 0,
+      on_shift: false,
       ids: [],
       items: [],
     };
     g.total += amt;
     g.ids.push(r.id);
     g.items.push({ code: r.penalty_code, amount: amt, business_date: r.business_date });
+    if (r.business_date && onShiftKeys.has(`${r.staff_id}|${r.business_date}`)) g.on_shift = true;
     groupMap.set(r.staff_id, g);
   }
   const staff = [...groupMap.values()].sort((a, b) => a.staff_name.localeCompare(b.staff_name, 'th'));
   const totalBaht = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
 
-  return NextResponse.json({ data: { staff, total_count: rows.length, total_baht: totalBaht } });
+  return NextResponse.json({
+    data: { staff, total_count: rows.length, total_baht: totalBaht, shift_data_available: shiftDataAvailable },
+  });
 }
 
 // POST /api/stock/penalties/send-to-hr  { store_id, month: 'YYYY-MM', penalty_ids?: string[] }
