@@ -131,6 +131,16 @@ interface StoreLineRow {
 // Type-to-preference column mapping
 // ---------------------------------------------------------------------------
 
+// Operational "new work" alerts a front-line user must never miss. These IGNORE the per-type mute
+// preference — they always attempt push (still subject to the work-hours quiet gate and to the device
+// having push enabled). For genuine silence the user turns on their phone's Do Not Disturb. Rationale:
+// an in-app mute that hides incoming work causes missed jobs (owner ask 2026-07-17).
+const MANDATORY_TYPES: ReadonlySet<NotificationType> = new Set<NotificationType>([
+  'new_deposit',        // bar: a new deposit to take in
+  'deposit_received',   // bar: confirm the received deposit into the system
+  'withdrawal_request', // bar: a withdrawal waiting to be handed out
+]);
+
 const TYPE_TO_PREF: Record<NotificationType, keyof NotificationPreferences> = {
   deposit_confirmed: 'notify_deposit_confirmed',
   withdrawal_completed: 'notify_withdrawal_completed',
@@ -245,9 +255,11 @@ export async function notifyUser(params: NotifyUserParams): Promise<void> {
     // If no preferences row exists, default to all enabled
     const prefColumn = TYPE_TO_PREF[type];
     const typeEnabled = prefs ? (prefs as NotificationPreferences)[prefColumn] !== false : true;
+    const mandatory = MANDATORY_TYPES.has(type);
 
-    if (!typeEnabled) {
-      // User opted out of this notification type — skip push channels
+    if (!mandatory && !typeEnabled) {
+      // User opted out of this (optional) notification type — skip push channels.
+      // Mandatory work alerts fall through and always attempt push so new work is never missed.
       return;
     }
 

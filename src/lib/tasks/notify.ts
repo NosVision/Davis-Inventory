@@ -72,9 +72,11 @@ export async function notifyTaskUsers(params: NotifyTaskUsersParams): Promise<vo
     await Promise.allSettled(
       targets.map((userId) => {
         const p = prefMap.get(userId);
-        const typeOn = p ? p.notify_task !== false : true;
         const pwaOn = p ? p.pwa_enabled !== false : true;
-        if (!typeOn || !pwaOn) return Promise.resolve();
+        // Task alerts are MANDATORY work notifications: they ignore the per-type mute so a newly
+        // assigned/started task is never missed. Off-hours quiet is still handled by the work-hours
+        // gate in sendPushToUser; for full silence the user uses their phone's Do Not Disturb.
+        if (!pwaOn) return Promise.resolve();
         return sendPushToUser(userId, payload);
       }),
     );

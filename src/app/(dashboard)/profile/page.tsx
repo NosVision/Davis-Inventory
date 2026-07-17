@@ -281,6 +281,7 @@ export default function ProfilePage() {
 
   // Determine which notification types are relevant for this role
   const isStaffLike = ['staff', 'bar', 'head_bar', 'manager', 'owner'].includes(user.role);
+  const isOwnerOrManager = ['owner', 'manager'].includes(user.role);
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 pb-12">
@@ -500,6 +501,19 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
 
+      {/* Why some alerts stay on + how to get real quiet (phone Do Not Disturb). */}
+      <div className="flex items-start gap-3 rounded-xl border border-indigo-100 bg-indigo-50 p-4 dark:border-indigo-900/40 dark:bg-indigo-900/20">
+        <Bell className="mt-0.5 h-5 w-5 shrink-0 text-indigo-500" />
+        <div>
+          <p className="text-sm font-medium text-indigo-900 dark:text-indigo-200">
+            {t('workAlertsAlwaysOn')}
+          </p>
+          <p className="mt-0.5 text-xs text-indigo-700/80 dark:text-indigo-300/80">
+            {t('workAlertsAlwaysOnDesc')}
+          </p>
+        </div>
+      </div>
+
       {/* ------------------------------------------------------------------ */}
       {/* Section 2: ประเภทการแจ้งเตือน (Notification Types)                  */}
       {/* ------------------------------------------------------------------ */}
@@ -528,9 +542,10 @@ export default function ProfilePage() {
             />
           )}
 
-          {/* Approval / to-do pings — anyone on staff can silence these (new deposit, withdrawal
-              request, stock discrepancies, HR to-dos all share this preference). */}
-          {isStaffLike && (
+          {/* Approval pings — owner/manager only. Front-line work alerts (new deposit / withdrawal
+              request) are mandatory and can't be muted here, so this toggle governs the remaining
+              optional approval pings (stock discrepancies, HR to-dos) that owners/managers get. */}
+          {isOwnerOrManager && (
             <ToggleRow
               label={t('approvalRequest')}
               description={t('approvalRequestDesc')}
