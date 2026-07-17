@@ -71,6 +71,9 @@ export interface TaskRoom {
   responsible_target?: TaskTarget;
   creator_target?: TaskTarget;
   require_attachment_default?: boolean;
+  // ── LINE group notify (00170) — push room task events via the central task bot ──
+  line_notify_enabled?: boolean;
+  line_group_id?: string | null;
 }
 
 /** ห้อง + ตัวเลขสรุป (สำหรับการ์ดหน้า home) */

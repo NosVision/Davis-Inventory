@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/server';
 import { sendPushToUser, type PushPayload } from '@/lib/notifications/push';
+import { pushTaskLineGroup } from '@/lib/line/tasks-bot';
 
 /**
  * แจ้งเตือนงาน (Task Management) — เฉพาะ in-app + web push เท่านั้น
@@ -76,6 +77,30 @@ export async function notifyTaskUsers(params: NotifyTaskUsersParams): Promise<vo
     );
   } catch (error) {
     console.error('[tasks] notifyTaskUsers error:', error);
+  }
+}
+
+/**
+ * แจ้งเตือนเข้ากลุ่ม LINE ของห้องงาน (ผ่านบอทกลาง) — เฉพาะเมื่อห้องเปิด line_notify_enabled
+ * และตั้ง group id ไว้. เงียบเสมอเมื่อไม่ได้ตั้งค่า (ไม่ throw). ใช้คู่กับ notifyTaskUsers.
+ */
+export async function notifyTaskLineGroup(
+  roomId: string,
+  title: string,
+  body: string,
+): Promise<void> {
+  try {
+    const supabase = createServiceClient();
+    const { data: room } = await supabase
+      .from('task_rooms')
+      .select('line_notify_enabled, line_group_id')
+      .eq('id', roomId)
+      .maybeSingle();
+    const groupId = room?.line_group_id as string | null;
+    if (!room?.line_notify_enabled || !groupId) return;
+    await pushTaskLineGroup(groupId, [{ type: 'text', text: `${title}\n${body}` }]);
+  } catch (error) {
+    console.error('[tasks] notifyTaskLineGroup error:', error);
   }
 }
 

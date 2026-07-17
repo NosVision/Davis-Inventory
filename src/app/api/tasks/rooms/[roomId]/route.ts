@@ -85,6 +85,8 @@ export async function PATCH(
     responsibleTarget: TaskTarget;
     creatorTarget: TaskTarget;
     requireAttachmentDefault: boolean;
+    lineNotifyEnabled: boolean;
+    lineGroupId: string;
   }>;
   try {
     body = await request.json();
@@ -109,6 +111,9 @@ export async function PATCH(
     update.creator_target = sanitizeTarget(body.creatorTarget);
   if (typeof body.requireAttachmentDefault === 'boolean')
     update.require_attachment_default = body.requireAttachmentDefault;
+  // ── LINE group notify (00170) ──
+  if (typeof body.lineNotifyEnabled === 'boolean') update.line_notify_enabled = body.lineNotifyEnabled;
+  if (typeof body.lineGroupId === 'string') update.line_group_id = body.lineGroupId.trim() || null;
 
   if (Object.keys(update).length === 0) {
     return NextResponse.json({ error: 'ไม่มีข้อมูลที่จะแก้ไข' }, { status: 400 });

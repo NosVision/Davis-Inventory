@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { notifyTaskUsers } from '@/lib/tasks/notify';
+import { notifyTaskUsers, notifyTaskLineGroup } from '@/lib/tasks/notify';
 import { todayBangkok } from '@/lib/utils/date';
 
 /**
@@ -45,6 +45,7 @@ export async function GET(request: NextRequest) {
       body: `${t.ticket_no} · ${t.title}`,
       data: { taskId: t.id, roomId: t.room_id, url: `/tasks/${t.room_id}` },
     });
+    await notifyTaskLineGroup(t.room_id, '🚀 ถึงวันเริ่มงานแล้ว', `${t.ticket_no} · ${t.title}`);
   }
   const activated = starting?.length ?? 0;
   if (activated > 0) {

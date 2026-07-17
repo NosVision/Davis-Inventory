@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
-import { notifyTaskUsers } from '@/lib/tasks/notify';
+import { notifyTaskUsers, notifyTaskLineGroup } from '@/lib/tasks/notify';
 import { resolveTargetUserIds, userMatchesTarget, getClaimableTaskIds } from '@/lib/tasks/resolve-target';
 import {
   OPEN_TASK_STATUSES,
@@ -258,7 +258,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Notify (in-app + push, no LINE)
+  // Notify (in-app + push, no LINE for the per-user channel)
   if (openClaim && resolvedResponsible.length > 0) {
     await notifyTaskUsers({
       userIds: resolvedResponsible,
@@ -280,6 +280,13 @@ export async function POST(request: NextRequest) {
       excludeUserId: user.id,
     });
   }
+
+  // Room LINE group (central task bot) — fires once per new task when the room enables it.
+  await notifyTaskLineGroup(
+    created.room_id as string,
+    openClaim ? '🆕 มีงานใหม่รอรับ' : '📋 มีงานใหม่',
+    `${created.ticket_no} · ${title}`,
+  );
 
   // Audit (non-fatal)
   try {
