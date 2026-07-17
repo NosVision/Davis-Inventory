@@ -84,8 +84,31 @@ export async function POST(req: NextRequest) {
   const monthYear = businessDate.slice(0, 7);
   const weekKey = weekKeyMonday(businessDate);
 
-  // Resolve target staff. Group sentinels → whoever was on shift that business date, from the
-  // HR schedule; fall back to all active members of that role at the store.
+  // Idempotency: a comparison can only be turned into this penalty code ONCE. Guards a double-submit
+  // (double-click / retry) from fanning the same discrepancy out into a duplicate batch. A cancelled
+  // prior batch is ignored so HQ can legitimately re-issue after voiding. (DB has a matching partial
+  // unique index as a hard backstop — see migration 00171.)
+  if (comparisonId) {
+    const { data: dup } = await service
+      .from('penalties')
+      .select('id')
+      .eq('comparison_id', comparisonId)
+      .eq('penalty_code', codeMeta.code)
+      .neq('status', 'cancelled')
+      .limit(1);
+    if ((dup ?? []).length > 0) {
+      return NextResponse.json(
+        { error: 'รายการนี้ถูกออกโทษไปแล้วจากการเปรียบเทียบนี้', code: 'already_applied' },
+        { status: 409 },
+      );
+    }
+  }
+
+  // Resolve target staff. Group sentinels → whoever actually worked the audited business date, read
+  // from the HR schedule first, then real check-ins (hr_attendance). We do NOT silently blanket the
+  // whole role when there is no shift data — that over-charges everyone (owner rule: only the shift
+  // that was on). Instead HQ must pick individuals, or opt in explicitly with confirm_all.
+  const confirmAll = body.confirm_all === true;
   let targetStaffIds: string[] = [];
   const groupRoles = target === GROUP_BAR_ALL ? ['bar', 'head_bar'] : target === GROUP_STAFF_ALL ? ['staff'] : null;
   if (groupRoles) {
@@ -98,17 +121,46 @@ export async function POST(req: NextRequest) {
       .flatMap((r) => (Array.isArray(r.profiles) ? r.profiles : r.profiles ? [r.profiles] : []))
       .filter((p) => p.active && groupRoles.includes(p.role))
       .map((p) => p.id);
-    // Narrow to those scheduled to work (not day off) on the audited business date, if we have data.
+    const guarded = roleMembers.length ? roleMembers : ['00000000-0000-0000-0000-000000000000'];
+
+    // 1) Scheduled to work (not day off) on the audited business date.
     const { data: sched } = await service
       .from('hr_schedule')
       .select('user_id')
       .eq('store_id', storeId)
       .eq('work_date', businessDate)
       .eq('is_day_off', false)
-      .in('user_id', roleMembers.length ? roleMembers : ['00000000-0000-0000-0000-000000000000']);
-    const onShift = new Set((sched ?? []).map((s) => (s as { user_id: string }).user_id));
+      .in('user_id', guarded);
+    let onShift = new Set((sched ?? []).map((s) => (s as { user_id: string }).user_id));
+
+    // 2) No schedule for that day → fall back to who actually clocked in (hr_attendance).
+    if (onShift.size === 0 && roleMembers.length > 0) {
+      const { data: att } = await service
+        .from('hr_attendance')
+        .select('user_id')
+        .eq('store_id', storeId)
+        .eq('business_date', businessDate)
+        .in('user_id', roleMembers);
+      onShift = new Set((att ?? []).map((s) => (s as { user_id: string }).user_id));
+    }
+
     targetStaffIds = roleMembers.filter((id) => onShift.has(id));
-    if (targetStaffIds.length === 0) targetStaffIds = roleMembers; // no schedule → whole role
+
+    // 3) Still nobody (no schedule + no check-in) → require HQ to choose, or confirm a whole-role charge.
+    if (targetStaffIds.length === 0) {
+      if (!confirmAll) {
+        return NextResponse.json(
+          {
+            error:
+              'ไม่พบข้อมูลกะหรือการเช็คอินของวันที่ถูกตรวจ — โปรดเลือกพนักงานที่รับผิดชอบเอง หรือยืนยันเพื่อปรับทั้งกลุ่ม',
+            code: 'no_shift_data',
+            role_member_count: roleMembers.length,
+          },
+          { status: 422 },
+        );
+      }
+      targetStaffIds = roleMembers; // explicit HQ override → whole role
+    }
   } else {
     targetStaffIds = [target];
   }

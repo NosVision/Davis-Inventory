@@ -42,6 +42,7 @@ import { openBusinessDateBangkok } from '@/lib/utils/date';
 import { formatThaiDate } from '@/lib/utils/format';
 import {
   AlertTriangle,
+  Ban,
   Banknote,
   ClipboardList,
   FileText,
@@ -49,6 +50,7 @@ import {
   Loader2,
   Megaphone,
   Minus,
+  Pencil,
   Send,
   Shield,
 } from 'lucide-react';
@@ -67,6 +69,7 @@ interface RecentPenalty {
   business_date: string | null;
   created_at: string;
   included_in_quota: boolean | null;
+  notes?: string | null;
   staff_name?: string;
 }
 
@@ -238,6 +241,14 @@ export default function StockPenaltiesPage() {
         stSentHr: 'ส่ง HR แล้ว',
         stDeducted: 'หักแล้ว',
         stCancelled: 'ยกเลิก',
+        // Row edit / cancel (HQ can fix a penalty after it was issued)
+        editRow: 'แก้ไข',
+        cancelRow: 'ยกเลิกรายการ',
+        editTitle: 'แก้ไขค่าปรับ',
+        notesLabel: 'หมายเหตุ',
+        editSaved: 'บันทึกการแก้ไขแล้ว',
+        cancelDone: 'ยกเลิกรายการแล้ว',
+        cancelConfirm: 'ยืนยันยกเลิกรายการค่าปรับนี้?',
         // Stock SOP management
         sopSectionTitle: 'ระเบียบสต๊อก (SOP)',
         sopVersion: (v: number) => `เวอร์ชัน ${v}`,
@@ -321,6 +332,14 @@ export default function StockPenaltiesPage() {
         stSentHr: 'Sent to HR',
         stDeducted: 'Deducted',
         stCancelled: 'Cancelled',
+        // Row edit / cancel (HQ can fix a penalty after it was issued)
+        editRow: 'Edit',
+        cancelRow: 'Cancel item',
+        editTitle: 'Edit penalty',
+        notesLabel: 'Notes',
+        editSaved: 'Saved',
+        cancelDone: 'Item cancelled',
+        cancelConfirm: 'Cancel this penalty?',
         // Stock SOP management
         sopSectionTitle: 'Stock SOP',
         sopVersion: (v: number) => `Version ${v}`,
@@ -351,6 +370,11 @@ export default function StockPenaltiesPage() {
 
   const [adhoc, setAdhoc] = useState<{ userId: string; reason: string; amount: string } | null>(null);
   const [submittingAdhoc, setSubmittingAdhoc] = useState(false);
+
+  // HQ edit / cancel of an already-issued penalty (pending/sent_hr only; deducted is locked server-side).
+  const [editPen, setEditPen] = useState<{ id: string; amount: string; notes: string } | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
 
   // Stock SOP policy + its editor.
   const [sop, setSop] = useState<SopPolicyResponse | null>(null);
@@ -573,6 +597,55 @@ export default function StockPenaltiesPage() {
     }
   };
 
+  const handleSaveEdit = async () => {
+    if (!editPen || savingEdit) return;
+    const amount = Number(editPen.amount);
+    if (!Number.isFinite(amount) || amount < 0) {
+      toast({ type: 'error', title: L.amountBaht });
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      const res = await fetch(`/api/stock/penalties/${editPen.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount, notes: editPen.notes }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        toast({ type: 'error', title: json.error || L.loadFail });
+        return;
+      }
+      toast({ type: 'success', title: L.editSaved });
+      setEditPen(null);
+      loadSummary();
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleCancelPenalty = async (p: RecentPenalty) => {
+    if (cancellingId) return;
+    if (typeof window !== 'undefined' && !window.confirm(L.cancelConfirm)) return;
+    setCancellingId(p.id);
+    try {
+      const res = await fetch(`/api/stock/penalties/${p.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel' }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        toast({ type: 'error', title: json.error || L.loadFail });
+        return;
+      }
+      toast({ type: 'success', title: L.cancelDone });
+      loadSummary();
+    } finally {
+      setCancellingId(null);
+    }
+  };
+
   // Open the SOP editor seeded from the current policy (edit-only: PUT needs an existing id).
   const openSopEdit = () => {
     const p = sop?.policy;
@@ -648,6 +721,8 @@ export default function StockPenaltiesPage() {
     const meta = rowStatusMeta(p);
     const dateLabel = formatThaiDate(p.business_date ?? p.created_at);
     const hasCharge = !!p.amount && p.amount > 0;
+    // HQ can fix or void a penalty until HR actually deducts it (deducted/cancelled are read-only).
+    const editable = canManage && p.status !== 'deducted' && p.status !== 'cancelled';
     return (
       <li key={p.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
         <div className="min-w-0 flex-1">
@@ -672,6 +747,35 @@ export default function StockPenaltiesPage() {
           {amountLabel(p.amount)}
         </span>
         <StatusBadge tone={meta.tone} label={meta.label} />
+        {editable && (
+          <div className="flex items-center gap-1">
+            {hasCharge && (
+              <button
+                type="button"
+                title={L.editRow}
+                aria-label={L.editRow}
+                onClick={() => setEditPen({ id: p.id, amount: String(p.amount ?? ''), notes: p.notes ?? '' })}
+                className="rounded-md p-1.5 text-gray-400 transition hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            )}
+            <button
+              type="button"
+              title={L.cancelRow}
+              aria-label={L.cancelRow}
+              disabled={cancellingId === p.id}
+              onClick={() => handleCancelPenalty(p)}
+              className="rounded-md p-1.5 text-gray-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50 dark:hover:bg-rose-900/20 dark:hover:text-rose-400"
+            >
+              {cancellingId === p.id ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Ban className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </div>
+        )}
       </li>
     );
   };
@@ -1009,6 +1113,35 @@ export default function StockPenaltiesPage() {
                 {L.cancel}
               </Button>
               <Button onClick={handleSubmitAdhoc} isLoading={submittingAdhoc}>
+                {L.save}
+              </Button>
+            </ModalFooter>
+          </div>
+        )}
+      </Modal>
+
+      {/* HQ edit-penalty modal (amount + notes). Cancelling is a separate inline confirm. */}
+      <Modal isOpen={!!editPen} onClose={() => setEditPen(null)} title={L.editTitle}>
+        {editPen && (
+          <div className="space-y-3">
+            <Input
+              type="number"
+              step="0.01"
+              min="0"
+              label={L.amountBaht}
+              value={editPen.amount}
+              onChange={(e) => setEditPen((prev) => prev && { ...prev, amount: e.target.value })}
+            />
+            <Input
+              label={L.notesLabel}
+              value={editPen.notes}
+              onChange={(e) => setEditPen((prev) => prev && { ...prev, notes: e.target.value })}
+            />
+            <ModalFooter>
+              <Button variant="outline" onClick={() => setEditPen(null)}>
+                {L.cancel}
+              </Button>
+              <Button onClick={handleSaveEdit} isLoading={savingEdit}>
                 {L.save}
               </Button>
             </ModalFooter>
