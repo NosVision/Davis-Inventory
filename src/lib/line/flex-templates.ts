@@ -868,6 +868,76 @@ export function newDepositNotifyFlex(params: NewDepositNotifyParams): FlexMessag
 }
 
 // ---------------------------------------------------------------------------
+// Task Room notification (central task bot) — accent = room color
+// ---------------------------------------------------------------------------
+
+export interface TaskNotifyFlexParams {
+  /** Header line, e.g. "📋 มีงานใหม่" */
+  headline: string;
+  roomName: string;
+  ticketNo: string;
+  title: string;
+  detail?: string | null;
+  assigneeText?: string | null;
+  dueText?: string | null;
+  /** Absolute URL — renders an "เปิดดูงาน" button when set. */
+  url?: string | null;
+  /** Accent hex (from the room color). Defaults to indigo. */
+  accent?: string;
+}
+
+/** Flex card for a task-room event, pushed into the room's LINE group by the central task bot. */
+export function taskNotifyFlex(p: TaskNotifyFlexParams): FlexMessage {
+  const accent = p.accent || '#6366f1';
+  const body: Record<string, unknown>[] = [
+    textComponent(p.title, { size: 'xl', weight: 'bold', color: COLORS.textPrimary, wrap: true }),
+    separatorComponent(),
+    labelValueRow('เลขงาน', p.ticketNo, { color: accent }),
+    labelValueRow('ห้อง', p.roomName),
+  ];
+  if (p.assigneeText) body.push(labelValueRow('ผู้รับผิดชอบ', p.assigneeText));
+  if (p.dueText) body.push(labelValueRow('กำหนดส่ง', p.dueText));
+  if (p.detail) {
+    body.push(textComponent(p.detail, { size: 'sm', color: COLORS.textSecondary, wrap: true, margin: 'md' }));
+  }
+
+  const footer: FlexBox = p.url
+    ? {
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          {
+            type: 'button',
+            style: 'primary',
+            color: accent,
+            height: 'md',
+            action: { type: 'uri', label: 'เปิดดูงาน', uri: p.url },
+          },
+        ],
+        paddingAll: 'lg',
+      }
+    : footerBox([
+        textComponent('เปิดแอปเพื่อดูรายละเอียด', { size: 'xs', color: COLORS.textMuted, align: 'center' }),
+      ]);
+
+  return {
+    type: 'flex',
+    altText: `${p.headline} ${p.ticketNo} · ${p.title}`,
+    contents: {
+      type: 'bubble',
+      size: 'mega',
+      header: headerBox(p.headline, accent),
+      body: bodyBox(body),
+      footer,
+      styles: {
+        header: { backgroundColor: accent },
+        footer: { separator: true },
+      },
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // (e) withdrawalRequestNotifyFlex
 // ---------------------------------------------------------------------------
 

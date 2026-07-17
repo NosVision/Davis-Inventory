@@ -281,12 +281,13 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  // Room LINE group (central task bot) — fires once per new task when the room enables it.
-  await notifyTaskLineGroup(
-    created.room_id as string,
-    openClaim ? '🆕 มีงานใหม่รอรับ' : '📋 มีงานใหม่',
-    `${created.ticket_no} · ${title}`,
-  );
+  // Room LINE group (central task bot) — a Flex card once per new task when the room enables it.
+  await notifyTaskLineGroup(created.room_id as string, {
+    headline: openClaim ? '🆕 มีงานใหม่รอรับ' : '📋 มีงานใหม่',
+    ticketNo: created.ticket_no as string,
+    title,
+    detail: created.detail as string | null,
+  });
 
   // Audit (non-fatal)
   try {

@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
       body: `${t.ticket_no} · ${t.title}`,
       data: { taskId: t.id, roomId: t.room_id, url: `/tasks/${t.room_id}` },
     });
-    await notifyTaskLineGroup(t.room_id, '🚀 ถึงวันเริ่มงานแล้ว', `${t.ticket_no} · ${t.title}`);
+    await notifyTaskLineGroup(t.room_id, { headline: '🚀 ถึงวันเริ่มงานแล้ว', ticketNo: t.ticket_no, title: t.title });
   }
   const activated = starting?.length ?? 0;
   if (activated > 0) {

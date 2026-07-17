@@ -1,6 +1,9 @@
 import { createServiceClient } from '@/lib/supabase/server';
 import { sendPushToUser, type PushPayload } from '@/lib/notifications/push';
 import { pushTaskLineGroup } from '@/lib/line/tasks-bot';
+import { taskNotifyFlex } from '@/lib/line/flex-templates';
+import { getRoomColor } from '@/lib/tasks/colors';
+import type { LineMessage } from '@/lib/line/messaging';
 
 /**
  * แจ้งเตือนงาน (Task Management) — เฉพาะ in-app + web push เท่านั้น
@@ -80,25 +83,45 @@ export async function notifyTaskUsers(params: NotifyTaskUsersParams): Promise<vo
   }
 }
 
+interface TaskLineGroupParams {
+  /** Header line, e.g. "📋 มีงานใหม่" */
+  headline: string;
+  ticketNo: string;
+  title: string;
+  detail?: string | null;
+  assigneeText?: string | null;
+  dueText?: string | null;
+}
+
 /**
- * แจ้งเตือนเข้ากลุ่ม LINE ของห้องงาน (ผ่านบอทกลาง) — เฉพาะเมื่อห้องเปิด line_notify_enabled
- * และตั้ง group id ไว้. เงียบเสมอเมื่อไม่ได้ตั้งค่า (ไม่ throw). ใช้คู่กับ notifyTaskUsers.
+ * แจ้งเตือนเข้ากลุ่ม LINE ของห้องงาน (ผ่านบอทกลาง) เป็น Flex card — เฉพาะเมื่อห้องเปิด
+ * line_notify_enabled และตั้ง group id ไว้. เงียบเสมอเมื่อไม่ได้ตั้งค่า (ไม่ throw).
+ * ปุ่ม "เปิดดูงาน" ลิงก์เข้าห้องงาน (ต้องมี NEXT_PUBLIC_APP_URL ถึงจะมีปุ่ม).
  */
-export async function notifyTaskLineGroup(
-  roomId: string,
-  title: string,
-  body: string,
-): Promise<void> {
+export async function notifyTaskLineGroup(roomId: string, params: TaskLineGroupParams): Promise<void> {
   try {
     const supabase = createServiceClient();
     const { data: room } = await supabase
       .from('task_rooms')
-      .select('line_notify_enabled, line_group_id')
+      .select('name, color, line_notify_enabled, line_group_id')
       .eq('id', roomId)
       .maybeSingle();
     const groupId = room?.line_group_id as string | null;
     if (!room?.line_notify_enabled || !groupId) return;
-    await pushTaskLineGroup(groupId, [{ type: 'text', text: `${title}\n${body}` }]);
+
+    const base = (process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/+$/, '');
+    const flex = taskNotifyFlex({
+      headline: params.headline,
+      roomName: (room.name as string) || 'ห้องงาน',
+      ticketNo: params.ticketNo,
+      title: params.title,
+      detail: params.detail ?? null,
+      assigneeText: params.assigneeText ?? null,
+      dueText: params.dueText ?? null,
+      url: base ? `${base}/tasks/${roomId}` : null,
+      accent: getRoomColor(room.color as string | null).accent,
+    });
+    await pushTaskLineGroup(groupId, [flex as unknown as LineMessage]);
   } catch (error) {
     console.error('[tasks] notifyTaskLineGroup error:', error);
   }
