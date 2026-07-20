@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { useLocale } from 'next-intl';
 import { cn } from '@/lib/utils/cn';
 import { isEmptyDay, type DaySummary, type TimesheetTotals } from '@/components/hr/timesheet-parts';
+import { openBusinessDateBangkok } from '@/lib/utils/date';
 
 // Extra timesheet presentations for /hr/timesheet (owner ask 2026-07-08): a colour-block grid
 // (employees × days, same visual language as the bulk-backfill grid) and a compact one-row-per
@@ -27,20 +28,31 @@ export type DayStatus =
   | 'dayoff'
   | 'wod'
   | 'incomplete'
+  | 'working'
   | 'empty';
 
 // Collapse a derived day into ONE headline status for the block grid. Order matters: the most
 // notable condition wins (leave > absent > no-clock-out > late > worked). OT/override are overlays.
 // A day carried purely by an HR override (bulk backfill / manual entry) has no schedule row or
 // punch, so it is read from the override's worked/absent/late fields rather than first_in.
-export function deriveDayStatus(d: DaySummary): DayStatus {
+/**
+ * @param today the CURRENT business date (Bangkok, 6am cutoff). An open shift on that date is
+ *   someone still at work, not a missing clock-out — without it every person mid-shift showed
+ *   the orange "no clock-out" flag.
+ *
+ * `incomplete` is deliberately ranked LAST of the worked states: a day that was both late and
+ * never clocked out used to render as "!" only, hiding the late status that actually costs money.
+ * The grid re-surfaces the missing clock-out as a corner badge instead.
+ */
+export function deriveDayStatus(d: DaySummary, today?: string): DayStatus {
   if (d.leave) return 'leave';
   if (isEmptyDay(d)) return 'empty';
   if (d.absent) return 'absent';
   if (d.is_day_off && !d.worked_on_day_off) return 'dayoff';
-  if (d.incomplete) return 'incomplete';
+  if (d.incomplete && d.business_date === today) return 'working';
   if (d.worked_on_day_off) return 'wod';
   if ((d.late_min ?? 0) > 0) return 'late';
+  if (d.incomplete) return 'incomplete';
   if (d.first_in) return 'normal';
   if ((d.worked_min ?? 0) > 0) return 'normal'; // override-set working day (no punch)
   if (d.scheduled) return 'normal';
@@ -76,8 +88,12 @@ export function TimesheetBlockGrid({
     dayoff: { block: 'bg-gray-300 text-gray-600 ring-gray-400 dark:bg-gray-600 dark:text-gray-200', glyph: isTh ? 'ห' : 'O', dot: 'bg-gray-400', label: isTh ? 'วันหยุด' : 'Day off' },
     wod: { block: 'bg-sky-400/90 text-white ring-sky-500', glyph: isTh ? 'ท' : 'W', dot: 'bg-sky-400', label: isTh ? 'ทำวันหยุด' : 'Worked day off' },
     incomplete: { block: 'bg-orange-400/90 text-white ring-orange-500', glyph: '!', dot: 'bg-orange-400', label: isTh ? 'ไม่ออกงาน' : 'No clock-out' },
+    working: { block: 'bg-blue-400/90 text-white ring-blue-500', glyph: isTh ? 'ก' : 'IN', dot: 'bg-blue-400', label: isTh ? 'กำลังทำงาน' : 'On shift' },
   };
-  const LEGEND: Exclude<DayStatus, 'empty'>[] = ['normal', 'late', 'absent', 'leave', 'wod', 'incomplete', 'dayoff'];
+  const LEGEND: Exclude<DayStatus, 'empty'>[] = ['normal', 'working', 'late', 'absent', 'leave', 'wod', 'incomplete', 'dayoff'];
+
+  // Bangkok business date (6am cutoff) — a night shift started at 22:00 stays "today" until 6am.
+  const today = openBusinessDateBangkok();
 
   const dates = useMemo(() => employees[0]?.days.map((d) => d.business_date) ?? [], [employees]);
 
@@ -130,9 +146,12 @@ export function TimesheetBlockGrid({
                   </td>
                   {dates.map((date) => {
                     const day = byDate.get(date);
-                    const status = day ? deriveDayStatus(day) : 'empty';
+                    const status = day ? deriveDayStatus(day, today) : 'empty';
                     const hasOt = (day?.ot_min ?? 0) > 0;
                     const overridden = !!day?.overridden;
+                    // A past day can be late AND missing its clock-out; the block shows the
+                    // payroll-relevant status, this badge keeps the data-quality flag visible.
+                    const missingOut = !!day?.incomplete && status !== 'incomplete' && status !== 'working';
                     return (
                       <td key={date} className="border-b border-gray-100 p-0.5 text-center dark:border-gray-700/60">
                         <button
@@ -142,7 +161,7 @@ export function TimesheetBlockGrid({
                           title={
                             status === 'empty'
                               ? isTh ? 'คลิกเพื่อลงเวลา' : 'Click to log time'
-                              : `${STYLE[status].label}${status === 'leave' && day?.leave ? ` · ${isTh ? day.leave.name_th : day.leave.name_en}` : ''}${(day?.late_min ?? 0) > 0 ? ` · สาย ${day?.late_min}` : ''}${(day?.ot_min ?? 0) > 0 ? ` · OT ${toH(day?.ot_min ?? 0)}` : ''}`
+                              : `${STYLE[status].label}${status === 'leave' && day?.leave ? ` · ${isTh ? day.leave.name_th : day.leave.name_en}` : ''}${missingOut ? ` · ${isTh ? 'ไม่ออกงาน' : 'no clock-out'}` : ''}${(day?.late_min ?? 0) > 0 ? ` · สาย ${day?.late_min}` : ''}${(day?.ot_min ?? 0) > 0 ? ` · OT ${toH(day?.ot_min ?? 0)}` : ''}`
                           }
                           className={cn(
                             'relative mx-auto flex h-7 w-7 items-center justify-center rounded-lg text-[11px] font-bold ring-1 transition-transform hover:scale-110',
@@ -154,6 +173,11 @@ export function TimesheetBlockGrid({
                         >
                           {status === 'empty' ? '+' : STYLE[status].glyph}
                           {hasOt && <i className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-violet-500 ring-1 ring-white dark:ring-gray-900" />}
+                          {missingOut && (
+                            <i className="absolute -left-0.5 -top-0.5 flex h-2.5 w-2.5 items-center justify-center rounded-full bg-orange-500 text-[7px] font-bold not-italic leading-none text-white ring-1 ring-white dark:ring-gray-900">
+                              !
+                            </i>
+                          )}
                         </button>
                       </td>
                     );

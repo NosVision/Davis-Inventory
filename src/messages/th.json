@@ -3974,6 +3974,7 @@
       "absent": "ขาดงาน",
       "incomplete": "ไม่สมบูรณ์",
       "noClockOut": "ไม่ได้ลงเวลาออก",
+      "onShift": "กำลังทำงาน",
       "late": "มาสาย",
       "workedOnDayOff": "ทำงานวันหยุด",
       "notScheduled": "ไม่มีกะ",

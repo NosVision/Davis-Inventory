@@ -11,7 +11,7 @@ import { useTranslations, useLocale } from 'next-intl';
 import { Pencil } from 'lucide-react';
 import { Badge } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
-import { formatTimeBangkok } from '@/lib/utils/date';
+import { formatTimeBangkok, openBusinessDateBangkok } from '@/lib/utils/date';
 
 /** An approved leave covering this day, surfaced so the UI shows "ลา (type)" not "ขาด". */
 export interface DayLeave {
@@ -136,9 +136,12 @@ function StatusCell({ d }: { d: DaySummary }) {
     );
   }
   if (d.incomplete) {
+    // On the CURRENT business date (Bangkok, 6am cutoff) an open shift means they are still at
+    // work — flagging that as a missing clock-out cried wolf at everyone mid-shift.
+    const onShiftNow = d.business_date === openBusinessDateBangkok();
     badges.push(
-      <Badge key="inc" variant="warning" size="sm">
-        {t('noClockOut')}
+      <Badge key="inc" variant={onShiftNow ? 'info' : 'warning'} size="sm">
+        {onShiftNow ? t('onShift') : t('noClockOut')}
       </Badge>
     );
   }

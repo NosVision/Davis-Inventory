@@ -3973,6 +3973,7 @@
       "absent": "Absent",
       "incomplete": "Incomplete",
       "noClockOut": "No clock-out",
+      "onShift": "On shift",
       "late": "Late",
       "workedOnDayOff": "Day off",
       "notScheduled": "Not scheduled",
