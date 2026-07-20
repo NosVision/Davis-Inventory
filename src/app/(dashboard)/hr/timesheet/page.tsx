@@ -27,6 +27,7 @@ type Employee = TimesheetEmployee;
 type ViewMode = 'blocks' | 'full' | 'summary';
 
 const MAX_RANGE_DAYS = 62;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function dayDiff(from: string, to: string): number {
   const a = new Date(`${from}T00:00:00Z`).getTime();
@@ -64,6 +65,21 @@ export default function HrTimesheetPage() {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [view, setView] = useState<ViewMode>('blocks');
   const [search, setSearch] = useState('');
+
+  // Deep-link support so the payroll slip can send HR straight here to fix a person's OT
+  // (?store=&from=&to=&q=). Read off window.location rather than useSearchParams so the page
+  // needs no Suspense boundary. Runs once; the store effect below preserves a seeded store.
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const qFrom = p.get('from');
+    const qTo = p.get('to');
+    const qStore = p.get('store');
+    const qSearch = p.get('q');
+    if (qFrom && DATE_RE.test(qFrom)) setFrom(qFrom);
+    if (qTo && DATE_RE.test(qTo)) setTo(qTo);
+    if (qStore) setStoreId(qStore);
+    if (qSearch) setSearch(qSearch);
+  }, []);
 
   // manageable stores → default to first
   useEffect(() => {
@@ -222,7 +238,7 @@ export default function HrTimesheetPage() {
       ) : view === 'blocks' ? (
         <TimesheetBlockGrid
           employees={filtered}
-          onPick={(emp, day) => setEditTarget({ userId: emp.user_id, name: emp.name, companyId: emp.company_id, day })}
+          onPick={(emp, day) => setEditTarget({ userId: emp.user_id, name: emp.name, companyId: emp.company_id, otEligible: emp.ot_eligible, day })}
         />
       ) : view === 'summary' ? (
         <TimesheetSummaryTable
@@ -244,7 +260,7 @@ export default function HrTimesheetPage() {
                 {hasData ? (
                   <DayTable
                     days={emp.days}
-                    onEditDay={(day) => setEditTarget({ userId: emp.user_id, name: emp.name, companyId: emp.company_id, day })}
+                    onEditDay={(day) => setEditTarget({ userId: emp.user_id, name: emp.name, companyId: emp.company_id, otEligible: emp.ot_eligible, day })}
                   />
                 ) : (
                   <p className="rounded-xl border border-dashed border-gray-200 px-4 py-6 text-center text-sm text-gray-400 dark:border-gray-700">

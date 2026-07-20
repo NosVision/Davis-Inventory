@@ -64,7 +64,7 @@ const SV_SOURCE_TH: Record<string, string> = {
 // free-form label (an allowance name, a leave code) falls through to the stored text.
 const KNOWN_TYPES = new Set([
   'salary', 'ot', 'service_charge', 'tip', 'commission', 'eval_bonus', 'claim',
-  'sso', 'tax', 'late', 'absent', 'leave_unpaid', 'travel_leave',
+  'sso', 'tax', 'late', 'absent', 'leave_unpaid', 'travel_leave', 'travel_absent',
   'student_loan', 'advance', 'guarantee', 'loan', 'provident_fund', 'other', 'allowance',
 ]);
 
@@ -122,6 +122,11 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
     if (l.type === 'travel_leave') {
       const days = leaveDaysFromRef(l.ref);
       if (days != null) return t('formula.travel', { days, divisor: dayDivisor });
+    }
+    // travel_absent carries a bare "{N}d" ref (no leave id to prefix it).
+    if (l.type === 'travel_absent' && l.ref) {
+      const days = Number(l.ref.replace(/d$/, ''));
+      if (Number.isFinite(days)) return t('formula.travel', { days, divisor: dayDivisor });
     }
     return null;
   };

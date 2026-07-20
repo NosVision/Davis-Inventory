@@ -21,6 +21,8 @@ export interface EditTarget {
   userId: string;
   name: string;
   companyId: string | null; // the employee's company — scopes the leave-type options
+  /** hr_employees.ot_eligible — when false the payroll engine pays 0 OT no matter what is stored here. */
+  otEligible: boolean;
   day: DaySummary;
 }
 
@@ -185,7 +187,8 @@ export function TimesheetEditModal({
             store_id: storeId || undefined,
             worked_min: hoursStrToMin(worked),
             late_min: minStrToMin(late),
-            ot_min: hoursStrToMin(ot),
+            // Never persist OT for an OT-ineligible employee — payroll would drop it anyway.
+            ot_min: target.otEligible ? hoursStrToMin(ot) : null,
             absent: status === 'absent',
             reason: trimmed,
           }),
@@ -315,10 +318,19 @@ export function TimesheetEditModal({
               inputMode="decimal"
               min={0}
               step={0.25}
-              value={ot}
+              value={target.otEligible ? ot : ''}
+              disabled={!target.otEligible}
               onChange={(e) => setOt(e.target.value)}
             />
           </div>
+        )}
+
+        {/* payroll.ts pays 0 OT unless hr_employees.ot_eligible is on. Without this the field
+            accepted a number, the timesheet showed it, and the payslip silently dropped it. */}
+        {status !== 'leave' && !target.otEligible && (
+          <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+            {t('otNotEligible')}
+          </p>
         )}
 
         <Input

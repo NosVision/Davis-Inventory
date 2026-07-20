@@ -133,12 +133,18 @@ export async function recomputePoolDeductions(
       }
     }
 
-    const { data: schedOff, error: schedOffErr } = await service
-      .from('hr_schedule').select('work_date')
-      .eq('user_id', userId).eq('store_id', storeId).eq('is_day_off', true)
+    const { data: sched, error: schedErr } = await service
+      .from('hr_schedule').select('work_date, is_day_off')
+      .eq('user_id', userId).eq('store_id', storeId)
       .gte('work_date', periodStart).lte('work_date', periodEnd);
-    if (schedOffErr) throw schedOffErr;
-    const dayOffSet = new Set((schedOff ?? []).map((r) => r.work_date as string));
+    if (schedErr) throw schedErr;
+    const dayOffSet = new Set<string>();
+    const rosteredSet = new Set<string>(); // scheduled to WORK (is_day_off = false)
+    for (const r of sched ?? []) {
+      const d = r.work_date as string;
+      if (r.is_day_off === true) dayOffSet.add(d);
+      else rosteredSet.add(d);
+    }
 
     const { data: leaves, error: leaveErr } = await service
       .from('hr_leaves')
@@ -146,6 +152,15 @@ export async function recomputePoolDeductions(
       .eq('user_id', userId).eq('status', 'approved')
       .lte('from_date', periodEnd).gte('to_date', periodStart);
     if (leaveErr) throw leaveErr;
+    // Every approved leave covers its dates — even the ones that don't dock SC (พักร้อน). A covered
+    // day is never "unauthorised absence", so this set must be built from ALL of them, before the
+    // deductSc filter below.
+    const leaveCovered = new Set<string>();
+    for (const lv of (leaves ?? []) as unknown as LeaveRow[]) {
+      for (const d of enumerateDates(clampMax(lv.from_date, periodStart), clampMin(lv.to_date, periodEnd))) {
+        leaveCovered.add(d);
+      }
+    }
     for (const lv of (leaves ?? []) as unknown as LeaveRow[]) {
       const lt = Array.isArray(lv.leave_type) ? lv.leave_type[0] : lv.leave_type;
       if (!lt) continue;
@@ -160,10 +175,46 @@ export async function recomputePoolDeductions(
       }
     }
 
+    // Unauthorised absence docks SC at the same ÷divisor rate as leave (client rule 2026-07-20:
+    // ขาดงาน → หักเงินเดือน + เซอร์วิส + ค่าเดินทาง). Mirrors time-engine's `absent = scheduled &&
+    // !firstIn`, with an HR override able to force or clear the flag either way, and any approved
+    // leave (docking or not) clearing it. Without this a no-show kept their full SC share while
+    // someone who filed ลากิจ lost it.
+    const { data: punches, error: punchErr } = await service
+      .from('hr_attendance').select('business_date')
+      .eq('user_id', userId).eq('type', 'in')
+      .gte('business_date', periodStart).lte('business_date', periodEnd);
+    if (punchErr) throw punchErr;
+    const punchedSet = new Set((punches ?? []).map((r) => r.business_date as string));
+
+    const { data: tsOverrides, error: tsErr } = await service
+      .from('hr_timesheet_overrides').select('business_date, absent')
+      .eq('user_id', userId)
+      .gte('business_date', periodStart).lte('business_date', periodEnd);
+    if (tsErr) throw tsErr;
+    const absentOverride = new Map<string, boolean>();
+    for (const r of tsOverrides ?? []) {
+      if (r.absent !== null) absentOverride.set(r.business_date as string, r.absent as boolean);
+    }
+
+    const absentDays = enumerateDates(periodStart, periodEnd).filter((d) => {
+      if (leaveCovered.has(d)) return false;
+      const forced = absentOverride.get(d);
+      if (forced !== undefined) return forced;
+      return rosteredSet.has(d) && !punchedSet.has(d);
+    }).length;
+
+    if (absentDays > 0) {
+      const { amount_satang } = computeLeaveScDeduction(allocated, absentDays, policies.sc_leave_divisor);
+      if (amount_satang > 0) {
+        lines.push({ allocation_id: allocId, source_type: 'absent', source_ref: null, label: `Absent (${absentDays}d)`, amount_satang, carry_satang: 0, auto: true, created_by: actorId });
+      }
+    }
+
     // Swap only the auto lines this routine OWNS (never 'eval'/'stock_penalty' base lines or 'manual').
     const { error: delErr } = await service
       .from(DED).delete().eq('allocation_id', allocId).eq('auto', true)
-      .in('source_type', ['warning', 'warning_carry', 'leave', 'eval_carry', 'stock_penalty_carry']);
+      .in('source_type', ['warning', 'warning_carry', 'leave', 'absent', 'eval_carry', 'stock_penalty_carry']);
     if (delErr) throw delErr;
     if (lines.length > 0) {
       const { error: insErr } = await service.from(DED).insert(lines);

@@ -23,7 +23,7 @@ export interface ScPool {
 
 export type ScSourceType =
   | 'warning' | 'warning_carry'
-  | 'leave' | 'late'
+  | 'leave' | 'absent' | 'late'
   | 'eval' | 'eval_carry'
   | 'stock_penalty' | 'stock_penalty_carry'
   | 'manual';
