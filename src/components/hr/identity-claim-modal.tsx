@@ -22,7 +22,10 @@ interface Option {
   requires_bank_verify?: boolean;
 }
 
-const DONE_KEY = 'hr-identity-done'; // '1' once linked/claimed — skip the status fetch entirely
+// NOTE: there is deliberately no localStorage short-circuit here. A 'done' flag was cached per
+// BROWSER, not per user — so signing in as an unverified account on a device where any verified
+// account had signed in before skipped the gate entirely. Server state is the only source of
+// truth; the check is two indexed lookups and runs once per full page load.
 
 export function IdentityClaimModal({ role }: { role: string }) {
   const isTh = useLocale() === 'th';
@@ -46,18 +49,12 @@ export function IdentityClaimModal({ role }: { role: string }) {
 
   useEffect(() => {
     if (!eligible) return;
-    try {
-      if (localStorage.getItem(DONE_KEY) === '1') return;
-    } catch { /* storage unavailable → just check the API */ }
     (async () => {
       try {
-        const res = await fetch('/api/hr/ess/identity');
+        const res = await fetch('/api/hr/ess/identity', { cache: 'no-store' });
         if (!res.ok) return;
         const d = (await res.json())?.data;
-        if (d?.linked || d?.claim) {
-          try { localStorage.setItem(DONE_KEY, '1'); } catch { /* ignore */ }
-          return;
-        }
+        if (d?.linked || d?.claim) return;
         setOpen(true);
       } catch { /* a failed status check must not lock the app out — stay closed, retry next load */ }
     })();
@@ -72,7 +69,6 @@ export function IdentityClaimModal({ role }: { role: string }) {
         const res = await fetch('/api/hr/ess/identity');
         const d = (await res.json())?.data;
         if (!res.ok || d?.linked || d?.claim) return;
-        try { localStorage.removeItem(DONE_KEY); } catch { /* ignore */ }
         setStep('ask');
         setOpen(true);
       } catch { /* ignore */ }
@@ -128,7 +124,6 @@ export function IdentityClaimModal({ role }: { role: string }) {
         return;
       }
       if (!res.ok) throw new Error(json?.error);
-      try { localStorage.setItem(DONE_KEY, '1'); } catch { /* ignore */ }
       // Tell any open surface (e.g. /me/profile) to re-read status so its "ผูกชื่อ" button
       // immediately flips to the "waiting for HR" banner instead of staying re-clickable.
       try { window.dispatchEvent(new Event('hr-identity-updated')); } catch { /* ignore */ }
