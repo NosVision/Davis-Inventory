@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireStoreManager } from '@/lib/hr/route-auth';
+import { requireHrManagerForStore } from '@/lib/hr/route-auth';
 import { openBusinessDateBangkok } from '@/lib/utils/date';
 import {
   computeDaySummary,
@@ -23,6 +23,8 @@ interface OverrideRow {
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+/** store_id sentinel for "employees not attached to any venue" (see GET). */
+export const NO_STORE = 'none';
 const MAX_RANGE_DAYS = 62;
 const DEFAULT_WORK_HOURS = 9;
 
@@ -91,8 +93,14 @@ function dateRange(from: string, to: string): string[] {
 // Read-only, derived on demand (never trusts stored metrics). Manager/HR only.
 export async function GET(request: NextRequest) {
   const sp = request.nextUrl.searchParams;
-  const storeId = sp.get('store_id') ?? '';
-  const auth = await requireStoreManager(storeId);
+  const storeParam = sp.get('store_id') ?? '';
+  // `store_id=none` = the staff who belong to a COMPANY but no venue (office: HR, accounting,
+  // graphic). They have no user_stores row, so a store-keyed roster could never list them and HR
+  // had no way to back-fill their hours at all. Company-wide HR only — there is no store manager
+  // who owns them. A blank store_id still 400s, as before.
+  const noStore = storeParam === NO_STORE;
+  const storeId = noStore ? '' : storeParam;
+  const auth = await requireHrManagerForStore(noStore ? null : storeId);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const today = openBusinessDateBangkok();
@@ -109,13 +117,29 @@ export async function GET(request: NextRequest) {
 
   const service = createServiceClient();
 
-  // Staff of the store (optionally a single employee).
-  const { data: members, error: membersErr } = await service
-    .from('user_stores')
-    .select('user_id')
-    .eq('store_id', storeId);
-  if (membersErr) return NextResponse.json({ error: 'Failed to load staff' }, { status: 500 });
-  let userIds = (members ?? []).map((r: { user_id: string }) => r.user_id);
+  // Staff of the store (optionally a single employee) — or, for the no-store bucket, every active
+  // employee with no user_stores row anywhere.
+  let userIds: string[];
+  if (noStore) {
+    const [empRes, linkRes] = await Promise.all([
+      service.from('hr_employees').select('profile_id').eq('status', 'active'),
+      service.from('user_stores').select('user_id'),
+    ]);
+    if (empRes.error || linkRes.error) {
+      return NextResponse.json({ error: 'Failed to load staff' }, { status: 500 });
+    }
+    const attached = new Set((linkRes.data ?? []).map((r) => r.user_id as string));
+    userIds = (empRes.data ?? [])
+      .map((r) => r.profile_id as string | null)
+      .filter((id): id is string => !!id && !attached.has(id));
+  } else {
+    const { data: members, error: membersErr } = await service
+      .from('user_stores')
+      .select('user_id')
+      .eq('store_id', storeId);
+    if (membersErr) return NextResponse.json({ error: 'Failed to load staff' }, { status: 500 });
+    userIds = (members ?? []).map((r: { user_id: string }) => r.user_id);
+  }
   if (userFilter) {
     if (!userIds.includes(userFilter)) {
       return NextResponse.json({ error: 'Employee is not in this store' }, { status: 400 });
@@ -130,17 +154,32 @@ export async function GET(request: NextRequest) {
       .from('hr_employees')
       .select('profile_id, company_id, full_name, work_hours_per_day, ot_eligible, status')
       .in('profile_id', userIds),
-    service
-      .from('hr_schedule')
-      .select('user_id, work_date, is_day_off, shift:hr_shift_templates(start_time, end_time)')
-      .eq('store_id', storeId)
+    // No-store bucket: key on user_id alone. These employees belong to no venue, so there is no
+    // other store's data to leak in — and hr_schedule.store_id is NOT NULL, so any roster row they
+    // do have would be filtered away by a store match that can never be satisfied.
+    (noStore
+      ? service
+          .from('hr_schedule')
+          .select('user_id, work_date, is_day_off, shift:hr_shift_templates(start_time, end_time)')
+          .in('user_id', userIds)
+      : service
+          .from('hr_schedule')
+          .select('user_id, work_date, is_day_off, shift:hr_shift_templates(start_time, end_time)')
+          .eq('store_id', storeId)
+    )
       .gte('work_date', from)
       .lte('work_date', to),
-    service
-      .from('hr_attendance')
-      .select('user_id, type, ts, business_date, review_status')
-      .eq('store_id', storeId) // scope to THIS store — a multi-store employee's punches
-      .in('user_id', userIds) //  elsewhere must not leak into / inflate this timesheet
+    (noStore
+      ? service
+          .from('hr_attendance')
+          .select('user_id, type, ts, business_date, review_status')
+          .in('user_id', userIds)
+      : service
+          .from('hr_attendance')
+          .select('user_id, type, ts, business_date, review_status')
+          .eq('store_id', storeId) // scope to THIS store — a multi-store employee's punches
+          .in('user_id', userIds) //  elsewhere must not leak into / inflate this timesheet
+    )
       .gte('business_date', from)
       .lte('business_date', to),
     service

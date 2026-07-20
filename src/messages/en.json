@@ -4153,6 +4153,7 @@
       "filter": {
         "all": "All",
         "venue": "Venue",
+        "company": "Company",
         "position": "Position",
         "department": "Department",
         "payType": "Pay type",

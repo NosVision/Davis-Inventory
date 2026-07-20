@@ -4154,6 +4154,7 @@
       "filter": {
         "all": "ทั้งหมด",
         "venue": "สาขา",
+        "company": "บริษัท",
         "position": "ตำแหน่ง",
         "department": "แผนก",
         "payType": "ประเภทการจ่าย",

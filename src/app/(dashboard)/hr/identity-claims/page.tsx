@@ -48,8 +48,8 @@ type Filter = 'claimed' | 'unclaimed' | 'linked';
 export default function HrIdentityClaimsPage() {
   const isTh = useLocale() === 'th';
   const L = isTh
-    ? { title: 'ยืนยันตัวตนพนักงาน', subtitle: 'ตรวจสอบว่าบัญชีผู้ใช้ไหนคือพนักงานคนไหน แล้วอนุมัติเพื่อผูกประวัติ', claimed: 'รอตรวจสอบ', unclaimed: 'ยังไม่ยืนยัน', linked: 'ผูกแล้ว', queue: 'คิวรอตรวจสอบ', empty: 'ไม่มีคำขอค้าง', unclaimedList: 'รายชื่อที่ยังไม่มีใครยืนยัน', approve: 'อนุมัติ', reject: 'ปฏิเสธ', rejectReason: 'เหตุผลที่ปฏิเสธ (แจ้งพนักงาน)', approved: 'ผูกบัญชีแล้ว', rejected: 'ปฏิเสธแล้ว — ชื่อกลับเข้ารายการ', failed: 'ทำรายการไม่สำเร็จ', claimsAs: 'ระบุว่าเป็น', sheetPos: 'ตำแหน่งในชีท', started: 'เริ่มงาน', account: 'บัญชี', linkedList: 'รายชื่อที่ผูกบัญชีแล้ว', emptyUnclaimed: 'ไม่มีรายชื่อที่รอยืนยัน', emptyLinked: 'ยังไม่มีใครผูกบัญชี' }
-    : { title: 'Employee identity claims', subtitle: 'Verify which app account is which employee, then approve to link', claimed: 'Awaiting review', unclaimed: 'Unclaimed', linked: 'Linked', queue: 'Review queue', empty: 'No pending claims', unclaimedList: 'Names not yet claimed', approve: 'Approve', reject: 'Reject', rejectReason: 'Rejection reason (shown to the employee)', approved: 'Account linked', rejected: 'Rejected — name returned to the pool', failed: 'Action failed', claimsAs: 'claims to be', sheetPos: 'Sheet position', started: 'Started', account: 'Account', linkedList: 'Linked accounts', emptyUnclaimed: 'No unclaimed names', emptyLinked: 'No linked accounts yet' };
+    ? { title: 'ยืนยันตัวตนพนักงาน', subtitle: 'ตรวจสอบว่าบัญชีผู้ใช้ไหนคือพนักงานคนไหน แล้วอนุมัติเพื่อผูกประวัติ', claimed: 'รอตรวจสอบ', unclaimed: 'ยังไม่ยืนยัน', linked: 'ผูกแล้ว', queue: 'คิวรอตรวจสอบ', empty: 'ไม่มีคำขอค้าง', unclaimedList: 'รายชื่อที่ยังไม่มีใครยืนยัน', approve: 'อนุมัติ', reject: 'ปฏิเสธ', rejectReason: 'เหตุผลที่ปฏิเสธ (แจ้งพนักงาน)', approved: 'ผูกบัญชีแล้ว', rejected: 'ปฏิเสธแล้ว — ชื่อกลับเข้ารายการ', failed: 'ทำรายการไม่สำเร็จ', claimsAs: 'ระบุว่าเป็น', sheetPos: 'ตำแหน่งในชีท', started: 'เริ่มงาน', account: 'บัญชี', linkedList: 'รายชื่อที่ผูกบัญชีแล้ว', emptyUnclaimed: 'ไม่มีรายชื่อที่รอยืนยัน', emptyLinked: 'ยังไม่มีใครผูกบัญชี', noStore: 'ไม่มีสาขา', noStoreHint: 'รายชื่อนี้ไม่ได้ระบุสาขา — อนุมัติได้ แต่จะไม่ถูกจัดกะและไม่โผล่ในหน้าบันทึกเวลาของสาขาใด ต้องใช้ตัวเลือก "ไม่สังกัดสาขา" แทน' }
+    : { title: 'Employee identity claims', subtitle: 'Verify which app account is which employee, then approve to link', claimed: 'Awaiting review', unclaimed: 'Unclaimed', linked: 'Linked', queue: 'Review queue', empty: 'No pending claims', unclaimedList: 'Names not yet claimed', approve: 'Approve', reject: 'Reject', rejectReason: 'Rejection reason (shown to the employee)', approved: 'Account linked', rejected: 'Rejected — name returned to the pool', failed: 'Action failed', claimsAs: 'claims to be', sheetPos: 'Sheet position', started: 'Started', account: 'Account', linkedList: 'Linked accounts', emptyUnclaimed: 'No unclaimed names', emptyLinked: 'No linked accounts yet', noStore: 'No venue', noStoreHint: 'This name has no venue — approving is fine, but they cannot be rostered and will not appear under any store on the timesheet. Use the "No venue" filter instead.' };
 
   const { prompt, dialog } = usePromptDialog();
   const [view, setView] = useViewMode('hr-identity-claims');
@@ -141,7 +141,15 @@ export default function HrIdentityClaimsPage() {
                         </>
                       }
                       subtitle={`${L.account}: ${c.claimant?.username ?? '—'} · ${c.store?.store_name ?? c.company?.name ?? ''}`}
-                      status={<StatusBadge tone="warn" label={L.claimed} />}
+                      status={
+                        <span className="inline-flex items-center gap-1.5">
+                          {/* Without a venue the subtitle silently falls back to the company name, so a
+                              storeless row looked normal — then the person vanished from every store's
+                              timesheet after approval. Say it before HR approves, not after. */}
+                          {!c.store && <StatusBadge tone="serious" label={L.noStore} />}
+                          <StatusBadge tone="warn" label={L.claimed} />
+                        </span>
+                      }
                       actions={
                         <>
                           <Button size="sm" variant="outline" disabled={busy === c.id} onClick={() => decide(c.id, 'reject')}>{L.reject}</Button>
@@ -150,6 +158,11 @@ export default function HrIdentityClaimsPage() {
                       }
                     >
                       {c.position_text ? `${L.sheetPos}: ${c.position_text}` : ''}{c.start_date ? ` · ${L.started} ${c.start_date}` : ''}{c.sheet_ref ? ` · ${c.sheet_ref}` : ''}
+                      {!c.store && (
+                        <span className="mt-1.5 block rounded-md bg-amber-50 px-2 py-1.5 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+                          {L.noStoreHint}
+                        </span>
+                      )}
                     </DataCard>
                   ))}
                 </DataList>
@@ -168,7 +181,9 @@ export default function HrIdentityClaimsPage() {
                   {unclaimed.map((u) => (
                     <span key={u.id} className="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-600 dark:bg-gray-700/60 dark:text-gray-300">
                       {u.full_name_th}
-                      {u.store?.store_name ? <span className="ml-1 text-gray-400">· {u.store.store_name}</span> : null}
+                      {u.store?.store_name
+                        ? <span className="ml-1 text-gray-400">· {u.store.store_name}</span>
+                        : <span className="ml-1 font-medium text-amber-600 dark:text-amber-400">· {L.noStore}</span>}
                     </span>
                   ))}
                 </div>

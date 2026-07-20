@@ -62,6 +62,9 @@ export default function EmployeesPage() {
   // filters
   const [q, setQ] = useState('');
   const [storeId, setStoreId] = useState('');
+  // Payroll is keyed on the legal entity, not the venue — office staff have a company but no store,
+  // so filtering by venue alone could never reach them.
+  const [companyId, setCompanyId] = useState('');
   const [positionId, setPositionId] = useState('');
   const [departmentId, setDepartmentId] = useState('');
   const [payType, setPayType] = useState('');
@@ -69,6 +72,7 @@ export default function EmployeesPage() {
 
   // filter option data
   const [stores, setStores] = useState<Ref[]>([]);
+  const [companies, setCompanies] = useState<Ref[]>([]);
   const [positions, setPositions] = useState<Ref[]>([]);
   const [departments, setDepartments] = useState<Ref[]>([]);
 
@@ -176,12 +180,14 @@ export default function EmployeesPage() {
   useEffect(() => {
     const supabase = createClient();
     (async () => {
-      const [st, pos, dep] = await Promise.all([
+      const [st, pos, dep, co] = await Promise.all([
         supabase.from('stores').select('id, store_name').eq('active', true).order('store_name'),
         supabase.from('hr_positions').select('id, name').eq('active', true).order('sort_order'),
         supabase.from('hr_departments').select('id, name').eq('active', true).order('name'),
+        supabase.from('hr_companies').select('id, name').order('name'),
       ]);
       setStores((st.data ?? []).map((s) => ({ id: s.id as string, name: s.store_name as string })));
+      setCompanies((co.data ?? []).map((c) => ({ id: c.id as string, name: c.name as string })));
       setPositions((pos.data ?? []).map((p) => ({ id: p.id as string, name: p.name as string })));
       setDepartments((dep.data ?? []).map((d) => ({ id: d.id as string, name: d.name as string })));
     })();
@@ -191,6 +197,7 @@ export default function EmployeesPage() {
     setLoading(true);
     const params = new URLSearchParams();
     if (q.trim()) params.set('q', q.trim());
+    if (companyId) params.set('company_id', companyId);
     if (storeId) params.set('store_id', storeId);
     if (positionId) params.set('position_id', positionId);
     if (departmentId) params.set('department_id', departmentId);
@@ -203,7 +210,7 @@ export default function EmployeesPage() {
       setCount(json.count ?? 0);
     }
     setLoading(false);
-  }, [q, storeId, positionId, departmentId, payType, status]);
+  }, [q, companyId, storeId, positionId, departmentId, payType, status]);
 
   useEffect(() => {
     const id = setTimeout(fetchEmployees, 250); // debounce search
@@ -381,6 +388,7 @@ export default function EmployeesPage() {
           placeholder={t('searchPlaceholder')}
           className="control col-span-2 lg:col-span-2"
         />
+        <Select value={companyId} onChange={(e) => setCompanyId(e.target.value)} placeholder={t('filter.company')} options={[{ value: '', label: t('filter.all') }, ...opt(companies)]} />
         <Select value={storeId} onChange={(e) => setStoreId(e.target.value)} placeholder={t('filter.venue')} options={[{ value: '', label: t('filter.all') }, ...opt(stores)]} />
         <Select value={positionId} onChange={(e) => setPositionId(e.target.value)} placeholder={t('filter.position')} options={[{ value: '', label: t('filter.all') }, ...opt(positions)]} />
         <Select value={departmentId} onChange={(e) => setDepartmentId(e.target.value)} placeholder={t('filter.department')} options={[{ value: '', label: t('filter.all') }, ...opt(departments)]} />

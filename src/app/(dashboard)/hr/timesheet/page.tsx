@@ -28,6 +28,8 @@ type ViewMode = 'blocks' | 'full' | 'summary';
 
 const MAX_RANGE_DAYS = 62;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+/** store filter value for "employees attached to no venue" — mirrors NO_STORE in the API route. */
+const NO_STORE = 'none';
 
 function dayDiff(from: string, to: string): number {
   const a = new Date(`${from}T00:00:00Z`).getTime();
@@ -96,6 +98,11 @@ export default function HrTimesheetPage() {
     })();
   }, []);
 
+  // NO_STORE is a filter sentinel, not a real store id — never let it reach an API that expects a
+  // uuid (the override write, the bulk grid). Those fall back to "no explicit store".
+  const noStore = storeId === NO_STORE;
+  const realStoreId = noStore ? '' : storeId;
+
   const load = useCallback(async () => {
     if (!storeId) {
       setEmployees([]);
@@ -154,6 +161,9 @@ export default function HrTimesheetPage() {
                     {s.store_name}
                   </option>
                 ))}
+                {/* Office staff (HR, accounting, graphic) belong to a company but no venue, so a
+                    store-keyed roster never listed them and their hours could not be back-filled. */}
+                <option value={NO_STORE}>{isTh ? '— ไม่สังกัดสาขา —' : '— No venue —'}</option>
               </select>
             </label>
             <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
@@ -177,7 +187,8 @@ export default function HrTimesheetPage() {
               />
             </label>
             <div className="flex items-end">
-              <Button variant="outline" onClick={() => setBulkOpen(true)} disabled={!storeId}>
+              {/* Bulk backfill seeds its grid from a store roster — meaningless without a venue. */}
+              <Button variant="outline" onClick={() => setBulkOpen(true)} disabled={!storeId || noStore}>
                 <CalendarPlus className="h-4 w-4" />
                 {t('bulkBackfill')}
               </Button>
@@ -276,7 +287,7 @@ export default function HrTimesheetPage() {
       <TimesheetEditModal
         isOpen={!!editTarget}
         target={editTarget}
-        storeId={storeId}
+        storeId={realStoreId}
         leaveTypes={leaveTypes}
         onClose={() => setEditTarget(null)}
         onSaved={() => {
@@ -287,7 +298,7 @@ export default function HrTimesheetPage() {
 
       <BulkBackfillModal
         isOpen={bulkOpen}
-        storeId={storeId}
+        storeId={realStoreId}
         storeName={stores.find((s) => s.id === storeId)?.store_name ?? ''}
         defaultFrom={from}
         defaultTo={to}
