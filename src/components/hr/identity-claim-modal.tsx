@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useLocale } from 'next-intl';
-import { UserCheck, Search } from 'lucide-react';
+import { UserCheck, Search, LogOut } from 'lucide-react';
 import { Modal, ModalFooter, Button, toast } from '@/components/ui';
+import { createClient } from '@/lib/supabase/client';
 
 // Identity-claim GATE (owner ask 2026-07-20): an app user who is NOT yet linked to an
 // hr_employees record AND has no claim awaiting HR must pick their REAL full name from the
@@ -12,9 +13,9 @@ import { Modal, ModalFooter, Button, toast } from '@/components/ui';
 // prompt was being deferred indefinitely. Either state clears it: `linked` (HR approved) or
 // `claim` (submitted, awaiting HR). Self-contained locale.
 //
-// Escape hatches, deliberately: `owner` is never gated (so someone can always reach HR screens to
-// approve or fix a roster gap), and a user whose name is missing from the roster is told to
-// contact HR rather than left staring at an empty picker.
+// Escape hatches, deliberately: the admin roles are never gated (see EXEMPT_ROLES — they must stay
+// able to reach the HR screens that approve claims and fix roster gaps), and a user whose name is
+// missing from the roster is told to contact HR rather than left staring at an empty picker.
 interface Option {
   id: string;
   full_name_th: string;
@@ -30,8 +31,8 @@ interface Option {
 export function IdentityClaimModal({ role }: { role: string }) {
   const isTh = useLocale() === 'th';
   const L = isTh
-    ? { title: 'กรุณาระบุชื่อจริงในระบบของคุณ', body: 'HR กำลังเชื่อมบัญชีผู้ใช้กับประวัติพนักงาน กรุณาเลือกชื่อ-นามสกุลจริงของคุณเพื่อยืนยันตัวตน', confirmNow: 'ยืนยันทันที', required: 'จำเป็นต้องยืนยันก่อนใช้งานระบบ — ข้ามขั้นตอนนี้ไม่ได้', noNameHelp: 'ไม่พบชื่อของคุณ? แจ้ง HR เพื่อเพิ่มชื่อเข้าระบบก่อน', searchPh: 'พิมพ์ชื่อจริงของคุณ…', pick: 'เลือกชื่อของคุณ', submit: 'ยืนยัน', sent: 'ส่งให้ HR ตรวจสอบแล้ว', sentBody: 'เมื่อ HR อนุมัติ บัญชีของคุณจะถูกผูกกับประวัติพนักงานอัตโนมัติ', failed: 'ส่งไม่สำเร็จ ลองใหม่อีกครั้ง', taken: 'ชื่อนี้ถูกยืนยันไปแล้ว — เลือกใหม่', noResult: 'ไม่พบชื่อ ลองพิมพ์เพิ่ม หรือติดต่อ HR', bankLabel: 'ยืนยันเลขบัญชีเงินเดือนของคุณ', bankHintOf: (b: string | null, l4: string) => `บัญชี${b ? ` ${b}` : ''}ที่ลงท้าย •••• ${l4}`, bankPh: 'เลขบัญชีเต็ม (ตัวเลขล้วน)', bankMismatch: 'เลขบัญชีไม่ตรงกับข้อมูลในระบบ — ตรวจสอบสมุดบัญชีของคุณอีกครั้ง' }
-    : { title: 'Please identify your real name', body: 'HR is linking app accounts to employee records. Pick your real full name to confirm your identity.', confirmNow: 'Confirm now', required: 'Verification is required before you can use the app — this step cannot be skipped.', noNameHelp: 'Cannot find your name? Ask HR to add you to the roster first.', searchPh: 'Type your real name…', pick: 'Select your name', submit: 'Confirm', sent: 'Sent to HR for review', sentBody: 'Once HR approves, your account is linked to your employee record automatically.', failed: 'Failed — try again', taken: 'That name was just claimed — pick again', noResult: 'No match — type more, or contact HR', bankLabel: 'Confirm your payroll bank account', bankHintOf: (b: string | null, l4: string) => `The${b ? ` ${b}` : ''} account ending •••• ${l4}`, bankPh: 'Full account number (digits only)', bankMismatch: 'Account number does not match our records — check your bank book' };
+    ? { title: 'กรุณาระบุชื่อจริงในระบบของคุณ', body: 'HR กำลังเชื่อมบัญชีผู้ใช้กับประวัติพนักงาน กรุณาเลือกชื่อ-นามสกุลจริงของคุณเพื่อยืนยันตัวตน', confirmNow: 'ยืนยันทันที', signOut: 'ออกจากระบบ', required: 'จำเป็นต้องยืนยันก่อนใช้งานระบบ — ข้ามขั้นตอนนี้ไม่ได้', noNameHelp: 'ไม่พบชื่อของคุณ? แจ้ง HR เพื่อเพิ่มชื่อเข้าระบบก่อน', searchPh: 'พิมพ์ชื่อจริงของคุณ…', pick: 'เลือกชื่อของคุณ', submit: 'ยืนยัน', sent: 'ส่งให้ HR ตรวจสอบแล้ว', sentBody: 'เมื่อ HR อนุมัติ บัญชีของคุณจะถูกผูกกับประวัติพนักงานอัตโนมัติ', failed: 'ส่งไม่สำเร็จ ลองใหม่อีกครั้ง', taken: 'ชื่อนี้ถูกยืนยันไปแล้ว — เลือกใหม่', noResult: 'ไม่พบชื่อ ลองพิมพ์เพิ่ม หรือติดต่อ HR', bankLabel: 'ยืนยันเลขบัญชีเงินเดือนของคุณ', bankHintOf: (b: string | null, l4: string) => `บัญชี${b ? ` ${b}` : ''}ที่ลงท้าย •••• ${l4}`, bankPh: 'เลขบัญชีเต็ม (ตัวเลขล้วน)', bankMismatch: 'เลขบัญชีไม่ตรงกับข้อมูลในระบบ — ตรวจสอบสมุดบัญชีของคุณอีกครั้ง' }
+    : { title: 'Please identify your real name', body: 'HR is linking app accounts to employee records. Pick your real full name to confirm your identity.', confirmNow: 'Confirm now', signOut: 'Sign out', required: 'Verification is required before you can use the app — this step cannot be skipped.', noNameHelp: 'Cannot find your name? Ask HR to add you to the roster first.', searchPh: 'Type your real name…', pick: 'Select your name', submit: 'Confirm', sent: 'Sent to HR for review', sentBody: 'Once HR approves, your account is linked to your employee record automatically.', failed: 'Failed — try again', taken: 'That name was just claimed — pick again', noResult: 'No match — type more, or contact HR', bankLabel: 'Confirm your payroll bank account', bankHintOf: (b: string | null, l4: string) => `The${b ? ` ${b}` : ''} account ending •••• ${l4}`, bankPh: 'Full account number (digits only)', bankMismatch: 'Account number does not match our records — check your bank book' };
 
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<'ask' | 'pick'>('ask');
@@ -41,11 +42,15 @@ export function IdentityClaimModal({ role }: { role: string }) {
   const [bankInput, setBankInput] = useState('');
   const [bankErr, setBankErr] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Roles that are never venue employees (owner is excluded from claiming anyway; customer has
-  // no dashboard). Everyone else may be an employee, so they get the prompt.
-  const eligible = role !== 'owner' && role !== 'customer';
+  // Roles the gate never blocks. `customer` has no dashboard; `owner`, `hq` and `hr` run the
+  // system rather than clock in through it — and blocking them would be self-defeating, since HQ
+  // and HR are the ones who approve claims and add missing roster names. Everyone else may be a
+  // venue employee, so they are gated.
+  const EXEMPT_ROLES = new Set(['owner', 'customer', 'hq', 'hr']);
+  const eligible = !EXEMPT_ROLES.has(role);
 
   useEffect(() => {
     if (!eligible) return;
@@ -92,7 +97,18 @@ export function IdentityClaimModal({ role }: { role: string }) {
   }, [q, step]);
 
   // The gate is mandatory: Modal calls onClose on Esc and on backdrop click, so it gets a no-op.
-  const noDismiss = () => { /* blocking gate — the only way out is submitting a claim */ };
+  const noDismiss = () => { /* blocking gate — the only ways out are claiming or signing out */ };
+
+  // The one way out without claiming. Must really end the session — clearing client state alone
+  // would leave the auth cookie valid, so the next navigation walks straight back into the gate.
+  // Hard navigation (not router.push) so no stale client state survives.
+  const signOut = async () => {
+    setSigningOut(true);
+    try {
+      await createClient().auth.signOut();
+    } catch { /* sign out locally anyway — the redirect below still drops them at /login */ }
+    window.location.href = '/login';
+  };
 
   const submit = async () => {
     if (!chosen) return;
@@ -149,6 +165,9 @@ export function IdentityClaimModal({ role }: { role: string }) {
           </div>
           <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">{L.required}</p>
           <ModalFooter>
+            <Button variant="ghost" onClick={signOut} disabled={signingOut} isLoading={signingOut} icon={<LogOut className="h-4 w-4" />}>
+              {L.signOut}
+            </Button>
             <Button onClick={() => setStep('pick')}>{L.confirmNow}</Button>
           </ModalFooter>
         </>
@@ -206,7 +225,10 @@ export function IdentityClaimModal({ role }: { role: string }) {
           )}
           <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">{L.noNameHelp}</p>
           <ModalFooter>
-            <Button onClick={submit} disabled={!chosen || submitting} isLoading={submitting}>{L.submit}</Button>
+            <Button variant="ghost" onClick={signOut} disabled={signingOut || submitting} isLoading={signingOut} icon={<LogOut className="h-4 w-4" />}>
+              {L.signOut}
+            </Button>
+            <Button onClick={submit} disabled={!chosen || submitting || signingOut} isLoading={submitting}>{L.submit}</Button>
           </ModalFooter>
         </>
       )}
