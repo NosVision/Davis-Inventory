@@ -5,10 +5,16 @@ import { useLocale } from 'next-intl';
 import { UserCheck, Search } from 'lucide-react';
 import { Modal, ModalFooter, Button, toast } from '@/components/ui';
 
-// Identity-claim prompt (owner flow 2026-07-05): an app user who is NOT yet linked to an
-// hr_employees record (and has no claim awaiting HR) is asked to pick their REAL full name from
-// the imported payroll roster. [ยืนยันทันที] opens a type-ahead over the unclaimed names;
-// [เอาไว้ทีหลัง] snoozes until the next day. Saving notifies HR to verify. Self-contained locale.
+// Identity-claim GATE (owner ask 2026-07-20): an app user who is NOT yet linked to an
+// hr_employees record AND has no claim awaiting HR must pick their REAL full name from the
+// imported payroll roster before using any page. Blocking, like the PWA/policy gate — no
+// dismiss, no Esc, no backdrop close, no snooze: an unidentified account cannot be paid, and the
+// prompt was being deferred indefinitely. Either state clears it: `linked` (HR approved) or
+// `claim` (submitted, awaiting HR). Self-contained locale.
+//
+// Escape hatches, deliberately: `owner` is never gated (so someone can always reach HR screens to
+// approve or fix a roster gap), and a user whose name is missing from the roster is told to
+// contact HR rather than left staring at an empty picker.
 interface Option {
   id: string;
   full_name_th: string;
@@ -16,18 +22,13 @@ interface Option {
   requires_bank_verify?: boolean;
 }
 
-const SNOOZE_KEY = 'hr-identity-snooze'; // Bangkok date string — re-prompt on the next day
 const DONE_KEY = 'hr-identity-done'; // '1' once linked/claimed — skip the status fetch entirely
-
-function bkkToday(): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
-}
 
 export function IdentityClaimModal({ role }: { role: string }) {
   const isTh = useLocale() === 'th';
   const L = isTh
-    ? { title: 'กรุณาระบุชื่อจริงในระบบของคุณ', body: 'HR กำลังเชื่อมบัญชีผู้ใช้กับประวัติพนักงาน กรุณาเลือกชื่อ-นามสกุลจริงของคุณเพื่อยืนยันตัวตน', confirmNow: 'ยืนยันทันที', later: 'เอาไว้ทีหลัง', searchPh: 'พิมพ์ชื่อจริงของคุณ…', pick: 'เลือกชื่อของคุณ', submit: 'ยืนยัน', sent: 'ส่งให้ HR ตรวจสอบแล้ว', sentBody: 'เมื่อ HR อนุมัติ บัญชีของคุณจะถูกผูกกับประวัติพนักงานอัตโนมัติ', failed: 'ส่งไม่สำเร็จ ลองใหม่อีกครั้ง', taken: 'ชื่อนี้ถูกยืนยันไปแล้ว — เลือกใหม่', noResult: 'ไม่พบชื่อ ลองพิมพ์เพิ่ม หรือติดต่อ HR', bankLabel: 'ยืนยันเลขบัญชีเงินเดือนของคุณ', bankHintOf: (b: string | null, l4: string) => `บัญชี${b ? ` ${b}` : ''}ที่ลงท้าย •••• ${l4}`, bankPh: 'เลขบัญชีเต็ม (ตัวเลขล้วน)', bankMismatch: 'เลขบัญชีไม่ตรงกับข้อมูลในระบบ — ตรวจสอบสมุดบัญชีของคุณอีกครั้ง' }
-    : { title: 'Please identify your real name', body: 'HR is linking app accounts to employee records. Pick your real full name to confirm your identity.', confirmNow: 'Confirm now', later: 'Later', searchPh: 'Type your real name…', pick: 'Select your name', submit: 'Confirm', sent: 'Sent to HR for review', sentBody: 'Once HR approves, your account is linked to your employee record automatically.', failed: 'Failed — try again', taken: 'That name was just claimed — pick again', noResult: 'No match — type more, or contact HR', bankLabel: 'Confirm your payroll bank account', bankHintOf: (b: string | null, l4: string) => `The${b ? ` ${b}` : ''} account ending •••• ${l4}`, bankPh: 'Full account number (digits only)', bankMismatch: 'Account number does not match our records — check your bank book' };
+    ? { title: 'กรุณาระบุชื่อจริงในระบบของคุณ', body: 'HR กำลังเชื่อมบัญชีผู้ใช้กับประวัติพนักงาน กรุณาเลือกชื่อ-นามสกุลจริงของคุณเพื่อยืนยันตัวตน', confirmNow: 'ยืนยันทันที', required: 'จำเป็นต้องยืนยันก่อนใช้งานระบบ — ข้ามขั้นตอนนี้ไม่ได้', noNameHelp: 'ไม่พบชื่อของคุณ? แจ้ง HR เพื่อเพิ่มชื่อเข้าระบบก่อน', searchPh: 'พิมพ์ชื่อจริงของคุณ…', pick: 'เลือกชื่อของคุณ', submit: 'ยืนยัน', sent: 'ส่งให้ HR ตรวจสอบแล้ว', sentBody: 'เมื่อ HR อนุมัติ บัญชีของคุณจะถูกผูกกับประวัติพนักงานอัตโนมัติ', failed: 'ส่งไม่สำเร็จ ลองใหม่อีกครั้ง', taken: 'ชื่อนี้ถูกยืนยันไปแล้ว — เลือกใหม่', noResult: 'ไม่พบชื่อ ลองพิมพ์เพิ่ม หรือติดต่อ HR', bankLabel: 'ยืนยันเลขบัญชีเงินเดือนของคุณ', bankHintOf: (b: string | null, l4: string) => `บัญชี${b ? ` ${b}` : ''}ที่ลงท้าย •••• ${l4}`, bankPh: 'เลขบัญชีเต็ม (ตัวเลขล้วน)', bankMismatch: 'เลขบัญชีไม่ตรงกับข้อมูลในระบบ — ตรวจสอบสมุดบัญชีของคุณอีกครั้ง' }
+    : { title: 'Please identify your real name', body: 'HR is linking app accounts to employee records. Pick your real full name to confirm your identity.', confirmNow: 'Confirm now', required: 'Verification is required before you can use the app — this step cannot be skipped.', noNameHelp: 'Cannot find your name? Ask HR to add you to the roster first.', searchPh: 'Type your real name…', pick: 'Select your name', submit: 'Confirm', sent: 'Sent to HR for review', sentBody: 'Once HR approves, your account is linked to your employee record automatically.', failed: 'Failed — try again', taken: 'That name was just claimed — pick again', noResult: 'No match — type more, or contact HR', bankLabel: 'Confirm your payroll bank account', bankHintOf: (b: string | null, l4: string) => `The${b ? ` ${b}` : ''} account ending •••• ${l4}`, bankPh: 'Full account number (digits only)', bankMismatch: 'Account number does not match our records — check your bank book' };
 
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<'ask' | 'pick'>('ask');
@@ -47,7 +48,6 @@ export function IdentityClaimModal({ role }: { role: string }) {
     if (!eligible) return;
     try {
       if (localStorage.getItem(DONE_KEY) === '1') return;
-      if (localStorage.getItem(SNOOZE_KEY) === bkkToday()) return;
     } catch { /* storage unavailable → just check the API */ }
     (async () => {
       try {
@@ -59,12 +59,12 @@ export function IdentityClaimModal({ role }: { role: string }) {
           return;
         }
         setOpen(true);
-      } catch { /* silent — never block the app over this prompt */ }
+      } catch { /* a failed status check must not lock the app out — stay closed, retry next load */ }
     })();
   }, [eligible]);
 
-  // Manual entry point (e.g. the "ผูกชื่อ" button on /me/profile) — force-open regardless of
-  // snooze; re-check the API so an already-linked user never gets a dead prompt.
+  // Manual entry point (e.g. the "ผูกชื่อ" button on /me/profile) — re-check the API so an
+  // already-linked user never gets a dead prompt.
   useEffect(() => {
     if (!eligible) return;
     const onOpen = async () => {
@@ -95,10 +95,8 @@ export function IdentityClaimModal({ role }: { role: string }) {
     return () => { if (debounce.current) clearTimeout(debounce.current); };
   }, [q, step]);
 
-  const snooze = () => {
-    try { localStorage.setItem(SNOOZE_KEY, bkkToday()); } catch { /* ignore */ }
-    setOpen(false);
-  };
+  // The gate is mandatory: Modal calls onClose on Esc and on backdrop click, so it gets a no-op.
+  const noDismiss = () => { /* blocking gate — the only way out is submitting a claim */ };
 
   const submit = async () => {
     if (!chosen) return;
@@ -145,7 +143,7 @@ export function IdentityClaimModal({ role }: { role: string }) {
 
   if (!open) return null;
   return (
-    <Modal isOpen onClose={snooze} title={L.title} size="md" showClose={false}>
+    <Modal isOpen onClose={noDismiss} title={L.title} size="md" showClose={false}>
       {step === 'ask' ? (
         <>
           <div className="flex items-start gap-3">
@@ -154,8 +152,8 @@ export function IdentityClaimModal({ role }: { role: string }) {
             </div>
             <p className="text-sm text-gray-600 dark:text-gray-300">{L.body}</p>
           </div>
+          <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">{L.required}</p>
           <ModalFooter>
-            <Button variant="ghost" onClick={snooze}>{L.later}</Button>
             <Button onClick={() => setStep('pick')}>{L.confirmNow}</Button>
           </ModalFooter>
         </>
@@ -211,8 +209,8 @@ export function IdentityClaimModal({ role }: { role: string }) {
               {bankErr && <p className="mt-1.5 text-xs text-red-500">{bankErr}</p>}
             </div>
           )}
+          <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">{L.noNameHelp}</p>
           <ModalFooter>
-            <Button variant="ghost" onClick={snooze}>{L.later}</Button>
             <Button onClick={submit} disabled={!chosen || submitting} isLoading={submitting}>{L.submit}</Button>
           </ModalFooter>
         </>
