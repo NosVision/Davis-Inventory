@@ -170,6 +170,7 @@ export type DeductionType =
   | 'absent'
   | 'leave_unpaid'
   | 'travel_leave'
+  | 'travel_absent'
   | 'student_loan'
   | 'advance'
   | 'guarantee'
@@ -384,6 +385,20 @@ export function computePayslip(input: PayrollInput): Payslip {
     .filter((a) => a.code === TRAVEL_CODE)
     .reduce((s, a) => s + a.amount_satang, 0);
 
+  // Travel allowance is docked per non-worked day, ÷30 × days (client rule 2026-07-20):
+  // ลากิจ / ลาป่วย (มีหรือไม่มีใบรับรอง) / ขาดงาน → หัก · day-off, ลาพักร้อน, นักขัตฤกษ์ → ไม่หัก.
+  // Which leave types dock is config-driven (hr_leave_types.deduct_travel → lv.travel_days);
+  // unauthorised absence always docks. Capped at the allowance so leave + absence in one cycle
+  // can never dock back more than was granted.
+  let travelDocked = 0;
+  const dockTravel = (days: number): number => {
+    if (travelAllowance <= 0 || days <= 0) return 0;
+    const amt = Math.min(Math.round((travelAllowance / dayDiv) * days), travelAllowance - travelDocked);
+    if (amt <= 0) return 0;
+    travelDocked += amt;
+    return amt;
+  };
+
   for (const lv of leaves) {
     if (lv.salary_days > 0 && !partTime) {
       const amt = Math.round(dailyRate(emp.rate_satang, dayDiv) * lv.salary_days);
@@ -396,27 +411,37 @@ export function computePayslip(input: PayrollInput): Payslip {
         });
       }
     }
-    if (lv.travel_days > 0 && travelAllowance > 0) {
-      const amt = Math.round((travelAllowance / dayDiv) * lv.travel_days);
-      if (amt > 0) {
-        deductions.push({
-          type: 'travel_leave',
-          label: lv.label,
-          amount_satang: amt,
-          ref: `${lv.leave_id}:${lv.travel_days}d`,
-        });
-      }
+    const travelAmt = dockTravel(lv.travel_days);
+    if (travelAmt > 0) {
+      deductions.push({
+        type: 'travel_leave',
+        label: lv.label,
+        amount_satang: travelAmt,
+        ref: `${lv.leave_id}:${lv.travel_days}d`,
+      });
     }
   }
 
-  // Unauthorized absence (no leave filed): salary docked ÷30/day.
-  if (ts.unauthorized_absent_days > 0 && !partTime) {
-    const amt = Math.round(dailyRate(emp.rate_satang, dayDiv) * ts.unauthorized_absent_days);
-    if (amt > 0) {
+  // Unauthorized absence (no leave filed): salary docked ÷30/day, and the travel allowance too —
+  // a no-show must never be treated more leniently than someone who filed ลากิจ.
+  if (ts.unauthorized_absent_days > 0) {
+    if (!partTime) {
+      const amt = Math.round(dailyRate(emp.rate_satang, dayDiv) * ts.unauthorized_absent_days);
+      if (amt > 0) {
+        deductions.push({
+          type: 'absent',
+          label: 'absent',
+          amount_satang: amt,
+          ref: `${ts.unauthorized_absent_days}d`,
+        });
+      }
+    }
+    const travelAmt = dockTravel(ts.unauthorized_absent_days);
+    if (travelAmt > 0) {
       deductions.push({
-        type: 'absent',
+        type: 'travel_absent',
         label: 'absent',
-        amount_satang: amt,
+        amount_satang: travelAmt,
         ref: `${ts.unauthorized_absent_days}d`,
       });
     }

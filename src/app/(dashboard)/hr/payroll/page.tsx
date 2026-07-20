@@ -27,6 +27,8 @@ interface PayrunRow {
   pay_date: string | null;
   status: 'draft' | 'finalized';
   announced_at?: string | null;
+  /** returned by GET /api/hr/payruns/[id]; absent from the list payload */
+  store_id?: string | null;
 }
 interface PayslipSummary {
   id: string;
@@ -1151,6 +1153,9 @@ export default function HrPayrollPage() {
                 }}
               />
             )}
+            {/* OT has no field on this screen — it is derived from the timesheet (auto from punches,
+                or HR's per-day override). HR asked "ไม่มีที่ให้ลง OT" because nothing pointed there. */}
+            {slip.payrun?.status === 'draft' && <OtEditHint slip={slip} storeId={detail?.payrun.store_id ?? null} />}
           </div>
           <ModalFooter>
             <Button variant="outline" onClick={() => doPrint(slip)} icon={<Printer className="h-4 w-4" />}>{t('print')}</Button>
@@ -1473,6 +1478,36 @@ function DetailSkeleton({ label }: { label: string }) {
 
 // HR fallback for the accounting office's official tax figure (primary path = review link).
 // Shown on draft payruns only; saving patches the slip immediately and survives regenerates.
+/**
+ * Points HR at the timesheet — the only place OT is entered. OT is derived per day (auto from
+ * punches for ot_eligible staff, or HR's per-day override); the payslip just totals it. HR reported
+ * "ไม่มีที่ให้ลง OT" because this screen has no OT field and nothing said where to go.
+ * Deep-links to the slip's own cycle + employee so the right rows are already on screen.
+ */
+function OtEditHint({ slip, storeId }: { slip: PayslipDetailData; storeId: string | null }) {
+  const isTh = useLocale() === 'th';
+  const run = slip.payrun as { cycle_start?: string | null; cycle_end?: string | null } | null;
+  const params = new URLSearchParams();
+  if (storeId) params.set('store', storeId);
+  if (run?.cycle_start) params.set('from', run.cycle_start);
+  if (run?.cycle_end) params.set('to', run.cycle_end);
+  if (slip.payslip.employee_name) params.set('q', slip.payslip.employee_name);
+
+  return (
+    <div className="mt-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-800/50">
+      <span className="text-gray-600 dark:text-gray-400">
+        {isTh ? 'OT แก้ที่ตารางเวลา ไม่ได้แก้ที่หน้านี้' : 'OT is edited on the timesheet, not here'}
+      </span>
+      <Link
+        href={`/hr/timesheet?${params.toString()}`}
+        className="ml-2 font-medium text-blue-600 hover:underline dark:text-blue-400"
+      >
+        {isTh ? 'ไปที่ตารางเวลา →' : 'Go to timesheet →'}
+      </Link>
+    </div>
+  );
+}
+
 function TaxOverrideBox({ slip, onSaved }: { slip: PayslipDetailData; onSaved: () => Promise<void> }) {
   const t = useTranslations('hr.payroll');
   const [baht, setBaht] = useState<string>(() =>

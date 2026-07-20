@@ -6,7 +6,7 @@ import { Loader2, Plus, Pencil, Save, Undo2, AlertTriangle } from 'lucide-react'
 import { Button, Modal, ModalFooter, PageHeader, StatusBadge, type StatusTone, toast } from '@/components/ui';
 import { todayBangkok } from '@/lib/utils/date';
 import ScheduleFillTools, { type PatternSlot } from './ScheduleFillTools';
-import ShiftModal from './ShiftModal';
+import ShiftModal, { labelTimeMismatch, to12h } from './ShiftModal';
 
 interface StoreOpt {
   id: string;
@@ -450,6 +450,21 @@ export default function SchedulePage({
           <Button size="sm" variant="ghost" onClick={() => { setShowAdd(false); setForm({ label: '', start: '17:00', end: '01:00', color: '#6366f1' }); }}>
             {tt('ยกเลิก', 'Cancel')}
           </Button>
+          {/* The time picker shows AM/PM under an en-US locale — naming a shift "10:00" while
+              picking 10:00 PM stores 22:00 and late detection then reads 0. Say so up front. */}
+          <p className="w-full text-xs text-gray-500 dark:text-gray-400">
+            {tt('เวลาที่ระบบจะใช้คำนวณสาย', 'Times used for late detection')}:{' '}
+            <span className="font-medium tabular-nums text-gray-700 dark:text-gray-200">{form.start}–{form.end}</span>
+            <span className="ml-1 text-gray-400 dark:text-gray-500">({to12h(form.start)} – {to12h(form.end)})</span>
+          </p>
+          {labelTimeMismatch(form.label, form.start) && (
+            <p className="w-full rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800 dark:border-amber-800/60 dark:bg-amber-900/20 dark:text-amber-200">
+              {tt(
+                `ชื่อกะขึ้นต้นด้วย ${labelTimeMismatch(form.label, form.start)} แต่เวลาเริ่มที่เลือกคือ ${form.start} (${to12h(form.start)}) — ระบบคำนวณสายจาก ${form.start}`,
+                `The name starts with ${labelTimeMismatch(form.label, form.start)} but the picked start is ${form.start} (${to12h(form.start)}) — lateness is measured from ${form.start}`
+              )}
+            </p>
+          )}
         </div>
       )}
 
@@ -541,7 +556,10 @@ export default function SchedulePage({
                                 : 'bg-transparent hover:bg-gray-100 dark:hover:bg-gray-700/50'
                           }`}
                           style={!c || c.is_day_off ? undefined : { backgroundColor: tpl?.color || '#6366f1' }}
-                          title={autoHoliday ? holiday : c?.is_day_off ? t('dayOff') : tpl?.label}>
+                          /* Include the real start–end on the roster cell: the label alone hid a
+                             shift named "10:00" that actually started 22:00, so nothing looked wrong
+                             until late detection silently read 0 minutes. */
+                          title={autoHoliday ? holiday : c?.is_day_off ? t('dayOff') : tpl ? `${tpl.label} · ${hhmm(tpl.start_time)}–${hhmm(tpl.end_time)}` : undefined}>
                           {c
                             ? (c.is_day_off ? <span className="text-[10px]">OFF</span> : <span className="hidden truncate px-0.5 text-[10px] font-medium sm:inline">{tpl?.label?.slice(0, 3)}</span>)
                             : autoHoliday

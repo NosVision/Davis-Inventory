@@ -207,8 +207,21 @@ export function TimesheetSummaryTable({
               <td className="px-3 py-2 font-medium text-gray-800 dark:text-gray-200">{emp.name}</td>
               <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{emp.totals.work_days}</td>
               <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{toH(emp.totals.worked_min)}</td>
+              {/* An OT-ineligible employee is paid 0 OT by payroll.ts regardless of stored minutes —
+                  say so here instead of showing a bare "—" that reads like "worked no OT". */}
               <td className="px-3 py-2 text-right tabular-nums">
-                {emp.totals.ot_min > 0 ? <span className="font-medium text-violet-600 dark:text-violet-400">{toH(emp.totals.ot_min)}</span> : <span className="text-gray-400 dark:text-gray-600">—</span>}
+                {!emp.ot_eligible ? (
+                  <span
+                    className="text-xs text-gray-400 dark:text-gray-600"
+                    title={isTh ? 'พนักงานคนนี้ไม่มีสิทธิ์ OT' : 'This employee is not OT-eligible'}
+                  >
+                    {isTh ? 'ไม่มีสิทธิ์' : 'n/a'}
+                  </span>
+                ) : emp.totals.ot_min > 0 ? (
+                  <span className="font-medium text-violet-600 dark:text-violet-400">{toH(emp.totals.ot_min)}</span>
+                ) : (
+                  <span className="text-gray-400 dark:text-gray-600">—</span>
+                )}
               </td>
               <td className="px-3 py-2 text-right tabular-nums">
                 {emp.totals.late_min > 0 ? <span className="font-medium text-amber-600 dark:text-amber-400">{emp.totals.late_min}</span> : <span className="text-gray-400 dark:text-gray-600">0</span>}

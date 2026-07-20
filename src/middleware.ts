@@ -16,7 +16,9 @@ const PUBLIC_ROUTES = [
   '/api/auth/callback',
   '/api/auth/liff-verify',       // LIFF SDK access-token verify
   '/api/auth/customer-token',    // HMAC link verify
-  '/api/line/webhook',
+  '/api/line/webhook',           // per-store customer OAs
+  '/api/line/tasks/webhook',     // central task bot — its own channel; verifies its own signature
+
   '/api/cron',
   '/api/chat/bot-message',
   '/api/system-settings/public', // central bot/LIFF id (whitelisted keys only)

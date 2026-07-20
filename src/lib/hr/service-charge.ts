@@ -127,7 +127,7 @@ const SC_CARRY_ELIGIBLE = new Set([
 ]);
 // Lower rank = applied earlier against the balance.
 const SC_RECONCILE_RANK: Record<string, number> = {
-  leave: 0, manual: 1, late: 1,
+  leave: 0, absent: 0, manual: 1, late: 1,
   warning: 2, warning_carry: 2,
   stock_penalty: 3, stock_penalty_carry: 3,
   eval: 4, eval_carry: 4,
