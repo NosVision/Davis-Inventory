@@ -27,6 +27,7 @@ import {
   Search,
   Shield,
   UserCheck,
+  UserCog,
   UserX,
   Store,
   Mail,
@@ -94,6 +95,9 @@ export default function UsersPage() {
   const [filterRole, setFilterRole] = useState<string>('all');
   const [filterLinked, setFilterLinked] = useState<'all' | 'linked' | 'unlinked'>('all');
   const [linkedIds, setLinkedIds] = useState<Set<string>>(new Set());
+  const [roleEditUser, setRoleEditUser] = useState<UserProfile | null>(null);
+  const [editRole, setEditRole] = useState<string>('staff');
+  const [savingRole, setSavingRole] = useState(false);
   const [resetTarget, setResetTarget] = useState<UserProfile | null>(null);
   const [resetResult, setResetResult] = useState<{ username: string; password: string } | null>(null);
   const [isResetting, setIsResetting] = useState(false);
@@ -224,6 +228,39 @@ export default function UsersPage() {
     setEditStoreIds(u.stores?.map((s) => s.store_id) ?? []);
   };
 
+  const openRoleEditor = (u: UserProfile) => {
+    setRoleEditUser(u);
+    setEditRole(u.role);
+  };
+
+  const handleSaveRole = async () => {
+    if (!roleEditUser || editRole === roleEditUser.role) {
+      setRoleEditUser(null);
+      return;
+    }
+    setSavingRole(true);
+    try {
+      const res = await fetch(`/api/users/${roleEditUser.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: editRole }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || '');
+      toast({ type: 'success', title: 'เปลี่ยนตำแหน่งเรียบร้อย' });
+      setRoleEditUser(null);
+      loadUsers();
+    } catch (err) {
+      toast({
+        type: 'error',
+        title: 'เปลี่ยนตำแหน่งไม่สำเร็จ',
+        message: err instanceof Error ? err.message : '',
+      });
+    } finally {
+      setSavingRole(false);
+    }
+  };
+
   const handleSaveStores = async () => {
     if (!storeEditUser) return;
     setSavingStores(true);
@@ -274,6 +311,14 @@ export default function UsersPage() {
   const isOwner = currentUser?.role === 'owner';
   // HR (non-owner) may only administer non-elevated accounts; owner/accountant/hq stay owner-only.
   const canAdminTarget = (u: UserProfile) => isOwner || !['owner', 'accountant', 'hq'].includes(u.role);
+  // Position changes: never on owner accounts; HR (non-owner) may not touch elevated positions.
+  const canEditRole = (u: UserProfile) =>
+    u.role !== 'owner' && u.role !== 'customer' && (isOwner || !['accountant', 'manager', 'hq', 'hr'].includes(u.role));
+  // Positions offered in the change-position modal (elevated ones are owner-only, same as create).
+  const roleEditOptions: UserRole[] = [
+    'staff', 'bar', 'head_bar', 'technician', 'cashier', 'housekeeping_staff', 'boh_staff', 'not_assign',
+    ...(isOwner ? (['manager', 'accountant', 'hq', 'hr'] as UserRole[]) : []),
+  ];
 
   return (
     <div className="space-y-6">
@@ -425,6 +470,15 @@ export default function UsersPage() {
                 {/* Actions — owner + HR (user administration APIs allow both) */}
                 {u.id !== currentUser?.id && !u.username.startsWith('printer-') && canAdminTarget(u) && (
                   <div className="flex items-center gap-1">
+                    {canEditRole(u) && (
+                      <button
+                        onClick={() => openRoleEditor(u)}
+                        className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-violet-50 hover:text-violet-600 dark:hover:bg-violet-900/20 dark:hover:text-violet-400"
+                        title="เปลี่ยนตำแหน่ง"
+                      >
+                        <UserCog className="h-4 w-4" />
+                      </button>
+                    )}
                     {u.role !== 'owner' && u.role !== 'customer' && (
                       <button
                         onClick={() => openStoreEditor(u)}
@@ -625,6 +679,43 @@ export default function UsersPage() {
             {t('cancel')}
           </Button>
           <Button onClick={handleSaveStores} isLoading={savingStores} icon={<Store className="h-4 w-4" />}>
+            บันทึก
+          </Button>
+        </ModalFooter>
+      </Modal>
+
+      {/* Change Position Modal */}
+      <Modal
+        isOpen={!!roleEditUser}
+        onClose={() => setRoleEditUser(null)}
+        title="เปลี่ยนตำแหน่ง"
+        description={
+          roleEditUser
+            ? `${roleEditUser.display_name || roleEditUser.username} — ตำแหน่งปัจจุบัน: ${ROLE_LABELS[roleEditUser.role] || roleEditUser.role}`
+            : undefined
+        }
+      >
+        <div className="space-y-3">
+          <Select
+            label="ตำแหน่งใหม่"
+            value={editRole}
+            onChange={(e) => setEditRole(e.target.value)}
+            options={roleEditOptions.map((r) => ({ value: r, label: ROLE_LABELS[r] || r }))}
+          />
+          <div className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-400">
+            สิทธิ์การเข้าถึงเมนูจะเปลี่ยนตามตำแหน่งใหม่ทันทีที่ผู้ใช้เข้าสู่ระบบครั้งถัดไป
+          </div>
+        </div>
+        <ModalFooter>
+          <Button variant="outline" onClick={() => setRoleEditUser(null)} disabled={savingRole}>
+            {t('cancel')}
+          </Button>
+          <Button
+            onClick={handleSaveRole}
+            isLoading={savingRole}
+            disabled={!roleEditUser || editRole === roleEditUser.role}
+            icon={<UserCog className="h-4 w-4" />}
+          >
             บันทึก
           </Button>
         </ModalFooter>

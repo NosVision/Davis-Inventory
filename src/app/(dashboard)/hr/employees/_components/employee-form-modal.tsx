@@ -200,7 +200,9 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
   const [linkMode, setLinkMode] = useState(false);
   const [linkProfileId, setLinkProfileId] = useState('');
   const [linkSearch, setLinkSearch] = useState('');
-  const [linkables, setLinkables] = useState<{ id: string; username: string | null; display_name: string | null; role: string }[]>([]);
+  const [linkables, setLinkables] = useState<{ id: string; username: string | null; display_name: string | null; role: string; active?: boolean }[]>([]);
+  const [linkablesLoading, setLinkablesLoading] = useState(false);
+  const [linkablesError, setLinkablesError] = useState(false);
 
   // "Prefill from imported roster" (create mode): search hr_pending_identities (imported people
   // with no login yet) by name or bank account and copy their payroll seed into the form.
@@ -244,16 +246,29 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
     })();
   }, []);
 
-  // Linkable accounts (create mode): active users without an employee record yet.
+  // Linkable accounts (create mode): users without an employee record yet (incl. disabled ones,
+  // which get labelled — linking re-activates them server-side).
   useEffect(() => {
     if (!isOpen || employeeId !== null) return;
+    let alive = true;
+    setLinkablesLoading(true);
+    setLinkablesError(false);
     (async () => {
       try {
         const res = await fetch('/api/hr/employees/linkable');
         const json = await res.json().catch(() => ({}));
+        if (!alive) return;
         if (res.ok) setLinkables((json.data ?? []) as typeof linkables);
-      } catch { /* link mode simply shows an empty list */ }
+        else setLinkablesError(true);
+      } catch {
+        if (alive) setLinkablesError(true);
+      } finally {
+        if (alive) setLinkablesLoading(false);
+      }
     })();
+    return () => {
+      alive = false;
+    };
   }, [isOpen, employeeId]);
 
   // Debounced search of the imported roster (create + new-account mode only).
@@ -712,28 +727,55 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
                     placeholder="ชื่อ / username"
                     autoComplete="off"
                   />
-                  <Select
-                    label={t('linkUser')}
-                    value={linkProfileId}
-                    onChange={(e) => setLinkProfileId(e.target.value)}
-                    options={[
-                      { value: '', label: '—' },
-                      ...linkables
-                        .filter((p) => {
-                          const q = linkSearch.trim().toLowerCase();
-                          if (!q) return true;
-                          return (
-                            String(p.username ?? '').toLowerCase().includes(q) ||
-                            String(p.display_name ?? '').toLowerCase().includes(q)
-                          );
-                        })
-                        .slice(0, 100)
-                        .map((p) => ({
-                          value: p.id,
-                          label: `${p.display_name || p.username || '—'} (${p.username ?? '—'} · ${p.role})`,
-                        })),
-                    ]}
-                  />
+                  {(() => {
+                    const q = linkSearch.trim().toLowerCase();
+                    const filtered = linkables.filter(
+                      (p) =>
+                        !q ||
+                        String(p.username ?? '').toLowerCase().includes(q) ||
+                        String(p.display_name ?? '').toLowerCase().includes(q)
+                    );
+                    return (
+                      <div className="space-y-1">
+                        <Select
+                          label={t('linkUser')}
+                          value={linkProfileId}
+                          onChange={(e) => setLinkProfileId(e.target.value)}
+                          options={[
+                            { value: '', label: '—' },
+                            ...filtered.slice(0, 100).map((p) => ({
+                              value: p.id,
+                              label: `${p.display_name || p.username || '—'} (${p.username ?? '—'} · ${p.role})${p.active === false ? (isTh ? ' — ปิดใช้งาน' : ' — disabled') : ''}`,
+                            })),
+                          ]}
+                        />
+                        {linkablesLoading ? (
+                          <p className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            {isTh ? 'กำลังโหลดรายชื่อผู้ใช้…' : 'Loading users…'}
+                          </p>
+                        ) : linkablesError ? (
+                          <p className="text-xs text-red-600 dark:text-red-400">
+                            {isTh
+                              ? 'โหลดรายชื่อผู้ใช้ไม่สำเร็จ — ปิดแล้วเปิดหน้าต่างนี้ใหม่อีกครั้ง'
+                              : 'Failed to load users — close and reopen this dialog'}
+                          </p>
+                        ) : filtered.length === 0 ? (
+                          <p className="text-xs text-amber-600 dark:text-amber-400">
+                            {isTh
+                              ? 'ไม่พบผู้ใช้ที่ลิงก์ได้ — แสดงเฉพาะบัญชีที่ยังไม่ถูกผูกเป็นพนักงาน (ไม่รวม Owner/ลูกค้า)'
+                              : 'No linkable users found — only accounts not yet linked to an employee are listed (Owner/customer excluded)'}
+                          </p>
+                        ) : linkProfileId && linkables.find((p) => p.id === linkProfileId)?.active === false ? (
+                          <p className="text-xs text-amber-600 dark:text-amber-400">
+                            {isTh
+                              ? 'บัญชีนี้ถูกปิดใช้งานอยู่ — ระบบจะเปิดใช้งานให้อัตโนมัติเมื่อลิงก์เป็นพนักงาน'
+                              : 'This account is disabled — it will be re-activated automatically when linked'}
+                          </p>
+                        ) : null}
+                      </div>
+                    );
+                  })()}
                 </>
               ) : (
                 <>

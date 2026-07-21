@@ -1,16 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireUserAdmin } from '@/lib/auth/user-admin';
+import { requireUserAdmin, ASSIGNABLE_ROLES, ELEVATED_ROLES } from '@/lib/auth/user-admin';
 
 // Accounts only an owner may administer (enable/disable, re-assign stores).
 const OWNER_ONLY_TARGET_ROLES = ['owner', 'accountant', 'hq'];
 
+// Roles a position change may land on: everything creatable, plus the "no role yet"
+// placeholder self-registered employees start with.
+const ROLE_CHANGE_TARGETS = [...ASSIGNABLE_ROLES, 'not_assign'] as readonly string[];
+
 /**
  * PATCH /api/users/[id] — owner + HR user administration for the /users page (owner ask
- * 2026-07-08). Body may carry { active?: boolean } and/or { storeIds?: string[] }. Runs with the
- * service role because the profiles/user_stores mutation RLS is owner-only, so the guards here ARE
- * the authorization: owner or HR only, HR may not touch elevated accounts, and nobody disables
- * their own login.
+ * 2026-07-08). Body may carry { active?: boolean }, { storeIds?: string[] } and/or
+ * { role?: string } (position change, owner ask 2026-07-21). Runs with the service role because
+ * the profiles/user_stores mutation RLS is owner-only, so the guards here ARE the authorization:
+ * owner or HR only, HR may not touch elevated accounts or assign elevated roles, and nobody
+ * disables their own login or changes their own role.
  */
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -35,7 +40,33 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return NextResponse.json({ error: 'Only an owner can manage this account' }, { status: 403 });
   }
 
-  const body = (await request.json().catch(() => ({}))) as { active?: unknown; storeIds?: unknown };
+  const body = (await request.json().catch(() => ({}))) as {
+    active?: unknown;
+    storeIds?: unknown;
+    role?: unknown;
+  };
+
+  // Change the position (role). Guards mirror account creation: never owner/customer, and
+  // elevated roles are owner-only in BOTH directions (assigning one, or demoting someone who
+  // holds one) so HR cannot touch manager/accountant/hq/hr positions.
+  if (typeof body.role === 'string' && body.role !== target.role) {
+    const nextRole = body.role;
+    if (!ROLE_CHANGE_TARGETS.includes(nextRole)) {
+      return NextResponse.json({ error: `Invalid role '${nextRole}'` }, { status: 400 });
+    }
+    if (id === auth.userId) {
+      return NextResponse.json({ error: 'You cannot change your own position' }, { status: 400 });
+    }
+    if (
+      !auth.isOwner &&
+      ((ELEVATED_ROLES as readonly string[]).includes(nextRole) ||
+        (ELEVATED_ROLES as readonly string[]).includes(target.role as string))
+    ) {
+      return NextResponse.json({ error: 'Only an owner can assign or change this position' }, { status: 403 });
+    }
+    const { error } = await service.from('profiles').update({ role: nextRole }).eq('id', id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 
   // Enable / disable the login.
   if (typeof body.active === 'boolean') {

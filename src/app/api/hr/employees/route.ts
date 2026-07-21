@@ -156,7 +156,6 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
     if (profErr) return NextResponse.json({ error: 'Failed to load profile' }, { status: 500 });
     if (!prof) return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
-    if (!prof.active) return NextResponse.json({ error: 'Profile is deactivated' }, { status: 400 });
     // Same policy as onboarding: never an owner or customer account. (No role change happens
     // here — linking grants nothing — so the owner-only elevated-role gate does not apply.)
     if (prof.role === 'owner' || prof.role === 'customer') {
@@ -183,6 +182,19 @@ export async function POST(request: NextRequest) {
 
     // Venue assignment: only add memberships the account doesn't already have.
     const warnings: string[] = [];
+
+    // A deactivated account becomes a live login again the moment it is linked as an
+    // employee (returning-staff case). Done after the insert so a failed link never
+    // silently re-enables a login.
+    if (!prof.active) {
+      const { error: actErr } = await service
+        .from('profiles')
+        .update({ active: true })
+        .eq('id', linkProfileId);
+      if (actErr) {
+        warnings.push('เปิดใช้งานบัญชีอัตโนมัติไม่สำเร็จ — ไปเปิดใช้งานที่หน้าจัดการผู้ใช้');
+      }
+    }
     const linkStoreIds = Array.isArray(body.storeIds)
       ? body.storeIds.filter((s): s is string => typeof s === 'string')
       : [];
@@ -208,7 +220,7 @@ export async function POST(request: NextRequest) {
       recordId: emp.id,
       before: null,
       after: emp,
-      reason: `Linked existing account ${prof.username ?? linkProfileId}`,
+      reason: `Linked existing account ${prof.username ?? linkProfileId}${prof.active ? '' : ' (re-activated a disabled login)'}`,
     });
 
     return NextResponse.json({ id: emp.id, profileId: linkProfileId, linked: true, warnings }, { status: 201 });

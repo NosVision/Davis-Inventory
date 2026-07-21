@@ -3,9 +3,11 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManager } from '@/lib/hr/route-auth';
 
 // GET /api/hr/employees/linkable?q= — existing accounts that can be attached to a new
-// hr_employees record (active, not owner/customer, and not already an employee). Feeds the
+// hr_employees record (not owner/customer, and not already an employee). Feeds the
 // "link existing user" mode of the onboarding form, so a person who already uses the app
 // keeps their login and all HR features stay keyed to the same profiles.id.
+// Deactivated accounts ARE included (labelled client-side) — linking one re-activates it,
+// covering the common case of a returning employee whose old login was disabled.
 export async function GET(request: NextRequest) {
   const auth = await requireHrManager();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
@@ -16,9 +18,9 @@ export async function GET(request: NextRequest) {
   const [{ data: profiles, error: profErr }, { data: emps, error: empErr }] = await Promise.all([
     service
       .from('profiles')
-      .select('id, username, display_name, role')
-      .eq('active', true)
+      .select('id, username, display_name, role, active')
       .not('role', 'in', '(owner,customer)')
+      .order('active', { ascending: false })
       .order('display_name', { ascending: true }),
     service.from('hr_employees').select('profile_id'),
   ]);
