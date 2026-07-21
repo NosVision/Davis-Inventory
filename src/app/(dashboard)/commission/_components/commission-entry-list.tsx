@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils/cn';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/audit';
 import { useTranslations } from 'next-intl';
 import { formatThaiDate } from '@/lib/utils/format';
-import type { CommissionEntry } from '@/types/commission';
+import { netDisplay, type CommissionEntry } from '@/types/commission';
 
 function formatCurrency(n: number) {
   return n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -20,7 +20,7 @@ function getCurrentMonth() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
-function GroupItem({ groupId, group, isExpanded, onToggle, t, canDelete, onDelete, onViewPhoto, onCancel, onRestore }: any) {
+function GroupItem({ groupId, group, isExpanded, onToggle, t, canDelete, onDelete, onViewPhoto, onCancel, onRestore, rounded }: any) {
   const profileName = group.type === 'ae_commission' 
     ? (group.profile?.name || 'Unknown AE')
     : (group.profile?.display_name || group.profile?.username || 'Unknown Staff');
@@ -120,7 +120,7 @@ function GroupItem({ groupId, group, isExpanded, onToggle, t, canDelete, onDelet
                           ? 'text-gray-400 line-through dark:text-gray-500'
                           : 'text-amber-600 dark:text-amber-400'
                       )}>
-                        {formatCurrency(Number(entry.net_amount))}
+                        {formatCurrency(netDisplay(entry.net_amount, !!rounded))}
                       </p>
                     </div>
                     {!entry.payment_id && !isCancelled && onCancel && (
@@ -152,9 +152,11 @@ function GroupItem({ groupId, group, isExpanded, onToggle, t, canDelete, onDelet
 interface CommissionEntryListProps {
   month?: string;
   refreshKey?: number;
+  /** display-only whole-baht view (entries are stored exact) */
+  rounded?: boolean;
 }
 
-export function CommissionEntryList({ month: monthProp, refreshKey }: CommissionEntryListProps = {}) {
+export function CommissionEntryList({ month: monthProp, refreshKey, rounded = false }: CommissionEntryListProps = {}) {
   const t = useTranslations('commission');
   const { currentStoreId } = useAppStore();
   const { user } = useAuthStore();
@@ -262,7 +264,7 @@ export function CommissionEntryList({ month: monthProp, refreshKey }: Commission
       }
       acc[groupId].entries.push(entry);
       if (!entry.cancelled_at) {
-        const amount = Number(entry.net_amount) || 0;
+        const amount = netDisplay(entry.net_amount, rounded);
         acc[groupId].totalAmount += amount;
         if (!entry.payment_id) {
           acc[groupId].unpaidAmount += amount;
@@ -420,6 +422,7 @@ export function CommissionEntryList({ month: monthProp, refreshKey }: Commission
                     onViewPhoto={setPhotoModal}
                     onCancel={handleCancelEntry}
                     onRestore={handleRestoreEntry}
+                    rounded={rounded}
                   />
                 ))}
               </div>
@@ -447,6 +450,7 @@ export function CommissionEntryList({ month: monthProp, refreshKey }: Commission
                     onViewPhoto={setPhotoModal}
                     onCancel={handleCancelEntry}
                     onRestore={handleRestoreEntry}
+                    rounded={rounded}
                   />
                 ))}
               </div>
@@ -517,7 +521,7 @@ export function CommissionEntryList({ month: monthProp, refreshKey }: Commission
                           : isAE ? 'text-amber-600 dark:text-amber-400'
                           : 'text-rose-600 dark:text-rose-400',
                       )}>
-                        {formatCurrency(Number(entry.net_amount))}
+                        {formatCurrency(netDisplay(entry.net_amount, rounded))}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2 text-right align-middle">
                         <div className="inline-flex items-center gap-1">
@@ -592,7 +596,7 @@ export function CommissionEntryList({ month: monthProp, refreshKey }: Commission
                       isCancelled ? 'text-gray-400 line-through dark:text-gray-500'
                         : isAE ? 'text-amber-600 dark:text-amber-400'
                         : 'text-rose-600 dark:text-rose-400',
-                    )}>{formatCurrency(Number(entry.net_amount))}</p>
+                    )}>{formatCurrency(netDisplay(entry.net_amount, rounded))}</p>
                     {!isPaid && !isCancelled && (
                       <button onClick={() => handleCancelEntry(entry.id)} className="rounded p-1 text-gray-300 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/30">
                         <XCircle className="h-4 w-4" />

@@ -11,11 +11,13 @@ import { CommissionExportButton } from './commission-export-button';
 interface CommissionHistoryProps {
   month: string;
   refreshKey?: number;
+  /** display-only whole-baht view (entries are stored exact) */
+  rounded?: boolean;
 }
 
 type HistoryView = 'bills' | 'payments';
 
-export function CommissionHistory({ month, refreshKey }: CommissionHistoryProps) {
+export function CommissionHistory({ month, refreshKey, rounded = false }: CommissionHistoryProps) {
   const t = useTranslations('commission');
   const [view, setView] = useState<HistoryView>('bills');
 
@@ -52,13 +54,13 @@ export function CommissionHistory({ month, refreshKey }: CommissionHistoryProps)
             {t('history.payments')}
           </button>
         </div>
-        <CommissionExportButton month={month} allowMonthChange />
+        <CommissionExportButton month={month} allowMonthChange rounded={rounded} />
       </div>
 
       {view === 'bills' ? (
-        <CommissionEntryList month={month} refreshKey={refreshKey} />
+        <CommissionEntryList month={month} refreshKey={refreshKey} rounded={rounded} />
       ) : (
-        <CommissionPaymentHistory month={month} refreshKey={refreshKey} />
+        <CommissionPaymentHistory month={month} refreshKey={refreshKey} rounded={rounded} />
       )}
     </div>
   );

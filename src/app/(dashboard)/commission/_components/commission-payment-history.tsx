@@ -6,6 +6,7 @@ import { useAppStore } from '@/stores/app-store';
 import { Loader2, Eye, Image } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { formatThaiDate } from '@/lib/utils/format';
+import { netDisplay } from '@/types/commission';
 
 function formatCurrency(n: number) {
   return n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -33,11 +34,13 @@ interface PaymentRecord {
 }
 
 interface CommissionPaymentHistoryProps {
+  /** display-only whole-baht view (entries are stored exact) */
+  rounded?: boolean;
   month?: string;
   refreshKey?: number;
 }
 
-export function CommissionPaymentHistory({ month: monthProp, refreshKey }: CommissionPaymentHistoryProps = {}) {
+export function CommissionPaymentHistory({ month: monthProp, refreshKey, rounded = false }: CommissionPaymentHistoryProps = {}) {
   const t = useTranslations('commission');
   const { currentStoreId } = useAppStore();
   const [year, setYear] = useState(new Date().getFullYear().toString());
@@ -197,7 +200,7 @@ export function CommissionPaymentHistory({ month: monthProp, refreshKey }: Commi
                       <tr key={e.id as string} className="border-t border-gray-100 dark:border-gray-700">
                         <td className="py-1">{formatThaiDate(e.bill_date as string)}</td>
                         <td className="py-1">{(e.receipt_no as string) || '-'}</td>
-                        <td className="py-1 text-right font-medium">{formatCurrency(Number(e.net_amount) || 0)}</td>
+                        <td className="py-1 text-right font-medium">{formatCurrency(netDisplay(e.net_amount as number, rounded))}</td>
                       </tr>
                     ))}
                   </tbody>

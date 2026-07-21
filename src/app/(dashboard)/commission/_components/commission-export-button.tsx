@@ -16,6 +16,7 @@ import { Button, Modal, ModalFooter, toast } from '@/components/ui';
 import { FileDown, Loader2 } from 'lucide-react';
 import { useAppStore } from '@/stores/app-store';
 import { createClient } from '@/lib/supabase/client';
+import { netDisplay } from '@/types/commission';
 
 interface AEGroup {
   ae_id: string;
@@ -36,13 +37,15 @@ interface CommissionExportButtonProps {
   /** True for History tab — render a month picker inside the modal so
    *  the accountant can pick a past month without leaving the page. */
   allowMonthChange?: boolean;
+  /** display-only whole-baht view (entries are stored exact) */
+  rounded?: boolean;
 }
 
 function formatCurrency(n: number) {
   return n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export function CommissionExportButton({ month: monthProp, allowMonthChange = false }: CommissionExportButtonProps) {
+export function CommissionExportButton({ month: monthProp, allowMonthChange = false, rounded = false }: CommissionExportButtonProps) {
   const { currentStoreId } = useAppStore();
 
   const [open, setOpen] = useState(false);
@@ -146,7 +149,7 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
             table_no: (r.table_no as string | null) ?? null,
             subtotal: Number(r.subtotal_amount) || 0,
             commission_amount: Number(r.commission_amount) || 0,
-            net_amount: Number(r.net_amount) || 0,
+            net_amount: netDisplay(r.net_amount as number, rounded),
             notes: (r.notes as string | null) ?? null,
           };
         });

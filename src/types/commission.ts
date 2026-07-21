@@ -1,5 +1,16 @@
 export type CommissionType = 'ae_commission' | 'bottle_commission';
 
+/**
+ * Display-time net (client ask 2026-07-21): entries STORE the exact net to the satang;
+ * the commission page offers a view toggle — exact as stored, or whole-baht half-up per
+ * entry (the pre-2026-07-21 payout behaviour). Sums in the rounded view must add the
+ * per-entry rounded values, never round the sum.
+ */
+export const netDisplay = (n: number | null | undefined, rounded: boolean): number => {
+  const v = Number(n) || 0;
+  return rounded ? Math.round(v) : v;
+};
+
 export interface AEProfile {
   id: string;
   name: string;

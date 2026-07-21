@@ -100,6 +100,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     updates.commission_amount = commission;
     updates.tax_amount = tax;
     updates.net_amount = Math.round((commission - tax) * 100) / 100;
+    updates.rounding = null; // exact net — no whole-baht rounding at save (2026-07-21)
   }
 
   // Recalc bottle commission
@@ -108,7 +109,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const rate = body.bottle_rate ?? 500;
     updates.bottle_count = count;
     updates.bottle_rate = rate;
-    updates.net_amount = count * rate;
+    updates.net_amount = Math.round(count * rate * 100) / 100;
+    updates.rounding = null;
   }
 
   const { data, error } = await supabase

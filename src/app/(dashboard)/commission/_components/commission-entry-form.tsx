@@ -209,11 +209,10 @@ export function CommissionEntryForm({ onSuccess }: CommissionEntryFormProps) {
   const bRate = parseFloat(bottleRate) || 500;
   const netBottle = bCount * bRate;
 
-  // Round the net payout to a whole baht, half-up (.49 down, .50 up) — automatic,
-  // mirrors the server so what the user sees is what's saved.
-  const roundNet = (n: number) => Math.round(n);
-  const netAERounded = roundNet(netAE);
-  const netBottleRounded = roundNet(netBottle);
+  // Exact net (satang precision) — mirrors the server, which no longer rounds at save
+  // (client ask 2026-07-21); the whole-baht view is a display toggle on the list pages.
+  const netAERounded = Math.round(netAE * 100) / 100;
+  const netBottleRounded = Math.round(netBottle * 100) / 100;
 
   async function handleQuickAddAE() {
     if (!quickAE.name.trim()) return;

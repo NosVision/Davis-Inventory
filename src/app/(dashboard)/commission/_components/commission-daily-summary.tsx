@@ -7,7 +7,7 @@ import { CalendarDays, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { useTranslations } from 'next-intl';
 import { formatThaiDate } from '@/lib/utils/format';
-import type { CommissionEntry } from '@/types/commission';
+import { netDisplay, type CommissionEntry } from '@/types/commission';
 
 function formatCurrency(n: number) {
   return n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -27,9 +27,11 @@ interface DailyRow {
 interface CommissionDailySummaryProps {
   month: string;
   refreshKey?: number;
+  /** display-only whole-baht view (entries are stored exact) */
+  rounded?: boolean;
 }
 
-export function CommissionDailySummary({ month, refreshKey }: CommissionDailySummaryProps) {
+export function CommissionDailySummary({ month, refreshKey, rounded = false }: CommissionDailySummaryProps) {
   const t = useTranslations('commission');
   const { currentStoreId } = useAppStore();
   const [daily, setDaily] = useState<DailyRow[]>([]);
@@ -57,9 +59,17 @@ export function CommissionDailySummary({ month, refreshKey }: CommissionDailySum
   // recorded elsewhere refreshes the daily totals.
   useEffect(() => { fetchDaily(); }, [fetchDaily, refreshKey]);
 
-  const monthTotal = daily.reduce((s, d) => s + d.total_net, 0);
-  const monthAE = daily.reduce((s, d) => s + d.ae_net, 0);
-  const monthBottle = daily.reduce((s, d) => s + d.bottle_net, 0);
+  // Rounded view = each ENTRY rounded to a whole baht, then summed (the pre-2026-07-21
+  // payout behaviour) — server rows carry the exact sums, so recompute from the entries.
+  const view = daily.map((d) => {
+    if (!rounded) return d;
+    const ae = d.entries.filter((e) => e.type === 'ae_commission').reduce((s, e) => s + netDisplay(e.net_amount, true), 0);
+    const bottle = d.entries.filter((e) => e.type === 'bottle_commission').reduce((s, e) => s + netDisplay(e.net_amount, true), 0);
+    return { ...d, ae_net: ae, bottle_net: bottle, total_net: ae + bottle };
+  });
+  const monthTotal = view.reduce((s, d) => s + d.total_net, 0);
+  const monthAE = view.reduce((s, d) => s + d.ae_net, 0);
+  const monthBottle = view.reduce((s, d) => s + d.bottle_net, 0);
 
   const toggle = (date: string) =>
     setExpanded((prev) => ({ ...prev, [date]: !prev[date] }));
@@ -98,7 +108,7 @@ export function CommissionDailySummary({ month, refreshKey }: CommissionDailySum
 
       <Card padding="none">
         <CardHeader title={t('daily.title')} />
-        {daily.length === 0 ? (
+        {view.length === 0 ? (
           <p className="py-10 text-center text-sm text-gray-400">{t('daily.noData')}</p>
         ) : (
           <div className="divide-y divide-gray-100 dark:divide-gray-800">
@@ -111,7 +121,7 @@ export function CommissionDailySummary({ month, refreshKey }: CommissionDailySum
               <span className="col-span-1" />
             </div>
 
-            {daily.map((d) => {
+            {view.map((d) => {
               const isOpen = !!expanded[d.date];
               return (
                 <div key={d.date}>
@@ -173,7 +183,7 @@ export function CommissionDailySummary({ month, refreshKey }: CommissionDailySum
                               )}
                             </div>
                             <span className={cn('shrink-0 font-semibold', isAE ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400')}>
-                              {formatCurrency(Number(e.net_amount))}
+                              {formatCurrency(netDisplay(e.net_amount, rounded))}
                             </span>
                           </div>
                         );

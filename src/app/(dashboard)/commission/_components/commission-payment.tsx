@@ -10,13 +10,13 @@ import { cn } from '@/lib/utils/cn';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/audit';
 import { useTranslations } from 'next-intl';
 import { formatThaiDate } from '@/lib/utils/format';
-import type { AEProfile } from '@/types/commission';
+import { netDisplay, type AEProfile } from '@/types/commission';
 
 function formatCurrency(n: number) {
   return n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function EntryRow({ e, t, onCancel, onViewPhoto, selectable, selected, onToggleSelect }: {
+function EntryRow({ e, t, onCancel, onViewPhoto, selectable, selected, onToggleSelect, rounded }: {
   e: any;
   t: any;
   onCancel?: (id: string) => void;
@@ -26,6 +26,8 @@ function EntryRow({ e, t, onCancel, onViewPhoto, selectable, selected, onToggleS
   selectable?: boolean;
   selected?: boolean;
   onToggleSelect?: (id: string, next: boolean) => void;
+  /** display-only whole-baht view (entries are stored exact) */
+  rounded?: boolean;
 }) {
   // Stacked layout matching the history tab: badges + meta wrap onto a
   // second line on small screens instead of squeezing into one row, and
@@ -87,7 +89,7 @@ function EntryRow({ e, t, onCancel, onViewPhoto, selectable, selected, onToggleS
           </button>
         )}
         <span className={`text-sm font-bold ${isAE ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'}`}>
-          {formatCurrency(Number(e.net_amount))}
+          {formatCurrency(netDisplay(e.net_amount, !!rounded))}
         </span>
         {onCancel && !e.payment_id && (
           <button
@@ -111,6 +113,8 @@ function getCurrentMonth() {
 interface CommissionPaymentProps {
   month?: string;
   refreshKey?: number;
+  /** display-only whole-baht view (entries are stored exact) */
+  rounded?: boolean;
 }
 
 interface SummaryData {
@@ -158,7 +162,7 @@ interface PaymentRecord {
   entries?: Array<Record<string, unknown>>;
 }
 
-export function CommissionPayment({ month: monthProp, refreshKey }: CommissionPaymentProps = {}) {
+export function CommissionPayment({ month: monthProp, refreshKey, rounded = false }: CommissionPaymentProps = {}) {
   const t = useTranslations('commission');
   const { currentStoreId } = useAppStore();
   const { user } = useAuthStore();
@@ -296,14 +300,14 @@ export function CommissionPayment({ month: monthProp, refreshKey }: CommissionPa
   const unpaidAE = (summary?.ae_summary || [])
     .map((a) => {
       const unpaidEntries = (a.entries || []).filter((e) => !(e as { payment_id?: string | null }).payment_id);
-      const totalNet = unpaidEntries.reduce((s, e) => s + (Number((e as { net_amount?: number }).net_amount) || 0), 0);
+      const totalNet = unpaidEntries.reduce((s, e) => s + netDisplay((e as { net_amount?: number }).net_amount, rounded), 0);
       return { ...a, entries: unpaidEntries, entry_count: unpaidEntries.length, total_net: totalNet };
     })
     .filter((a) => a.entry_count > 0);
   const unpaidBottle = (summary?.bottle_summary || [])
     .map((b) => {
       const unpaidEntries = (b.entries || []).filter((e) => !(e as { payment_id?: string | null }).payment_id);
-      const totalNet = unpaidEntries.reduce((s, e) => s + (Number((e as { net_amount?: number }).net_amount) || 0), 0);
+      const totalNet = unpaidEntries.reduce((s, e) => s + netDisplay((e as { net_amount?: number }).net_amount, rounded), 0);
       const totalBottles = unpaidEntries.reduce((s, e) => s + (Number((e as { bottle_count?: number }).bottle_count) || 0), 0);
       return { ...b, entries: unpaidEntries, entry_count: unpaidEntries.length, total_net: totalNet, total_bottles: totalBottles };
     })
@@ -510,7 +514,7 @@ export function CommissionPayment({ month: monthProp, refreshKey }: CommissionPa
           />
           {t('payment.showCancelled')}
         </label>
-        <CommissionExportButton month={month} />
+        <CommissionExportButton month={month} rounded={rounded} />
       </div>
 
       {/* Unpaid AE list */}
@@ -527,7 +531,7 @@ export function CommissionPayment({ month: monthProp, refreshKey }: CommissionPa
                 const somePicked = pickedInGroup.length > 0 && !allPicked;
                 const pickedTotal = (ae.entries || [])
                   .filter((e: any) => selectedEntryIds.has(e.id))
-                  .reduce((s: number, e: any) => s + (Number(e.net_amount) || 0), 0);
+                  .reduce((s: number, e: any) => s + netDisplay(e.net_amount, rounded), 0);
                 const payTotal = pickedInGroup.length > 0 ? pickedTotal : ae.total_net;
                 return (
                   <div key={ae.ae_id} className="group">
@@ -589,6 +593,7 @@ export function CommissionPayment({ month: monthProp, refreshKey }: CommissionPa
                             selectable
                             selected={selectedEntryIds.has(e.id)}
                             onToggleSelect={toggleEntryId}
+                            rounded={rounded}
                           />
                         ))}
                       </div>
@@ -615,7 +620,7 @@ export function CommissionPayment({ month: monthProp, refreshKey }: CommissionPa
                 const somePicked = pickedInGroup.length > 0 && !allPicked;
                 const pickedTotal = (b.entries || [])
                   .filter((e: any) => selectedEntryIds.has(e.id))
-                  .reduce((s: number, e: any) => s + (Number(e.net_amount) || 0), 0);
+                  .reduce((s: number, e: any) => s + netDisplay(e.net_amount, rounded), 0);
                 const payTotal = pickedInGroup.length > 0 ? pickedTotal : b.total_net;
                 return (
                   <div key={b.staff_id} className="group">
@@ -674,6 +679,7 @@ export function CommissionPayment({ month: monthProp, refreshKey }: CommissionPa
                             selectable
                             selected={selectedEntryIds.has(e.id)}
                             onToggleSelect={toggleEntryId}
+                            rounded={rounded}
                           />
                         ))}
                       </div>
@@ -701,7 +707,7 @@ export function CommissionPayment({ month: monthProp, refreshKey }: CommissionPa
         const payCount = useAll ? (group?.entry_count ?? 0) : pickedEntries.length;
         const payAmount = useAll
           ? (group?.total_net ?? 0)
-          : pickedEntries.reduce((s, e) => s + (Number(e.net_amount) || 0), 0);
+          : pickedEntries.reduce((s, e) => s + netDisplay(e.net_amount, rounded), 0);
         const groupName = selectedType === 'ae'
           ? (group as any)?.ae_name
           : (group as any)?.staff_name;
@@ -824,7 +830,7 @@ export function CommissionPayment({ month: monthProp, refreshKey }: CommissionPa
                         )}
                       </div>
                       <div className="flex shrink-0 items-center gap-1.5">
-                        <span className="text-sm font-bold text-gray-400 line-through dark:text-gray-500">{formatCurrency(Number(e.net_amount))}</span>
+                        <span className="text-sm font-bold text-gray-400 line-through dark:text-gray-500">{formatCurrency(netDisplay(e.net_amount, rounded))}</span>
                         <button
                           onClick={() => handleRestoreEntry(e.id)}
                           disabled={restoringEntry === e.id}
@@ -900,7 +906,7 @@ export function CommissionPayment({ month: monthProp, refreshKey }: CommissionPa
                       <tr key={e.id as string} className="border-t border-gray-100 dark:border-gray-700">
                         <td className="py-1">{e.bill_date as string}</td>
                         <td className="py-1">{(e.receipt_no as string) || '-'}</td>
-                        <td className="py-1 text-right font-medium">{formatCurrency(Number(e.net_amount) || 0)}</td>
+                        <td className="py-1 text-right font-medium">{formatCurrency(netDisplay(e.net_amount as number, rounded))}</td>
                       </tr>
                     ))}
                   </tbody>
