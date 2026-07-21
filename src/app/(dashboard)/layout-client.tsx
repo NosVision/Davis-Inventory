@@ -12,7 +12,6 @@ import { ChatBadgeProvider } from '@/components/chat/chat-badge-provider';
 import { DesktopLayout } from '@/components/layout/desktop-layout';
 import { MobileLayout } from '@/components/layout/mobile-layout';
 import { InstallPrompt } from '@/components/pwa/install-prompt';
-import { PwaGate } from '@/components/pwa/pwa-gate';
 import { UserGuide } from '@/components/pwa/user-guide';
 import { Store, ArrowRight } from 'lucide-react';
 import type { AuthUser } from '@/lib/auth/permissions';
@@ -89,7 +88,9 @@ export function DashboardLayoutClient({
     <QueryClientProvider client={queryClient}>
       <ChatBadgeProvider />
       <InstallPrompt />
-      <PwaGate />
+      {/* PwaGate (mandatory install+notifications wall) removed — owner ask 2026-07-21:
+          stop FORCING the install. The dismissible InstallPrompt above stays as a gentle
+          nudge; re-enable the gate by re-adding <PwaGate /> here. */}
       <UserGuide />
       {showDesktop ? (
         <DesktopLayout stores={stores}>{content}</DesktopLayout>
