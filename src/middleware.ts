@@ -79,6 +79,11 @@ export async function middleware(request: NextRequest) {
   if (!user) {
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('redirect', pathname);
+    // Keep the installed-app launch marker (manifest start_url ?source=pwa) across the
+    // redirect so the login page can stamp sessionStorage for the PWA gate.
+    if (request.nextUrl.searchParams.get('source') === 'pwa') {
+      loginUrl.searchParams.set('source', 'pwa');
+    }
     return NextResponse.redirect(loginUrl);
   }
 

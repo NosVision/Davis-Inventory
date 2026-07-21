@@ -17,6 +17,7 @@ import {
 import { cn } from '@/lib/utils/cn';
 import { usePushSubscription } from '@/hooks/use-push-subscription';
 import { useInstallPWA } from '@/hooks/use-install-pwa';
+import { isStandaloneLaunch } from '@/lib/pwa/standalone';
 
 // Escape hatch for demos/support: run `localStorage.setItem('pwa-gate-off','1')` in the
 // console (or a future admin toggle) to disable the gate on that device.
@@ -33,12 +34,6 @@ function detectPlatform(): Platform {
 }
 function detectInAppBrowser(): boolean {
   return /Line\/|FBAN|FBAV|Instagram|Messenger/i.test(navigator.userAgent);
-}
-function detectStandalone(): boolean {
-  return (
-    window.matchMedia('(display-mode: standalone)').matches ||
-    (navigator as unknown as { standalone?: boolean }).standalone === true
-  );
 }
 
 // Mandatory PWA gate for phones/tablets (owner ask 2026-07-15): on iOS/Android the app MUST be
@@ -64,7 +59,7 @@ export function PwaGate() {
     setMounted(true);
     setPlatform(detectPlatform());
     setInApp(detectInAppBrowser());
-    setStandalone(detectStandalone());
+    setStandalone(isStandaloneLaunch());
     setBypass(localStorage.getItem(BYPASS_KEY) === '1');
     const onInstalled = () => setInstalledNow(true);
     window.addEventListener('appinstalled', onInstalled);

@@ -65,6 +65,15 @@ export default async function RootLayout({
             __html: `try{var d=JSON.parse(localStorage.getItem('stockmanager-app')||'{}');if(d.state&&d.state.theme==='dark')document.documentElement.classList.add('dark')}catch(e){}`,
           }}
         />
+        {/* Launched from the installed icon (manifest start_url carries ?source=pwa, or an
+            android-app:// referrer) → stamp sessionStorage BEFORE React mounts, so the PWA gate
+            never mis-nags an installed app whose display-mode query is unreliable. sessionStorage
+            is per app-window, so plain browser tabs are unaffected (the gate still blocks them). */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{if(new URLSearchParams(location.search).get('source')==='pwa'||document.referrer.indexOf('android-app://')===0)sessionStorage.setItem('pwa-standalone-launch','1')}catch(e){}`,
+          }}
+        />
       </head>
       <body
         className={`${notoSansThai.variable} ${playpenSansThai.variable} font-sans antialiased bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100`}

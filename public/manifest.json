@@ -2,7 +2,7 @@
   "name": "DavisManage - ระบบจัดการร้าน",
   "short_name": "DavisManage",
   "description": "ระบบจัดการสต๊อกเครื่องดื่มและฝากเหล้า สำหรับร้านอาหารและบาร์",
-  "start_url": "/",
+  "start_url": "/?source=pwa",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#4f46e5",

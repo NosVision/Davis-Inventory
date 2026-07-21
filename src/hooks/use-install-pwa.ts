@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { isStandaloneLaunch } from '@/lib/pwa/standalone';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
@@ -14,11 +15,8 @@ export function useInstallPWA() {
   const [isInstalling, setIsInstalling] = useState(false);
 
   useEffect(() => {
-    // Check if already installed (standalone mode)
-    if (
-      window.matchMedia('(display-mode: standalone)').matches ||
-      (navigator as unknown as { standalone?: boolean }).standalone
-    ) {
+    // Check if already installed (running as the installed app)
+    if (isStandaloneLaunch()) {
       setIsInstalled(true);
       return;
     }

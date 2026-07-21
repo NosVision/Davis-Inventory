@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { useTranslations } from 'next-intl';
 import { ChevronLeft, ChevronRight, X, Sparkles, CheckCircle2, Maximize2 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
+import { isStandaloneLaunch } from '@/lib/pwa/standalone';
 
 const STORAGE_KEY = 'user-guide-completed-v1';
 const PWA_DISMISSED_KEY = 'pwa-install-prompt-dismissed';
@@ -72,9 +73,7 @@ export function UserGuide() {
     if (localStorage.getItem(STORAGE_KEY)) return;
 
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-    const isInstalled =
-      window.matchMedia('(display-mode: standalone)').matches ||
-      (navigator as unknown as { standalone?: boolean }).standalone === true;
+    const isInstalled = isStandaloneLaunch();
     const pwaDismissed = localStorage.getItem(PWA_DISMISSED_KEY);
     let dismissedRecent = false;
     if (pwaDismissed) {
