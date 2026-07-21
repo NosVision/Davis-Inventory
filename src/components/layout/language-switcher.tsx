@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Languages } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { useAppStore } from '@/stores/app-store';
+import { useAuthStore } from '@/stores/auth-store';
 import type { Locale } from '@/i18n/config';
 
 interface LanguageSwitcherProps {
@@ -16,9 +17,19 @@ export function LanguageSwitcher({ collapsed = false, className }: LanguageSwitc
   const locale = useLocale();
   const router = useRouter();
   const { setLocale } = useAppStore();
+  const { user } = useAuthStore();
+
+  // Burmese is a menu-only partial locale for staff awaiting an HR position (role
+  // not_assign) — mostly Burmese workers who self-registered. Everyone else keeps TH↔EN.
+  const order: Locale[] = user?.role === 'not_assign' ? ['th', 'en', 'my'] : ['th', 'en'];
+  const next: Locale = order[(order.indexOf(locale as Locale) + 1) % order.length] ?? 'th';
+  const NEXT_TITLE: Record<Locale, string> = {
+    th: 'เปลี่ยนเป็นภาษาไทย',
+    en: 'Switch to English',
+    my: 'မြန်မာဘာသာသို့ ပြောင်းရန်',
+  };
 
   const toggle = () => {
-    const next: Locale = locale === 'th' ? 'en' : 'th';
     document.cookie = `NEXT_LOCALE=${next};path=/;max-age=31536000;SameSite=Lax`;
     setLocale(next);
     router.refresh();
@@ -28,7 +39,7 @@ export function LanguageSwitcher({ collapsed = false, className }: LanguageSwitc
     <button
       type="button"
       onClick={toggle}
-      title={locale === 'th' ? 'Switch to English' : 'เปลี่ยนเป็นภาษาไทย'}
+      title={NEXT_TITLE[next]}
       className={cn(
         'flex items-center gap-3 rounded-lg px-3 py-2 text-sm',
         'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800',
@@ -39,7 +50,7 @@ export function LanguageSwitcher({ collapsed = false, className }: LanguageSwitc
     >
       <Languages className="h-[18px] w-[18px] shrink-0" />
       {!collapsed && (
-        <span>{locale === 'th' ? 'EN' : 'TH'}</span>
+        <span>{next.toUpperCase()}</span>
       )}
     </button>
   );
