@@ -5,8 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Languages } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { useAppStore } from '@/stores/app-store';
-import { useAuthStore } from '@/stores/auth-store';
-import type { Locale } from '@/i18n/config';
+import { locales, type Locale } from '@/i18n/config';
 
 interface LanguageSwitcherProps {
   collapsed?: boolean;
@@ -17,16 +16,16 @@ export function LanguageSwitcher({ collapsed = false, className }: LanguageSwitc
   const locale = useLocale();
   const router = useRouter();
   const { setLocale } = useAppStore();
-  const { user } = useAuthStore();
 
-  // Burmese is a menu-only partial locale for staff awaiting an HR position (role
-  // not_assign) — mostly Burmese workers who self-registered. Everyone else keeps TH↔EN.
-  const order: Locale[] = user?.role === 'not_assign' ? ['th', 'en', 'my'] : ['th', 'en'];
+  // Every role may pick any language (owner ask 2026-07-21). Burmese/Lao are partial
+  // menu-only locales — untranslated keys fall back to Thai, so nothing breaks.
+  const order: readonly Locale[] = locales;
   const next: Locale = order[(order.indexOf(locale as Locale) + 1) % order.length] ?? 'th';
   const NEXT_TITLE: Record<Locale, string> = {
     th: 'เปลี่ยนเป็นภาษาไทย',
     en: 'Switch to English',
     my: 'မြန်မာဘာသာသို့ ပြောင်းရန်',
+    lo: 'ປ່ຽນເປັນພາສາລາວ',
   };
 
   const toggle = () => {

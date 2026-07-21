@@ -1,0 +1,70 @@
+{
+  "moduleGroups": {
+    "main": "ຫຼັກ",
+    "warehouse": "ສາງສິນຄ້າ",
+    "help": "ຊ່ວຍເຫຼືອ"
+  },
+  "modules": {
+    "chat": {
+      "name": "ແຊັດ",
+      "description": "ແຊັດພາຍໃນສາຂາ"
+    },
+    "me": {
+      "name": "ຂອງຂ້ອຍ",
+      "description": "ເຊັກອິນ, ລາພັກ, ສະລິບເງິນເດືອນ"
+    },
+    "tasks": {
+      "name": "ຫ້ອງວຽກ",
+      "description": "ຈັດການວຽກງານ ແລະ ມອບໝາຍວຽກ"
+    },
+    "guide": {
+      "name": "ຄູ່ມື",
+      "description": "ຄູ່ມືການໃຊ້ງານລະບົບ"
+    },
+    "deposit": {
+      "name": "ຝາກ/ເບີກເຫຼົ້າ",
+      "description": "ຈັດການຝາກເຫຼົ້າ ແລະ ເບີກເຫຼົ້າ"
+    },
+    "stock": {
+      "name": "ເຊັກສະຕັອກ",
+      "description": "ນັບສະຕັອກ ແລະ ປຽບທຽບຜົນຕ່າງ"
+    },
+    "transfer": {
+      "name": "ໂອນສະຕັອກ",
+      "description": "ໂອນສະຕັອກລະຫວ່າງສາຂາ"
+    },
+    "borrow": {
+      "name": "ຢືມສິນຄ້າ",
+      "description": "ຢືມສິນຄ້າລະຫວ່າງສາຂາ"
+    },
+    "repairNew": {
+      "name": "ແຈ້ງສ້ອມແປງ",
+      "description": "ແຈ້ງອຸປະກອນທີ່ເສຍໃນສາຂາ"
+    }
+  },
+  "nav": {
+    "chat": "ແຊັດ",
+    "me": "ຂອງຂ້ອຍ",
+    "tasks": "ຫ້ອງວຽກ",
+    "guide": "ຄູ່ມື",
+    "depositWithdraw": "ຝາກ/ເບີກ",
+    "warehouse": "ສາງ",
+    "warehouseHubSubtitle": "ວຽກສາງສິນຄ້າທັງໝົດ — ເລືອກເມນູທີ່ຕ້ອງການ",
+    "main": "ໜ້າຫຼັກ",
+    "mainHubSubtitle": "ເມນູທັງໝົດໃນລະບົບ — ເລືອກທີ່ຕ້ອງການ",
+    "stock": "ສະຕັອກ",
+    "countStock": "ນັບສະຕັອກ",
+    "borrowItem": "ຢືມສິນຄ້າ",
+    "transfer": "ໂອນ",
+    "approve": "ອະນຸມັດ",
+    "darkMode": "ໂໝດມືດ",
+    "lightMode": "ໂໝດສະຫວ່າງ",
+    "collapseMenu": "ຫຍໍ້ເມນູ",
+    "expandMenu": "ຂະຫຍາຍເມນູ",
+    "openMenu": "ເປີດເມນູ",
+    "closeMenu": "ປິດເມນູ"
+  },
+  "auth": {
+    "logout": "ອອກຈາກລະບົບ"
+  }
+}

@@ -1,6 +1,6 @@
 import { getRequestConfig } from 'next-intl/server';
 import { cookies } from 'next/headers';
-import { defaultLocale, locales, type Locale } from './config';
+import { defaultLocale, locales, partialLocales, type Locale } from './config';
 
 type Messages = Record<string, unknown>;
 
@@ -26,13 +26,13 @@ export default getRequestConfig(async () => {
     ? (raw as Locale)
     : defaultLocale;
 
-  // 'my' (Burmese) is a partial menu-only locale — merge it over the Thai base.
-  if (locale === 'my') {
-    const [th, my] = await Promise.all([
+  // Partial menu-only locales (Burmese/Lao) — merge over the Thai base.
+  if (partialLocales.includes(locale)) {
+    const [th, partial] = await Promise.all([
       import('../messages/th.json'),
-      import('../messages/my.json'),
+      import(`../messages/${locale}.json`),
     ]);
-    return { locale, messages: deepMerge(th.default as Messages, my.default as Messages) as never };
+    return { locale, messages: deepMerge(th.default as Messages, partial.default as Messages) as never };
   }
 
   return {
