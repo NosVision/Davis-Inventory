@@ -63,30 +63,38 @@ const COLOR: Record<string, string> = {
   emerald: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400',
 };
 
-const LABELS: Record<string, { th: string; en: string }> = {
-  checkin: { th: 'เช็คอิน', en: 'Check-in' },
-  schedule: { th: 'ตารางงาน', en: 'Schedule' },
-  timesheet: { th: 'บันทึกเวลา', en: 'Timesheet' },
-  attendanceRequests: { th: 'ขอแก้เวลา', en: 'Time requests' },
-  otRequests: { th: 'ขอโอที', en: 'OT requests' },
-  leaves: { th: 'ขอลา', en: 'Leave' },
-  swaps: { th: 'สลับวันหยุด', en: 'Day-off swaps' },
-  claims: { th: 'เบิกค่าใช้จ่าย', en: 'Claims' },
-  payslips: { th: 'สลิปเงินเดือน', en: 'Payslips' },
-  documents: { th: 'เอกสาร/50ทวิ', en: 'Documents' },
-  evaluations: { th: 'ประเมินเพื่อน', en: 'Peer review' },
-  evaluationResults: { th: 'ผลประเมินของฉัน', en: 'My results' },
-  warnings: { th: 'ใบเตือน', en: 'Warnings' },
-  stockPenalties: { th: 'คะแนน/ค่าปรับสต๊อก', en: 'Stock penalties' },
-  announcements: { th: 'ประกาศ', en: 'Announcements' },
-  policies: { th: 'ระเบียบบริษัท', en: 'Policies' },
-  profile: { th: 'โปรไฟล์', en: 'Profile' },
+// 4-language tile labels (client ask 2026-07-21: Burmese/Lao staff must read every /me menu).
+const LABELS: Record<string, { th: string; en: string; my: string; lo: string }> = {
+  checkin: { th: 'เช็คอิน', en: 'Check-in', my: 'ချက်အင်', lo: 'ເຊັກອິນ' },
+  schedule: { th: 'ตารางงาน', en: 'Schedule', my: 'အလုပ်ဇယား', lo: 'ຕາຕະລາງວຽກ' },
+  timesheet: { th: 'บันทึกเวลา', en: 'Timesheet', my: 'အချိန်မှတ်တမ်း', lo: 'ບັນທຶກເວລາ' },
+  attendanceRequests: { th: 'ขอแก้เวลา', en: 'Time requests', my: 'အချိန်ပြင်ရန်', lo: 'ຂໍແກ້ເວລາ' },
+  otRequests: { th: 'ขอโอที', en: 'OT requests', my: 'OT တောင်းဆို', lo: 'ຂໍໂອທີ' },
+  leaves: { th: 'ขอลา', en: 'Leave', my: 'ခွင့်တောင်း', lo: 'ຂໍລາ' },
+  swaps: { th: 'สลับวันหยุด', en: 'Day-off swaps', my: 'အားလပ်ရက် လဲလှယ်', lo: 'ສະຫຼັບວັນພັກ' },
+  claims: { th: 'เบิกค่าใช้จ่าย', en: 'Claims', my: 'စရိတ် တောင်းခံ', lo: 'ເບີກຄ່າໃຊ້ຈ່າຍ' },
+  payslips: { th: 'สลิปเงินเดือน', en: 'Payslips', my: 'လစာစလစ်', lo: 'ສະລິບເງິນເດືອນ' },
+  documents: { th: 'เอกสาร/50ทวิ', en: 'Documents', my: 'စာရွက်စာတမ်း', lo: 'ເອກະສານ' },
+  evaluations: { th: 'ประเมินเพื่อน', en: 'Peer review', my: 'လုပ်ဖော်ကိုင်ဖက် အကဲဖြတ်', lo: 'ປະເມີນໝູ່ເພື່ອນ' },
+  evaluationResults: { th: 'ผลประเมินของฉัน', en: 'My results', my: 'ကျွန်ုပ်၏ အကဲဖြတ်ချက်', lo: 'ຜົນປະເມີນຂອງຂ້ອຍ' },
+  warnings: { th: 'ใบเตือน', en: 'Warnings', my: 'သတိပေးစာ', lo: 'ໃບເຕືອນ' },
+  stockPenalties: { th: 'คะแนน/ค่าปรับสต๊อก', en: 'Stock penalties', my: 'စတော့ ဒဏ်ကြေး', lo: 'ຄະແນນ/ຄ່າປັບສະຕັອກ' },
+  announcements: { th: 'ประกาศ', en: 'Announcements', my: 'ကြေညာချက်', lo: 'ປະກາດ' },
+  policies: { th: 'ระเบียบบริษัท', en: 'Policies', my: 'ကုမ္ပဏီစည်းမျဉ်း', lo: 'ລະບຽບບໍລິສັດ' },
+  profile: { th: 'โปรไฟล์', en: 'Profile', my: 'ပရိုဖိုင်', lo: 'ໂປຣໄຟລ໌' },
 };
 
 export default function MeHomePage() {
-  const isTh = useLocale() === 'th';
-  const title = isTh ? 'ของฉัน' : 'My workspace';
-  const subtitle = isTh ? 'บริการพนักงาน — เวลา ลางาน สลิป และประเมินผล' : 'Employee self-service — time, leave, payslips, and reviews';
+  const locale = useLocale();
+  const label = (t: { th: string; en: string; my: string; lo: string }) =>
+    locale === 'th' ? t.th : locale === 'my' ? t.my : locale === 'lo' ? t.lo : t.en;
+  const title = label({ th: 'ของฉัน', en: 'My workspace', my: 'ကျွန်ုပ်', lo: 'ຂອງຂ້ອຍ' });
+  const subtitle = label({
+    th: 'บริการพนักงาน — เวลา ลางาน สลิป และประเมินผล',
+    en: 'Employee self-service — time, leave, payslips, and reviews',
+    my: 'ဝန်ထမ်း ကိုယ်တိုင်ဝန်ဆောင်မှု — အချိန်၊ ခွင့်၊ လစာစလစ်',
+    lo: 'ບໍລິການພະນັກງານ — ເວລາ ລາພັກ ສະລິບ ແລະ ປະເມີນຜົນ',
+  });
 
   // Per-tile "new activity" counts (unread notifications + must-act items).
   const [badges, setBadges] = useState<Record<string, number>>({});
@@ -132,7 +140,7 @@ export default function MeHomePage() {
               <div className={cn('flex h-10 w-10 items-center justify-center rounded-lg', COLOR[color])}>
                 <Icon className="h-5 w-5" />
               </div>
-              <span className="text-sm font-medium text-gray-900 dark:text-white">{isTh ? LABELS[key].th : LABELS[key].en}</span>
+              <span className="text-sm font-medium text-gray-900 dark:text-white">{label(LABELS[key])}</span>
             </Link>
           );
         })}

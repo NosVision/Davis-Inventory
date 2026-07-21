@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useLocale } from 'next-intl';
 import { ShieldAlert, ChevronRight } from 'lucide-react';
+import { useEssText } from '@/lib/i18n/ess-locale';
 
 // A prominent prompt on the ESS home for employees who have LINKED their identity
 // (an hr_employees record exists) but still have company policies they have not read
@@ -11,7 +11,7 @@ import { ShieldAlert, ChevronRight } from 'lucide-react';
 // reader; the actual scroll → accept → save gate lives on /me/policies. Non-linked
 // users are not nagged here — they are steered to verify their identity first.
 export function RequiredPolicyBanner() {
-  const isTh = useLocale() === 'th';
+  const tx = useEssText();
   const [count, setCount] = useState(0);
 
   useEffect(() => {
@@ -49,12 +49,15 @@ export function RequiredPolicyBanner() {
       </span>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">
-          {isTh ? 'มีระเบียบบริษัทที่ต้องอ่านและยอมรับ' : 'Company policies need your acceptance'}
+          {tx(
+            'มีระเบียบบริษัทที่ต้องอ่านและยอมรับ',
+            'Company policies need your acceptance',
+            'ဖတ်ရှုပြီး လက်ခံရမည့် ကုမ္ပဏီစည်းမျဉ်းများ ရှိသည်',
+            'ມີລະບຽບບໍລິສັດທີ່ຕ້ອງອ່ານ ແລະ ຍອມຮັບ'
+          )}
         </p>
         <p className="text-xs text-amber-700 dark:text-amber-300/80">
-          {isTh
-            ? `${count} ฉบับ — เลื่อนอ่านให้ครบแล้วกดยอมรับ`
-            : `${count} to read — scroll through and accept`}
+          {count} {tx('ฉบับ — เลื่อนอ่านให้ครบแล้วกดยอมรับ', 'to read — scroll through and accept', 'စောင် — အပြည့်ဖတ်ပြီး လက်ခံပါ', 'ສະບັບ — ເລື່ອນອ່ານໃຫ້ຄົບແລ້ວກົດຍອມຮັບ')}
         </p>
       </div>
       <ChevronRight className="h-5 w-5 shrink-0 text-amber-500" />
