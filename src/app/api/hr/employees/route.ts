@@ -16,6 +16,66 @@ import {
 } from '@/lib/hr/employees';
 
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';
+
+/**
+ * Consume an imported (unclaimed) roster row for a just-created employee record: flip it to
+ * 'linked' so the same person cannot also self-claim that name, back-link their historical
+ * payslips, materialize staged sheet leave balances, and stamp the formal payroll full name
+ * onto hr_employees (mirrors the identity-claim approve flow). Shared by BOTH onboarding
+ * modes — create-new-account and link-existing-account (client report 2026-07-21: linking a
+ * sheet identity to an existing login was impossible). Best-effort: problems land in
+ * `warnings`, never a 500 (the employee row is already committed).
+ */
+async function consumePendingIdentity(
+  service: ReturnType<typeof createServiceClient>,
+  opts: { pendingIdentityId: string; employeeId: string; companyId: string | null; note: string; actorId: string },
+  warnings: string[]
+): Promise<void> {
+  const { data: flipped } = await service
+    .from('hr_pending_identities')
+    .update({
+      status: 'linked',
+      reviewed_by: opts.actorId,
+      reviewed_at: new Date().toISOString(),
+      linked_employee_id: opts.employeeId,
+      review_note: opts.note,
+    })
+    .eq('id', opts.pendingIdentityId)
+    .eq('status', 'unclaimed')
+    .select('id, full_name_th');
+  if (!flipped?.length) {
+    warnings.push('Imported identity was already taken — check for a duplicate record');
+    return;
+  }
+
+  // Formal payroll name (slips/accountant review print this) — only fill a blank, never
+  // overwrite a name HR already maintains.
+  const fullName = (flipped[0].full_name_th as string | null)?.trim();
+  if (fullName) {
+    await service
+      .from('hr_employees')
+      .update({ full_name: fullName })
+      .eq('id', opts.employeeId)
+      .is('full_name', null);
+  }
+
+  const { error: histErr } = await service
+    .from('hr_imported_payslips')
+    .update({ employee_id: opts.employeeId })
+    .eq('pending_identity_id', opts.pendingIdentityId);
+  if (histErr) warnings.push('Historical payslips were not back-linked — link them manually');
+
+  // Materialize staged sheet-imported leave balances for this identity (00166) — best-effort.
+  try {
+    await applyPendingLeaveBalances(service, {
+      pendingIdentityId: opts.pendingIdentityId,
+      employeeId: opts.employeeId,
+      companyId: opts.companyId,
+    });
+  } catch (e) {
+    console.error('hr onboarding: staged leave balances failed', e);
+  }
+}
 // Valid employee roles for onboarding (never 'owner'/'customer').
 const ALLOWED_NEW_ROLES = ['staff', 'bar', 'head_bar', 'manager', 'accountant', 'hq', 'technician', 'hr', 'cashier', 'housekeeping_staff', 'boh_staff', 'not_assign'];
 // Powerful/app-wide roles — only an OWNER caller may mint these (accountant is a
@@ -213,6 +273,23 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Sheet identity picked alongside the existing login — consume it exactly like the
+    // create-new-account path (historical payslips, leave balances, payroll full name).
+    const linkPendingIdentityId = typeof body.pending_identity_id === 'string' ? body.pending_identity_id : '';
+    if (linkPendingIdentityId) {
+      await consumePendingIdentity(
+        service,
+        {
+          pendingIdentityId: linkPendingIdentityId,
+          employeeId: emp.id as string,
+          companyId: (emp.company_id as string | null) ?? null,
+          note: `Linked via add-employee prefill to existing account ${prof.username ?? linkProfileId}`,
+          actorId: auth.userId,
+        },
+        warnings
+      );
+    }
+
     await logHrAudit(service, {
       actorId: auth.userId,
       action: 'create',
@@ -220,7 +297,7 @@ export async function POST(request: NextRequest) {
       recordId: emp.id,
       before: null,
       after: emp,
-      reason: `Linked existing account ${prof.username ?? linkProfileId}${prof.active ? '' : ' (re-activated a disabled login)'}`,
+      reason: `Linked existing account ${prof.username ?? linkProfileId}${prof.active ? '' : ' (re-activated a disabled login)'}${linkPendingIdentityId ? ' + imported sheet identity' : ''}`,
     });
 
     return NextResponse.json({ id: emp.id, profileId: linkProfileId, linked: true, warnings }, { status: 201 });
@@ -320,42 +397,20 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // When this onboarding was prefilled from an imported (unclaimed) roster row, consume it so the
-  // same person cannot also self-claim that name later, and follow their historical payslips over
-  // to the new employee record — mirrors the identity-claim approve flow.
+  // When this onboarding was prefilled from an imported (unclaimed) roster row, consume it.
   const pendingIdentityId = typeof body.pending_identity_id === 'string' ? body.pending_identity_id : '';
   if (pendingIdentityId) {
-    const { data: flipped } = await service
-      .from('hr_pending_identities')
-      .update({
-        status: 'linked',
-        reviewed_by: auth.userId,
-        reviewed_at: new Date().toISOString(),
-        linked_employee_id: emp.id,
-        review_note: 'Linked via add-employee prefill',
-      })
-      .eq('id', pendingIdentityId)
-      .eq('status', 'unclaimed')
-      .select('id');
-    if (flipped?.length) {
-      const { error: histErr } = await service
-        .from('hr_imported_payslips')
-        .update({ employee_id: emp.id })
-        .eq('pending_identity_id', pendingIdentityId);
-      if (histErr) warnings.push('Historical payslips were not back-linked — link them manually');
-      // Materialize staged sheet-imported leave balances for this identity (00166) — best-effort.
-      try {
-        await applyPendingLeaveBalances(service, {
-          pendingIdentityId,
-          employeeId: emp.id as string,
-          companyId: (emp.company_id as string | null) ?? null,
-        });
-      } catch (e) {
-        console.error('hr onboarding: staged leave balances failed', e);
-      }
-    } else {
-      warnings.push('Imported identity was already taken — check for a duplicate record');
-    }
+    await consumePendingIdentity(
+      service,
+      {
+        pendingIdentityId,
+        employeeId: emp.id as string,
+        companyId: (emp.company_id as string | null) ?? null,
+        note: 'Linked via add-employee prefill',
+        actorId: auth.userId,
+      },
+      warnings
+    );
   }
 
   await logHrAudit(service, {
