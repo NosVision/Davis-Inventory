@@ -67,22 +67,34 @@ function SlipRow({ label, value, strong, tone }: { label: string; value: string;
 }
 
 export function ImportedPayslipView({ data }: { data: ImportedSlip }) {
-  const isTh = useLocale() === 'th';
-  const L = isTh
-    ? {
-        archive: 'ข้อมูลนำเข้า (ย้อนหลัง)', name: 'ชื่อ', position: 'ตำแหน่ง', period: 'งวด',
-        earnings: 'รายได้', salary: 'เงินเดือน', workedDays: 'วันทำงาน', otHours: 'ชม. OT',
-        otPay: 'ค่า OT', holidayPay: 'ค่าทำงานวันหยุด', transport: 'ค่าเดินทาง', service: 'ค่าเซอร์วิส',
-        deductions: 'รายการหัก', sso: 'ประกันสังคม', wht3: 'ภาษีหัก ณ ที่จ่าย 3%', tax: 'ภาษีเงินได้ (ภ.ง.ด.1)', otherDed: 'หักอื่นๆ',
-        gross: 'รวมรายได้', net: 'เงินสุทธิ', days: 'วัน', hours: 'ชม.',
-      }
-    : {
-        archive: 'Imported (historical)', name: 'Name', position: 'Position', period: 'Period',
-        earnings: 'Earnings', salary: 'Salary', workedDays: 'Worked days', otHours: 'OT hours',
-        otPay: 'OT pay', holidayPay: 'Holiday pay', transport: 'Transport', service: 'Service charge',
-        deductions: 'Deductions', sso: 'Social security', wht3: 'Withholding tax 3%', tax: 'Income tax (PND1)', otherDed: 'Other deductions',
-        gross: 'Gross', net: 'Net pay', days: 'd', hours: 'h',
-      };
+  const locale = useLocale();
+  const tx = (th: string, en: string, my?: string, lo?: string) =>
+    locale === 'th' ? th : locale === 'my' ? my ?? th : locale === 'lo' ? lo ?? th : en;
+  const L = {
+    archive: tx('ข้อมูลนำเข้า (ย้อนหลัง)', 'Imported (historical)', 'တင်သွင်းဒေတာ (ယခင်)', 'ຂໍ້ມູນນຳເຂົ້າ (ຍ້ອນຫຼັງ)'),
+    name: tx('ชื่อ', 'Name', 'အမည်', 'ຊື່'),
+    position: tx('ตำแหน่ง', 'Position', 'ရာထူး', 'ຕຳແໜ່ງ'),
+    period: tx('งวด', 'Period', 'အပတ်စဉ်', 'ງວດ'),
+    earnings: tx('รายได้', 'Earnings', 'ဝင်ငွေ', 'ລາຍຮັບ'),
+    salary: tx('เงินเดือน', 'Salary', 'လစာ', 'ເງິນເດືອນ'),
+    workedDays: tx('วันทำงาน', 'Worked days', 'အလုပ်ရက်', 'ວັນເຮັດວຽກ'),
+    otHours: tx('ชม. OT', 'OT hours', 'OT နာရီ', 'ຊົ່ວໂມງ OT'),
+    otPay: tx('ค่า OT', 'OT pay', 'OT ကြေး', 'ຄ່າ OT'),
+    holidayPay: tx('ค่าทำงานวันหยุด', 'Holiday pay', 'အားလပ်ရက် အလုပ်ကြေး', 'ຄ່າເຮັດວຽກວັນພັກ'),
+    transport: tx('ค่าเดินทาง', 'Transport', 'ခရီးစရိတ်', 'ຄ່າເດີນທາງ'),
+    service: tx('ค่าเซอร์วิส', 'Service charge', 'ဝန်ဆောင်ခ (SC)', 'ຄ່າເຊີວິດ'),
+    deductions: tx('รายการหัก', 'Deductions', 'ဖြတ်တောက်ငွေ', 'ລາຍການຫັກ'),
+    sso: tx('ประกันสังคม', 'Social security', 'SSO', 'ປກສ.'),
+    wht3: tx('ภาษีหัก ณ ที่จ่าย 3%', 'Withholding tax 3%', 'ပင်ရင်းအခွန် 3%', 'ພາສີຫັກ ณ ທີ່ຈ່າຍ 3%'),
+    tax: tx('ภาษีเงินได้ (ภ.ง.ด.1)', 'Income tax (PND1)', 'ဝင်ငွေခွန် (PND1)', 'ພາສີລາຍໄດ້ (PND1)'),
+    otherDed: tx('หักอื่นๆ', 'Other deductions', 'အခြားဖြတ်တောက်မှု', 'ຫັກອື່ນໆ'),
+    gross: tx('รวมรายได้', 'Gross', 'စုစုပေါင်းဝင်ငွေ', 'ລວມລາຍຮັບ'),
+    net: tx('เงินสุทธิ', 'Net pay', 'အသားတင်ငွေ', 'ເງິນສຸດທິ'),
+    days: tx('วัน', 'd', 'ရက်', 'ວັນ'),
+    hours: tx('ชม.', 'h', 'နာရီ', 'ຊມ.'),
+  };
+  // Thai month names for th/my/lo (fallback direction of the partial locales); EN only for en.
+  const isTh = locale !== 'en';
 
   const name = data.name_th || data.name_en || data.nickname || '—';
   // sso5 = real social security (5%); sso3 = the foreigner withholding-tax 3% group — NOT social

@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { useLocale } from 'next-intl';
 import { Gauge, Loader2 } from 'lucide-react';
 import {
   EmptyState,
@@ -12,6 +11,7 @@ import {
   type StatusTone,
   toast,
 } from '@/components/ui';
+import { useEssText } from '@/lib/i18n/ess-locale';
 import { formatThaiDate } from '@/lib/utils/format';
 
 // Employee self-service: my stock-penalty / SOP-point history (penalties.staff_id = me).
@@ -44,34 +44,30 @@ function bahtLabel(amount: number): string {
 }
 
 export default function MyStockPenaltiesPage() {
-  const isTh = useLocale() === 'th';
-  const L = isTh
-    ? {
-        title: 'คะแนน/ค่าปรับสต๊อก',
-        subtitle: 'ประวัติคะแนน SOP และค่าปรับสต๊อกของฉัน',
-        empty: 'ยังไม่มีรายการคะแนน/ค่าปรับ',
-        monthPrefix: 'เดือนนี้',
-        times: 'ครั้ง',
-        pending: 'รอหัก',
-        cancelled: 'ยกเลิก',
-        recorded: 'บันทึกแล้ว',
-        noCharge: 'ไม่หัก',
-        loadFail: 'โหลดไม่สำเร็จ',
-        noDetail: '(ไม่มีรายละเอียด)',
-      }
-    : {
-        title: 'Stock penalties',
-        subtitle: 'My SOP points and stock-penalty history',
-        empty: 'No penalty records yet',
-        monthPrefix: 'This month',
-        times: '',
-        pending: 'Pending',
-        cancelled: 'Cancelled',
-        recorded: 'Recorded',
-        noCharge: '—',
-        loadFail: 'Load failed',
-        noDetail: 'No description',
-      };
+  const tx = useEssText();
+  const L = {
+    title: tx('คะแนน/ค่าปรับสต๊อก', 'Stock penalties', 'စတော့ အမှတ်/ဒဏ်ကြေး', 'ຄະແນນ/ຄ່າປັບສະຕັອກ'),
+    subtitle: tx(
+      'ประวัติคะแนน SOP และค่าปรับสต๊อกของฉัน',
+      'My SOP points and stock-penalty history',
+      'ကျွန်ုပ်၏ SOP အမှတ်နှင့် စတော့ဒဏ်ကြေး မှတ်တမ်း',
+      'ປະຫວັດຄະແນນ SOP ແລະ ຄ່າປັບສະຕັອກຂອງຂ້ອຍ'
+    ),
+    empty: tx(
+      'ยังไม่มีรายการคะแนน/ค่าปรับ',
+      'No penalty records yet',
+      'အမှတ်/ဒဏ်ကြေး မှတ်တမ်း မရှိသေးပါ',
+      'ຍັງບໍ່ມີລາຍການຄະແນນ/ຄ່າປັບ'
+    ),
+    monthPrefix: tx('เดือนนี้', 'This month', 'ယခုလ', 'ເດືອນນີ້'),
+    times: tx('ครั้ง', '', 'ကြိမ်', 'ຄັ້ງ'),
+    pending: tx('รอหัก', 'Pending', 'ဖြတ်ရန် စောင့်ဆိုင်းဆဲ', 'ລໍຖ້າຫັກ'),
+    cancelled: tx('ยกเลิก', 'Cancelled', 'ဖျက်သိမ်းပြီး', 'ຍົກເລີກ'),
+    recorded: tx('บันทึกแล้ว', 'Recorded', 'မှတ်တမ်းတင်ပြီး', 'ບັນທຶກແລ້ວ'),
+    noCharge: tx('ไม่หัก', '—', 'မဖြတ်ပါ', 'ບໍ່ຫັກ'),
+    loadFail: tx('โหลดไม่สำเร็จ', 'Load failed', 'ဖွင့်၍မရပါ', 'ໂຫຼດບໍ່ສຳເລັດ'),
+    noDetail: tx('(ไม่มีรายละเอียด)', 'No description', '(အသေးစိတ် မရှိပါ)', '(ບໍ່ມີລາຍລະອຽດ)'),
+  };
 
   const [rows, setRows] = useState<PenaltyRow[]>([]);
   const [monthPoints, setMonthPoints] = useState(0);

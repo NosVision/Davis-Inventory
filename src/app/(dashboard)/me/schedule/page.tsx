@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { CalendarDays, Loader2, ChevronLeft, ChevronRight, LayoutGrid, List } from 'lucide-react';
 import { PageHeader, StatusBadge } from '@/components/ui';
+import { useEssText } from '@/lib/i18n/ess-locale';
 import { cn } from '@/lib/utils/cn';
 import { todayBangkok } from '@/lib/utils/date';
 import { formatThaiDate } from '@/lib/utils/format';
@@ -63,7 +64,8 @@ function addDay(dateStr: string, days: number): string {
 
 export default function MySchedulePage() {
   const t = useTranslations('hr.schedule');
-  const isTh = useLocale() === 'th';
+  const locale = useLocale();
+  const tx = useEssText();
   const today = todayBangkok();
 
   const [month, setMonth] = useState<string>(() => today.slice(0, 7));
@@ -75,12 +77,12 @@ export default function MySchedulePage() {
   const [selected, setSelected] = useState<string | null>(null);
 
   const STATUS: Record<NamedStatus, { dot: string; label: string; tone: 'good' | 'warn' | 'critical' | 'info' | 'neutral' }> = {
-    normal: { dot: 'bg-emerald-500', tone: 'good', label: isTh ? 'ปกติ' : 'Normal' },
-    late: { dot: 'bg-amber-500', tone: 'warn', label: isTh ? 'มาสาย' : 'Late' },
-    absent: { dot: 'bg-red-500', tone: 'critical', label: isTh ? 'ขาด' : 'Absent' },
-    leave: { dot: 'bg-blue-500', tone: 'info', label: isTh ? 'ลา' : 'Leave' },
-    dayoff: { dot: 'bg-gray-400', tone: 'neutral', label: isTh ? 'วันหยุด' : 'Day off' },
-    scheduled: { dot: 'bg-indigo-400', tone: 'info', label: isTh ? 'มีกะ' : 'Scheduled' },
+    normal: { dot: 'bg-emerald-500', tone: 'good', label: tx('ปกติ', 'Normal', 'ပုံမှန်', 'ປົກກະຕິ') },
+    late: { dot: 'bg-amber-500', tone: 'warn', label: tx('มาสาย', 'Late', 'နောက်ကျ', 'ມາຊ້າ') },
+    absent: { dot: 'bg-red-500', tone: 'critical', label: tx('ขาด', 'Absent', 'ပျက်ကွက်', 'ຂາດວຽກ') },
+    leave: { dot: 'bg-blue-500', tone: 'info', label: tx('ลา', 'Leave', 'ခွင့်', 'ລາພັກ') },
+    dayoff: { dot: 'bg-gray-400', tone: 'neutral', label: tx('วันหยุด', 'Day off', 'အားလပ်ရက်', 'ວັນພັກ') },
+    scheduled: { dot: 'bg-indigo-400', tone: 'info', label: tx('มีกะ', 'Scheduled', 'ဆိုင်းရှိ', 'ມີກະ') },
   };
 
   const fetchAll = useCallback(async () => {
@@ -153,13 +155,22 @@ export default function MySchedulePage() {
     [leaveDates, tsByDate, schedByDate, today]
   );
 
-  const weekdays = isTh ? ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'] : ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+  const weekdays =
+    locale === 'th'
+      ? ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
+      : locale === 'my'
+        ? ['နွေ', 'လာ', 'ဂါ', 'ဟူး', 'တေး', 'ကြာ', 'နေ']
+        : locale === 'lo'
+          ? ['ອາ', 'ຈ', 'ອຄ', 'ພຸ', 'ພຫ', 'ສຸ', 'ສ']
+          : ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
   const monthLabel = useMemo(() => {
     const [y, m] = month.split('-').map(Number);
-    return new Intl.DateTimeFormat(isTh ? 'th-TH' : 'en-US', { month: 'long', year: 'numeric' }).format(
+    const intlLocale =
+      locale === 'th' ? 'th-TH' : locale === 'my' ? 'my-MM' : locale === 'lo' ? 'lo-LA' : 'en-US';
+    return new Intl.DateTimeFormat(intlLocale, { month: 'long', year: 'numeric' }).format(
       new Date(y, m - 1, 1)
     );
-  }, [month, isTh]);
+  }, [month, locale]);
 
   // Days (of this month) that carry a status — for the list view.
   const listDays = useMemo(() => {
@@ -199,11 +210,11 @@ export default function MySchedulePage() {
         ) : null}
         {ts && ts.first_in && (ts.late_min ?? 0) > 0 && (
           <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-            {isTh ? `มาสาย ${ts.late_min} นาที` : `Late ${ts.late_min} min`}
+            {tx(`มาสาย ${ts.late_min} นาที`, `Late ${ts.late_min} min`, `${ts.late_min} မိနစ် နောက်ကျ`, `ມາຊ້າ ${ts.late_min} ນາທີ`)}
           </p>
         )}
         {st === 'none' && (
-          <p className="mt-1 text-xs text-gray-400">{isTh ? 'ไม่มีข้อมูล' : 'No data'}</p>
+          <p className="mt-1 text-xs text-gray-400">{tx('ไม่มีข้อมูล', 'No data', 'အချက်အလက်မရှိ', 'ບໍ່ມີຂໍ້ມູນ')}</p>
         )}
       </div>
     );
@@ -230,7 +241,9 @@ export default function MySchedulePage() {
                 )}
               >
                 <Icon className="h-3.5 w-3.5" />
-                {v === 'calendar' ? (isTh ? 'ปฏิทิน' : 'Calendar') : isTh ? 'รายการ' : 'List'}
+                {v === 'calendar'
+                  ? tx('ปฏิทิน', 'Calendar', 'ပြက္ခဒိန်', 'ປະຕິທິນ')
+                  : tx('รายการ', 'List', 'စာရင်း', 'ລາຍການ')}
               </button>
             ))}
           </div>

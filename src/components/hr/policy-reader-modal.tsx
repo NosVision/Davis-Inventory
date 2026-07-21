@@ -1,9 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useLocale } from 'next-intl';
 import { ArrowDown, ShieldCheck } from 'lucide-react';
 import { Button, Modal, ModalFooter, toast } from '@/components/ui';
+import { useEssText } from '@/lib/i18n/ess-locale';
 import { PolicyMarkdown } from './policy-markdown';
 
 export interface ReaderPolicy {
@@ -28,28 +28,27 @@ export function PolicyReaderModal({
   onClose: () => void;
   onAcked: () => void;
 }) {
-  const isTh = useLocale() === 'th';
-  const L = isTh
-    ? {
-        version: 'เวอร์ชัน',
-        scrollHint: 'กรุณาเลื่อนอ่านให้ถึงด้านล่างสุดก่อนจึงจะกดยอมรับได้',
-        accept: 'ข้าพเจ้าได้อ่าน ทำความเข้าใจ และยินยอมปฏิบัติตามระเบียบฉบับนี้ทุกประการ',
-        save: 'ยอมรับและบันทึก',
-        submitting: 'กำลังบันทึก…',
-        close: 'ปิด',
-        okTitle: 'บันทึกการยอมรับแล้ว',
-        failTitle: 'บันทึกไม่สำเร็จ',
-      }
-    : {
-        version: 'Version',
-        scrollHint: 'Please scroll to the very bottom before you can accept',
-        accept: 'I have read, understood, and agree to comply with this policy in full',
-        save: 'Accept & save',
-        submitting: 'Saving…',
-        close: 'Close',
-        okTitle: 'Acknowledgement saved',
-        failTitle: 'Save failed',
-      };
+  const tx = useEssText();
+  const L = {
+    version: tx('เวอร์ชัน', 'Version', 'ဗားရှင်း', 'ເວີຊັນ'),
+    scrollHint: tx(
+      'กรุณาเลื่อนอ่านให้ถึงด้านล่างสุดก่อนจึงจะกดยอมรับได้',
+      'Please scroll to the very bottom before you can accept',
+      'လက်ခံနိုင်ရန် အောက်ဆုံးအထိ ဆွဲဖတ်ပါ',
+      'ກະລຸນາເລື່ອນອ່ານໃຫ້ຮອດລຸ່ມສຸດກ່ອນຈຶ່ງກົດຍອມຮັບໄດ້'
+    ),
+    accept: tx(
+      'ข้าพเจ้าได้อ่าน ทำความเข้าใจ และยินยอมปฏิบัติตามระเบียบฉบับนี้ทุกประการ',
+      'I have read, understood, and agree to comply with this policy in full',
+      'ကျွန်ုပ်သည် ဤစည်းမျဉ်းကို ဖတ်ရှုနားလည်ပြီး အပြည့်အဝ လိုက်နာရန် သဘောတူပါသည်',
+      'ຂ້າພະເຈົ້າໄດ້ອ່ານ ເຂົ້າໃຈ ແລະ ຍິນຍອມປະຕິບັດຕາມລະບຽບສະບັບນີ້ທຸກປະການ'
+    ),
+    save: tx('ยอมรับและบันทึก', 'Accept & save', 'လက်ခံပြီး သိမ်းရန်', 'ຍອມຮັບ ແລະ ບັນທຶກ'),
+    submitting: tx('กำลังบันทึก…', 'Saving…', 'သိမ်းနေသည်…', 'ກຳລັງບັນທຶກ…'),
+    close: tx('ปิด', 'Close', 'ပိတ်', 'ປິດ'),
+    okTitle: tx('บันทึกการยอมรับแล้ว', 'Acknowledgement saved', 'လက်ခံမှု သိမ်းပြီးပါပြီ', 'ບັນທຶກການຍອມຮັບແລ້ວ'),
+    failTitle: tx('บันทึกไม่สำเร็จ', 'Save failed', 'သိမ်း၍မရပါ', 'ບັນທຶກບໍ່ສຳເລັດ'),
+  };
 
   const [submitting, setSubmitting] = useState(false);
   const [reachedEnd, setReachedEnd] = useState(false);

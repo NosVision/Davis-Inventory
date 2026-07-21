@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocale } from 'next-intl';
 import { Loader2, Award, TrendingUp, Lightbulb } from 'lucide-react';
 import { EmptyState, PageHeader, ScoreRing, toast } from '@/components/ui';
+import { useEssText } from '@/lib/i18n/ess-locale';
 import { cn } from '@/lib/utils/cn';
 import { todayBangkok } from '@/lib/utils/date';
 
@@ -20,12 +21,17 @@ const BAR_TONE: Record<RingTone, string> = {
 
 const TH_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 const EN_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-// 'YYYY-MM-DD' → 'มิ.ย. 69' / 'Jun 26'
-function monthYearLabel(periodMonth: string, isTh: boolean): string {
+const MY_MONTHS = ['ဇန်', 'ဖေ', 'မတ်', 'ဧပြီ', 'မေ', 'ဇွန်', 'ဇူ', 'ဩဂုတ်', 'စက်', 'အောက်', 'နိုဝင်', 'ဒီဇင်'];
+const LO_MONTHS = ['ມ.ກ.', 'ກ.ພ.', 'ມ.ນ.', 'ມ.ສ.', 'ພ.ພ.', 'ມິ.ຖ.', 'ກ.ລ.', 'ສ.ຫ.', 'ກ.ຍ.', 'ຕ.ລ.', 'ພ.ຈ.', 'ທ.ວ.'];
+function monthsFor(locale: string): string[] {
+  return locale === 'th' ? TH_MONTHS : locale === 'my' ? MY_MONTHS : locale === 'lo' ? LO_MONTHS : EN_MONTHS;
+}
+// 'YYYY-MM-DD' → 'มิ.ย. 69' / 'Jun 26' (Buddhist-era year only for Thai)
+function monthYearLabel(periodMonth: string, locale: string): string {
   const y = Number(periodMonth.slice(0, 4));
   const m = Number(periodMonth.slice(5, 7));
-  const months = isTh ? TH_MONTHS : EN_MONTHS;
-  const yy = String((isTh ? y + 543 : y) % 100).padStart(2, '0');
+  const months = monthsFor(locale);
+  const yy = String((locale === 'th' ? y + 543 : y) % 100).padStart(2, '0');
   return `${months[m - 1] ?? m} ${yy}`;
 }
 
@@ -46,10 +52,22 @@ interface MyResult {
 const IMPROVE_BELOW_PCT = 90;
 
 export default function MyEvaluationResultsPage() {
-  const isTh = useLocale() === 'th';
-  const L = isTh
-    ? { title: 'ผลประเมินของฉัน', subtitle: 'คะแนนประเมินรายเดือน (เห็นได้หลังปิดงวด)', empty: 'ยังไม่มีผลประเมินที่ปิดงวดแล้ว', evaluators: 'ผู้ประเมิน', loadFailed: 'โหลดไม่สำเร็จ', people: 'คน', overview: 'ภาพรวมปี', yearAvg: 'เฉลี่ยปีนี้', improve: 'เรื่องที่ควรปรับปรุง (งวดล่าสุด)', allGood: 'ทำได้ดีทุกหัวข้อ 🎉', byCriteria: 'คะแนนเฉลี่ยรายหัวข้อ' }
-    : { title: 'My evaluation results', subtitle: 'Monthly review scores (visible after a period closes)', empty: 'No closed evaluation results yet', evaluators: 'Evaluators', loadFailed: 'Load failed', people: '', overview: 'Year overview', yearAvg: 'Year average', improve: 'Areas to improve (latest period)', allGood: 'Strong across the board 🎉', byCriteria: 'Average by criterion' };
+  const locale = useLocale();
+  const isTh = locale === 'th'; // kept for Buddhist-era year math (+543)
+  const tx = useEssText();
+  const L = {
+    title: tx('ผลประเมินของฉัน', 'My evaluation results', 'ကျွန်ုပ်၏ အကဲဖြတ်ချက်', 'ຜົນປະເມີນຂອງຂ້ອຍ'),
+    subtitle: tx('คะแนนประเมินรายเดือน (เห็นได้หลังปิดงวด)', 'Monthly review scores (visible after a period closes)', 'လစဉ်အကဲဖြတ်မှတ် (အပိုင်းပိတ်ပြီးမှ မြင်ရမည်)', 'ຄະແນນປະເມີນລາຍເດືອນ (ເຫັນໄດ້ຫຼັງປິດງວດ)'),
+    empty: tx('ยังไม่มีผลประเมินที่ปิดงวดแล้ว', 'No closed evaluation results yet', 'ပိတ်ပြီးသော အကဲဖြတ်ချက် မရှိသေးပါ', 'ຍັງບໍ່ມີຜົນປະເມີນທີ່ປິດງວດແລ້ວ'),
+    evaluators: tx('ผู้ประเมิน', 'Evaluators', 'အကဲဖြတ်သူ', 'ຜູ້ປະເມີນ'),
+    loadFailed: tx('โหลดไม่สำเร็จ', 'Load failed', 'ဒေတာယူ၍မရပါ', 'ໂຫຼດບໍ່ສຳເລັດ'),
+    people: tx('คน', '', 'ဦး', 'ຄົນ'),
+    overview: tx('ภาพรวมปี', 'Year overview', 'နှစ်ချုပ်', 'ພາບລວມປີ'),
+    yearAvg: tx('เฉลี่ยปีนี้', 'Year average', 'ဒီနှစ်ပျမ်းမျှ', 'ສະເລ່ຍປີນີ້'),
+    improve: tx('เรื่องที่ควรปรับปรุง (งวดล่าสุด)', 'Areas to improve (latest period)', 'တိုးတက်သင့်သည့်အချက် (နောက်ဆုံးအပိုင်း)', 'ສິ່ງທີ່ຄວນປັບປຸງ (ງວດຫຼ້າສຸດ)'),
+    allGood: tx('ทำได้ดีทุกหัวข้อ 🎉', 'Strong across the board 🎉', 'အားလုံးကောင်းမွန်ပါသည် 🎉', 'ເຮັດໄດ້ດີທຸກຫົວຂໍ້ 🎉'),
+    byCriteria: tx('คะแนนเฉลี่ยรายหัวข้อ', 'Average by criterion', 'ခေါင်းစဉ်အလိုက် ပျမ်းမျှမှတ်', 'ຄະແນນສະເລ່ຍຕາມຫົວຂໍ້'),
+  };
 
   const [results, setResults] = useState<MyResult[]>([]);
   const [loading, setLoading] = useState(true);
@@ -123,7 +141,7 @@ export default function MyEvaluationResultsPage() {
               </div>
 
               <div className="grid grid-cols-12 gap-1">
-                {(isTh ? TH_MONTHS : EN_MONTHS).map((m, i) => {
+                {monthsFor(locale).map((m, i) => {
                   const v = yearView.monthly[i];
                   const isCurrent = i === currentMonthIdx;
                   return (
@@ -176,9 +194,9 @@ export default function MyEvaluationResultsPage() {
                   className="shrink-0"
                 />
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium text-gray-900 dark:text-white">{r.title || (r.period_month ? monthYearLabel(r.period_month, isTh) : '')}</p>
+                  <p className="font-medium text-gray-900 dark:text-white">{r.title || (r.period_month ? monthYearLabel(r.period_month, locale) : '')}</p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {r.period_month ? monthYearLabel(r.period_month, isTh) : '—'} · {L.evaluators}: {r.evaluator_count}{isTh ? ` ${L.people}` : ''}
+                    {r.period_month ? monthYearLabel(r.period_month, locale) : '—'} · {L.evaluators}: {r.evaluator_count}{L.people ? ` ${L.people}` : ''}
                   </p>
                   <p className="mt-1 text-lg font-bold tabular-nums text-gray-900 dark:text-white">
                     {r.score_pct == null ? '—' : `${Number(r.score_pct).toFixed(1)}%`}

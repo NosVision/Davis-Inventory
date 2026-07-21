@@ -1,9 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { useLocale } from 'next-intl';
 import { Loader2, FileText, Plus, Download, X } from 'lucide-react';
 import { Button, Modal, ModalFooter, PageHeader, StatusBadge, toast } from '@/components/ui';
+import { useEssText } from '@/lib/i18n/ess-locale';
 import { TileNotices } from '../_components/tile-notices';
 
 // ⑥ พนักงานขอเอกสารส่วนตัว (50 ทวิ / หนังสือรับรองเงินเดือน / สำเนาสลิป / อื่นๆ) แล้วเปิด/ดาวน์โหลด
@@ -22,10 +22,37 @@ interface DocReq {
 const baht = (satang: number) => (satang / 100).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function MyDocumentsPage() {
-  const isTh = useLocale() === 'th';
-  const L = isTh
-    ? { title: 'เอกสารของฉัน', subtitle: 'ขอ 50 ทวิ หนังสือรับรองเงินเดือน หรือสำเนาสลิปย้อนหลัง', request: 'ขอเอกสาร', type: 'ประเภทเอกสาร', year: 'ปี (พ.ศ./ค.ศ.)', note: 'หมายเหตุ', submit: 'ส่งคำขอ', cancel: 'ยกเลิก', empty: 'ยังไม่มีคำขอ', requested: 'รอดำเนินการ', ready: 'พร้อมแล้ว', rejected: 'ไม่อนุมัติ', view: 'เปิด/ดาวน์โหลด', requested_ok: 'ส่งคำขอแล้ว', failed: 'ทำรายการไม่สำเร็จ', dl50: '50 ทวิ (หนังสือรับรองหักภาษี ณ ที่จ่ายรายปี)', dlSalary: 'หนังสือรับรองเงินเดือน', dlSlip: 'สำเนาสลิปย้อนหลัง', dlOther: 'อื่นๆ (ระบุในหมายเหตุ)', close: 'ปิด', income: 'รายได้รวมทั้งปี', tax: 'ภาษีหัก ณ ที่จ่ายรวม', sso: 'ประกันสังคมรวม', months: 'จำนวนงวด', position: 'ตำแหน่ง', startDate: 'วันเริ่มงาน', salary: 'เงินเดือน', issued: 'ออกเอกสารวันที่' }
-    : { title: 'My documents', subtitle: 'Request 50 ทวิ, a salary certificate, or a back-copy of a slip', request: 'Request document', type: 'Document type', year: 'Year', note: 'Note', submit: 'Submit', cancel: 'Cancel', empty: 'No requests yet', requested: 'Pending', ready: 'Ready', rejected: 'Rejected', view: 'Open / download', requested_ok: 'Request submitted', failed: 'Action failed', dl50: '50 ทวิ (annual withholding certificate)', dlSalary: 'Salary certificate', dlSlip: 'Back-copy of a slip', dlOther: 'Other (describe in note)', close: 'Close', income: 'Total annual income', tax: 'Total tax withheld', sso: 'Total SSO', months: 'Payslips', position: 'Position', startDate: 'Start date', salary: 'Salary', issued: 'Issued on' };
+  const tx = useEssText();
+  const L = {
+    title: tx('เอกสารของฉัน', 'My documents', 'ကျွန်ုပ်၏ စာရွက်စာတမ်း', 'ເອກະສານຂອງຂ້ອຍ'),
+    subtitle: tx('ขอ 50 ทวิ หนังสือรับรองเงินเดือน หรือสำเนาสลิปย้อนหลัง', 'Request 50 ทวิ, a salary certificate, or a back-copy of a slip', '50 ทวิ၊ လစာထောက်ခံစာ သို့မဟုတ် စလစ်မိတ္တူ တောင်းရန်', 'ຂໍ 50 ทวิ, ໃບຢັ້ງຢືນເງິນເດືອນ ຫຼື ສຳເນົາສະລິບຍ້ອນຫຼັງ'),
+    request: tx('ขอเอกสาร', 'Request document', 'စာရွက်စာတမ်းတောင်းရန်', 'ຂໍເອກະສານ'),
+    type: tx('ประเภทเอกสาร', 'Document type', 'စာရွက်စာတမ်းအမျိုးအစား', 'ປະເພດເອກະສານ'),
+    year: tx('ปี (พ.ศ./ค.ศ.)', 'Year', 'ခုနှစ်', 'ປີ'),
+    note: tx('หมายเหตุ', 'Note', 'မှတ်ချက်', 'ໝາຍເຫດ'),
+    submit: tx('ส่งคำขอ', 'Submit', 'တောင်းဆိုချက်ပို့ရန်', 'ສົ່ງຄຳຂໍ'),
+    cancel: tx('ยกเลิก', 'Cancel', 'ပယ်ဖျက်', 'ຍົກເລີກ'),
+    empty: tx('ยังไม่มีคำขอ', 'No requests yet', 'တောင်းဆိုချက် မရှိသေးပါ', 'ຍັງບໍ່ມີຄຳຂໍ'),
+    requested: tx('รอดำเนินการ', 'Pending', 'စောင့်ဆိုင်းဆဲ', 'ລໍດຳເນີນການ'),
+    ready: tx('พร้อมแล้ว', 'Ready', 'ရပြီ', 'ພ້ອມແລ້ວ'),
+    rejected: tx('ไม่อนุมัติ', 'Rejected', 'ငြင်းပယ်', 'ບໍ່ອະນຸມັດ'),
+    view: tx('เปิด/ดาวน์โหลด', 'Open / download', 'ဖွင့်/ဒေါင်းလုဒ်', 'ເປີດ/ດາວໂຫຼດ'),
+    requested_ok: tx('ส่งคำขอแล้ว', 'Request submitted', 'တောင်းဆိုချက်ပို့ပြီးပါပြီ', 'ສົ່ງຄຳຂໍແລ້ວ'),
+    failed: tx('ทำรายการไม่สำเร็จ', 'Action failed', 'လုပ်ဆောင်၍မရပါ', 'ເຮັດລາຍການບໍ່ສຳເລັດ'),
+    dl50: tx('50 ทวิ (หนังสือรับรองหักภาษี ณ ที่จ่ายรายปี)', '50 ทวิ (annual withholding certificate)', '50 ทวิ (နှစ်စဉ်အခွန်ဖြတ်တောက်မှုထောက်ခံစာ)', '50 ทวิ (ໃບຢັ້ງຢືນຫັກພາສີປະຈຳປີ)'),
+    dlSalary: tx('หนังสือรับรองเงินเดือน', 'Salary certificate', 'လစာထောက်ခံစာ', 'ໃບຢັ້ງຢືນເງິນເດືອນ'),
+    dlSlip: tx('สำเนาสลิปย้อนหลัง', 'Back-copy of a slip', 'လစာစလစ်မိတ္တူ', 'ສຳເນົາສະລິບຍ້ອນຫຼັງ'),
+    dlOther: tx('อื่นๆ (ระบุในหมายเหตุ)', 'Other (describe in note)', 'အခြား (မှတ်ချက်တွင်ဖော်ပြပါ)', 'ອື່ນໆ (ລະບຸໃນໝາຍເຫດ)'),
+    close: tx('ปิด', 'Close', 'ပိတ်ရန်', 'ປິດ'),
+    income: tx('รายได้รวมทั้งปี', 'Total annual income', 'တစ်နှစ်စုစုပေါင်းဝင်ငွေ', 'ລາຍໄດ້ລວມທັງປີ'),
+    tax: tx('ภาษีหัก ณ ที่จ่ายรวม', 'Total tax withheld', 'ဖြတ်တောက်အခွန်စုစုပေါင်း', 'ພາສີຫັກລວມ'),
+    sso: tx('ประกันสังคมรวม', 'Total SSO', 'လူမှုဖူလုံရေးစုစုပေါင်း', 'ປະກັນສັງຄົມລວມ'),
+    months: tx('จำนวนงวด', 'Payslips', 'စလစ်အရေအတွက်', 'ຈຳນວນງວດ'),
+    position: tx('ตำแหน่ง', 'Position', 'ရာထူး', 'ຕຳແໜ່ງ'),
+    startDate: tx('วันเริ่มงาน', 'Start date', 'အလုပ်စတင်သည့်နေ့', 'ວັນເລີ່ມວຽກ'),
+    salary: tx('เงินเดือน', 'Salary', 'လစာ', 'ເງິນເດືອນ'),
+    issued: tx('ออกเอกสารวันที่', 'Issued on', 'ထုတ်ပေးသည့်နေ့', 'ອອກເອກະສານວັນທີ'),
+  };
 
   const [rows, setRows] = useState<DocReq[]>([]);
   const [loading, setLoading] = useState(true);
@@ -171,7 +198,7 @@ export default function MyDocumentsPage() {
             )}
           </div>
           <ModalFooter>
-            <Button variant="outline" icon={<Download className="h-4 w-4" />} onClick={() => window.print()}>{isTh ? 'พิมพ์' : 'Print'}</Button>
+            <Button variant="outline" icon={<Download className="h-4 w-4" />} onClick={() => window.print()}>{tx('พิมพ์', 'Print', 'ပရင့်ထုတ်ရန်', 'ພິມ')}</Button>
             <Button variant="ghost" onClick={() => setViewing(null)} icon={<X className="h-4 w-4" />}>{L.close}</Button>
           </ModalFooter>
         </Modal>

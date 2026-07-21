@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { useLocale } from 'next-intl';
 import { FileText, Loader2, CheckCircle2, Clock } from 'lucide-react';
 import {
   Button,
@@ -13,6 +12,7 @@ import {
   toast,
 } from '@/components/ui';
 import { PolicyReaderModal, type ReaderPolicy } from '@/components/hr/policy-reader-modal';
+import { useEssText } from '@/lib/i18n/ess-locale';
 import { formatThaiDateTime } from '@/lib/utils/format';
 
 interface Policy extends ReaderPolicy {
@@ -24,32 +24,24 @@ interface Policy extends ReaderPolicy {
 // the bottom, accept, then save — the acknowledgement is stored per version (a version bump forces a
 // fresh accept). The reader itself is the shared PolicyReaderModal.
 export default function MyPoliciesPage() {
-  const isTh = useLocale() === 'th';
-  const L = isTh
-    ? {
-        title: 'ระเบียบบริษัท',
-        subtitle: 'อ่านและกดยอมรับระเบียบพนักงาน — ระบบจะบันทึกไว้ตามเวอร์ชัน',
-        empty: 'ยังไม่มีระเบียบให้อ่าน',
-        version: 'เวอร์ชัน',
-        acknowledged: 'ยอมรับแล้ว',
-        pending: 'ต้องอ่าน/ยอมรับ',
-        read: 'อ่านอีกครั้ง',
-        acknowledge: 'อ่านและยอมรับ',
-        ackedOn: 'ยอมรับเมื่อ',
-        loadFail: 'โหลดไม่สำเร็จ',
-      }
-    : {
-        title: 'Company policies',
-        subtitle: 'Read and accept the staff handbook — stored per version',
-        empty: 'No policies to read yet',
-        version: 'Version',
-        acknowledged: 'Accepted',
-        pending: 'Must read & accept',
-        read: 'Read again',
-        acknowledge: 'Read & accept',
-        ackedOn: 'Accepted on',
-        loadFail: 'Load failed',
-      };
+  const tx = useEssText();
+  const L = {
+    title: tx('ระเบียบบริษัท', 'Company policies', 'ကုမ္ပဏီစည်းမျဉ်း', 'ລະບຽບບໍລິສັດ'),
+    subtitle: tx(
+      'อ่านและกดยอมรับระเบียบพนักงาน — ระบบจะบันทึกไว้ตามเวอร์ชัน',
+      'Read and accept the staff handbook — stored per version',
+      'ဝန်ထမ်းစည်းမျဉ်းကို ဖတ်ပြီး လက်ခံပါ — ဗားရှင်းအလိုက် စနစ်က မှတ်ထားမည်',
+      'ອ່ານ ແລະ ກົດຍອມຮັບລະບຽບພະນັກງານ — ລະບົບຈະບັນທຶກໄວ້ຕາມເວີຊັນ'
+    ),
+    empty: tx('ยังไม่มีระเบียบให้อ่าน', 'No policies to read yet', 'ဖတ်ရန် စည်းမျဉ်း မရှိသေးပါ', 'ຍັງບໍ່ມີລະບຽບໃຫ້ອ່ານ'),
+    version: tx('เวอร์ชัน', 'Version', 'ဗားရှင်း', 'ເວີຊັນ'),
+    acknowledged: tx('ยอมรับแล้ว', 'Accepted', 'လက်ခံပြီးပြီ', 'ຍອມຮັບແລ້ວ'),
+    pending: tx('ต้องอ่าน/ยอมรับ', 'Must read & accept', 'ဖတ်/လက်ခံရမည်', 'ຕ້ອງອ່ານ/ຍອມຮັບ'),
+    read: tx('อ่านอีกครั้ง', 'Read again', 'ထပ်ဖတ်ရန်', 'ອ່ານອີກຄັ້ງ'),
+    acknowledge: tx('อ่านและยอมรับ', 'Read & accept', 'ဖတ်ပြီး လက်ခံရန်', 'ອ່ານ ແລະ ຍອມຮັບ'),
+    ackedOn: tx('ยอมรับเมื่อ', 'Accepted on', 'လက်ခံသည့်နေ့', 'ຍອມຮັບເມື່ອ'),
+    loadFail: tx('โหลดไม่สำเร็จ', 'Load failed', 'ဖွင့်၍မရပါ', 'ໂຫຼດບໍ່ສຳເລັດ'),
+  };
 
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [loading, setLoading] = useState(true);
@@ -83,9 +75,12 @@ export default function MyPoliciesPage() {
       {!loading && pendingCount > 0 && (
         <div className="flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800 dark:border-amber-700/60 dark:bg-amber-900/20 dark:text-amber-200">
           <Clock className="h-4 w-4 shrink-0" />
-          {isTh
-            ? `มีระเบียบ ${pendingCount} ฉบับที่ต้องอ่านและกดยอมรับ`
-            : `${pendingCount} polic${pendingCount > 1 ? 'ies' : 'y'} to read and accept`}
+          {tx(
+            `มีระเบียบ ${pendingCount} ฉบับที่ต้องอ่านและกดยอมรับ`,
+            `${pendingCount} polic${pendingCount > 1 ? 'ies' : 'y'} to read and accept`,
+            `ဖတ်ပြီး လက်ခံရမည့် စည်းမျဉ်း ${pendingCount} ခု ရှိသည်`,
+            `ມີລະບຽບ ${pendingCount} ສະບັບທີ່ຕ້ອງອ່ານ ແລະ ກົດຍອມຮັບ`
+          )}
         </div>
       )}
 

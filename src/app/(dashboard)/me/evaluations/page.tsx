@@ -1,9 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useLocale } from 'next-intl';
 import { Loader2, Star, CheckCircle2, ClipboardList } from 'lucide-react';
 import { Button, EmptyState, Modal, ModalFooter, PageHeader, ViewToggle, useViewMode, DataList, DataCard, StatusBadge, useConfirm, toast } from '@/components/ui';
+import { useEssText } from '@/lib/i18n/ess-locale';
 import { cn } from '@/lib/utils/cn';
 
 // §G evaluator self-service: score the people assigned to me for an OPEN period. Data comes from
@@ -31,11 +31,34 @@ interface QueueItem {
 interface SavedScore { criterion_id: string; points: number; comment: string | null }
 
 export default function MyEvaluationsPage() {
-  const isTh = useLocale() === 'th';
+  const tx = useEssText();
   const { confirm, dialog } = useConfirm();
-  const L = isTh
-    ? { title: 'ประเมินเพื่อนร่วมงาน', subtitle: 'ให้คะแนนคนที่ได้รับมอบหมายในงวดที่เปิดอยู่', noPeriods: 'ไม่มีงวดที่ต้องประเมินตอนนี้', noQueue: 'ไม่มีคนให้ประเมินในงวดนี้', progress: 'ความคืบหน้า', pending: 'ค้าง', done: 'เสร็จ', score: 'ให้คะแนน', edit: 'แก้ไข', submitted: 'ส่งแล้ว', criterion: 'หัวข้อ', max: 'เต็ม', points: 'คะแนน', comment: 'หมายเหตุ (ถ้ามี)', saveDraft: 'บันทึกร่าง', submit: 'ส่งผลประเมิน', scoring: 'ให้คะแนน', loadFailed: 'โหลดไม่สำเร็จ', saved: 'บันทึกร่างแล้ว', submittedOk: 'ส่งผลประเมินแล้ว', saveFailed: 'บันทึกไม่สำเร็จ', submitConfirm: 'ส่งผลประเมินคนนี้? หลังส่งต้องให้ HR เปิดให้แก้', outOf: 'จาก', close: 'ปิด' }
-    : { title: 'Peer evaluation', subtitle: 'Score the people assigned to you in the open period', noPeriods: 'No periods to evaluate right now', noQueue: 'No one to evaluate in this period', progress: 'Progress', pending: 'Pending', done: 'Done', score: 'Score', edit: 'Edit', submitted: 'Submitted', criterion: 'Criterion', max: 'Max', points: 'Points', comment: 'Comment (optional)', saveDraft: 'Save draft', submit: 'Submit', scoring: 'Scoring', loadFailed: 'Load failed', saved: 'Draft saved', submittedOk: 'Evaluation submitted', saveFailed: 'Save failed', submitConfirm: 'Submit this evaluation? HR must reopen it to edit after submitting.', outOf: 'of', close: 'Close' };
+  const L = {
+    title: tx('ประเมินเพื่อนร่วมงาน', 'Peer evaluation', 'လုပ်ဖော်ကိုင်ဖက်ကို အကဲဖြတ်ရန်', 'ປະເມີນເພື່ອນຮ່ວມງານ'),
+    subtitle: tx('ให้คะแนนคนที่ได้รับมอบหมายในงวดที่เปิดอยู่', 'Score the people assigned to you in the open period', 'ဖွင့်ထားသောအပိုင်းတွင် တာဝန်ပေးထားသူများကို အမှတ်ပေးပါ', 'ໃຫ້ຄະແນນຄົນທີ່ໄດ້ຮັບມອບໝາຍໃນງວດທີ່ເປີດຢູ່'),
+    noPeriods: tx('ไม่มีงวดที่ต้องประเมินตอนนี้', 'No periods to evaluate right now', 'ယခုအကဲဖြတ်ရန်အပိုင်း မရှိပါ', 'ບໍ່ມີງວດທີ່ຕ້ອງປະເມີນຕອນນີ້'),
+    noQueue: tx('ไม่มีคนให้ประเมินในงวดนี้', 'No one to evaluate in this period', 'ဤအပိုင်းတွင် အကဲဖြတ်ရန်သူ မရှိပါ', 'ບໍ່ມີຄົນໃຫ້ປະເມີນໃນງວດນີ້'),
+    progress: tx('ความคืบหน้า', 'Progress', 'တိုးတက်မှု', 'ຄວາມຄືບໜ້າ'),
+    pending: tx('ค้าง', 'Pending', 'ကျန်', 'ຄ້າງ'),
+    done: tx('เสร็จ', 'Done', 'ပြီး', 'ສຳເລັດ'),
+    score: tx('ให้คะแนน', 'Score', 'အမှတ်ပေးရန်', 'ໃຫ້ຄະແນນ'),
+    edit: tx('แก้ไข', 'Edit', 'ပြင်ရန်', 'ແກ້ໄຂ'),
+    submitted: tx('ส่งแล้ว', 'Submitted', 'ပို့ပြီး', 'ສົ່ງແລ້ວ'),
+    criterion: tx('หัวข้อ', 'Criterion', 'ခေါင်းစဉ်', 'ຫົວຂໍ້'),
+    max: tx('เต็ม', 'Max', 'အပြည့်', 'ເຕັມ'),
+    points: tx('คะแนน', 'Points', 'အမှတ်', 'ຄະແນນ'),
+    comment: tx('หมายเหตุ (ถ้ามี)', 'Comment (optional)', 'မှတ်ချက် (ရှိလျှင်)', 'ໝາຍເຫດ (ຖ້າມີ)'),
+    saveDraft: tx('บันทึกร่าง', 'Save draft', 'မူကြမ်းသိမ်းရန်', 'ບັນທຶກຮ່າງ'),
+    submit: tx('ส่งผลประเมิน', 'Submit', 'အကဲဖြတ်ချက်ပို့ရန်', 'ສົ່ງຜົນປະເມີນ'),
+    scoring: tx('ให้คะแนน', 'Scoring', 'အမှတ်ပေးရန်', 'ໃຫ້ຄະແນນ'),
+    loadFailed: tx('โหลดไม่สำเร็จ', 'Load failed', 'ဒေတာယူ၍မရပါ', 'ໂຫຼດບໍ່ສຳເລັດ'),
+    saved: tx('บันทึกร่างแล้ว', 'Draft saved', 'မူကြမ်းသိမ်းပြီးပါပြီ', 'ບັນທຶກຮ່າງແລ້ວ'),
+    submittedOk: tx('ส่งผลประเมินแล้ว', 'Evaluation submitted', 'အကဲဖြတ်ချက်ပို့ပြီးပါပြီ', 'ສົ່ງຜົນປະເມີນແລ້ວ'),
+    saveFailed: tx('บันทึกไม่สำเร็จ', 'Save failed', 'သိမ်း၍မရပါ', 'ບັນທຶກບໍ່ສຳເລັດ'),
+    submitConfirm: tx('ส่งผลประเมินคนนี้? หลังส่งต้องให้ HR เปิดให้แก้', 'Submit this evaluation? HR must reopen it to edit after submitting.', 'ဤသူ၏အကဲဖြတ်ချက်ကို ပို့မလား? ပို့ပြီးနောက် ပြင်လိုလျှင် HR ပြန်ဖွင့်ပေးရမည်', 'ສົ່ງຜົນປະເມີນຄົນນີ້ບໍ? ຫຼັງສົ່ງຕ້ອງໃຫ້ HR ເປີດໃຫ້ແກ້'),
+    outOf: tx('จาก', 'of', 'အပြည့်', 'ຈາກ'),
+    close: tx('ปิด', 'Close', 'ပိတ်ရန်', 'ປິດ'),
+  };
 
   const [view, setView] = useViewMode('me-evaluations');
   const [periods, setPeriods] = useState<PeriodItem[]>([]);

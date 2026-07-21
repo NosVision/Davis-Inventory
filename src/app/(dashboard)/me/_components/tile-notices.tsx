@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useAuthStore } from '@/stores/auth-store';
 import { TILE_TYPES } from '@/lib/hr/ess-notif-tiles';
 import { localizeNotification, type NotifTranslate } from '@/lib/notifications/localize';
+import { pickEssText, useEssText } from '@/lib/i18n/ess-locale';
 
 // In-page banner for the /me ESS pages: when a tile shows a red badge on the hub, the badge counts
 // UNREAD notifications mapped to that tile — but nothing used to show WHAT the alert was, so the
@@ -24,20 +25,22 @@ interface Notice {
   created_at: string;
 }
 
-function timeAgo(iso: string, isTh: boolean): string {
+function timeAgo(iso: string, locale: string): string {
+  const px = (th: string, en: string, my?: string, lo?: string) => pickEssText(locale, th, en, my, lo);
   const diffMs = Date.now() - new Date(iso).getTime();
   const min = Math.round(diffMs / 60000);
-  if (min < 1) return isTh ? 'เมื่อสักครู่' : 'just now';
-  if (min < 60) return isTh ? `${min} นาทีที่แล้ว` : `${min}m ago`;
+  if (min < 1) return px('เมื่อสักครู่', 'just now', 'ယခုလေးတင်', 'ຫາກໍ່ນີ້');
+  if (min < 60) return px(`${min} นาทีที่แล้ว`, `${min}m ago`, `${min} မိနစ်အရင်က`, `${min} ນາທີກ່ອນ`);
   const hr = Math.round(min / 60);
-  if (hr < 24) return isTh ? `${hr} ชม.ที่แล้ว` : `${hr}h ago`;
+  if (hr < 24) return px(`${hr} ชม.ที่แล้ว`, `${hr}h ago`, `${hr} နာရီအရင်က`, `${hr} ຊົ່ວໂມງກ່ອນ`);
   const day = Math.round(hr / 24);
-  if (day < 7) return isTh ? `${day} วันที่แล้ว` : `${day}d ago`;
-  return new Date(iso).toLocaleDateString(isTh ? 'th-TH' : 'en-GB');
+  if (day < 7) return px(`${day} วันที่แล้ว`, `${day}d ago`, `${day} ရက်အရင်က`, `${day} ວັນກ່ອນ`);
+  return new Date(iso).toLocaleDateString(locale === 'en' ? 'en-GB' : 'th-TH');
 }
 
 export function TileNotices({ tile }: { tile: string }) {
-  const isTh = useLocale() === 'th';
+  const locale = useLocale();
+  const tx = useEssText();
   const t = useTranslations();
   const { user } = useAuthStore();
   const [notices, setNotices] = useState<Notice[]>([]);
@@ -82,7 +85,7 @@ export function TileNotices({ tile }: { tile: string }) {
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-        <Bell className="h-3.5 w-3.5" /> {isTh ? 'การแจ้งเตือนใหม่' : 'New alerts'}
+        <Bell className="h-3.5 w-3.5" /> {tx('การแจ้งเตือนใหม่', 'New alerts', 'အသိပေးချက်အသစ်', 'ການແຈ້ງເຕືອນໃໝ່')}
       </div>
       {notices.map((n) => {
         const { title, body } = localizeNotification(t as unknown as NotifTranslate, n);
@@ -95,12 +98,12 @@ export function TileNotices({ tile }: { tile: string }) {
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-gray-900 dark:text-white">{title}</p>
             {body && <p className="mt-0.5 text-sm text-gray-600 dark:text-gray-300">{body}</p>}
-            <p className="mt-1 text-xs text-gray-400">{timeAgo(n.created_at, isTh)}</p>
+            <p className="mt-1 text-xs text-gray-400">{timeAgo(n.created_at, locale)}</p>
           </div>
           <button
             type="button"
             onClick={() => dismiss(n.id)}
-            aria-label={isTh ? 'ปิด' : 'Dismiss'}
+            aria-label={tx('ปิด', 'Dismiss', 'ပိတ်ရန်', 'ປິດ')}
             className="flex-shrink-0 rounded-md p-1 text-gray-400 transition-colors hover:bg-amber-100 hover:text-gray-600 dark:hover:bg-amber-900/30"
           >
             <X className="h-4 w-4" />

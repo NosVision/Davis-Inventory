@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useLocale, useTranslations } from 'next-intl';
+import { useTranslations } from 'next-intl';
+import { useEssText } from '@/lib/i18n/ess-locale';
 import { MapPin, RefreshCw, Camera, Loader2, AlertTriangle, Check } from 'lucide-react';
 import { Button, PageHeader, StatusBadge, DataList, DataCard, ViewToggle, useViewMode, Modal, ModalFooter, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
@@ -68,7 +69,7 @@ const isDev = process.env.NODE_ENV === 'development';
 
 export default function CheckinPage() {
   const t = useTranslations('hr.checkin');
-  const isTh = useLocale() === 'th';
+  const tx = useEssText();
 
   const [type, setType] = useState<AttendanceType>('in');
   const [noGpsOpen, setNoGpsOpen] = useState(false);
@@ -279,9 +280,12 @@ export default function CheckinPage() {
       toast({
         type: pending ? 'warning' : 'success',
         title: !coords
-          ? isTh
-            ? 'บันทึกแล้ว — ส่งให้ HR ตรวจสอบ (ไม่มีตำแหน่ง GPS)'
-            : 'Saved — sent to HR for review (no GPS)'
+          ? tx(
+              'บันทึกแล้ว — ส่งให้ HR ตรวจสอบ (ไม่มีตำแหน่ง GPS)',
+              'Saved — sent to HR for review (no GPS)',
+              'သိမ်းပြီးပါပြီ — HR စစ်ဆေးရန် ပို့ထားသည် (GPS တည်နေရာ မရှိ)',
+              'ບັນທຶກແລ້ວ — ສົ່ງໃຫ້ HR ກວດສອບ (ບໍ່ມີຕຳແໜ່ງ GPS)'
+            )
           : pending
             ? t('successPending')
             : json.in_geofence === false
@@ -296,7 +300,7 @@ export default function CheckinPage() {
     } finally {
       setSubmitting(false);
     }
-  }, [coords, photo, type, t, isTh, fetchToday]);
+  }, [coords, photo, type, t, tx, fetchToday]);
 
   const submit = useCallback(() => {
     if (!photo) {
@@ -402,9 +406,12 @@ export default function CheckinPage() {
       {locStatus === 'failed' && (
         <p className="-mt-3 flex items-start gap-1.5 px-1 text-xs text-amber-600 dark:text-amber-400">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          {isTh
-            ? 'ไม่พบตำแหน่ง GPS — ยังบันทึกได้ แต่จะถูกส่งให้ HR ตรวจสอบ และต้องชี้แจงเหตุผลกับ HR'
-            : 'No GPS — you can still save, but it will be sent to HR for review and you must explain it.'}
+          {tx(
+            'ไม่พบตำแหน่ง GPS — ยังบันทึกได้ แต่จะถูกส่งให้ HR ตรวจสอบ และต้องชี้แจงเหตุผลกับ HR',
+            'No GPS — you can still save, but it will be sent to HR for review and you must explain it.',
+            'GPS တည်နေရာ မတွေ့ပါ — သိမ်း၍ရသေးသည် သို့သော် HR စစ်ဆေးရန် ပို့မည်ဖြစ်ပြီး HR ကို အကြောင်းပြချက် ရှင်းပြရမည်',
+            'ບໍ່ພົບຕຳແໜ່ງ GPS — ຍັງບັນທຶກໄດ້ ແຕ່ຈະຖືກສົ່ງໃຫ້ HR ກວດສອບ ແລະ ຕ້ອງຊີ້ແຈງເຫດຜົນກັບ HR'
+          )}
         </p>
       )}
 
@@ -518,7 +525,7 @@ export default function CheckinPage() {
       <Modal
         isOpen={noGpsOpen}
         onClose={() => setNoGpsOpen(false)}
-        title={isTh ? 'ไม่พบตำแหน่ง GPS' : 'No GPS location'}
+        title={tx('ไม่พบตำแหน่ง GPS', 'No GPS location', 'GPS တည်နေရာ မတွေ့ပါ', 'ບໍ່ພົບຕຳແໜ່ງ GPS')}
         size="sm"
       >
         <div className="flex items-start gap-3">
@@ -526,14 +533,17 @@ export default function CheckinPage() {
             <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
           </div>
           <p className="text-sm text-gray-600 dark:text-gray-300">
-            {isTh
-              ? 'ระบบไม่พบตำแหน่ง GPS ของคุณ หากบันทึกต่อ การลงเวลานี้จะถูกส่งให้ HR ตรวจสอบก่อน และคุณจะต้องชี้แจงเหตุผลกับ HR'
-              : 'Your GPS location was not found. If you continue, this punch is sent to HR for review first and you will need to explain the reason to HR.'}
+            {tx(
+              'ระบบไม่พบตำแหน่ง GPS ของคุณ หากบันทึกต่อ การลงเวลานี้จะถูกส่งให้ HR ตรวจสอบก่อน และคุณจะต้องชี้แจงเหตุผลกับ HR',
+              'Your GPS location was not found. If you continue, this punch is sent to HR for review first and you will need to explain the reason to HR.',
+              'သင့် GPS တည်နေရာကို ရှာမတွေ့ပါ။ ဆက်သိမ်းလျှင် ဤအချိန်မှတ်တမ်းကို HR အရင် စစ်ဆေးမည်ဖြစ်ပြီး HR ကို အကြောင်းပြချက် ရှင်းပြရမည်',
+              'ລະບົບບໍ່ພົບຕຳແໜ່ງ GPS ຂອງທ່ານ ຖ້າບັນທຶກຕໍ່ ການລົງເວລານີ້ຈະຖືກສົ່ງໃຫ້ HR ກວດສອບກ່ອນ ແລະ ທ່ານຕ້ອງຊີ້ແຈງເຫດຜົນກັບ HR'
+            )}
           </p>
         </div>
         <ModalFooter>
           <Button variant="outline" onClick={() => setNoGpsOpen(false)} disabled={submitting}>
-            {isTh ? 'ยกเลิก' : 'Cancel'}
+            {tx('ยกเลิก', 'Cancel', 'ပယ်ဖျက်', 'ຍົກເລີກ')}
           </Button>
           <Button
             onClick={() => {
@@ -542,7 +552,7 @@ export default function CheckinPage() {
             }}
             isLoading={submitting}
           >
-            {isTh ? 'บันทึกและส่งให้ HR' : 'Save & send to HR'}
+            {tx('บันทึกและส่งให้ HR', 'Save & send to HR', 'သိမ်းပြီး HR သို့ ပို့ရန်', 'ບັນທຶກ ແລະ ສົ່ງໃຫ້ HR')}
           </Button>
         </ModalFooter>
       </Modal>

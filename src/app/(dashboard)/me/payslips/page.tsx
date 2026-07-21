@@ -6,6 +6,7 @@ import { Loader2, Wallet, X, FileText } from 'lucide-react';
 import { Button, EmptyState, Modal, ModalFooter, PageHeader, DataList, DataCard, MoneyValue, StatusBadge, ViewToggle, useViewMode, toast } from '@/components/ui';
 import { PayslipView, type PayslipDetailData } from '@/components/hr/payslip-view';
 import { ImportedPayslipView, periodLabel, type ImportedSlip } from '@/components/hr/imported-payslip-view';
+import { useEssText } from '@/lib/i18n/ess-locale';
 import { TileNotices } from '../_components/tile-notices';
 
 interface MyPayslip {
@@ -20,7 +21,10 @@ interface MyPayslip {
 
 export default function MyPayslipsPage() {
   const t = useTranslations('hr.payslip');
-  const isTh = useLocale() === 'th';
+  // periodLabel() takes a Thai/English boolean — my/lo readers get Thai month names
+  // (same fallback direction as the partial locales).
+  const isTh = useLocale() !== 'en';
+  const tx = useEssText();
   const [rows, setRows] = useState<MyPayslip[]>([]);
   const [imported, setImported] = useState<ImportedSlip[]>([]);
   const [standing, setStanding] = useState(false);
@@ -173,8 +177,8 @@ export default function MyPayslipsPage() {
                   key={m.key}
                   onClick={() => setImportedSlip(m.row)}
                   title={periodLabel(m.year, m.month, isTh)}
-                  subtitle={isTh ? 'ข้อมูลนำเข้า (ย้อนหลัง)' : 'Imported (historical)'}
-                  status={<StatusBadge tone="neutral" label={isTh ? 'นำเข้า' : 'Archive'} />}
+                  subtitle={tx('ข้อมูลนำเข้า (ย้อนหลัง)', 'Imported (historical)', 'တင်သွင်းထားသော အချက်အလက် (ယခင်)', 'ຂໍ້ມູນນຳເຂົ້າ (ຍ້ອນຫຼັງ)')}
+                  status={<StatusBadge tone="neutral" label={tx('นำเข้า', 'Archive', 'တင်သွင်း', 'ນຳເຂົ້າ')} />}
                   value={<MoneyValue satang={m.row.net_satang ?? 0} emphasis="strong" tone="good" />}
                 />
               ),
