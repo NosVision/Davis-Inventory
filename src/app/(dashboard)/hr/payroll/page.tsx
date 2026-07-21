@@ -38,7 +38,10 @@ interface PayslipSummary {
   pay_type: string;
   tax_mode?: string;
   worked_days?: number;
+  nickname?: string | null;
   position?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
   employee_code?: string | null;
   gross_satang: number;
   sso_satang: number;
@@ -882,10 +885,19 @@ export default function HrPayrollPage() {
                                 title={t('viewSlip')}
                               >
                                 {s.name}
+                                {s.nickname && s.nickname !== s.name && (
+                                  <span className="ml-1 font-normal text-gray-400">({s.nickname})</span>
+                                )}
                               </button>
                               <div className="text-[10px] text-gray-400">
                                 {idx + 1}{s.employee_code ? ` · ${s.employee_code}` : ''}{s.position ? ` · ${s.position}` : ''}
+                                {s.start_date ? ` · เริ่ม ${dmy(s.start_date)}` : ''}
                               </div>
+                              {s.end_date && s.end_date <= (detail.payrun.cycle_end ?? '') && (
+                                <div className="text-[10px] font-medium text-red-500">
+                                  พ้นสภาพ {dmy(s.end_date)} — คำนวณตามวันทำงานจริง
+                                </div>
+                              )}
                             </td>
                             <td className="px-2 py-2 text-right tabular-nums text-gray-500">{s.worked_days ?? '—'}</td>
                             <td className="px-2 py-2 text-right tabular-nums">{formatBaht(s.salary_satang ?? 0)}</td>

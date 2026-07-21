@@ -293,6 +293,17 @@ export function computePayslip(input: PayrollInput): Payslip {
   const earnings: PayslipLine[] = [];
   const deductions: PayslipLine[] = [];
 
+  // Mid-period hire/leaver (prorate_days set): the travel allowance follows the salary and is
+  // prorated ÷day_divisor × employed days (client ask 2026-07-21: "พ้นสภาพกลางงวด → ฐานเงินเดือน/
+  // ค่าเดินทาง/ประกันสังคม หารวันทำงานจริง"). Other allowances (housing/phone/…) stay full —
+  // only ค่าเดินทาง was ever day-based (it already docks per leave/absent day ÷30).
+  const isPartialPeriod = !partTime && ts.prorate_days != null;
+  const effAllowances = input.allowances.map((a) =>
+    a.code === TRAVEL_CODE && isPartialPeriod
+      ? { ...a, amount_satang: Math.round((a.amount_satang / dayDiv) * (ts.prorate_days as number)) }
+      : a
+  );
+
   // ── Earnings ──────────────────────────────────────────────────────────────
   const baseSalary = computeBaseSalary(emp, ts, dayDiv);
   earnings.push({ type: 'salary', label: 'salary', amount_satang: baseSalary });
@@ -307,8 +318,9 @@ export function computePayslip(input: PayrollInput): Payslip {
     });
   }
 
-  // Recurring allowances (full amount; travel is docked per leave day below).
-  for (const a of input.allowances) {
+  // Recurring allowances (travel prorated above for mid-period hire/leaver; docked per leave
+  // day below).
+  for (const a of effAllowances) {
     if (a.amount_satang > 0) {
       earnings.push({ type: 'allowance', label: a.label, amount_satang: a.amount_satang, ref: a.code });
     }
@@ -341,9 +353,11 @@ export function computePayslip(input: PayrollInput): Payslip {
   // also be charged the 5% SSO.
   let sso = 0;
   if (emp.sso_enrolled && !partTime && emp.tax_mode !== 'withholding_3pct') {
-    // Base on the prorated salary earned (aligns with PVD) when the company opts in; else the full
-    // monthly rate. Identical for a full-month employee and for anyone at/above the ceiling.
-    const ssoBase = company.sso_prorate ? baseSalary : emp.rate_satang;
+    // Base on the prorated salary earned (aligns with PVD) when the company opts in — and ALWAYS
+    // for a mid-period hire/leaver (client ask 2026-07-21: SSO on the final month follows the
+    // actual employed days, like the salary). Identical for a full-month employee and for anyone
+    // at/above the ceiling.
+    const ssoBase = company.sso_prorate || isPartialPeriod ? baseSalary : emp.rate_satang;
     const raw = Math.round(ssoBase * company.sso_rate);
     const cap = Math.round(company.sso_wage_ceiling_satang * company.sso_rate);
     sso = Math.min(raw, cap);
@@ -381,7 +395,14 @@ export function computePayslip(input: PayrollInput): Payslip {
 
   // ── Variable deductions (salary side only: leave / absent / late) ─────────
   // Leave (approved): salary docked ÷30 × salary_days; travel allowance docked per travel_day.
-  const travelAllowance = input.allowances
+  // Granted this period (prorated for a mid-period hire/leaver) — the dock cap. The per-day dock
+  // RATE stays the full monthly amount ÷30: e.g. travel ฿3,000, employed 20 days (earns ฿2,000),
+  // absent 2 of them → dock 2 × ฿100 = ฿200 → ฿1,800 = 18/30 of the month, exactly as if each
+  // non-worked day costs one daily travel unit.
+  const travelAllowance = effAllowances
+    .filter((a) => a.code === TRAVEL_CODE)
+    .reduce((s, a) => s + a.amount_satang, 0);
+  const travelAllowanceFullMonth = input.allowances
     .filter((a) => a.code === TRAVEL_CODE)
     .reduce((s, a) => s + a.amount_satang, 0);
 
@@ -393,7 +414,7 @@ export function computePayslip(input: PayrollInput): Payslip {
   let travelDocked = 0;
   const dockTravel = (days: number): number => {
     if (travelAllowance <= 0 || days <= 0) return 0;
-    const amt = Math.min(Math.round((travelAllowance / dayDiv) * days), travelAllowance - travelDocked);
+    const amt = Math.min(Math.round((travelAllowanceFullMonth / dayDiv) * days), travelAllowance - travelDocked);
     if (amt <= 0) return 0;
     travelDocked += amt;
     return amt;

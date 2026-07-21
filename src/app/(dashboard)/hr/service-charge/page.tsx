@@ -38,7 +38,7 @@ import type {
   StoreOpt,
   ScData,
   ScAllocation,
-  ScEmployeeRef,
+  ScEmployeeInfo,
   ScRow,
   ScSourceType,
 } from './_components/types';
@@ -58,6 +58,13 @@ const SOURCE_STYLES: Record<ScSourceType, string> = {
   manual: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
 };
 
+/** 'YYYY-MM-DD' → 'DD/MM/YYYY' (same convention as the payroll register). */
+function dmy(d?: string | null): string {
+  if (!d) return '—';
+  const [y, m, dd] = String(d).slice(0, 10).split('-');
+  return y && m && dd ? `${dd}/${m}/${y}` : String(d);
+}
+
 /** Current calendar month as YYYY-MM (Bangkok clock is close enough for a month picker). */
 function currentMonth(): string {
   const d = new Date();
@@ -72,7 +79,7 @@ export default function HrServiceChargePage() {
   const [storeId, setStoreId] = useState('');
   const [month, setMonth] = useState<string>(() => currentMonth());
 
-  const [employees, setEmployees] = useState<ScEmployeeRef[]>([]);
+  const [employees, setEmployees] = useState<ScEmployeeInfo[]>([]);
   const [data, setData] = useState<ScData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -129,8 +136,25 @@ export default function HrServiceChargePage() {
       const scJson = await scRes.json();
       const empJson = await empRes.json();
       setData((scJson.data ?? null) as ScData | null);
-      const emps = (empJson.data ?? []) as { profile: ScEmployeeRef | null }[];
-      setEmployees(emps.map((e) => e.profile).filter((p): p is ScEmployeeRef => !!p));
+      // Keep the payroll identity next to the app account: full name + position + start date
+      // come from hr_employees, the nickname from the linked profile.
+      const emps = (empJson.data ?? []) as {
+        full_name: string | null;
+        start_date: string | null;
+        position: { name: string | null } | null;
+        profile: { id: string; display_name: string | null; username: string | null } | null;
+      }[];
+      setEmployees(
+        emps
+          .filter((e) => !!e.profile)
+          .map((e) => ({
+            id: e.profile!.id,
+            nickname: e.profile!.display_name || e.profile!.username || null,
+            fullName: e.full_name?.trim() || null,
+            position: e.position?.name ?? null,
+            startDate: e.start_date ?? null,
+          }))
+      );
     } catch {
       setError(true);
       setData(null);
@@ -157,7 +181,10 @@ export default function HrServiceChargePage() {
       seen.add(e.id);
       out.push({
         userId: e.id,
-        name: e.display_name || e.username || '—',
+        name: e.fullName || e.nickname || '—',
+        nickname: e.nickname,
+        position: e.position,
+        startDate: e.startDate,
         allocation: allocByUser.get(e.id) ?? null,
       });
     });
@@ -166,6 +193,9 @@ export default function HrServiceChargePage() {
       out.push({
         userId: a.user_id,
         name: a.employee?.display_name || a.employee?.username || '—',
+        nickname: a.employee?.display_name || a.employee?.username || null,
+        position: null,
+        startDate: null,
         allocation: a,
       });
     });
@@ -663,8 +693,20 @@ export default function HrServiceChargePage() {
                                 ) : (
                                   <ChevronRight className="h-4 w-4 text-gray-400" />
                                 )}
-                                {r.name}
+                                <span>
+                                  {r.name}
+                                  {r.nickname && r.nickname !== r.name && (
+                                    <span className="ml-1 font-normal text-gray-400">({r.nickname})</span>
+                                  )}
+                                </span>
                               </button>
+                              {(r.position || r.startDate) && (
+                                <div className="pl-[22px] text-[10px] text-gray-400">
+                                  {[r.position, r.startDate ? `เริ่ม ${dmy(r.startDate)}` : null]
+                                    .filter(Boolean)
+                                    .join(' · ')}
+                                </div>
+                              )}
                             </td>
                             <td className="px-3 py-2 text-right">
                               <div className="flex items-center justify-end gap-1">

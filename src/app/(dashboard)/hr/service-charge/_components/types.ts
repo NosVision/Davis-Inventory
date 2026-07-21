@@ -44,6 +44,16 @@ export interface ScEmployeeRef {
   username: string | null;
 }
 
+/** Store employee enriched with payroll identity (client ask 2026-07-21: HR pays against the
+ *  REAL full name + nickname + position + start date, not the app nickname alone). */
+export interface ScEmployeeInfo {
+  id: string; // profile id
+  nickname: string | null; // profiles.display_name / username (app name)
+  fullName: string | null; // hr_employees.full_name (payroll name)
+  position: string | null;
+  startDate: string | null; // YYYY-MM-DD
+}
+
 export interface ScAllocation {
   id: string;
   user_id: string;
@@ -68,6 +78,10 @@ export interface ScData {
 /** One rendered table row: an employee at the store merged with any existing allocation. */
 export interface ScRow {
   userId: string;
+  /** primary display name — the payroll full name when known, else the app nickname */
   name: string;
+  nickname: string | null;
+  position: string | null;
+  startDate: string | null;
   allocation: ScAllocation | null;
 }

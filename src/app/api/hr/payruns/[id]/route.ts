@@ -43,7 +43,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   // the same aggregation the accountant portal shows, finally visible to HR (redesign 2026-07-14).
   const [profsRes, empsRes, scRes, linkRes, scPoolsRes, tipPoolsRes, reviewRows, remarksRes] = await Promise.all([
     service.from('profiles').select('id, username, display_name').in('id', userIds),
-    service.from('hr_employees').select('profile_id, full_name, position:hr_positions(name)').in('profile_id', userIds),
+    service.from('hr_employees').select('profile_id, full_name, start_date, end_date, position:hr_positions(name)').in('profile_id', userIds),
     service
       .from('hr_sc_allocations')
       .select('user_id, allocated_satang, pool:hr_sc_pools!inner(period_month), hr_sc_deductions(amount_satang)')
@@ -68,9 +68,13 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   for (const p of (profsRes.data ?? []) as ProfileRow[]) nameById.set(p.id, p.display_name || p.username || '—');
   const fullNameById = new Map<string, string>();
   const positionById = new Map<string, string>();
-  for (const e of (empsRes.data ?? []) as unknown as { profile_id: string; full_name: string | null; position: { name: string | null } | null }[]) {
+  const startDateById = new Map<string, string>();
+  const endDateById = new Map<string, string>();
+  for (const e of (empsRes.data ?? []) as unknown as { profile_id: string; full_name: string | null; start_date: string | null; end_date: string | null; position: { name: string | null } | null }[]) {
     if (e.full_name?.trim()) fullNameById.set(e.profile_id, e.full_name.trim());
     if (e.position?.name) positionById.set(e.profile_id, e.position.name);
+    if (e.start_date) startDateById.set(e.profile_id, e.start_date);
+    if (e.end_date) endDateById.set(e.profile_id, e.end_date);
   }
   const reviewBySlip = new Map((reviewRows ?? []).map((r) => [r.payslip_id, r]));
   const remarkByUser = new Map<string, string>(
@@ -91,7 +95,12 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       return {
         ...s,
         name: fullNameById.get(s.user_id) || nameById.get(s.user_id) || '—',
+        // the app nickname (profiles.display_name) — shown alongside the payroll full name so HR
+        // can tie the slip to the person they know in chat/schedule (client ask 2026-07-21)
+        nickname: nameById.get(s.user_id) ?? null,
         position: positionById.get(s.user_id) ?? null,
+        start_date: startDateById.get(s.user_id) ?? null,
+        end_date: endDateById.get(s.user_id) ?? null,
         employee_code: rr?.employee_code ?? null,
         sc_net_satang: sc?.net ?? 0,
         sv_deduct_satang: sc?.deducted ?? 0,
