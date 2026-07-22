@@ -16,9 +16,24 @@ export type TimesheetEmployee = {
   company_id: string | null;
   work_hours_per_day: number;
   ot_eligible: boolean;
+  /** Set only for departed (resigned/terminated) staff — their last working day. The API keeps
+   *  a leaver visible while the viewed period overlaps their employment, then drops them. */
+  end_date?: string | null;
   days: DaySummary[];
   totals: TimesheetTotals;
 };
+
+/** Small rose chip marking a departed employee's row (shown while their final period is viewed). */
+export function DepartedChip({ endDate, isTh }: { endDate: string; isTh: boolean }) {
+  return (
+    <span
+      className="ml-1 inline-flex shrink-0 items-center rounded-full bg-rose-50 px-1.5 py-0.5 text-[9px] font-medium text-rose-600 dark:bg-rose-900/30 dark:text-rose-400"
+      title={`${isTh ? 'วันทำงานสุดท้าย' : 'Last working day'}: ${endDate}`}
+    >
+      {isTh ? 'พ้นสภาพ' : 'departed'}
+    </span>
+  );
+}
 
 export type DayStatus =
   | 'normal'
@@ -143,6 +158,7 @@ export function TimesheetBlockGrid({
                 <tr key={emp.user_id}>
                   <td className="sticky left-0 z-[5] min-w-[9rem] max-w-[9rem] truncate border-b border-r border-gray-200 bg-white px-2 py-1 font-medium text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
                     {emp.name}
+                    {emp.end_date && <DepartedChip endDate={emp.end_date} isTh={isTh} />}
                   </td>
                   {dates.map((date) => {
                     const day = byDate.get(date);
@@ -228,7 +244,10 @@ export function TimesheetSummaryTable({
                 onPick && 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50'
               )}
             >
-              <td className="px-3 py-2 font-medium text-gray-800 dark:text-gray-200">{emp.name}</td>
+              <td className="px-3 py-2 font-medium text-gray-800 dark:text-gray-200">
+                {emp.name}
+                {emp.end_date && <DepartedChip endDate={emp.end_date} isTh={isTh} />}
+              </td>
               <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{emp.totals.work_days}</td>
               <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{toH(emp.totals.worked_min)}</td>
               {/* An OT-ineligible employee is paid 0 OT by payroll.ts regardless of stored minutes —

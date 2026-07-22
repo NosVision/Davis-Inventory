@@ -48,6 +48,7 @@ interface EmployeeRow {
   work_hours_per_day: number | null;
   ot_eligible: boolean | null;
   status: string | null;
+  end_date: string | null;
 }
 interface ProfileRow {
   id: string;
@@ -118,11 +119,15 @@ export async function GET(request: NextRequest) {
   const service = createServiceClient();
 
   // Staff of the store (optionally a single employee) — or, for the no-store bucket, every active
-  // employee with no user_stores row anywhere.
+  // employee with no user_stores row anywhere (plus leavers whose last working day falls in or
+  // after this window, so a just-offboarded person's final period stays viewable).
   let userIds: string[];
   if (noStore) {
     const [empRes, linkRes] = await Promise.all([
-      service.from('hr_employees').select('profile_id').eq('status', 'active'),
+      service
+        .from('hr_employees')
+        .select('profile_id')
+        .or(`status.eq.active,end_date.gte.${from}`),
       service.from('user_stores').select('user_id'),
     ]);
     if (empRes.error || linkRes.error) {
@@ -152,7 +157,7 @@ export async function GET(request: NextRequest) {
     service.from('profiles').select('id, username, display_name').in('id', userIds),
     service
       .from('hr_employees')
-      .select('profile_id, company_id, full_name, work_hours_per_day, ot_eligible, status')
+      .select('profile_id, company_id, full_name, work_hours_per_day, ot_eligible, status, end_date')
       .in('profile_id', userIds),
     // No-store bucket: key on user_id alone. These employees belong to no venue, so there is no
     // other store's data to leak in — and hr_schedule.store_id is NOT NULL, so any roster row they
@@ -269,11 +274,17 @@ export async function GET(request: NextRequest) {
     punchesByCell.set(key, list);
   }
 
-  // A store member is on the timesheet unless their HR record is resigned/terminated.
+  // A store member is on the timesheet unless they had already left before this window
+  // began: a leaver stays visible while the viewed period overlaps their employment
+  // (end_date >= window start), mirroring the payroll leaver-window, then drops off in
+  // later periods. Keeps a just-offboarded person's final timesheet viewable (client
+  // ask 2026-07-22).
   const staff = userIds
     .filter((uid) => {
       const e = empById.get(uid);
-      return !e || (e.status !== 'resigned' && e.status !== 'terminated');
+      if (!e) return true;
+      if (e.status !== 'resigned' && e.status !== 'terminated') return true;
+      return !!e.end_date && e.end_date >= from;
     })
     .map((uid) => {
       const p = profById.get(uid);
@@ -298,6 +309,7 @@ export async function GET(request: NextRequest) {
         // absent tally (payroll reconciles leave-vs-absent on its own path).
         return leave ? { ...merged, absent: false, leave } : { ...merged, leave: null };
       });
+      const departed = e?.status === 'resigned' || e?.status === 'terminated';
       return {
         user_id: uid,
         // Prefer the employee's real full name (ชื่อ-นามสกุล); fall back to the profile
@@ -306,6 +318,8 @@ export async function GET(request: NextRequest) {
         company_id: e?.company_id ?? null,
         work_hours_per_day: workHours,
         ot_eligible: otEligible,
+        // Set only for leavers — lets the timesheet UI flag the row as departed.
+        end_date: departed ? (e?.end_date ?? null) : null,
         days,
         totals: sumDays(days),
       };

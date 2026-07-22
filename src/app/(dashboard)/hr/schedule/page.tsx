@@ -18,6 +18,8 @@ interface Employee {
   name: string;
   work_hours_per_day: number;
   standard_days_off: number;
+  /** Set only for departed staff — visible for their final month, capped by the API. */
+  end_date?: string | null;
 }
 interface Template {
   id: string;
@@ -535,6 +537,14 @@ export default function SchedulePage({
                       <input type="checkbox" checked={selectedEmps.has(emp.user_id)} onChange={() => toggleEmp(emp.user_id)}
                         className="h-3.5 w-3.5 rounded border-gray-300 text-indigo-600" />
                       {emp.name}
+                      {emp.end_date && (
+                        <span
+                          className="inline-flex shrink-0 items-center rounded-full bg-rose-50 px-1.5 py-0.5 text-[9px] font-medium text-rose-600 dark:bg-rose-900/30 dark:text-rose-400"
+                          title={`${tt('วันทำงานสุดท้าย', 'Last working day')}: ${emp.end_date}`}
+                        >
+                          {tt('พ้นสภาพ', 'departed')}
+                        </span>
+                      )}
                     </label>
                   </td>
                   {days.map((d) => {

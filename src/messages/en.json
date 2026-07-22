@@ -3973,6 +3973,7 @@
     "timesheet": {
       "title": "Timesheet",
       "subtitle": "Reconciled work hours from punches vs schedule",
+      "departed": "Departed",
       "scoreTitle": "Work index",
       "scoreOutOf": "of 100",
       "band_excellent": "Excellent",

@@ -265,7 +265,7 @@ export default function HrTimesheetPage() {
             const hasData = emp.days.some((d) => !isEmptyDay(d));
             return (
               <section key={emp.user_id} className="space-y-2">
-                <SectionHeading title={emp.name} />
+                <SectionHeading title={emp.end_date ? `${emp.name} · ${t('departed')}` : emp.name} />
                 <AttendanceScoreCard days={emp.days} today={openBusinessDateBangkok()} compact config={scoreConfig} />
                 <SummaryChips totals={emp.totals} />
                 {hasData ? (

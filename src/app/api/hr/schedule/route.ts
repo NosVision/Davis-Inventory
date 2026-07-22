@@ -22,6 +22,7 @@ interface EmployeeRow {
   work_hours_per_day: number | null;
   standard_days_off: number | null;
   status: string | null;
+  end_date: string | null;
   company_id: string | null;
 }
 interface TemplateRow {
@@ -89,7 +90,7 @@ export async function GET(request: NextRequest) {
     userIds.length
       ? service
           .from('hr_employees')
-          .select('profile_id, work_hours_per_day, standard_days_off, status, company_id')
+          .select('profile_id, work_hours_per_day, standard_days_off, status, end_date, company_id')
           .in('profile_id', userIds)
       : Promise.resolve({ data: [], error: null }),
     service
@@ -116,19 +117,27 @@ export async function GET(request: NextRequest) {
   const entries = (entriesRes.data ?? []) as ScheduleRow[];
 
   const empByProfile = new Map(employees.map((e) => [e.profile_id, e]));
-  // A store member is schedulable unless their HR employee record is resigned/terminated.
+  // A store member is on the roster unless they had already left before this month began:
+  // a leaver stays visible for any month overlapping their employment (end_date >= month
+  // start), mirroring the payroll leaver-window, then drops off in later months. This
+  // keeps a just-offboarded person's final-month roster viewable (client ask 2026-07-22).
   const staff = profiles
     .filter((p) => {
       const e = empByProfile.get(p.id);
-      return !e || (e.status !== 'resigned' && e.status !== 'terminated');
+      if (!e) return true;
+      if (e.status !== 'resigned' && e.status !== 'terminated') return true;
+      return !!e.end_date && e.end_date >= first;
     })
     .map((p) => {
       const e = empByProfile.get(p.id);
+      const departed = e?.status === 'resigned' || e?.status === 'terminated';
       return {
         user_id: p.id,
         name: p.display_name || p.username || '—',
         work_hours_per_day: e?.work_hours_per_day ?? DEFAULT_WORK_HOURS,
         standard_days_off: e?.standard_days_off ?? DEFAULT_DAYS_OFF,
+        // Signals the roster UI that this person has left (their end_date caps assignments).
+        end_date: departed ? (e?.end_date ?? null) : null,
       };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -227,6 +236,25 @@ export async function POST(request: NextRequest) {
   if (memberErr) return NextResponse.json({ error: 'Failed to verify staff' }, { status: 500 });
   if (!member) {
     return NextResponse.json({ error: 'Employee is not assigned to this store' }, { status: 400 });
+  }
+
+  // A leaver stays visible on the roster for their final month, so cap edits at their
+  // last working day — no assignments past the employment end.
+  const { data: empRec, error: empRecErr } = await service
+    .from('hr_employees')
+    .select('status, end_date')
+    .eq('profile_id', userId)
+    .maybeSingle();
+  if (empRecErr) return NextResponse.json({ error: 'Failed to verify staff' }, { status: 500 });
+  if (
+    empRec &&
+    (empRec.status === 'resigned' || empRec.status === 'terminated') &&
+    (!empRec.end_date || workDate > (empRec.end_date as string))
+  ) {
+    return NextResponse.json(
+      { error: 'This employee has left — cannot schedule beyond their last working day' },
+      { status: 400 }
+    );
   }
 
   // A shift assignment must reference an active template of THIS store.
