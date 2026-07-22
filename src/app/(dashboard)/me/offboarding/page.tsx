@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { formatThaiDate } from '@/lib/utils/format';
-import { Loader2, DoorOpen } from 'lucide-react';
+import { todayBangkok } from '@/lib/utils/date';
+import { Loader2, DoorOpen, Send, Undo2 } from 'lucide-react';
 import {
   Button,
   Modal,
@@ -48,6 +49,17 @@ interface Offboarding {
   assets: AssetItem[];
 }
 
+type RequestStatus = 'pending' | 'accepted' | 'rejected' | 'withdrawn';
+interface ResignationRequest {
+  id: string;
+  notice_date: string;
+  last_working_date: string | null;
+  reason: string | null;
+  status: RequestStatus;
+  review_note: string | null;
+  created_at: string | null;
+}
+
 const KIND_TONE: Record<Kind, StatusTone> = {
   resignation: 'neutral',
   termination: 'critical',
@@ -70,6 +82,14 @@ const RESOLUTION_TONE: Record<Resolution, StatusTone> = {
   lost: 'critical',
   damaged: 'critical',
 };
+const REQUEST_TONE: Record<RequestStatus, StatusTone> = {
+  pending: 'warn',
+  accepted: 'good',
+  rejected: 'critical',
+  withdrawn: 'neutral',
+};
+
+const inputCls = 'control mt-1 w-full disabled:cursor-not-allowed disabled:opacity-60';
 
 function formatDate(value: string | null): string {
   if (!value) return '—';
@@ -86,6 +106,16 @@ export default function MyOffboardingPage() {
   const [submitting, setSubmitting] = useState(false);
   const sigRef = useRef<SignaturePadHandle | null>(null);
   const [view, setView] = useViewMode('me-offboarding');
+
+  // resignation requests (ยื่นใบลาออก)
+  const [requests, setRequests] = useState<ResignationRequest[]>([]);
+  const [resignOpen, setResignOpen] = useState(false);
+  const [resignSubmitting, setResignSubmitting] = useState(false);
+  const [resignLastDate, setResignLastDate] = useState('');
+  const [resignReason, setResignReason] = useState('');
+  const resignSigRef = useRef<SignaturePadHandle | null>(null);
+  const [withdrawFor, setWithdrawFor] = useState<ResignationRequest | null>(null);
+  const [withdrawing, setWithdrawing] = useState(false);
 
   const kindLabel = useCallback((k: Kind) => t(`kind_${k}`), [t]);
   const statusLabel = useCallback((s: Status) => t(`status_${s}`), [t]);
@@ -106,9 +136,107 @@ export default function MyOffboardingPage() {
     }
   }, [t]);
 
+  const fetchRequests = useCallback(async () => {
+    try {
+      const res = await fetch('/api/hr/ess/resignation');
+      if (!res.ok) throw new Error();
+      const json = await res.json();
+      setRequests((json.data ?? []) as ResignationRequest[]);
+    } catch {
+      setRequests([]);
+    }
+  }, []);
+
   useEffect(() => {
     fetchRows();
-  }, [fetchRows]);
+    fetchRequests();
+  }, [fetchRows, fetchRequests]);
+
+  // ── Submit a resignation request ──────────────────────────────────────────
+  const hasPendingRequest = useMemo(
+    () => requests.some((r) => r.status === 'pending'),
+    [requests]
+  );
+  const hasOpenOffboarding = useMemo(
+    () => rows.some((o) => o.status === 'draft' || o.status === 'pending_signoff'),
+    [rows]
+  );
+  const canResign = !loading && !hasPendingRequest && !hasOpenOffboarding;
+
+  const openResign = useCallback(() => {
+    setResignLastDate('');
+    setResignReason('');
+    setResignOpen(true);
+  }, []);
+
+  const submitResign = useCallback(async () => {
+    const pad = resignSigRef.current;
+    if (!pad || pad.isEmpty()) {
+      toast({ type: 'warning', title: t('signRequired') });
+      return;
+    }
+    const signature = pad.toDataURL();
+    if (!signature) {
+      toast({ type: 'warning', title: t('signRequired') });
+      return;
+    }
+    setResignSubmitting(true);
+    try {
+      const res = await fetch('/api/hr/ess/resignation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          last_working_date: resignLastDate || undefined,
+          reason: resignReason.trim() || undefined,
+          signature,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (res.status === 409) {
+        toast({ type: 'warning', title: t('resignAlreadyPending') });
+        setResignOpen(false);
+        await Promise.all([fetchRows(), fetchRequests()]);
+        return;
+      }
+      if (!res.ok) throw new Error(json?.error);
+      toast({ type: 'success', title: t('resignSubmitted') });
+      setResignOpen(false);
+      await fetchRequests();
+    } catch (e) {
+      toast({
+        type: 'error',
+        title: e instanceof Error && e.message ? e.message : t('resignSubmitFailed'),
+      });
+    } finally {
+      setResignSubmitting(false);
+    }
+  }, [resignLastDate, resignReason, t, fetchRows, fetchRequests]);
+
+  const submitWithdraw = useCallback(async () => {
+    if (!withdrawFor) return;
+    setWithdrawing(true);
+    try {
+      const res = await fetch(`/api/hr/ess/resignation/${withdrawFor.id}/withdraw`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      if (res.status === 409) {
+        toast({ type: 'warning', title: t('withdrawConflict') });
+        setWithdrawFor(null);
+        await fetchRequests();
+        return;
+      }
+      if (!res.ok) throw new Error();
+      toast({ type: 'success', title: t('withdrawnOk') });
+      setWithdrawFor(null);
+      await fetchRequests();
+    } catch {
+      toast({ type: 'error', title: t('withdrawFailed') });
+    } finally {
+      setWithdrawing(false);
+    }
+  }, [withdrawFor, t, fetchRequests]);
 
   const canAck = (o: Offboarding) =>
     o.status !== 'completed' && o.status !== 'cancelled' && !o.employee_signed_at;
@@ -158,8 +286,63 @@ export default function MyOffboardingPage() {
       <PageHeader
         title={t('myTitle')}
         subtitle={t('mySubtitle')}
-        actions={<ViewToggle value={view} onChange={setView} />}
+        actions={
+          <>
+            <ViewToggle value={view} onChange={setView} />
+            {canResign && (
+              <Button size="sm" onClick={openResign} icon={<Send className="h-4 w-4" />}>
+                {t('submitResignation')}
+              </Button>
+            )}
+          </>
+        }
       />
+
+      {/* My resignation requests */}
+      {requests.length > 0 && (
+        <div className="space-y-2">
+          <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+            {t('myRequestsHeading')}
+          </h2>
+          <DataList compact={view === 'compact'}>
+            {requests.map((r) => (
+              <DataCard
+                key={r.id}
+                accent={r.status === 'pending' ? 'warn' : r.status === 'accepted' ? 'good' : 'neutral'}
+                title={
+                  <StatusBadge tone={REQUEST_TONE[r.status]} label={t(`reqStatus_${r.status}`)} />
+                }
+                actions={
+                  r.status === 'pending' ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setWithdrawFor(r)}
+                      icon={<Undo2 className="h-3.5 w-3.5" />}
+                    >
+                      {t('withdraw')}
+                    </Button>
+                  ) : undefined
+                }
+              >
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {t('noticeDate')}: {formatDate(r.notice_date)}
+                  {' · '}
+                  {t('desiredLastDate')}: {formatDate(r.last_working_date)}
+                </p>
+                {r.reason && (
+                  <p className="mt-1 text-sm text-gray-700 dark:text-gray-300">{r.reason}</p>
+                )}
+                {r.review_note && (
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {t('reviewNote')}: {r.review_note}
+                  </p>
+                )}
+              </DataCard>
+            ))}
+          </DataList>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-16 text-gray-400">
@@ -276,6 +459,84 @@ export default function MyOffboardingPage() {
           </Button>
           <Button size="sm" onClick={submitAck} isLoading={submitting}>
             {t('acknowledge')}
+          </Button>
+        </ModalFooter>
+      </Modal>
+
+      {/* Submit resignation modal */}
+      <Modal
+        isOpen={resignOpen}
+        onClose={() => !resignSubmitting && setResignOpen(false)}
+        title={t('resignFormTitle')}
+        size="lg"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600 dark:text-gray-400">{t('resignIntro')}</p>
+
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              {t('noticeDate')}
+              <input type="date" value={todayBangkok()} disabled className={inputCls} />
+            </label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              {t('desiredLastDate')}
+              <input
+                type="date"
+                value={resignLastDate}
+                min={todayBangkok()}
+                onChange={(e) => setResignLastDate(e.target.value)}
+                className={inputCls}
+              />
+            </label>
+          </div>
+
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+            {t('reason')}
+            <textarea
+              rows={2}
+              value={resignReason}
+              onChange={(e) => setResignReason(e.target.value)}
+              placeholder={t('reasonPlaceholder')}
+              className={inputCls}
+            />
+          </label>
+
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              {t('resignSignPrompt')}
+            </p>
+            <SignaturePad ref={resignSigRef} />
+          </div>
+        </div>
+        <ModalFooter>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => resignSigRef.current?.clear()}
+            disabled={resignSubmitting}
+          >
+            {t('clear')}
+          </Button>
+          <Button size="sm" onClick={submitResign} isLoading={resignSubmitting}>
+            {t('submitResignation')}
+          </Button>
+        </ModalFooter>
+      </Modal>
+
+      {/* Withdraw confirm modal */}
+      <Modal
+        isOpen={withdrawFor !== null}
+        onClose={() => !withdrawing && setWithdrawFor(null)}
+        title={t('withdrawTitle')}
+        size="md"
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-400">{t('withdrawPrompt')}</p>
+        <ModalFooter>
+          <Button variant="ghost" onClick={() => setWithdrawFor(null)} disabled={withdrawing}>
+            {t('keep')}
+          </Button>
+          <Button variant="danger" onClick={submitWithdraw} isLoading={withdrawing}>
+            {t('withdraw')}
           </Button>
         </ModalFooter>
       </Modal>

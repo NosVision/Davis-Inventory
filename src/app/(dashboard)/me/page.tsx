@@ -21,6 +21,7 @@ import {
   CalendarPlus,
   Timer,
   FileText,
+  DoorOpen,
   type LucideIcon,
 } from 'lucide-react';
 import { PageHeader } from '@/components/ui';
@@ -50,6 +51,7 @@ const TILES: Tile[] = [
   { key: 'stockPenalties', icon: Gauge, href: '/me/stock-penalties', color: 'rose' },
   { key: 'announcements', icon: Megaphone, href: '/me/announcements', color: 'sky' },
   { key: 'policies', icon: BookOpen, href: '/me/policies', color: 'teal' },
+  { key: 'resignation', icon: DoorOpen, href: '/me/offboarding', color: 'rose' },
   { key: 'profile', icon: UserCog, href: '/me/profile', color: 'indigo' },
 ];
 
@@ -81,6 +83,7 @@ const LABELS: Record<string, { th: string; en: string; my: string; lo: string }>
   stockPenalties: { th: 'คะแนน/ค่าปรับสต๊อก', en: 'Stock penalties', my: 'စတော့ ဒဏ်ကြေး', lo: 'ຄະແນນ/ຄ່າປັບສະຕັອກ' },
   announcements: { th: 'ประกาศ', en: 'Announcements', my: 'ကြေညာချက်', lo: 'ປະກາດ' },
   policies: { th: 'ระเบียบบริษัท', en: 'Policies', my: 'ကုမ္ပဏီစည်းမျဉ်း', lo: 'ລະບຽບບໍລິສັດ' },
+  resignation: { th: 'ยื่นลาออก', en: 'Resignation', my: 'နုတ်ထွက်စာ', lo: 'ຍື່ນລາອອກ' },
   profile: { th: 'โปรไฟล์', en: 'Profile', my: 'ပရိုဖိုင်', lo: 'ໂປຣໄຟລ໌' },
 };
 

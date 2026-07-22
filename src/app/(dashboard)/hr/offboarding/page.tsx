@@ -79,6 +79,17 @@ interface Employee {
   company_id?: string | null;
   company?: Company | null;
 }
+interface ResignationRequest {
+  id: string;
+  user_id: string;
+  notice_date: string;
+  last_working_date: string | null;
+  reason: string | null;
+  status: string;
+  created_at: string | null;
+  employee: Person | null;
+  company: Company | null;
+}
 
 const KINDS: Kind[] = ['resignation', 'termination'];
 const RESOLUTIONS: Resolution[] = ['pending', 'returned', 'lost', 'damaged'];
@@ -175,6 +186,13 @@ export default function HrOffboardingPage() {
   const [dSeverance, setDSeverance] = useState('');
   const [dAssets, setDAssets] = useState<AssetDraft[]>([]);
 
+  // resignation requests queue (พนักงานยื่นเอง)
+  const [requests, setRequests] = useState<ResignationRequest[]>([]);
+  const [acceptingId, setAcceptingId] = useState<string | null>(null);
+  const [rejectFor, setRejectFor] = useState<ResignationRequest | null>(null);
+  const [rejectNote, setRejectNote] = useState('');
+  const [rejecting, setRejecting] = useState(false);
+
   // sign / complete / cancel
   const [signOpen, setSignOpen] = useState(false);
   const [signing, setSigning] = useState(false);
@@ -233,9 +251,24 @@ export default function HrOffboardingPage() {
     }
   }, [filterStatus, filterCompany]);
 
+  // Employee-submitted resignation requests awaiting HR review.
+  const loadRequests = useCallback(async () => {
+    try {
+      const params = new URLSearchParams({ status: 'pending' });
+      if (filterCompany) params.set('company_id', filterCompany);
+      const res = await fetch(`/api/hr/resignation-requests?${params.toString()}`);
+      if (!res.ok) throw new Error();
+      const json = await res.json();
+      setRequests((json.data ?? []) as ResignationRequest[]);
+    } catch {
+      setRequests([]);
+    }
+  }, [filterCompany]);
+
   useEffect(() => {
     load();
-  }, [load]);
+    loadRequests();
+  }, [load, loadRequests]);
 
   // ── Detail ──────────────────────────────────────────────────────────────────
   const openDetail = useCallback(
@@ -279,6 +312,66 @@ export default function HrOffboardingPage() {
     setDetail(null);
     setDAssets([]);
   }, []);
+
+  // ── Accept / reject a resignation request ──────────────────────────────────
+  const acceptRequest = useCallback(
+    async (req: ResignationRequest) => {
+      setAcceptingId(req.id);
+      try {
+        const res = await fetch(`/api/hr/resignation-requests/${req.id}/accept`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (res.status === 409) {
+          toast({ type: 'warning', title: json?.error || t('requestConflict') });
+          await Promise.all([loadRequests(), load()]);
+          return;
+        }
+        if (!res.ok) throw new Error(json?.error);
+        toast({ type: 'success', title: t('requestAccepted') });
+        if (json?.warning) toast({ type: 'warning', title: json.warning });
+        await Promise.all([loadRequests(), load()]);
+        const created = json?.data as Offboarding | undefined;
+        if (created?.id) await openDetail(created.id);
+      } catch (e) {
+        toast({
+          type: 'error',
+          title: e instanceof Error && e.message ? e.message : t('requestAcceptFailed'),
+        });
+      } finally {
+        setAcceptingId(null);
+      }
+    },
+    [t, loadRequests, load, openDetail]
+  );
+
+  const submitReject = useCallback(async () => {
+    if (!rejectFor) return;
+    setRejecting(true);
+    try {
+      const res = await fetch(`/api/hr/resignation-requests/${rejectFor.id}/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note: rejectNote.trim() || undefined }),
+      });
+      if (res.status === 409) {
+        toast({ type: 'warning', title: t('requestConflict') });
+        setRejectFor(null);
+        await loadRequests();
+        return;
+      }
+      if (!res.ok) throw new Error();
+      toast({ type: 'success', title: t('requestRejected') });
+      setRejectFor(null);
+      await loadRequests();
+    } catch {
+      toast({ type: 'error', title: t('requestRejectFailed') });
+    } finally {
+      setRejecting(false);
+    }
+  }, [rejectFor, rejectNote, t, loadRequests]);
 
   // ── Initiate ────────────────────────────────────────────────────────────────
   const openInitiate = () => {
@@ -543,6 +636,65 @@ export default function HrOffboardingPage() {
             options={statusOptions}
           />
         </FilterBar>
+
+        {/* Employee-submitted resignation requests awaiting review */}
+        {requests.length > 0 && (
+          <div className="space-y-2">
+            <h2 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+              {t('requestsHeading')} ({requests.length})
+            </h2>
+            <DataList compact={view === 'compact'}>
+              {requests.map((r) => (
+                <DataCard
+                  key={r.id}
+                  accent="warn"
+                  title={personName(r.employee)}
+                  status={<StatusBadge tone="warn" label={t('reqStatus_pending')} />}
+                  actions={
+                    <div className="flex items-center gap-1.5">
+                      <Button
+                        size="sm"
+                        onClick={() => acceptRequest(r)}
+                        isLoading={acceptingId === r.id}
+                        icon={<CheckCircle2 className="h-3.5 w-3.5" />}
+                      >
+                        {t('requestAccept')}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setRejectNote('');
+                          setRejectFor(r);
+                        }}
+                        disabled={acceptingId === r.id}
+                        icon={<Ban className="h-3.5 w-3.5" />}
+                      >
+                        {t('requestReject')}
+                      </Button>
+                    </div>
+                  }
+                >
+                  <div className="space-y-1.5">
+                    {r.company?.name && (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <StatusBadge tone="neutral" label={r.company.name} />
+                      </div>
+                    )}
+                    <p>
+                      {t('noticeDate')}: {formatDate(r.notice_date)}
+                      {' · '}
+                      {t('desiredLastDate')}: {formatDate(r.last_working_date)}
+                    </p>
+                    {r.reason && (
+                      <p className="text-sm text-gray-700 dark:text-gray-300">{r.reason}</p>
+                    )}
+                  </div>
+                </DataCard>
+              ))}
+            </DataList>
+          </div>
+        )}
 
         {/* list */}
         {loading ? (
@@ -982,6 +1134,37 @@ export default function HrOffboardingPage() {
           </Button>
           <Button variant="danger" onClick={submitCancel} isLoading={cancelling}>
             {t('cancelConfirm')}
+          </Button>
+        </ModalFooter>
+      </Modal>
+
+      {/* Reject resignation request modal */}
+      <Modal
+        isOpen={rejectFor !== null}
+        onClose={() => !rejecting && setRejectFor(null)}
+        title={t('requestRejectTitle')}
+        description={rejectFor ? personName(rejectFor.employee) : undefined}
+        size="md"
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-gray-600 dark:text-gray-400">{t('requestRejectPrompt')}</p>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+            {t('requestRejectNote')}
+            <textarea
+              rows={2}
+              value={rejectNote}
+              onChange={(e) => setRejectNote(e.target.value)}
+              placeholder={t('requestRejectNotePlaceholder')}
+              className={inputCls}
+            />
+          </label>
+        </div>
+        <ModalFooter>
+          <Button variant="ghost" onClick={() => setRejectFor(null)} disabled={rejecting}>
+            {t('keep')}
+          </Button>
+          <Button variant="danger" onClick={submitReject} isLoading={rejecting}>
+            {t('requestReject')}
           </Button>
         </ModalFooter>
       </Modal>

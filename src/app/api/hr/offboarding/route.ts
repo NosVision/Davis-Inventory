@@ -4,17 +4,14 @@ import { requireHrManagerForEmployeeProfile, resolveHrScope } from '@/lib/hr/rou
 import { logHrAudit } from '@/lib/hr/audit';
 import { isUniqueViolation } from '@/lib/hr/db-errors';
 import { isCalendarDate } from '@/lib/hr/leaves';
+import { snapshotOffboardingAssets } from '@/lib/hr/offboarding';
 
 const TABLE = 'hr_offboarding';
-const ASSET_TABLE = 'hr_offboarding_assets';
 
 const COLS =
   'id, user_id, company_id, store_id, kind, reason, notice_date, last_working_date, ' +
   'severance_note, status, employee_signature_path, employee_signed_at, hr_signature_path, ' +
   'hr_signed_at, hr_signed_by, initiated_by, completed_at, created_at, updated_at, updated_by';
-
-const ASSET_COLS =
-  'id, offboarding_id, asset_id, asset_code, asset_name, resolution, note, created_at, updated_at';
 
 const EMPLOYEE_EMBED =
   'employee:profiles!hr_offboarding_user_id_fkey(id, display_name, username)';
@@ -117,34 +114,7 @@ export async function POST(request: NextRequest) {
   // Snapshot the assets the employee currently holds into the return checklist.
   // Best-effort: a snapshot failure keeps the offboarding and returns a warning
   // rather than failing the whole initiation.
-  const warnings: string[] = [];
-  let assets: unknown[] = [];
-
-  const { data: held, error: heldErr } = await service
-    .from('hr_assets')
-    .select('id, asset_code, name')
-    .eq('holder_id', userId)
-    .eq('status', 'issued');
-  if (heldErr) {
-    warnings.push('Could not read the employee’s issued assets; the return checklist is empty.');
-  } else if (held && held.length > 0) {
-    const rows = held.map((a) => ({
-      offboarding_id: offboardingId,
-      asset_id: a.id as string,
-      asset_code: (a.asset_code as string | null) ?? null,
-      asset_name: (a.name as string | null) ?? null,
-      resolution: 'pending',
-    }));
-    const { data: created, error: assetErr } = await service
-      .from(ASSET_TABLE)
-      .insert(rows)
-      .select(ASSET_COLS);
-    if (assetErr) {
-      warnings.push('Failed to snapshot the asset-return checklist; add items manually.');
-    } else {
-      assets = created ?? [];
-    }
-  }
+  const { assets, warnings } = await snapshotOffboardingAssets(service, offboardingId, userId);
 
   return NextResponse.json(
     {
