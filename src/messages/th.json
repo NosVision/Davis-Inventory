@@ -3228,7 +3228,9 @@
         "absent": "ขาด {days} วัน × อัตรารายวัน",
         "leave": "{days} วัน × {daily} ฿ (เงินเดือน÷{divisor})",
         "travel": "หักค่าเดินทาง {days} วัน (÷{divisor}/วัน)",
-        "days": "{days} วัน"
+        "days": "{days} วัน",
+        "prorate": "เข้า/ออกระหว่างงวด — จ่ายตามช่วงจ้าง {days}/{divisor} วัน × {daily} ฿/วัน",
+        "prorateTravel": "จ่ายตามช่วงจ้าง {days}/{divisor} วัน"
       },
       "print": "พิมพ์",
       "close": "ปิด",

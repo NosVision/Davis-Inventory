@@ -3227,7 +3227,9 @@
         "absent": "absent {days}d × daily rate",
         "leave": "{days}d × {daily} ฿ (salary÷{divisor})",
         "travel": "travel docked {days}d (÷{divisor}/day)",
-        "days": "{days}d"
+        "days": "{days}d",
+        "prorate": "mid-period hire/leaver — paid {days}/{divisor} days × {daily} ฿/day",
+        "prorateTravel": "paid for {days}/{divisor} employed days"
       },
       "print": "Print",
       "close": "Close",

@@ -300,13 +300,25 @@ export function computePayslip(input: PayrollInput): Payslip {
   const isPartialPeriod = !partTime && ts.prorate_days != null;
   const effAllowances = input.allowances.map((a) =>
     a.code === TRAVEL_CODE && isPartialPeriod
-      ? { ...a, amount_satang: Math.round((a.amount_satang / dayDiv) * (ts.prorate_days as number)) }
-      : a
+      ? {
+          ...a,
+          amount_satang: Math.round((a.amount_satang / dayDiv) * (ts.prorate_days as number)),
+          // "travel:27/30d" — lets the slip show the prorate math behind the number.
+          ref: `${TRAVEL_CODE}:${ts.prorate_days}/${dayDiv}d`,
+        }
+      : { ...a, ref: a.code }
   );
 
   // ── Earnings ──────────────────────────────────────────────────────────────
   const baseSalary = computeBaseSalary(emp, ts, dayDiv);
-  earnings.push({ type: 'salary', label: 'salary', amount_satang: baseSalary });
+  earnings.push({
+    type: 'salary',
+    label: 'salary',
+    amount_satang: baseSalary,
+    // Mid-period hire/leaver: surface the prorate day count ("27/30d") so the slip can
+    // explain where the prorated base came from (client ask 2026-07-22).
+    ...(isPartialPeriod ? { ref: `${ts.prorate_days}/${dayDiv}d` } : {}),
+  });
 
   const ot = computeOt(emp, company, ts.ot_minutes_eligible);
   if (ot > 0) {
@@ -322,7 +334,7 @@ export function computePayslip(input: PayrollInput): Payslip {
   // day below).
   for (const a of effAllowances) {
     if (a.amount_satang > 0) {
-      earnings.push({ type: 'allowance', label: a.label, amount_satang: a.amount_satang, ref: a.code });
+      earnings.push({ type: 'allowance', label: a.label, amount_satang: a.amount_satang, ref: a.ref });
     }
   }
 

@@ -109,6 +109,23 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
   const dayDivisor = payrun?.company?.day_divisor || 30;
   const dailyRateSatang = payslip.rate_satang ? payslip.rate_satang / dayDivisor : 0;
   const lineFormula = (l: PayslipLine): string | null => {
+    // Mid-period hire/leaver — the engine prorated the base over the employment window and
+    // stamped "27/30d" on the line; show the day count so the number is followable.
+    if (l.type === 'salary' && l.ref) {
+      const m = /^(\d+)\/(\d+)d$/.exec(l.ref);
+      if (m && payslip.rate_satang) {
+        return t('formula.prorate', {
+          days: m[1],
+          divisor: m[2],
+          daily: formatBaht(Math.round(payslip.rate_satang / Number(m[2]))),
+        });
+      }
+    }
+    // Prorated travel allowance carries "travel:27/30d".
+    if (l.type === 'allowance' && l.ref) {
+      const m = /^travel:(\d+)\/(\d+)d$/.exec(l.ref);
+      if (m) return t('formula.prorateTravel', { days: m[1], divisor: m[2] });
+    }
     if (l.type === 'ot' && l.ref) return l.ref; // "12.50h"
     if (l.type === 'late' && l.ref) return l.ref; // "3x"
     if (l.type === 'absent' && l.ref) return t('formula.absent', { days: l.ref.replace(/d$/, '') });
