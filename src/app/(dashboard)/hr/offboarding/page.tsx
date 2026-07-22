@@ -45,6 +45,10 @@ interface Person {
   display_name: string | null;
   username: string | null;
 }
+interface Company {
+  id: string;
+  name: string | null;
+}
 interface AssetItem {
   id: string;
   asset_id: string;
@@ -66,10 +70,14 @@ interface Offboarding {
   hr_signed_at: string | null;
   created_at: string | null;
   employee: Person | null;
+  company?: Company | null;
   assets?: AssetItem[];
 }
 interface Employee {
   profile: Person;
+  status?: string | null;
+  company_id?: string | null;
+  company?: Company | null;
 }
 
 const KINDS: Kind[] = ['resignation', 'termination'];
@@ -139,15 +147,18 @@ export default function HrOffboardingPage() {
   const t = useTranslations('hr.offboarding');
 
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [rows, setRows] = useState<Offboarding[]>([]);
   const [loading, setLoading] = useState(true);
   const [errored, setErrored] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterCompany, setFilterCompany] = useState<string>('');
   const [view, setView] = useViewMode('hr-offboarding');
 
   // initiate modal
   const [initOpen, setInitOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [initCompany, setInitCompany] = useState('');
   const [userId, setUserId] = useState('');
   const [kind, setKind] = useState<Kind>('resignation');
   const [reason, setReason] = useState('');
@@ -176,15 +187,28 @@ export default function HrOffboardingPage() {
   const statusLabel = useCallback((s: Status) => t(`status_${s}`), [t]);
   const resolutionLabel = useCallback((r: Resolution) => t(`resolution_${r}`), [t]);
 
-  // ── Employee source ─────────────────────────────────────────────────────────
+  // ── Employee + company sources ──────────────────────────────────────────────
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch('/api/hr/employees');
+        const res = await fetch('/api/hr/employees?limit=200');
         const json = await res.json().catch(() => ({}));
-        setEmployees((json.data ?? []) as Employee[]);
+        const all = (json.data ?? []) as Employee[];
+        // Only people still employed can be offboarded.
+        setEmployees(all.filter((e) => e.status !== 'resigned' && e.status !== 'terminated'));
       } catch {
         setEmployees([]);
+      }
+    })();
+    (async () => {
+      try {
+        const res = await fetch('/api/hr/companies');
+        const json = await res.json().catch(() => ({}));
+        setCompanies(
+          ((json.data ?? []) as Company[]).map((c) => ({ id: c.id, name: c.name }))
+        );
+      } catch {
+        setCompanies([]);
       }
     })();
   }, []);
@@ -195,6 +219,7 @@ export default function HrOffboardingPage() {
     try {
       const params = new URLSearchParams();
       if (filterStatus !== 'all') params.set('status', filterStatus);
+      if (filterCompany) params.set('company_id', filterCompany);
       const qs = params.toString();
       const res = await fetch(`/api/hr/offboarding${qs ? `?${qs}` : ''}`);
       if (!res.ok) throw new Error();
@@ -206,7 +231,7 @@ export default function HrOffboardingPage() {
     } finally {
       setLoading(false);
     }
-  }, [filterStatus]);
+  }, [filterStatus, filterCompany]);
 
   useEffect(() => {
     load();
@@ -257,6 +282,7 @@ export default function HrOffboardingPage() {
 
   // ── Initiate ────────────────────────────────────────────────────────────────
   const openInitiate = () => {
+    setInitCompany(filterCompany); // carry the list's company filter into the modal
     setUserId('');
     setKind('resignation');
     setReason('');
@@ -264,6 +290,12 @@ export default function HrOffboardingPage() {
     setLastWorkingDate('');
     setInitOpen(true);
   };
+
+  // Employee choices, narrowed to the company picked in the modal.
+  const initEmployees = useMemo(
+    () => (initCompany ? employees.filter((e) => e.company_id === initCompany) : employees),
+    [employees, initCompany]
+  );
 
   const canSubmit = Boolean(userId) && !submitting;
 
@@ -303,8 +335,9 @@ export default function HrOffboardingPage() {
     }
   }, [userId, kind, reason, noticeDate, lastWorkingDate, t, load, openDetail]);
 
-  // ── Save draft (dates + assets) ──────────────────────────────────────────────
-  const isDraft = detail?.status === 'draft';
+  // ── Save (dates + assets, while still open) ─────────────────────────────────
+  const isOpenRecord =
+    detail?.status === 'draft' || detail?.status === 'pending_signoff';
 
   const setAssetResolution = (assetId: string, resolution: Resolution) =>
     setDAssets((prev) =>
@@ -432,6 +465,7 @@ export default function HrOffboardingPage() {
   // ── Cancel ───────────────────────────────────────────────────────────────────
   const submitCancel = useCallback(async () => {
     if (!detail) return;
+    const wasCompleted = detail.status === 'completed';
     setCancelling(true);
     try {
       const res = await fetch(`/api/hr/offboarding/${detail.id}/cancel`, {
@@ -446,6 +480,7 @@ export default function HrOffboardingPage() {
       }
       if (!res.ok) throw new Error();
       toast({ type: 'success', title: t('cancelled') });
+      if (wasCompleted) toast({ type: 'warning', title: t('cancelledRevertNote') });
       setCancelOpen(false);
       await refreshDetail();
     } catch {
@@ -463,11 +498,16 @@ export default function HrOffboardingPage() {
     value: s,
     label: s === 'all' ? t('statusAll') : statusLabel(s as Status),
   }));
+  const companyOptions = [
+    { value: '', label: t('companyAll') },
+    ...companies.map((c) => ({ value: c.id, label: c.name ?? '—' })),
+  ];
 
-  const canEdit = isDraft;
+  const canEdit = isOpenRecord;
   const canSign = detail && !detail.hr_signed_at && detail.status !== 'completed' && detail.status !== 'cancelled';
   const canComplete = detail && detail.status !== 'completed' && detail.status !== 'cancelled';
-  const canCancel = detail && detail.status !== 'completed' && detail.status !== 'cancelled';
+  // A completed record can be cancelled too — the server reverts the employee's status.
+  const canCancel = detail && detail.status !== 'cancelled';
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-4">
@@ -490,6 +530,12 @@ export default function HrOffboardingPage() {
 
         {/* filter */}
         <FilterBar>
+          <Select
+            label={t('filterCompany')}
+            value={filterCompany}
+            onChange={(e) => setFilterCompany(e.target.value)}
+            options={companyOptions}
+          />
           <Select
             label={t('filterStatus')}
             value={filterStatus}
@@ -531,6 +577,9 @@ export default function HrOffboardingPage() {
                       tone={o.kind === 'termination' ? 'critical' : 'neutral'}
                       label={kindLabel(o.kind)}
                     />
+                    {o.company?.name && (
+                      <StatusBadge tone="neutral" label={o.company.name} />
+                    )}
                   </div>
                   <p>
                     {t('lastWorkingDate')}: {formatDate(o.last_working_date)}
@@ -555,6 +604,7 @@ export default function HrOffboardingPage() {
             <table className="w-full border-collapse text-sm">
               <tbody>
                 <PrintRow label={t('employee')} value={personName(detail.employee)} />
+                <PrintRow label={t('company')} value={detail.company?.name ?? '—'} />
                 <PrintRow label={t('kind')} value={kindLabel(detail.kind)} />
                 <PrintRow label={t('reason')} value={detail.reason || '—'} />
                 <PrintRow label={t('noticeDate')} value={formatDate(detail.notice_date)} />
@@ -619,12 +669,32 @@ export default function HrOffboardingPage() {
       >
         <div className="space-y-4">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+            {t('company')}
+            <select
+              value={initCompany}
+              onChange={(e) => {
+                setInitCompany(e.target.value);
+                setUserId('');
+              }}
+              className={inputCls}
+            >
+              <option value="">{t('companyAll')}</option>
+              {companies.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name ?? '—'}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
             {t('employee')}
             <select value={userId} onChange={(e) => setUserId(e.target.value)} className={inputCls}>
               <option value="">{t('selectEmployee')}</option>
-              {employees.map((emp) => (
+              {initEmployees.map((emp) => (
                 <option key={emp.profile.id} value={emp.profile.id}>
                   {personName(emp.profile)}
+                  {!initCompany && emp.company?.name ? ` — ${emp.company.name}` : ''}
                 </option>
               ))}
             </select>
@@ -688,7 +758,11 @@ export default function HrOffboardingPage() {
         isOpen={detail !== null || detailLoading}
         onClose={closeDetail}
         title={t('detailTitle')}
-        description={detail ? personName(detail.employee) : undefined}
+        description={
+          detail
+            ? `${personName(detail.employee)}${detail.company?.name ? ` · ${detail.company.name}` : ''}`
+            : undefined
+        }
         size="xl"
       >
         {detailLoading || !detail ? (
@@ -899,7 +973,9 @@ export default function HrOffboardingPage() {
         title={t('cancelTitle')}
         size="md"
       >
-        <p className="text-sm text-gray-600 dark:text-gray-400">{t('cancelPrompt')}</p>
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          {detail?.status === 'completed' ? t('cancelPromptCompleted') : t('cancelPrompt')}
+        </p>
         <ModalFooter>
           <Button variant="ghost" onClick={() => setCancelOpen(false)} disabled={cancelling}>
             {t('keep')}

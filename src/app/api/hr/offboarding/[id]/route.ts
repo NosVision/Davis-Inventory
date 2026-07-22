@@ -19,6 +19,8 @@ const ASSET_COLS =
 const EMPLOYEE_EMBED =
   'employee:profiles!hr_offboarding_user_id_fkey(id, display_name, username)';
 
+const COMPANY_EMBED = 'company:hr_companies(id, name)';
+
 const KINDS = ['resignation', 'termination'] as const;
 const RESOLUTIONS = ['pending', 'returned', 'lost', 'damaged'] as const;
 
@@ -26,7 +28,7 @@ const RESOLUTIONS = ['pending', 'returned', 'lost', 'damaged'] as const;
 async function loadDetail(service: SupabaseClient, id: string) {
   const { data: offboarding, error } = await service
     .from(TABLE)
-    .select(`${COLS}, ${EMPLOYEE_EMBED}`)
+    .select(`${COLS}, ${EMPLOYEE_EMBED}, ${COMPANY_EMBED}`)
     .eq('id', id)
     .maybeSingle();
   if (error || !offboarding) return { offboarding: null, assets: [] as unknown[] };
@@ -58,9 +60,12 @@ export async function GET(
   return NextResponse.json({ data: { ...(offboarding as Record<string, unknown>), assets } });
 }
 
-// PUT /api/hr/offboarding/[id] — edit a DRAFT offboarding (409 once it has left draft).
-// Body may include { reason, notice_date, last_working_date, severance_note, kind,
-// assets: [{ asset_id, resolution, note }] }. Only the provided fields change.
+// PUT /api/hr/offboarding/[id] — edit an OPEN offboarding (draft or pending_signoff;
+// 409 once completed/cancelled). Body may include { reason, notice_date,
+// last_working_date, severance_note, kind, assets: [{ asset_id, resolution, note }] }.
+// Only the provided fields change.
+const EDITABLE_STATUSES = ['draft', 'pending_signoff'] as const;
+
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -78,8 +83,11 @@ export async function PUT(
     .maybeSingle();
   if (loadErr) return NextResponse.json({ error: 'Failed to load offboarding' }, { status: 500 });
   if (!row) return NextResponse.json({ error: 'Offboarding not found' }, { status: 404 });
-  if ((row.status as string) !== 'draft') {
-    return NextResponse.json({ error: 'Only a draft offboarding can be edited' }, { status: 409 });
+  if (!(EDITABLE_STATUSES as readonly string[]).includes(row.status as string)) {
+    return NextResponse.json(
+      { error: 'Only an open (draft or pending sign-off) offboarding can be edited' },
+      { status: 409 }
+    );
   }
 
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
@@ -118,14 +126,14 @@ export async function PUT(
     .from(TABLE)
     .update(update)
     .eq('id', id)
-    .eq('status', 'draft')
+    .in('status', [...EDITABLE_STATUSES])
     .select('id');
   if (updErr) return NextResponse.json({ error: 'Failed to update offboarding' }, { status: 500 });
   // If the compare-and-set matched 0 rows the offboarding was completed/cancelled between
   // our read and this write — stop before rewriting the checklist against a closed record.
   if (!parentUpd || parentUpd.length === 0) {
     return NextResponse.json(
-      { error: 'This offboarding is no longer editable (not in draft)' },
+      { error: 'This offboarding is no longer editable (already completed or cancelled)' },
       { status: 409 }
     );
   }

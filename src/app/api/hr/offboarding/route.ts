@@ -19,6 +19,8 @@ const ASSET_COLS =
 const EMPLOYEE_EMBED =
   'employee:profiles!hr_offboarding_user_id_fkey(id, display_name, username)';
 
+const COMPANY_EMBED = 'company:hr_companies(id, name)';
+
 const KINDS = ['resignation', 'termination'] as const;
 
 // POST /api/hr/offboarding — HR initiates a resignation/termination (§J6). Derives
@@ -153,17 +155,20 @@ export async function POST(request: NextRequest) {
   );
 }
 
-// GET /api/hr/offboarding — HR queue / history. Query: status? (default all). Newest first.
+// GET /api/hr/offboarding — HR queue / history. Query: status?, company_id? (default all).
+// Newest first.
 export async function GET(request: NextRequest) {
   // §P5.5: company-wide HR sees the whole queue; a scoped manager sees only their stores' cases.
   const scope = await resolveHrScope();
   if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status });
 
   const status = request.nextUrl.searchParams.get('status');
+  const companyId = request.nextUrl.searchParams.get('company_id');
 
   const service = createServiceClient();
-  let query = service.from(TABLE).select(`${COLS}, ${EMPLOYEE_EMBED}`);
+  let query = service.from(TABLE).select(`${COLS}, ${EMPLOYEE_EMBED}, ${COMPANY_EMBED}`);
   if (status) query = query.eq('status', status);
+  if (companyId) query = query.eq('company_id', companyId);
   if (scope.storeIds) query = query.in('store_id', scope.storeIds); // scoped manager: their stores' rows only
   query = query.order('created_at', { ascending: false });
 
