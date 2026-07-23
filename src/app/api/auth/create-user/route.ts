@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireUserAdmin, ASSIGNABLE_ROLES, ELEVATED_ROLES } from '@/lib/auth/user-admin';
+import { requireUserAdmin, ASSIGNABLE_ROLES } from '@/lib/auth/user-admin';
 
 export async function POST(request: NextRequest) {
   // Owner + HR may create users; only an owner may mint elevated-role accounts.
@@ -22,9 +22,8 @@ export async function POST(request: NextRequest) {
   if (!(ASSIGNABLE_ROLES as readonly string[]).includes(role)) {
     return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
   }
-  if (!admin.isOwner && (ELEVATED_ROLES as readonly string[]).includes(role)) {
-    return NextResponse.json({ error: 'Only an owner can create this role' }, { status: 403 });
-  }
+  // Owner ask 2026-07-23: HR may create/assign every non-owner role (ASSIGNABLE_ROLES
+  // never contains 'owner', so that stays impossible for everyone here).
 
   const serviceClient = createServiceClient();
   const email = `${username.trim().toLowerCase()}@stockmanager.app`;

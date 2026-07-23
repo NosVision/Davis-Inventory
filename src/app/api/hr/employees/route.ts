@@ -76,11 +76,9 @@ async function consumePendingIdentity(
     console.error('hr onboarding: staged leave balances failed', e);
   }
 }
-// Valid employee roles for onboarding (never 'owner'/'customer').
+// Valid employee roles for onboarding (never 'owner'/'customer'). HR may mint any of
+// these — the elevated owner-only gate was removed 2026-07-23 (owner ask).
 const ALLOWED_NEW_ROLES = ['staff', 'bar', 'head_bar', 'manager', 'accountant', 'hq', 'technician', 'hr', 'cashier', 'housekeeping_staff', 'boh_staff', 'not_assign'];
-// Powerful/app-wide roles — only an OWNER caller may mint these (accountant is a
-// wildcard '*' role = owner-equivalent; manager/hq/hr carry cross-cutting access).
-const ELEVATED_ROLES = ['accountant', 'manager', 'hq', 'hr'];
 const SEARCH_CAP = 500;
 
 const LIST_SELECT =
@@ -317,9 +315,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `Cannot onboard an employee with role '${role}'` }, { status: 400 });
   }
   if (!ALLOWED_NEW_ROLES.includes(role)) role = 'staff';
-  if (ELEVATED_ROLES.includes(role) && auth.role !== 'owner') {
-    return NextResponse.json({ error: `Only an owner can onboard a '${role}' account` }, { status: 403 });
-  }
+  // Owner ask 2026-07-23: HR may onboard every non-owner role (elevated gate removed).
 
   const storeIds = Array.isArray(body.storeIds)
     ? body.storeIds.filter((s): s is string => typeof s === 'string')

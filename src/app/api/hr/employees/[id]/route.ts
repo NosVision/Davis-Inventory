@@ -21,12 +21,11 @@ const SENSITIVE_KEYS = ['rate_satang', 'bank_name', 'bank_account_no', 'bank_acc
 const TERMINAL_STATUSES = ['resigned', 'terminated'];
 
 // Roles HR may assign from the employee modal (owner ask 2026-07-10). Excludes 'owner'/'customer'.
-// Elevated (owner-equivalent) roles may only be granted by an owner caller.
+// Owner ask 2026-07-23: HR may grant every non-owner role (the elevated owner-only gate is gone).
 const ASSIGNABLE_ROLES = new Set([
   'staff', 'bar', 'head_bar', 'manager', 'technician', 'hq', 'accountant', 'hr',
   'cashier', 'housekeeping_staff', 'boh_staff', 'not_assign',
 ]);
-const ELEVATED_ROLES = new Set(['accountant', 'manager', 'hq', 'hr']);
 
 // GET /api/hr/employees/[id]
 export async function GET(
@@ -129,13 +128,8 @@ export async function PUT(
 
   // System role change (validated up-front so a bad/forbidden role rejects before any write).
   const roleChange = typeof body.role === 'string' && body.role ? body.role : null;
-  if (roleChange) {
-    if (!ASSIGNABLE_ROLES.has(roleChange)) {
-      return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
-    }
-    if (ELEVATED_ROLES.has(roleChange) && auth.role !== 'owner') {
-      return NextResponse.json({ error: 'Only an owner may grant this role' }, { status: 403 });
-    }
+  if (roleChange && !ASSIGNABLE_ROLES.has(roleChange)) {
+    return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
   }
 
   if (Object.keys(fields).length === 0 && !hasDisplayName && !roleChange) {

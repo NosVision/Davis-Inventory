@@ -85,10 +85,8 @@ export async function POST(request: NextRequest) {
   if (ctx.role === 'manager' && !['staff', 'bar', 'head_bar'].includes(role)) {
     return NextResponse.json({ error: 'Manager can only invite staff or bar' }, { status: 403 });
   }
-  // Only an owner may invite an elevated-role account (HR is limited to staff/bar/technician).
-  if (!ctx.isOwner && (['accountant', 'manager', 'hq', 'hr'] as Role[]).includes(role)) {
-    return NextResponse.json({ error: 'Only an owner can invite this role' }, { status: 403 });
-  }
+  // Owner ask 2026-07-23: owner + HR may invite every non-owner role (the elevated
+  // owner-only gate is gone; managers stay limited to front-line above).
 
   const token = crypto.randomBytes(12).toString('base64url');
 

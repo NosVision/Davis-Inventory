@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireUserAdmin, ASSIGNABLE_ROLES, ELEVATED_ROLES } from '@/lib/auth/user-admin';
+import { requireUserAdmin, ASSIGNABLE_ROLES } from '@/lib/auth/user-admin';
 
 // Accounts only an owner may administer (enable/disable, re-assign stores).
-const OWNER_ONLY_TARGET_ROLES = ['owner', 'accountant', 'hq'];
+// Loosened 2026-07-23 (owner ask): HR now manages every account except owner accounts.
+const OWNER_ONLY_TARGET_ROLES = ['owner'];
 
 // Roles a position change may land on: everything creatable, plus the "no role yet"
 // placeholder self-registered employees start with.
@@ -46,9 +47,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     role?: unknown;
   };
 
-  // Change the position (role). Guards mirror account creation: never owner/customer, and
-  // elevated roles are owner-only in BOTH directions (assigning one, or demoting someone who
-  // holds one) so HR cannot touch manager/accountant/hq/hr positions.
+  // Change the position (role). Never owner/customer (ROLE_CHANGE_TARGETS excludes both),
+  // never your own account. HR may assign/change every non-owner role (owner ask 2026-07-23 —
+  // previously elevated roles were owner-only in both directions).
   if (typeof body.role === 'string' && body.role !== target.role) {
     const nextRole = body.role;
     if (!ROLE_CHANGE_TARGETS.includes(nextRole)) {
@@ -56,13 +57,6 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
     if (id === auth.userId) {
       return NextResponse.json({ error: 'You cannot change your own position' }, { status: 400 });
-    }
-    if (
-      !auth.isOwner &&
-      ((ELEVATED_ROLES as readonly string[]).includes(nextRole) ||
-        (ELEVATED_ROLES as readonly string[]).includes(target.role as string))
-    ) {
-      return NextResponse.json({ error: 'Only an owner can assign or change this position' }, { status: 403 });
     }
     const { error } = await service.from('profiles').update({ role: nextRole }).eq('id', id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });

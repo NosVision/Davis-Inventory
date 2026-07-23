@@ -306,18 +306,17 @@ export default function UsersPage() {
   });
 
   const FILTERABLE_ROLES: UserRole[] = ['owner', 'accountant', 'manager', 'bar', 'head_bar', 'technician', 'staff', 'hq', 'hr', 'cashier', 'housekeeping_staff', 'boh_staff'];
-  // Owner + HR may administer users; only the OWNER gets the elevated bits — the permissions
-  // editor and creating/inviting elevated-role accounts (accountant/manager/hq/hr).
+  // Owner + HR may administer users; only the OWNER keeps the permissions editor.
   const isOwner = currentUser?.role === 'owner';
-  // HR (non-owner) may only administer non-elevated accounts; owner/accountant/hq stay owner-only.
-  const canAdminTarget = (u: UserProfile) => isOwner || !['owner', 'accountant', 'hq'].includes(u.role);
-  // Position changes: never on owner accounts; HR (non-owner) may not touch elevated positions.
-  const canEditRole = (u: UserProfile) =>
-    u.role !== 'owner' && u.role !== 'customer' && (isOwner || !['accountant', 'manager', 'hq', 'hr'].includes(u.role));
-  // Positions offered in the change-position modal (elevated ones are owner-only, same as create).
+  // HR may administer every account except owner accounts (owner ask 2026-07-23:
+  // "HR เปลี่ยนสิทธิ์ได้ทั้งหมดยกเว้น owner").
+  const canAdminTarget = (u: UserProfile) => isOwner || u.role !== 'owner';
+  // Position changes: never on owner accounts; everything else is fair game for owner + HR.
+  const canEditRole = (u: UserProfile) => u.role !== 'owner' && u.role !== 'customer';
+  // Positions offered in the change-position modal — every role except owner.
   const roleEditOptions: UserRole[] = [
     'staff', 'bar', 'head_bar', 'technician', 'cashier', 'housekeeping_staff', 'boh_staff', 'not_assign',
-    ...(isOwner ? (['manager', 'accountant', 'hq', 'hr'] as UserRole[]) : []),
+    'manager', 'accountant', 'hq', 'hr',
   ];
 
   return (
@@ -570,15 +569,11 @@ export default function UsersPage() {
               { value: 'cashier', label: ROLE_LABELS.cashier },
               { value: 'housekeeping_staff', label: ROLE_LABELS.housekeeping_staff },
               { value: 'boh_staff', label: ROLE_LABELS.boh_staff },
-              // Elevated roles are owner-only — HR cannot mint them.
-              ...(isOwner
-                ? [
-                    { value: 'manager', label: ROLE_LABELS.manager },
-                    { value: 'accountant', label: ROLE_LABELS.accountant },
-                    { value: 'hq', label: ROLE_LABELS.hq },
-                    { value: 'hr', label: ROLE_LABELS.hr },
-                  ]
-                : []),
+              // Every non-owner role — HR may mint these too (owner ask 2026-07-23).
+              { value: 'manager', label: ROLE_LABELS.manager },
+              { value: 'accountant', label: ROLE_LABELS.accountant },
+              { value: 'hq', label: ROLE_LABELS.hq },
+              { value: 'hr', label: ROLE_LABELS.hr },
             ]}
           />
           <div>
