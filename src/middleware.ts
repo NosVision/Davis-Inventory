@@ -10,8 +10,10 @@ import { createServerClient } from '@supabase/ssr';
 // /login, the LIFF page can't even fetch the central LIFF id.
 const PUBLIC_ROUTES = [
   '/login',
-  '/invite',                     // /invite/[token] — staff register page
+  '/invite',                     // /invite/[token] — staff invitation register page
+  '/register',                   // /register/[token] — HR self-registration page
   '/api/auth/register',
+  '/api/auth/hr-register',       // token-gated staff self-registration (validates its own token)
   '/api/auth/invitation',        // /api/auth/invitation/[token] — public lookup
   '/api/auth/callback',
   '/api/auth/liff-verify',       // LIFF SDK access-token verify
