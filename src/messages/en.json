@@ -4340,7 +4340,15 @@
         "generating": "Generating",
         "done": "PDF created",
         "fail": "PDF failed",
-        "allCompanies": "All companies"
+        "allCompanies": "All companies",
+        "bank": "Bank",
+        "bankAccount": "Account no.",
+        "modalTitle": "Print employee register",
+        "companyLabel": "Company",
+        "fieldsLabel": "Fields to print",
+        "print": "Print",
+        "cancel": "Cancel",
+        "emptyResult": "No employees in the selected company"
       },
       "profile": {
         "action": "Print profile",

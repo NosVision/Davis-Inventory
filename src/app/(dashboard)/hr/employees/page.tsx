@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Plus, ArrowLeftRight, History, Printer, IdCard, Archive, UserRound, Link2 } from 'lucide-react';
-import { Button, Select, Badge, PageHeader, StatusBadge, type StatusTone, toast } from '@/components/ui';
+import { Button, Select, Badge, PageHeader, StatusBadge, Modal, ModalFooter, type StatusTone, toast } from '@/components/ui';
 import { DataTable, type Column } from '@/components/data/data-table';
 import { createClient } from '@/lib/supabase/client';
 import { EmployeeFormModal } from './_components/employee-form-modal';
@@ -25,12 +25,30 @@ interface EmployeeRow extends Record<string, unknown> {
   rate_satang: number;
   pay_type: string;
   status: string;
+  bank_name: string | null;
+  bank_account_no: string | null;
   profile: { display_name?: string | null; username?: string | null } | null;
   position: { name?: string | null } | null;
   department: { name?: string | null } | null;
   company: { name?: string | null } | null;
   stores: { id: string; store_name: string }[];
 }
+
+// Printable register columns, in print order. Bank columns default OFF — they carry
+// sensitive data, so HR opts in per print (client ask 2026-07-23).
+const REGISTER_COLS = [
+  { key: 'code', defaultOn: true },
+  { key: 'name', defaultOn: true },
+  { key: 'position', defaultOn: true },
+  { key: 'department', defaultOn: true },
+  { key: 'store', defaultOn: true },
+  { key: 'pay_type', defaultOn: true },
+  { key: 'rate', defaultOn: true },
+  { key: 'status', defaultOn: true },
+  { key: 'bank_name', defaultOn: false },
+  { key: 'bank_account_no', defaultOn: false },
+] as const;
+type RegisterColKey = (typeof REGISTER_COLS)[number]['key'];
 
 const PAY_TYPES = ['full_monthly', 'pt_hourly', 'pt_daily', 'pt_monthly'];
 const STATUSES = ['active', 'probation', 'resigned', 'terminated'];
@@ -87,6 +105,12 @@ export default function EmployeesPage() {
   const [payHistoryFor, setPayHistoryFor] = useState<{ id: string; name: string } | null>(null);
   const [detailFor, setDetailFor] = useState<EmployeeRow | null>(null);
   const [printing, setPrinting] = useState(false);
+  // print-register modal: company scope (default '' = every company) + column picks
+  const [printOpen, setPrintOpen] = useState(false);
+  const [printCompany, setPrintCompany] = useState('');
+  const [printCols, setPrintCols] = useState<Record<RegisterColKey, boolean>>(
+    () => Object.fromEntries(REGISTER_COLS.map((c) => [c.key, c.defaultOn])) as Record<RegisterColKey, boolean>
+  );
   const [profilePrintId, setProfilePrintId] = useState<string | null>(null);
   const [showRegLink, setShowRegLink] = useState(false);
 
@@ -138,20 +162,49 @@ export default function EmployeesPage() {
     }
   };
 
+  // Header label per printable column (register.* keys).
+  const registerColLabel = (key: RegisterColKey): string =>
+    key === 'pay_type' ? t('register.pay')
+    : key === 'bank_name' ? t('register.bank')
+    : key === 'bank_account_no' ? t('register.bankAccount')
+    : t(`register.${key}`);
+
+  const openPrintModal = () => {
+    setPrintCompany(''); // spec: default = every company, regardless of the list filter
+    setPrintCols(Object.fromEntries(REGISTER_COLS.map((c) => [c.key, c.defaultOn])) as Record<RegisterColKey, boolean>);
+    setPrintOpen(true);
+  };
+
   const printRegister = async () => {
-    if (rows.length === 0) return;
+    const columns = REGISTER_COLS.map((c) => c.key).filter((k) => printCols[k]);
+    if (columns.length === 0) return;
     setPrinting(true);
     try {
+      // Fresh fetch — the on-screen list is paginated (50) and may be company-filtered;
+      // the register prints the modal's company choice in full (API cap 200).
+      const params = new URLSearchParams({ limit: '200' });
+      if (printCompany) params.set('company_id', printCompany);
+      const res = await fetch(`/api/hr/employees?${params.toString()}`);
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error();
+      const printRows = (json.data ?? []) as EmployeeRow[];
+      if (printRows.length === 0) {
+        toast({ type: 'warning', title: t('register.emptyResult') });
+        return;
+      }
+
       const { buildEmployeeRegisterPdf, downloadBlob } = await import('./_components/employee-register-pdf');
-      const companies = [...new Set(rows.map((r) => r.company?.name).filter(Boolean))];
-      const companyName = companies.length === 1 ? (companies[0] as string) : t('register.allCompanies');
+      const companyName = printCompany
+        ? companies.find((c) => c.id === printCompany)?.name || t('register.allCompanies')
+        : t('register.allCompanies');
       const now = new Date();
       const generated = new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Bangkok' }).format(now);
       const blob = await buildEmployeeRegisterPdf({
         company_name: companyName,
         generated_label: generated,
-        headcount: rows.length,
-        rows: rows.map((r) => ({
+        headcount: printRows.length,
+        columns,
+        rows: printRows.map((r) => ({
           code: r.employee_code || '',
           name: employeeName(r),
           position: r.position?.name || '—',
@@ -160,16 +213,22 @@ export default function EmployeesPage() {
           pay_type: t(`payType.${r.pay_type}`),
           rate: bahtFromSatang(r.rate_satang),
           status: t(`status.${r.status}`),
+          bank_name: r.bank_name || '—',
+          bank_account_no: r.bank_account_no || '—',
         })),
         labels: {
-          title: t('register.title'), no: t('register.no'), code: t('register.code'), name: t('register.name'),
-          position: t('register.position'), department: t('register.department'), store: t('register.store'),
-          pay: t('register.pay'), rate: t('register.rate'), status: t('register.status'),
-          headcount: t('register.headcount'), page: t('register.page'),
+          title: t('register.title'),
+          no: t('register.no'),
+          headcount: t('register.headcount'),
+          page: t('register.page'),
+          cols: Object.fromEntries(
+            REGISTER_COLS.map((c) => [c.key, registerColLabel(c.key)])
+          ) as Record<RegisterColKey, string>,
         },
       });
       downloadBlob(blob, `employee-register-${now.toISOString().slice(0, 10)}.pdf`);
       toast({ type: 'success', title: t('register.done') });
+      setPrintOpen(false);
     } catch {
       toast({ type: 'error', title: t('register.fail') });
     } finally {
@@ -357,13 +416,7 @@ export default function EmployeesPage() {
               <Link2 className="h-4 w-4" />
               {t('regLink')}
             </Button>
-            <Button
-              variant="outline"
-              type="button"
-              onClick={printRegister}
-              isLoading={printing}
-              disabled={rows.length === 0 || printing}
-            >
+            <Button variant="outline" type="button" onClick={openPrintModal}>
               <Printer className="h-4 w-4" />
               {t('register.action')}
             </Button>
@@ -412,6 +465,54 @@ export default function EmployeesPage() {
           setFormOpen(true);
         }}
       />
+
+      {/* Print-register modal: pick the company scope + which columns to print */}
+      <Modal
+        isOpen={printOpen}
+        onClose={() => !printing && setPrintOpen(false)}
+        title={t('register.modalTitle')}
+        size="md"
+      >
+        <div className="space-y-4">
+          <Select
+            label={t('register.companyLabel')}
+            value={printCompany}
+            onChange={(e) => setPrintCompany(e.target.value)}
+            options={[{ value: '', label: t('register.allCompanies') }, ...opt(companies)]}
+          />
+          <div>
+            <p className="mb-1.5 text-sm font-medium text-gray-700 dark:text-gray-300">
+              {t('register.fieldsLabel')}
+            </p>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+              {REGISTER_COLS.map((c) => (
+                <label key={c.key} className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={printCols[c.key]}
+                    onChange={(e) => setPrintCols((prev) => ({ ...prev, [c.key]: e.target.checked }))}
+                    className="h-4 w-4 rounded border-gray-300 text-teal-600"
+                  />
+                  {registerColLabel(c.key)}
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+        <ModalFooter>
+          <Button variant="ghost" onClick={() => setPrintOpen(false)} disabled={printing}>
+            {t('register.cancel')}
+          </Button>
+          <Button
+            onClick={printRegister}
+            isLoading={printing}
+            disabled={printing || !Object.values(printCols).some(Boolean)}
+            icon={<Printer className="h-4 w-4" />}
+          >
+            {t('register.print')}
+          </Button>
+        </ModalFooter>
+      </Modal>
 
       <EmployeeFormModal
         isOpen={formOpen}

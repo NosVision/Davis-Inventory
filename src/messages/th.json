@@ -4341,7 +4341,15 @@
         "generating": "กำลังสร้าง",
         "done": "สร้าง PDF แล้ว",
         "fail": "สร้าง PDF ไม่สำเร็จ",
-        "allCompanies": "ทุกบริษัท"
+        "allCompanies": "ทุกบริษัท",
+        "bank": "ธนาคาร",
+        "bankAccount": "เลขที่บัญชี",
+        "modalTitle": "พิมพ์ทะเบียนพนักงาน",
+        "companyLabel": "บริษัท",
+        "fieldsLabel": "ข้อมูลที่จะพิมพ์",
+        "print": "พิมพ์",
+        "cancel": "ยกเลิก",
+        "emptyResult": "ไม่มีพนักงานในบริษัทที่เลือก"
       },
       "profile": {
         "action": "พิมพ์ประวัติ",

@@ -1,13 +1,19 @@
 'use client';
 
 /**
- * ทะเบียนพนักงาน (employee register) PDF (P1.5) — a printable roster of the currently-filtered
- * employee list for HR/audit. Landscape A4, one row per employee. react-pdf + NotoSansThai +
- * whole-word hyphenation (Thai lines have no spaces to break on). Rows arrive already localized
- * (pay type / status labels) so this component stays locale-agnostic. Lazy-loaded via import().
+ * ทะเบียนพนักงาน (employee register) PDF (P1.5) — a printable roster for HR/audit.
+ * Landscape A4, one row per employee. react-pdf + NotoSansThai + whole-word hyphenation
+ * (Thai lines have no spaces to break on). Rows arrive already localized (pay type /
+ * status labels) so this component stays locale-agnostic. Lazy-loaded via import().
+ *
+ * Columns are DYNAMIC (client ask 2026-07-23): the print modal picks which fields to
+ * include (bank name / account no. joined the roster), so the document renders whatever
+ * `data.columns` lists, in that order. Flex-based widths reflow to the chosen set.
  */
 
 import { Document, Page, Text, View, StyleSheet, Font, pdf } from '@react-pdf/renderer';
+
+type ColStyle = { width?: number; flex?: number; textAlign?: 'right' | 'center'; paddingRight?: number };
 
 function fontUrl(file: string): string {
   if (typeof window !== 'undefined') return `${window.location.origin}/fonts/${file}`;
@@ -35,33 +41,53 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', paddingVertical: 2.5, paddingHorizontal: 2, borderBottomWidth: 0.3, borderColor: '#e5e7eb' },
   rowAlt: { backgroundColor: '#f9fafb' },
   cNo: { width: 22, textAlign: 'right', paddingRight: 4 },
-  cCode: { width: 60 },
-  cName: { flex: 1.6 },
-  cPos: { flex: 1.2 },
-  cDept: { flex: 1 },
-  cStore: { flex: 1.2 },
-  cPay: { flex: 1 },
-  cRate: { width: 62, textAlign: 'right' },
-  cStatus: { width: 52, textAlign: 'center' },
   foot: { position: 'absolute', bottom: 14, left: 24, right: 24, fontSize: 7.5, color: '#9ca3af', flexDirection: 'row', justifyContent: 'space-between' },
 });
 
-export interface RegisterRow {
-  code: string;
-  name: string;
-  position: string;
-  department: string;
-  store: string;
-  pay_type: string;
-  rate: string; // formatted THB
-  status: string;
-}
+export type RegisterColumnKey =
+  | 'code'
+  | 'name'
+  | 'position'
+  | 'department'
+  | 'store'
+  | 'pay_type'
+  | 'rate'
+  | 'status'
+  | 'bank_name'
+  | 'bank_account_no';
+
+// Per-column layout. Fixed widths for compact/numeric columns, flex for text ones —
+// dropping a column lets the flex columns absorb the space.
+const COL_STYLE: Record<RegisterColumnKey, ColStyle> = {
+  code: { width: 56 },
+  name: { flex: 1.6 },
+  position: { flex: 1.1 },
+  department: { flex: 0.9 },
+  store: { flex: 1.1 },
+  pay_type: { flex: 0.8 },
+  rate: { width: 60, textAlign: 'right', paddingRight: 3 },
+  status: { width: 48, textAlign: 'center' },
+  bank_name: { width: 52 },
+  bank_account_no: { width: 76 },
+};
+
+export type RegisterRow = Partial<Record<RegisterColumnKey, string>>;
+
 export interface EmployeeRegisterData {
   company_name: string;
   generated_label: string; // Thai date-time
   headcount: number;
+  /** Which columns to print, in order. */
+  columns: RegisterColumnKey[];
   rows: RegisterRow[];
-  labels: { title: string; no: string; code: string; name: string; position: string; department: string; store: string; pay: string; rate: string; status: string; headcount: string; page: string };
+  labels: {
+    title: string;
+    no: string;
+    headcount: string;
+    page: string;
+    /** Header label per column key. */
+    cols: Record<RegisterColumnKey, string>;
+  };
 }
 
 function RegisterDocument({ data }: { data: EmployeeRegisterData }) {
@@ -82,27 +108,17 @@ function RegisterDocument({ data }: { data: EmployeeRegisterData }) {
 
         <View style={styles.head} fixed>
           <Text style={styles.cNo}>{L.no}</Text>
-          <Text style={styles.cCode}>{L.code}</Text>
-          <Text style={styles.cName}>{L.name}</Text>
-          <Text style={styles.cPos}>{L.position}</Text>
-          <Text style={styles.cDept}>{L.department}</Text>
-          <Text style={styles.cStore}>{L.store}</Text>
-          <Text style={styles.cPay}>{L.pay}</Text>
-          <Text style={styles.cRate}>{L.rate}</Text>
-          <Text style={styles.cStatus}>{L.status}</Text>
+          {data.columns.map((c) => (
+            <Text key={c} style={COL_STYLE[c]}>{L.cols[c]}</Text>
+          ))}
         </View>
 
         {data.rows.map((r, i) => (
           <View key={i} style={[styles.row, i % 2 === 1 ? styles.rowAlt : {}]} wrap={false}>
             <Text style={styles.cNo}>{i + 1}</Text>
-            <Text style={styles.cCode}>{r.code || '-'}</Text>
-            <Text style={styles.cName}>{r.name}</Text>
-            <Text style={styles.cPos}>{r.position}</Text>
-            <Text style={styles.cDept}>{r.department}</Text>
-            <Text style={styles.cStore}>{r.store}</Text>
-            <Text style={styles.cPay}>{r.pay_type}</Text>
-            <Text style={styles.cRate}>{r.rate}</Text>
-            <Text style={styles.cStatus}>{r.status}</Text>
+            {data.columns.map((c) => (
+              <Text key={c} style={COL_STYLE[c]}>{r[c] || '-'}</Text>
+            ))}
           </View>
         ))}
 
