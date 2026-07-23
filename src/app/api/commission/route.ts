@@ -51,8 +51,10 @@ export async function POST(req: NextRequest) {
   }
 
   // Normalize the receipt/invoice number once — it's the key we use to
-  // block duplicate bills within the same store.
-  const receiptNo: string | null = receipt_no?.trim() || null;
+  // block duplicate bills within the same store. Uppercased because the number
+  // is hand-typed: "Rc6907090027" vs "RC6907090027" slipped past the guard as
+  // two different bills (client report 2026-07-23).
+  const receiptNo: string | null = receipt_no?.trim().toUpperCase() || null;
 
   // Net is stored EXACTLY as computed, to the satang (client ask 2026-07-21 — reversing
   // the 2026-07-09 always-round rule). The whole-baht view is now a display-time toggle
@@ -65,11 +67,14 @@ export async function POST(req: NextRequest) {
   // per-store partial unique index (migration 00131), which is the
   // authoritative guard handled below via the 23505 fallback.
   if (receiptNo) {
+    // ilike (with LIKE wildcards escaped) = case-insensitive equality, so legacy
+    // rows saved before uppercasing ("Rc...") still block a re-entry ("RC...").
+    const likePattern = receiptNo.replace(/[\\%_]/g, (m) => `\\${m}`);
     const { data: dup } = await supabase
       .from('commission_entries')
       .select('id')
       .eq('store_id', store_id)
-      .eq('receipt_no', receiptNo)
+      .ilike('receipt_no', likePattern)
       .is('cancelled_at', null)
       .limit(1)
       .maybeSingle();

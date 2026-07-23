@@ -77,7 +77,37 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   // Recalculate if amounts change
   const updates: Record<string, unknown> = {};
   if (body.bill_date !== undefined) updates.bill_date = body.bill_date;
-  if (body.receipt_no !== undefined) updates.receipt_no = body.receipt_no?.trim() || null;
+  // Uppercase like the create route — the per-store duplicate guard must not be
+  // dodgeable by re-typing the same bill in a different case.
+  if (body.receipt_no !== undefined) updates.receipt_no = body.receipt_no?.trim().toUpperCase() || null;
+
+  // Editing the receipt number: run the same case-insensitive per-store duplicate
+  // check as create (excluding this entry itself).
+  if (typeof updates.receipt_no === 'string') {
+    const { data: row } = await supabase
+      .from('commission_entries')
+      .select('store_id')
+      .eq('id', id)
+      .maybeSingle();
+    if (row) {
+      const likePattern = (updates.receipt_no as string).replace(/[\\%_]/g, (m) => `\\${m}`);
+      const { data: dup } = await supabase
+        .from('commission_entries')
+        .select('id')
+        .eq('store_id', row.store_id as string)
+        .ilike('receipt_no', likePattern)
+        .is('cancelled_at', null)
+        .neq('id', id)
+        .limit(1)
+        .maybeSingle();
+      if (dup) {
+        return NextResponse.json(
+          { error: `บิลเลขที่ ${updates.receipt_no} ถูกบันทึกในสาขานี้ไปแล้ว — ห้ามใส่บิลซ้ำ` },
+          { status: 409 }
+        );
+      }
+    }
+  }
   if (body.receipt_photo_url !== undefined) updates.receipt_photo_url = body.receipt_photo_url || null;
   if (body.table_no !== undefined) updates.table_no = body.table_no?.trim() || null;
   if (body.ae_id !== undefined) updates.ae_id = body.ae_id;
