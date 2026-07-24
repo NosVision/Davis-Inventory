@@ -105,7 +105,7 @@ export default function ProductsPage() {
 
   // Permission helpers
   const canEdit = user
-    ? ['owner', 'accountant', 'manager'].includes(user.role)
+    ? ['owner', 'accountant', 'manager', 'hq'].includes(user.role)
     : false;
 
   // ---------------------------------------------------------------------------

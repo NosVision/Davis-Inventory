@@ -1426,12 +1426,12 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
     setLoading(false);
   };
 
-  const canBarConfirm = deposit.status === 'pending_confirm' && user && ['bar', 'head_bar', 'manager', 'owner'].includes(user.role);
-  const canRejectDeposit = deposit.status === 'pending_confirm' && user && ['bar', 'head_bar', 'manager', 'owner'].includes(user.role);
+  const canBarConfirm = deposit.status === 'pending_confirm' && user && ['bar', 'head_bar', 'manager', 'owner', 'hq'].includes(user.role);
+  const canRejectDeposit = deposit.status === 'pending_confirm' && user && ['bar', 'head_bar', 'manager', 'owner', 'hq'].includes(user.role);
   // ระหว่าง pending_confirm = ขวดยังไม่ได้รับเข้าระบบ → ทั้ง mark-expired
   // และ toggle-VIP ไม่ make sense (จะ VIP/หมดอายุของอะไรในเมื่อยังไม่รับฝาก)
   // จึงตัด pending_confirm ออกจากเงื่อนไขทั้งสอง
-  const canApproveWithdrawal = deposit.status === 'pending_withdrawal' && user && ['bar', 'head_bar', 'manager', 'owner'].includes(user.role);
+  const canApproveWithdrawal = deposit.status === 'pending_withdrawal' && user && ['bar', 'head_bar', 'manager', 'owner', 'hq'].includes(user.role);
   const canWithdraw = deposit.status === 'in_store' && deposit.remaining_qty > 0;
   const canMarkExpired = deposit.status === 'in_store' && !deposit.is_vip;
   const canTransfer = deposit.status === 'expired';

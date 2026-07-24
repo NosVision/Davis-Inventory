@@ -76,7 +76,17 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[] | ['*']> = {
   // Staff = ฝากเหล้า / เบิกเหล้า / แชท / แจ้งซ่อม
   staff: ['can_manage_deposit', 'can_request_repair'],
   customer: ['can_view_own_deposits', 'can_request_withdrawal'],
-  hq: ['can_transfer', 'can_view_reports', 'can_manage_stock_sop'],
+  // HQ คุมระบบสต๊อกทั้งเส้น รวมฝากเหล้า/เบิก/ยืม/โอน (owner ask 2026-07-23)
+  hq: [
+    'can_transfer',
+    'can_view_reports',
+    'can_manage_stock_sop',
+    'can_count_stock',
+    'can_approve_stock',
+    'can_manage_deposit',
+    'can_approve_deposit',
+    'can_borrow',
+  ],
   // HR = ฝ่ายบุคคล: HR + จัดการผู้ใช้ (โมเดลใหม่ 2026-07-08 — แคบลง เหลือ HR + baseline)
   hr: ['can_manage_hr', 'can_manage_users'],
   // Cashier = AE (คอมมิชชั่น) + งานประจำ

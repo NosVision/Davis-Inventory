@@ -496,7 +496,7 @@ function GroupedPreview({
 
 // ── Component ──
 
-const UPLOAD_ROLES = ['owner', 'manager', 'accountant'];
+const UPLOAD_ROLES = ['owner', 'manager', 'accountant', 'hq'];
 
 export default function TxtUploadPage() {
   const t = useTranslations('stock');

@@ -34,7 +34,7 @@ import {
 
 type ViewFilter = 'explained' | 'approved' | 'rejected';
 
-const APPROVAL_ROLES = ['owner', 'manager'];
+const APPROVAL_ROLES = ['owner', 'manager', 'hq'];
 
 export default function ApprovalPage() {
   const t = useTranslations('stock');
