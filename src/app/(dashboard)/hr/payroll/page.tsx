@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
-import { Loader2, Wallet, Play, Lock, LockOpen, Printer, X, FileText, Settings2, SlidersHorizontal, Percent, GitCompareArrows, Users, Coins, Send, Megaphone, RefreshCw, CheckCircle2, ChevronRight, ChevronDown, ArrowRight, BookOpen, StickyNote, type LucideIcon } from 'lucide-react';
+import { Loader2, Wallet, Play, Lock, LockOpen, Printer, X, FileText, Settings2, SlidersHorizontal, Percent, GitCompareArrows, Users, Coins, Send, Megaphone, RefreshCw, CheckCircle2, ChevronRight, ChevronDown, ArrowRight, BookOpen, StickyNote, Landmark, Banknote, type LucideIcon } from 'lucide-react';
 import { Button, EmptyState, Modal, ModalFooter, PageHeader, KpiRow, StatTile, MoneyValue, StatusBadge, Skeleton, toast, useConfirm, usePromptDialog } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { formatBaht } from '@/lib/pos/money';
@@ -607,6 +607,15 @@ export default function HrPayrollPage() {
           ? [{ key: 'recompute', label: t('recompute'), icon: RefreshCw, onClick: () => regenerateCurrent(), disabled: busy || recomputing, title: t('recomputeHint') }]
           : []),
         { key: 'excel', label: t('exportExcel'), icon: FileText, onClick: () => window.open(`/api/hr/payruns/${detail.payrun.id}/export`, '_blank'), disabled: !hasSlips, title: t('exportHint') },
+        // Bank-transfer files (client ask 2026-07-24) — finalized runs only (the API 409s a draft):
+        // one file per batch the bank wants, named Payment-<group>-<MM-YYYY>.xlsx.
+        ...(isFinalized
+          ? [
+              { key: 'bankBbl', label: t('bankFileBbl'), icon: Landmark, onClick: () => window.open(`/api/hr/payruns/${detail.payrun.id}/bank-file?group=bbl`, '_blank'), disabled: !hasSlips, title: t('bankFileHint') },
+              { key: 'bankOther', label: t('bankFileOther'), icon: Landmark, onClick: () => window.open(`/api/hr/payruns/${detail.payrun.id}/bank-file?group=other`, '_blank'), disabled: !hasSlips, title: t('bankFileHint') },
+              { key: 'bankCash', label: t('bankFileCash'), icon: Banknote, onClick: () => window.open(`/api/hr/payruns/${detail.payrun.id}/bank-file?group=cash`, '_blank'), disabled: !hasSlips, title: t('bankFileHint') },
+            ]
+          : []),
         { key: 'calibrate', label: t('printCalibrate'), icon: Printer, onClick: () => doPrint(CALIBRATE_DATA), title: t('printCalibrateHint') },
         // ส่งให้บัญชี-again — only when it is not already the hero primary
         ...(isFinalized || accountantConfirmed

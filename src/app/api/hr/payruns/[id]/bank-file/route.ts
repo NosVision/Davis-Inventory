@@ -5,8 +5,11 @@ import { logHrAudit } from '@/lib/hr/audit';
 import {
   buildBankTransferCsv,
   resolveBankCode,
+  bankFileLabel,
+  normalizeAccountNo,
   type BankTransferRow,
 } from '@/lib/hr/bank-transfer';
+import { buildXlsx } from '@/lib/xlsx';
 
 interface EmpBank {
   id: string;
@@ -15,19 +18,33 @@ interface EmpBank {
   bank_name: string | null;
   bank_account_no: string | null;
   bank_account_name: string | null;
+  bank_verified: boolean | null;
   tax_id: string | null;
 }
 
-// GET /api/hr/payruns/[id]/bank-file — direct-credit CSV for a FINALIZED payrun (§E "โอน BBL").
+// GET /api/hr/payruns/[id]/bank-file — bank-transfer file for a FINALIZED payrun (§E "โอน BBL").
 // HR only. Only finalized payruns can be exported (a draft is still changing; paying from it
-// would transfer wrong amounts). Returns text/csv as a download; logs the export for audit.
-export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+// would transfer wrong amounts). Two modes:
+//   (no group)            → legacy direct-credit CSV, every bank in one file (unchanged).
+//   ?group=bbl|other|cash → one .xlsx per bank batch (client ask 2026-07-24), columns mirroring
+//     the BBL bulk-payment template's PAYMENT sheet so HR copy-pastes the block straight in:
+//       bbl   — Bangkok Bank accounts only (the template's "all BBL? = yes" batch)
+//       other — every other bank (interbank batch; rows carry "004, KASIKORNBANK …")
+//       cash  — no bank account on file (e.g. Burmese staff) → hand-paid list
+//     Safety rail: rows whose account HR has NOT verified (hr_employees.bank_verified) are
+//     quarantined in a marked section below the main block and excluded from its totals, so an
+//     unchecked hand-typed account number can never ride into the upload unnoticed.
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const group = request.nextUrl.searchParams.get('group');
+  if (group && !['bbl', 'other', 'cash'].includes(group)) {
+    return NextResponse.json({ error: "group must be 'bbl', 'other' or 'cash'" }, { status: 400 });
+  }
   const service = createServiceClient();
 
   const { data: payrun, error: prErr } = await service
     .from('hr_payruns')
-    .select('id, company_id, store_id, period_year, period_month, pay_date, status')
+    .select('id, company_id, store_id, period_year, period_month, cycle_start, cycle_end, pay_date, status, company:hr_companies(name)')
     .eq('id', id)
     .maybeSingle();
   if (prErr) return NextResponse.json({ error: 'Failed to load payrun' }, { status: 500 });
@@ -56,7 +73,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   if (empIds.length) {
     const { data: emps } = await service
       .from('hr_employees')
-      .select('id, profile_id, employee_code, bank_name, bank_account_no, bank_account_name, tax_id')
+      .select('id, profile_id, employee_code, bank_name, bank_account_no, bank_account_name, bank_verified, tax_id')
       .in('id', empIds);
     for (const e of (emps ?? []) as EmpBank[]) bankByEmp.set(e.id, e);
   }
@@ -66,6 +83,112 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     for (const p of (profs ?? []) as { id: string; username: string | null; display_name: string | null }[]) {
       nameByProfile.set(p.id, p.display_name || p.username || '');
     }
+  }
+
+  // ── Grouped .xlsx mode (client ask 2026-07-24) ─────────────────────────────
+  if (group) {
+    interface Line {
+      name: string;
+      account: string;
+      bank: string | null;
+      net: number; // satang
+      employee: string;
+      verified: boolean;
+    }
+    const lines: Line[] = [];
+    for (const s of slipRows) {
+      const emp = s.employee_id ? bankByEmp.get(s.employee_id) : undefined;
+      const account = normalizeAccountNo(emp?.bank_account_no);
+      const bank = emp?.bank_name?.trim() || null;
+      const target = !account || !bank ? 'cash' : bank === 'BBL' ? 'bbl' : 'other';
+      if (target !== group) continue;
+      if (s.net_satang <= 0) continue; // nothing to pay
+      lines.push({
+        name: emp?.bank_account_name?.trim() || nameByProfile.get(s.user_id) || '',
+        account,
+        bank,
+        net: s.net_satang,
+        employee: nameByProfile.get(s.user_id) || '',
+        verified: !!emp?.bank_verified,
+      });
+    }
+
+    const b = (satang: number) => Math.round(satang) / 100;
+    const companyName = (payrun.company as unknown as { name: string | null } | null)?.name ?? '';
+    const periodLabel = `${String(payrun.period_month).padStart(2, '0')}/${payrun.period_year}`;
+    const title =
+      group === 'bbl' ? 'โอนเงินเดือน — ธนาคารกรุงเทพล้วน (BBL)'
+      : group === 'other' ? 'โอนเงินเดือน — ต่างธนาคาร'
+      : 'จ่ายเงินสด — ไม่มีบัญชีธนาคาร';
+    const grid: (string | number | null)[][] = [
+      [companyName],
+      [`${title} · งวด ${periodLabel} · รอบ ${payrun.cycle_start ?? ''} – ${payrun.cycle_end ?? ''} · จ่าย ${payrun.pay_date ?? ''}`],
+      [],
+    ];
+
+    if (group === 'cash') {
+      grid.push(['NO.', 'ชื่อพนักงาน', 'จำนวนเงิน (NET)', 'หมายเหตุ']);
+      lines.forEach((l, i) => grid.push([i + 1, l.employee, b(l.net), 'จ่ายเงินสด — ไม่มีบัญชีธนาคาร']));
+      grid.push([]);
+      grid.push(['รวม', `${lines.length} รายการ`, b(lines.reduce((s, l) => s + l.net, 0)), null]);
+    } else {
+      const header = [
+        'NO.',
+        'ชื่อผู้รับเงิน (Beneficiary Name)',
+        'เลขที่บัญชี (Account No)',
+        'จำนวนเงิน (Amount)',
+        'สกุลเงิน (Currency)',
+        'ธนาคารผู้รับเงิน (Bank)',
+        'ชื่อพนักงาน (อ้างอิงภายใน)',
+      ];
+      const pushRows = (list: Line[]) =>
+        list.forEach((l, i) =>
+          grid.push([i + 1, l.name, l.account, b(l.net), 'THB', bankFileLabel(l.bank), l.employee])
+        );
+      const ok = lines.filter((l) => l.verified);
+      const pending = lines.filter((l) => !l.verified);
+
+      grid.push(header);
+      pushRows(ok);
+      grid.push([]);
+      grid.push(['รวม (ตรวจบัญชีแล้ว — พร้อมอัปโหลด)', `${ok.length} รายการ`, null, b(ok.reduce((s, l) => s + l.net, 0)), null, null, null]);
+
+      if (pending.length) {
+        grid.push([]);
+        grid.push(['⚠ ส่วนนี้บัญชียังไม่ผ่านการตรวจโดย HR — ห้ามคัดลอกลงไฟล์ธนาคารจนกว่าจะตรวจกับสมุด/สลิปจริง แล้วติ๊ก "ตรวจบัญชีแล้ว" ในหน้าพนักงาน']);
+        grid.push(header);
+        pushRows(pending);
+        grid.push(['รวม (รอตรวจบัญชี)', `${pending.length} รายการ`, null, b(pending.reduce((s, l) => s + l.net, 0)), null, null, null]);
+      }
+    }
+
+    // A grouped bank file with verified payable rows is money leaving the building — stamp
+    // + audit exactly like the legacy CSV path (cash list moves no money by file).
+    const payableCount = group === 'cash' ? 0 : lines.filter((l) => l.verified).length;
+    if (payableCount > 0) {
+      const { error: stampErr } = await service
+        .from('hr_payruns')
+        .update({ bank_exported_at: new Date().toISOString(), bank_exported_by: auth.userId })
+        .eq('id', id);
+      if (stampErr) console.error('[bank-file] failed to stamp bank_exported_at', stampErr.message);
+    }
+    await logHrAudit(service, {
+      actorId: auth.userId, action: 'update', table: 'hr_payruns', recordId: id,
+      before: null,
+      after: { bank_file_exported: true, group, rows: lines.length, payable_rows: payableCount },
+      reason: `bank transfer file exported (${group})`,
+    });
+
+    const fileGroup = group === 'bbl' ? 'BBL' : group === 'other' ? 'OtherBanks' : 'Cash';
+    const sheetName = group === 'bbl' ? 'BBL' : group === 'other' ? 'Other Banks' : 'Cash';
+    const buf = await buildXlsx([{ name: sheetName, rows: grid }]);
+    const filename = `Payment-${fileGroup}-${String(payrun.period_month).padStart(2, '0')}-${payrun.period_year}.xlsx`;
+    return new NextResponse(new Uint8Array(buf), {
+      headers: {
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+      },
+    });
   }
 
   const rows: BankTransferRow[] = slipRows.map((s) => {

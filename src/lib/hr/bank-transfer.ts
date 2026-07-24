@@ -30,6 +30,40 @@ export const BANK_CODES: Record<string, string> = {
 
 export const BBL_BANK_CODE = BANK_CODES.BBL;
 
+// Dropdown/registry entries for the bank pickers + the bank-file export (client ask
+// 2026-07-24). `code` is what hr_employees.bank_name stores (no more free text — the
+// legacy 'kbank'/'Kbang' typos are exactly why); `nameEn` matches the receiving-bank
+// string the BBL bulk-payment template shows ("004, KASIKORNBANK ...").
+export interface ThaiBankOption {
+  code: keyof typeof BANK_CODES;
+  nameTh: string;
+  nameEn: string;
+}
+export const THAI_BANK_OPTIONS: ThaiBankOption[] = [
+  { code: 'BBL', nameTh: 'กรุงเทพ', nameEn: 'BANGKOK BANK PUBLIC COMPANY LIMITED (BBL)' },
+  { code: 'KBANK', nameTh: 'กสิกรไทย', nameEn: 'KASIKORNBANK PUBLIC COMPANY LIMITED (KBANK)' },
+  { code: 'KTB', nameTh: 'กรุงไทย', nameEn: 'KRUNG THAI BANK PUBLIC COMPANY LIMITED (KTB)' },
+  { code: 'TTB', nameTh: 'ทีเอ็มบีธนชาต', nameEn: 'TMBTHANACHART BANK PUBLIC COMPANY LIMITED (TTB)' },
+  { code: 'SCB', nameTh: 'ไทยพาณิชย์', nameEn: 'THE SIAM COMMERCIAL BANK PUBLIC COMPANY LIMITED (SCB)' },
+  { code: 'BAY', nameTh: 'กรุงศรีอยุธยา', nameEn: 'BANK OF AYUDHYA PUBLIC COMPANY LIMITED (BAY)' },
+  { code: 'CIMB', nameTh: 'ซีไอเอ็มบี ไทย', nameEn: 'CIMB THAI BANK PUBLIC COMPANY LIMITED (CIMBT)' },
+  { code: 'UOB', nameTh: 'ยูโอบี', nameEn: 'UNITED OVERSEAS BANK (THAI) PUBLIC COMPANY LIMITED (UOB)' },
+  { code: 'GSB', nameTh: 'ออมสิน', nameEn: 'GOVERNMENT SAVINGS BANK (GSB)' },
+  { code: 'BAAC', nameTh: 'ธ.ก.ส.', nameEn: 'BANK FOR AGRICULTURE AND AGRICULTURAL COOPERATIVES (BAAC)' },
+  { code: 'GHB', nameTh: 'อาคารสงเคราะห์', nameEn: 'GOVERNMENT HOUSING BANK (GHB)' },
+  { code: 'KKP', nameTh: 'เกียรตินาคินภัทร', nameEn: 'KIATNAKIN PHATRA BANK PUBLIC COMPANY LIMITED (KKP)' },
+  { code: 'TISCO', nameTh: 'ทิสโก้', nameEn: 'TISCO BANK PUBLIC COMPANY LIMITED (TISCO)' },
+  { code: 'LHBANK', nameTh: 'แลนด์ แอนด์ เฮ้าส์', nameEn: 'LAND AND HOUSES BANK PUBLIC COMPANY LIMITED (LHBANK)' },
+];
+
+const optionByCode = new Map(THAI_BANK_OPTIONS.map((b) => [b.code as string, b]));
+
+/** "004, KASIKORNBANK PUBLIC COMPANY LIMITED (KBANK)" — the BBL template's bank column. */
+export function bankFileLabel(codeKey: string | null | undefined): string {
+  const b = codeKey ? optionByCode.get(codeKey.trim()) : undefined;
+  return b ? `${BANK_CODES[b.code]}, ${b.nameEn}` : (codeKey ?? '');
+}
+
 /** One payee line, built from a finalized payslip + the employee's bank details. */
 export interface BankTransferRow {
   bankCode: string; // 3-digit ITMX code; defaults to BBL when the employee's bank is unknown

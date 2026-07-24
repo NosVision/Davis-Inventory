@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils/cn';
 import { createClient } from '@/lib/supabase/client';
 import { ROLE_LABELS } from '@/types/roles';
 import type { UserRole } from '@/types/roles';
+import { THAI_BANK_OPTIONS } from '@/lib/hr/bank-transfer';
 import { CredentialShare } from './credential-share';
 import {
   PAY_TYPES,
@@ -91,6 +92,8 @@ interface FormState {
   bank_name: string;
   bank_account_no: string;
   bank_account_name: string;
+  /** HR ตรวจเลขบัญชีกับสมุด/สลิปจริงแล้ว — gates the bank-transfer export. */
+  bank_verified: boolean;
   // emergency contact
   em_name: string;
   em_phone: string;
@@ -151,6 +154,7 @@ function defaultForm(): FormState {
     bank_name: '',
     bank_account_no: '',
     bank_account_name: '',
+    bank_verified: false,
     em_name: '',
     em_phone: '',
     em_relation: '',
@@ -407,6 +411,7 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
         bank_name: (d.bank_name as string) ?? '',
         bank_account_no: (d.bank_account_no as string) ?? '',
         bank_account_name: (d.bank_account_name as string) ?? '',
+        bank_verified: Boolean(d.bank_verified),
         em_name: ec.name ?? '',
         em_phone: ec.phone ?? '',
         em_relation: ec.relation ?? '',
@@ -619,6 +624,9 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
       if (!snap || bankAcc !== snap.bank_account_name) body.bank_account_name = bankAcc;
       if (!snap || ssoNo !== snap.sso_no) body.sso_no = ssoNo;
       if (!snap || taxId !== snap.tax_id) body.tax_id = taxId;
+      // "ตรวจบัญชีแล้ว" — always send; the API auto-resets it when the account changes,
+      // and ticking it alongside a change means HR verified the NEW number.
+      body.bank_verified = form.bank_verified;
 
       const sensitiveKeys = ['rate_satang', 'bank_name', 'bank_account_no', 'bank_account_name', 'sso_no', 'tax_id'];
       const sensitiveChanged = sensitiveKeys.some((k) => k in body);
@@ -1133,17 +1141,49 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
 
           {/* Bank */}
           <SectionHeader>{t('secBank')}</SectionHeader>
-          <Input label={t('bankName')} value={form.bank_name} onChange={(e) => update('bank_name', e.target.value)} />
+          <Select
+            label={t('bankName')}
+            value={form.bank_name}
+            onChange={(e) => {
+              update('bank_name', e.target.value);
+              update('bank_verified', false); // new bank → must be re-verified
+            }}
+            options={[
+              { value: '', label: t('bankNone') },
+              // Keep an unknown legacy value selectable so opening an old record doesn't silently clear it.
+              ...(form.bank_name && !THAI_BANK_OPTIONS.some((b) => b.code === form.bank_name)
+                ? [{ value: form.bank_name, label: form.bank_name }]
+                : []),
+              ...THAI_BANK_OPTIONS.map((b) => ({ value: b.code as string, label: `${b.nameTh} (${b.code})` })),
+            ]}
+          />
           <Input
             label={t('bankAccountNo')}
             value={form.bank_account_no}
-            onChange={(e) => update('bank_account_no', e.target.value)}
+            onChange={(e) => {
+              update('bank_account_no', e.target.value);
+              update('bank_verified', false); // new number → must be re-verified
+            }}
           />
           <Input
             label={t('bankAccountName')}
             value={form.bank_account_name}
             onChange={(e) => update('bank_account_name', e.target.value)}
           />
+          {!isCreate && (
+            <label className="flex items-start gap-2 sm:col-span-2">
+              <input
+                type="checkbox"
+                checked={form.bank_verified}
+                onChange={(e) => update('bank_verified', e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-teal-600"
+              />
+              <span className="text-sm text-gray-700 dark:text-gray-300">
+                {t('bankVerified')}
+                <span className="block text-xs text-gray-400">{t('bankVerifiedHint')}</span>
+              </span>
+            </label>
+          )}
 
           {/* Emergency contact */}
           <SectionHeader>{t('secEmergency')}</SectionHeader>

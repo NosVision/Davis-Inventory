@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Loader2, Check, X, Search, UserPlus, ShieldQuestion } from 'lucide-react';
+import { THAI_BANK_OPTIONS } from '@/lib/hr/bank-transfer';
 
 interface Ctx {
   company_id: string | null;
@@ -474,7 +475,14 @@ export default function HrRegisterPage() {
                 </div>
                 <div>
                   <label className={label}>ธนาคาร</label>
-                  <input className={input} value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="เช่น BBL" />
+                  <select className={input} value={bankName} onChange={(e) => setBankName(e.target.value)}>
+                    <option value="">ไม่มีบัญชี (รับเงินสด)</option>
+                    {THAI_BANK_OPTIONS.map((b) => (
+                      <option key={b.code} value={b.code}>
+                        {b.nameTh} ({b.code})
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
             </div>

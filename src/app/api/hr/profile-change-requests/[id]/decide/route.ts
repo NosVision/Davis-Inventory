@@ -138,6 +138,11 @@ export async function POST(
       bank_name: (newValue.bank_name as string) ?? null,
       bank_account_no: (newValue.bank_account_no as string) ?? null,
       bank_account_name: (newValue.bank_account_name as string) ?? null,
+      // Employee-supplied bank details are unverified by definition — HR must re-check
+      // against the real book/slip before the next bank-transfer export (2026-07-24).
+      bank_verified: false,
+      bank_verified_by: null,
+      bank_verified_at: null,
     };
   } else if (fieldKey === 'emergency_contact') {
     patch = { emergency_contact: newValue };

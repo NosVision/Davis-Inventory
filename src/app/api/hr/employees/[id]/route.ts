@@ -124,6 +124,24 @@ export async function PUT(
     );
   }
 
+  // Bank verification flag (client ask 2026-07-24 — hand-typed account numbers feed the
+  // bank-transfer file, so HR must re-verify after ANY change). Changing the number or bank
+  // resets the flag; an explicit tick sent WITH the change verifies the new details.
+  const bankChanged =
+    ('bank_account_no' in fields && fields.bank_account_no !== current.bank_account_no) ||
+    ('bank_name' in fields && fields.bank_name !== current.bank_name);
+  if (typeof body.bank_verified === 'boolean') {
+    if (body.bank_verified !== Boolean(current.bank_verified) || bankChanged) {
+      fields.bank_verified = body.bank_verified;
+      fields.bank_verified_by = body.bank_verified ? auth.userId : null;
+      fields.bank_verified_at = body.bank_verified ? new Date().toISOString() : null;
+    }
+  } else if (bankChanged) {
+    fields.bank_verified = false;
+    fields.bank_verified_by = null;
+    fields.bank_verified_at = null;
+  }
+
   const hasDisplayName = 'display_name' in body;
 
   // System role change (validated up-front so a bad/forbidden role rejects before any write).
