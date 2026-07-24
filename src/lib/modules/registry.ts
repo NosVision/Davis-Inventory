@@ -362,8 +362,9 @@ export const modules: ModuleConfig[] = [
     icon: 'settings',
     color: 'gray',
     href: '/settings',
-    roles: ['owner'],
-    permission: 'can_manage_settings',
+    // Only owner / HR / HQ reach settings (owner ask 2026-07-24). No permission unlock —
+    // access is exclusively role-based so a stray individual grant can't open it.
+    roles: ['owner', 'hr', 'hq'],
     groupKey: 'moduleGroups.system',
   },
 ];

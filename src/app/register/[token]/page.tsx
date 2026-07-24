@@ -59,7 +59,6 @@ export default function HrRegisterPage() {
   const [bankNo, setBankNo] = useState('');
   const [bankName, setBankName] = useState('');
   const [companyId, setCompanyId] = useState('');
-  const [positionId, setPositionId] = useState('');
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -145,13 +144,9 @@ export default function HrRegisterPage() {
     setFullName(it.full_name_th || it.full_name_en || '');
     setBankNo(it.bank_account_no || '');
     setBankName(it.bank_name || '');
-    // Prefill company (unless the link is company-scoped) + match the position by its text.
+    // Prefill company (unless the link is company-scoped). Position is NOT collected at
+    // self-registration anymore — HR assigns it afterwards (owner ask 2026-07-24).
     if (!ctx?.company_id && it.company_id) setCompanyId(it.company_id);
-    if (it.position_text) {
-      const want = it.position_text.trim().toLowerCase();
-      const match = ctx?.positions.find((p) => p.name.trim().toLowerCase() === want);
-      if (match) setPositionId(match.id);
-    }
     setResults([]);
     setQ('');
   }, [ctx]);
@@ -182,7 +177,6 @@ export default function HrRegisterPage() {
           bank_account_no: bankNo.trim() || undefined,
           bank_name: bankName.trim() || undefined,
           company_id: ctx?.company_id || companyId || undefined,
-          position_id: positionId || undefined,
           pending_identity_id: picked?.id || undefined,
         }),
       });
@@ -235,7 +229,6 @@ export default function HrRegisterPage() {
           bank_account_no: bankNo.trim() || undefined,
           bank_name: bankName.trim() || undefined,
           company_id: ctx?.company_id || companyId || undefined,
-          position_id: positionId || undefined,
           pending_identity_id: picked?.id || undefined,
         }),
       });
@@ -489,25 +482,17 @@ export default function HrRegisterPage() {
           )}
         </div>
 
-        {/* Company (only if the link isn't company-scoped) + Position */}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {!ctx.company_id && (
-            <div>
-              <label className={label}>บริษัท</label>
-              <select className={input} value={companyId} onChange={(e) => setCompanyId(e.target.value)}>
-                <option value="">— เลือก —</option>
-                {ctx.companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </div>
-          )}
+        {/* Company (only if the link isn't company-scoped). Position/role are assigned by HR
+            after registration, so they're not collected here (owner ask 2026-07-24). */}
+        {!ctx.company_id && (
           <div>
-            <label className={label}>ตำแหน่ง</label>
-            <select className={input} value={positionId} onChange={(e) => setPositionId(e.target.value)}>
+            <label className={label}>บริษัท</label>
+            <select className={input} value={companyId} onChange={(e) => setCompanyId(e.target.value)}>
               <option value="">— เลือก —</option>
-              {ctx.positions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              {ctx.companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
-        </div>
+        )}
 
         {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</p>}
 
