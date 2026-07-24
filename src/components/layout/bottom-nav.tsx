@@ -12,6 +12,7 @@ import {
   UserCircle,
   Warehouse as WarehouseIcon,
   LayoutGrid,
+  HandCoins,
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { useAuthStore } from '@/stores/auth-store';
@@ -51,11 +52,23 @@ const staffNavItems: NavItem[] = [
   { labelKey: 'nav.guide', href: '/guide', icon: BookOpen, color: 'sky' },
 ];
 
-// technician (ช่าง) — ห้องงาน (รวมแจ้งซ่อม+งานประจำแล้ว) แชท ของฉัน คู่มือ
+// technician (ช่าง) — ห้องงาน (รวมแจ้งซ่อม+งานประจำแล้ว) แชท ของฉัน คู่มือ.
+// ALSO the no-deposit baseline for housekeeping / boh / not_assign (they have no
+// can_manage_deposit — the old fallback wrongly gave them the ฝาก/เบิก button).
 const technicianNavItems: NavItem[] = [
   { labelKey: 'nav.tasks', href: '/tasks', icon: ClipboardList, color: 'indigo' },
   { labelKey: 'nav.chat', href: '/chat', icon: MessageSquare, color: 'blue' },
   { labelKey: 'nav.me', href: '/me', icon: UserCircle, color: 'teal' },
+  { labelKey: 'nav.guide', href: '/guide', icon: BookOpen, color: 'sky' },
+];
+
+// cashier (AE) — คอมมิชชั่นคือเมนูงานเดียว + งานประจำ/แชท/คู่มือ. NO deposit button
+// (owner ask 2026-07-24: cashier must not see ฝากเหล้า — it lacks can_manage_deposit).
+const cashierNavItems: NavItem[] = [
+  { labelKey: 'nav.commission', href: '/commission', icon: HandCoins, color: 'amber' },
+  { labelKey: 'nav.tasks', href: '/tasks', icon: ClipboardList, color: 'indigo' },
+  { labelKey: 'nav.me', href: '/me', icon: UserCircle, color: 'teal', hideLabel: true },
+  { labelKey: 'nav.chat', href: '/chat', icon: MessageSquare, color: 'blue' },
   { labelKey: 'nav.guide', href: '/guide', icon: BookOpen, color: 'sky' },
 ];
 
@@ -83,9 +96,13 @@ export function BottomNav() {
     ? desktopRoleNavItems
     : user.role === 'technician'
       ? technicianNavItems
-      : user.role === 'bar' || user.role === 'head_bar'
-        ? barNavItems
-        : staffNavItems;
+      : user.role === 'cashier'
+        ? cashierNavItems
+        : user.role === 'bar' || user.role === 'head_bar'
+          ? barNavItems
+          : user.role === 'staff'
+            ? staffNavItems // only real staff has can_manage_deposit → keeps the ฝาก/เบิก button
+            : technicianNavItems; // housekeeping / boh / not_assign → baseline, no deposit
 
   const centerIndex = navItems.length === 5 ? 2 : -1;
 

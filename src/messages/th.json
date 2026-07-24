@@ -152,7 +152,8 @@
     "approve": "อนุมัติ",
     "selectStore": "เลือกสาขา",
     "tasks": "ห้องงาน",
-    "me": "ของฉัน"
+    "me": "ของฉัน",
+    "commission": "คอมมิชชั่น"
   },
   "modules": {
     "overview": {
@@ -2801,7 +2802,8 @@
       "offboarding": "การพ้นสภาพ",
       "today": "แดชบอร์ดวันนี้",
       "certificates": "หนังสือรับรอง",
-      "close": "ปิดยอดประจำเดือน"
+      "close": "ปิดยอดประจำเดือน",
+      "locations": "จุดลงเวลา (Geofence)"
     },
     "leaves": {
       "title": "ลางาน",

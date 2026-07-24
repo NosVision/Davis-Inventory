@@ -33,6 +33,7 @@ import {
   Building2,
   SlidersHorizontal,
   Archive,
+  MapPin,
   type LucideIcon,
 } from 'lucide-react';
 import { PageHeader } from '@/components/ui';
@@ -52,6 +53,7 @@ const NAV_TILES: { key: string; icon: LucideIcon; href?: string }[] = [
   { key: 'companies', icon: Building2, href: '/hr/companies' },
   { key: 'policySettings', icon: SlidersHorizontal, href: '/hr/policy-settings' },
   { key: 'attendance', icon: Clock, href: '/hr/attendance' },
+  { key: 'locations', icon: MapPin, href: '/hr/locations' },
   { key: 'schedule', icon: CalendarDays, href: '/hr/schedule' },
   { key: 'timesheet', icon: CalendarClock, href: '/hr/timesheet' },
   { key: 'swaps', icon: Repeat, href: '/hr/swaps' },

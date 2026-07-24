@@ -152,7 +152,8 @@
     "approve": "Approve",
     "selectStore": "Select branch",
     "tasks": "Tasks",
-    "me": "Me"
+    "me": "Me",
+    "commission": "Commission"
   },
   "modules": {
     "overview": {
@@ -2800,7 +2801,8 @@
       "offboarding": "Offboarding",
       "today": "Today",
       "certificates": "Certificates",
-      "close": "Monthly Close"
+      "close": "Monthly Close",
+      "locations": "Check-in points (Geofence)"
     },
     "leaves": {
       "title": "Leave",
