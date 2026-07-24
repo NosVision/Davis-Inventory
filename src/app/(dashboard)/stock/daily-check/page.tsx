@@ -44,7 +44,9 @@ interface CountEntry {
   notes: string;
 }
 
-const COUNT_ROLES = ['owner', 'accountant', 'manager', 'bar', 'head_bar'];
+// hq added 2026-07-23 (client report: HQ opened the stock menu but this page bounced them —
+// the module registry, RLS, and can_count_stock all already allowed hq; only this list didn't).
+const COUNT_ROLES = ['owner', 'accountant', 'manager', 'bar', 'head_bar', 'hq'];
 
 export default function DailyCheckPage() {
   const t = useTranslations('stock');
