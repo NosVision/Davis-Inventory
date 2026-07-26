@@ -16,15 +16,29 @@ async function verifyLogin(username: string, password: string): Promise<{ ok: bo
   return { ok: true, userId: data.user.id };
 }
 
-// Public HR self-registration (owner ask 2026-07-10). Token-gated, service-role. A new hire opens
-// the HR link, sets a username + password, matches an imported identity (or types name + bank),
-// picks a position/company, and the app creates their account (role 'not_assign') + hr_employees.
-// No session is required; the reusable link token is the only credential.
+// Public employee sign-up (owner ask 2026-07-10, unified 2026-07-27). Token-gated, service-role.
+// ONE flow serves BOTH link types — the form is identical, only the role differs:
+//   • kind 'hr'     (hr_registration_links, /register/…): role lands as 'not_assign', no store —
+//     HR verifies identity + assigns the role afterwards.
+//   • kind 'invite' (staff_invitations, /invite/…): the link pre-binds a role + store, so the
+//     account is usable the moment sign-up finishes.
+// Either way the hire sets username + password, matches an imported identity (or types name +
+// bank), picks a company, and the app creates their account + hr_employees.
 
 const USERNAME_RE = /^[a-z0-9_]+$/;
 const USED_COUNT_CAP = 1000; // runaway backstop for a leaked link
 
-type Link = { id: string; company_id: string | null; created_by: string | null; used_count: number };
+type Link = {
+  kind: 'hr' | 'invite';
+  id: string;
+  company_id: string | null;
+  created_by: string | null;
+  used_count: number;
+  // invite-only presets
+  role: string | null;
+  store_id: string | null;
+  store_name: string | null;
+};
 
 async function loadLink(service: ReturnType<typeof createServiceClient>, token: string): Promise<Link | null> {
   if (!token || token.length < 16 || token.length > 80) return null;
@@ -33,8 +47,46 @@ async function loadLink(service: ReturnType<typeof createServiceClient>, token: 
     .select('id, company_id, created_by, used_count, revoked_at, expires_at')
     .eq('token', token)
     .maybeSingle();
-  if (!data || data.revoked_at || new Date(data.expires_at as string).getTime() < Date.now()) return null;
-  return { id: data.id as string, company_id: (data.company_id as string | null) ?? null, created_by: (data.created_by as string | null) ?? null, used_count: Number(data.used_count) || 0 };
+  if (data && !data.revoked_at && new Date(data.expires_at as string).getTime() >= Date.now()) {
+    return {
+      kind: 'hr',
+      id: data.id as string,
+      company_id: (data.company_id as string | null) ?? null,
+      created_by: (data.created_by as string | null) ?? null,
+      used_count: Number(data.used_count) || 0,
+      role: null,
+      store_id: null,
+      store_name: null,
+    };
+  }
+
+  // Not an HR link → try an invitation token (role + store pre-bound).
+  const { data: inv } = await service
+    .from('staff_invitations')
+    .select('id, store_id, role, active, used_count, created_by, store:stores(store_name)')
+    .eq('token', token)
+    .maybeSingle();
+  if (!inv || !inv.active) return null;
+  const store = inv.store as unknown as { store_name?: string } | null;
+  return {
+    kind: 'invite',
+    id: inv.id as string,
+    company_id: null,
+    created_by: (inv.created_by as string | null) ?? null,
+    used_count: Number(inv.used_count) || 0,
+    role: (inv.role as string) ?? null,
+    store_id: (inv.store_id as string) ?? null,
+    store_name: store?.store_name ?? null,
+  };
+}
+
+// Bump the right counter for whichever link kind served this sign-up.
+async function bumpLinkUse(service: ReturnType<typeof createServiceClient>, link: Link): Promise<void> {
+  if (link.kind === 'invite') {
+    await service.from('staff_invitations').update({ used_count: link.used_count + 1 }).eq('id', link.id);
+  } else {
+    await service.from('hr_registration_links').update({ used_count: link.used_count + 1 }).eq('id', link.id);
+  }
 }
 
 async function usernameTaken(service: ReturnType<typeof createServiceClient>, username: string): Promise<boolean> {
@@ -87,6 +139,10 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     data: {
       valid: true,
+      kind: link.kind,
+      // invite links pre-bind these — the form shows them as fixed badges instead of pickers
+      invite_role: link.role,
+      store_name: link.store_name,
       company_id: link.company_id,
       company_name: companyName,
       companies: companiesRes.data ?? [],
@@ -191,10 +247,33 @@ export async function POST(request: NextRequest) {
         }
       }
     }
-    await service.from('hr_registration_links').update({ used_count: link.used_count + 1 }).eq('id', link.id);
+
+    // Invite link → also grant the pre-bound store, and apply the invite's role — but ONLY when
+    // the account is still 'not_assign'. An account that already holds a real role keeps it
+    // (a leaked invite link + own credentials must never work as a self-upgrade).
+    if (link.kind === 'invite') {
+      if (link.store_id) {
+        const { data: hasStore } = await service
+          .from('user_stores')
+          .select('user_id')
+          .eq('user_id', userId)
+          .eq('store_id', link.store_id)
+          .maybeSingle();
+        if (!hasStore) await service.from('user_stores').insert({ user_id: userId, store_id: link.store_id });
+      }
+      if (link.role) {
+        const { data: prof } = await service.from('profiles').select('role').eq('id', userId).maybeSingle();
+        if (prof?.role === 'not_assign') {
+          await service.from('profiles').update({ role: link.role }).eq('id', userId);
+        }
+      }
+    }
+
+    await bumpLinkUse(service, link);
     await service.from('audit_logs').insert({
       action_type: 'HR_SELF_LINKED', table_name: 'hr_employees', record_id: userId,
-      new_value: { username, full_name: fullName, via: 'hr_registration_link' }, changed_by: userId,
+      store_id: link.store_id,
+      new_value: { username, full_name: fullName, via: link.kind === 'invite' ? 'staff_invitation' : 'hr_registration_link' }, changed_by: userId,
     });
     return NextResponse.json({ data: { success: true, linked: true, username } });
   }
@@ -227,13 +306,15 @@ export async function POST(request: NextRequest) {
     if (!co) companyId = null;
   }
 
-  // 1. Create the auth account (email = username@stockmanager.app, like the invite flow).
+  // 1. Create the auth account (email = username@stockmanager.app). Role by link kind:
+  //    hr link → 'not_assign' (HR assigns later) · invite link → the role the link pre-binds.
+  const newRole = link.kind === 'invite' && link.role ? link.role : 'not_assign';
   const email = `${username}@stockmanager.app`;
   const { data: authData, error: authErr } = await service.auth.admin.createUser({
     email,
     password,
     email_confirm: true,
-    user_metadata: { username, role: 'not_assign' },
+    user_metadata: { username, role: newRole },
   });
   if (authErr || !authData?.user) {
     if (authErr?.message?.includes('already been registered')) {
@@ -246,8 +327,13 @@ export async function POST(request: NextRequest) {
   // 2. Finalize the profile (the trigger created a default row).
   await service
     .from('profiles')
-    .update({ username, role: 'not_assign', display_name: fullName, active: true })
+    .update({ username, role: newRole, display_name: fullName, active: true })
     .eq('id', userId);
+
+  // 2b. Invite link → grant the pre-bound store right away.
+  if (link.kind === 'invite' && link.store_id) {
+    await service.from('user_stores').insert({ user_id: userId, store_id: link.store_id });
+  }
 
   // 3. Create the linked hr_employees record (pending an HR role/salary review).
   const { data: newEmp, error: empErr } = await service
@@ -293,14 +379,25 @@ export async function POST(request: NextRequest) {
   }
 
   // 5. Bump the link's use count + audit.
-  await service.from('hr_registration_links').update({ used_count: link.used_count + 1 }).eq('id', link.id);
+  await bumpLinkUse(service, link);
   await service.from('audit_logs').insert({
-    action_type: 'HR_SELF_REGISTERED',
+    action_type: link.kind === 'invite' ? 'STAFF_INVITED_REGISTERED' : 'HR_SELF_REGISTERED',
     table_name: 'profiles',
     record_id: userId,
-    new_value: { username, full_name: fullName, company_id: companyId, position_id: positionId, via: 'hr_registration_link' },
+    store_id: link.store_id,
+    new_value: {
+      username,
+      full_name: fullName,
+      company_id: companyId,
+      position_id: positionId,
+      role: newRole,
+      via: link.kind === 'invite' ? 'staff_invitation' : 'hr_registration_link',
+    },
     changed_by: userId,
   });
 
-  return NextResponse.json({ data: { success: true, username } }, { status: 201 });
+  return NextResponse.json(
+    { data: { success: true, username, role: newRole, store_name: link.store_name } },
+    { status: 201 },
+  );
 }
