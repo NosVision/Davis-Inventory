@@ -32,6 +32,8 @@ import {
   KeyRound,
   Clock,
   Copy,
+  ClipboardCheck,
+  ArrowUpRight,
 } from 'lucide-react';
 
 function formatLastSignIn(iso: string | null): string {
@@ -101,6 +103,9 @@ export function UsersManager({ initialSearch }: { initialSearch?: string }) {
   const [filterRole, setFilterRole] = useState<string>('all');
   const [filterLinked, setFilterLinked] = useState<'all' | 'linked' | 'unlinked'>('all');
   const [linkedIds, setLinkedIds] = useState<Set<string>>(new Set());
+  // คิว "คำขอยืนยันตัวตน" (hr_pending_identities status=claimed) — same number the
+  // ยืนยันตัวตนพนักงาน page shows; the 4th summary card links there. Best-effort.
+  const [claimsPending, setClaimsPending] = useState<number | null>(null);
   const [roleEditUser, setRoleEditUser] = useState<UserProfile | null>(null);
   const [editRole, setEditRole] = useState<string>('staff');
   const [savingRole, setSavingRole] = useState(false);
@@ -151,6 +156,23 @@ export function UsersManager({ initialSearch }: { initialSearch?: string }) {
     loadUsers();
     loadStores();
   }, [loadUsers, loadStores]);
+
+  // Pending identity-claims count for the summary card (never blocks the list on failure).
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/hr/identity-claims');
+        const json = await res.json().catch(() => ({}));
+        if (alive && res.ok) setClaimsPending(Number(json.data?.counts?.claimed ?? 0));
+      } catch {
+        /* card shows "—" */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const handleCreateUser = async () => {
     if (!formUsername || !formPassword || !currentUser) return;
@@ -337,6 +359,67 @@ export function UsersManager({ initialSearch }: { initialSearch?: string }) {
           {t('addUser')}
         </Button>
       </div>
+
+      {/* Summary cards — 1-3 filter the list below; card 4 opens the identity-claims queue
+          (ยืนยันตัวตนพนักงาน) which is where claims get approved/rejected. */}
+      {(() => {
+        const linkedCount = users.filter((u) => linkedIds.has(u.id)).length;
+        const cardBase =
+          'flex items-center gap-3 rounded-xl border p-3 text-left transition-colors hover:border-indigo-300 dark:hover:border-indigo-700';
+        const cards: Array<{
+          key: 'all' | 'linked' | 'unlinked';
+          label: string;
+          value: number;
+          icon: typeof Users;
+          iconCls: string;
+        }> = [
+          { key: 'all', label: 'จำนวนทั้งหมด', value: users.length, icon: Users, iconCls: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400' },
+          { key: 'linked', label: 'ยืนยันตัวตนแล้ว', value: linkedCount, icon: UserCheck, iconCls: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' },
+          { key: 'unlinked', label: 'ยังไม่ยืนยันตัวตน', value: users.length - linkedCount, icon: UserX, iconCls: 'bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400' },
+        ];
+        return (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {cards.map(({ key, label, value, icon: Icon, iconCls }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setFilterLinked(key)}
+                className={cn(
+                  cardBase,
+                  filterLinked === key
+                    ? 'border-indigo-300 bg-indigo-50/50 ring-1 ring-indigo-200 dark:border-indigo-700 dark:bg-indigo-900/10 dark:ring-indigo-800'
+                    : 'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800'
+                )}
+              >
+                <span className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-lg', iconCls)}>
+                  <Icon className="h-4 w-4" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-[11px] font-medium text-gray-500 dark:text-gray-400">{label}</span>
+                  <span className="block text-xl font-bold tabular-nums text-gray-900 dark:text-white">{isLoading ? '…' : value}</span>
+                </span>
+              </button>
+            ))}
+            <Link
+              href="/hr/identity-claims"
+              className={cn(cardBase, 'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800')}
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-rose-50 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400">
+                <ClipboardCheck className="h-4 w-4" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-1 text-[11px] font-medium text-gray-500 dark:text-gray-400">
+                  <span className="truncate">คำขอยืนยันตัวตน</span>
+                  <ArrowUpRight className="h-3 w-3 shrink-0" />
+                </span>
+                <span className="block text-xl font-bold tabular-nums text-gray-900 dark:text-white">
+                  {claimsPending === null ? '—' : claimsPending}
+                </span>
+              </span>
+            </Link>
+          </div>
+        );
+      })()}
 
       {/* Search + Filters */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">

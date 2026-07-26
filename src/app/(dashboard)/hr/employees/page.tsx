@@ -533,9 +533,10 @@ export default function EmployeesPage() {
         <Select value={positionId} onChange={(e) => setPositionId(e.target.value)} placeholder={t('filter.position')} options={[{ value: '', label: t('filter.all') }, ...opt(positions)]} />
         <Select value={departmentId} onChange={(e) => setDepartmentId(e.target.value)} placeholder={t('filter.department')} options={[{ value: '', label: t('filter.all') }, ...opt(departments)]} />
         <Select value={payType} onChange={(e) => setPayType(e.target.value)} placeholder={t('filter.payType')} options={[{ value: '', label: t('filter.all') }, ...PAY_TYPES.map((p) => ({ value: p, label: t(`payType.${p}`) }))]} />
+        {/* สถานะ sits beside ประเภทการจ่าย in the same grid row on wide screens (owner ask 2026-07-27) */}
+        <Select value={status} onChange={(e) => setStatus(e.target.value)} placeholder={t('filter.status')} options={[{ value: '', label: t('filter.all') }, ...STATUSES.map((s) => ({ value: s, label: t(`status.${s}`) }))]} />
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <Select value={status} onChange={(e) => setStatus(e.target.value)} placeholder={t('filter.status')} className="max-w-[180px]" options={[{ value: '', label: t('filter.all') }, ...STATUSES.map((s) => ({ value: s, label: t(`status.${s}`) }))]} />
         <Button variant="ghost" size="sm" onClick={clearFilters}>
           {t('filter.clear')}
         </Button>
