@@ -6,9 +6,13 @@
  * Mirrors the manual "Upper House_INVENTORY" Excel sheet the owner used to
  * keep by hand. For one (store, date) shows every comparison row alongside
  * the recount, conclusion, responsible staff, attached penalty, remark and
- * HR-escalation flag — all editable inline. Pulls quota counts so the
- * owner can see who's close to the SOP's 12/month limit and ping the
- * store chat directly when someone crosses 7.
+ * HR-escalation flag — all editable inline.
+ *
+ * SOP numbers (monthly points / warning threshold / month fine total) come from
+ * /api/stock/penalties/summary — the SAME rollup the HQ page (/stock/penalties)
+ * reads — so the two surfaces can never disagree (client-side math kept only as
+ * a fallback while the API loads). Warnings are per STORE per month (default 7
+ * count-days), never per person.
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -34,6 +38,7 @@ import {
 import { sendChatBotMessage } from '@/lib/chat/bot-client';
 import { formatThaiDate, formatSignedQty, formatQty, formatNumber } from '@/lib/utils/format';
 import { businessDateBangkok } from '@/lib/utils/date';
+import { DEFAULT_WARNING_THRESHOLD } from '@/lib/stock/penalty-engine';
 import type { Comparison, Penalty, PenaltyCode } from '@/types/database';
 import {
   ArrowLeft,
@@ -55,8 +60,6 @@ import {
 // SOP target: same role set already gated for /stock/tracking. Manager
 // runs this every morning; owner + accountant + hq look in periodically.
 const REVIEW_ROLES = ['owner', 'accountant', 'manager', 'hq'];
-
-const QUOTA_WARN = 7;   // SOP threshold: 7 store OCCURRENCES/month → head_bar warning (owner 2026-07-09)
 
 interface StaffOption {
   id: string;
@@ -83,6 +86,14 @@ interface ViolationCount {
   staff_name: string;
   violations: number;
   total_amount: number;
+}
+
+// Canonical SOP rollup from /api/stock/penalties/summary — same source as /stock/penalties,
+// so the banner here and the HQ hero always show identical numbers for the same month.
+interface SopSummary {
+  points: number;
+  threshold: number;
+  moneyBaht: number;
 }
 
 export default function OwnerReviewPage() {
@@ -113,6 +124,7 @@ export default function OwnerReviewPage() {
   const [staff, setStaff] = useState<StaffOption[]>([]);
   const [codes, setCodes] = useState<PenaltyCode[]>([]);
   const [violations, setViolations] = useState<ViolationCount[]>([]);
+  const [sopSummary, setSopSummary] = useState<SopSummary | null>(null);
   const [lastTuesdayTransfer, setLastTuesdayTransfer] = useState<{
     tuesday: string;
     transferred_at: string | null;
@@ -179,6 +191,9 @@ export default function OwnerReviewPage() {
   const penaltyByComparison = useMemo(() => {
     const m = new Map<string, PenaltyRow>();
     for (const p of penalties) {
+      // Skip voided rows — after HQ cancels on /stock/penalties the row must show the
+      // "ออกโทษ" button again (the server-side idempotency guard ignores cancelled too).
+      if (p.status === 'cancelled') continue;
       if (p.comparison_id) m.set(p.comparison_id, p);
     }
     return m;
@@ -188,7 +203,7 @@ export default function OwnerReviewPage() {
   // shortcuts → individual people grouped by role with role headers so the
   // bar list and staff list are visually separated.
   const responsibleOptions = useMemo(() => {
-    const bar = staff.filter((s) => s.role === 'bar');
+    const bar = staff.filter((s) => s.role === 'bar' || s.role === 'head_bar');
     const others = staff.filter((s) => s.role === 'staff');
     const opts: Array<{ value: string; label: string; disabled?: boolean }> = [
       { value: '', label: '— เลือก —' },
@@ -259,19 +274,30 @@ export default function OwnerReviewPage() {
   // sees one big number ("เดือนนี้บันทึกความผิดไปแล้ว N ครั้ง") regardless
   // of who got dinged. Excludes EXP-01 (those rows already have included_in_quota=false).
   const storeMonthTotals = useMemo(() => {
-    // Count OCCURRENCES per COUNT-DAY (one business_date = one, regardless of products/people/clicks)
-    // — matches v_store_monthly_sop_count + the weekly money escalation, so this equals what fires
-    // the head_bar warning at 7. Legacy rows with no business_date fall back to batch_id then id.
+    // FALLBACK ONLY (shown until /api/stock/penalties/summary responds) — mirrors the API's
+    // formulas exactly so the banner never jumps when the canonical numbers arrive:
+    //   • count  = OCCURRENCES per COUNT-DAY among quota rows (v_store_monthly_sop_count);
+    //     legacy rows with no business_date fall back to batch_id then id.
+    //   • amount = EVERY non-cancelled fine (amount > 0) INCLUDING non-quota codes like
+    //     EXP-01 — same as the HQ money tiles, which is why quota is not checked for money.
     const occ = new Set<string>();
     let amount = 0;
     for (const p of penalties) {
-      if (!p.included_in_quota || p.status === 'cancelled') continue;
+      if (p.status === 'cancelled') continue;
+      if (Number(p.amount || 0) > 0) amount += Number(p.amount || 0);
+      if (!p.included_in_quota) continue;
       const row = p as { business_date?: string | null; batch_id?: string | null };
       occ.add(row.business_date ?? row.batch_id ?? p.id);
-      amount += Number(p.amount || 0);
     }
     return { count: occ.size, amount };
   }, [penalties]);
+
+  // Canonical numbers for the banner — API first (same source as /stock/penalties), fallback
+  // to the client math above while loading. Threshold comes from hr_policy_settings via the
+  // API (configurable), never hardcoded here.
+  const sopPoints = sopSummary?.points ?? storeMonthTotals.count;
+  const sopThreshold = sopSummary?.threshold ?? DEFAULT_WARNING_THRESHOLD;
+  const sopMoney = sopSummary?.moneyBaht ?? storeMonthTotals.amount;
 
   // ────────────────────────────────────────────────────────────────────────
   // Data loading
@@ -299,11 +325,13 @@ export default function OwnerReviewPage() {
     // small instead of dumping the whole org. We further filter to the
     // two roles that physically count stock — owners/managers should
     // never appear under "ผู้รับผิดชอบ" because they don't pour drinks.
+    // bar + head_bar + staff — the engine's "Bar ทุกคน" expands to bar AND head_bar (per spec),
+    // so the individual dropdown must reach head_bar too or their penalty rows show as "—".
     const staffPromise = supabase
       .from('user_stores')
       .select('user_id, profiles!inner(id, username, display_name, active, role)')
       .eq('store_id', currentStoreId)
-      .in('profiles.role', ['staff', 'bar']);
+      .in('profiles.role', ['staff', 'bar', 'head_bar']);
 
     const codesPromise = supabase
       .from('penalty_codes')
@@ -339,6 +367,18 @@ export default function OwnerReviewPage() {
       .eq('id', currentStoreId)
       .maybeSingle();
 
+    // Canonical SOP rollup — the SAME endpoint /stock/penalties reads, for the month being
+    // reviewed. Best-effort: a failure leaves sopSummary null and the client fallback shows.
+    const summaryPromise = fetch(
+      `/api/stock/penalties/summary?store_id=${encodeURIComponent(currentStoreId)}&month=${monthYear}`,
+    )
+      .then(async (res) => (res.ok ? ((await res.json()) as {
+        sop_points: number;
+        threshold: number;
+        money?: Record<'pending' | 'sent_hr' | 'deducted', { count: number; baht: number }>;
+      }) : null))
+      .catch(() => null);
+
     const [
       compRes,
       staffRes,
@@ -346,6 +386,7 @@ export default function OwnerReviewPage() {
       penRes,
       transferRes,
       storeRes,
+      summaryRes,
     ] = await Promise.all([
       compPromise,
       staffPromise,
@@ -353,7 +394,21 @@ export default function OwnerReviewPage() {
       penaltiesPromise,
       transferPromise,
       storePromise,
+      summaryPromise,
     ]);
+
+    setSopSummary(
+      summaryRes
+        ? {
+            points: summaryRes.sop_points ?? 0,
+            threshold: summaryRes.threshold ?? DEFAULT_WARNING_THRESHOLD,
+            moneyBaht:
+              (summaryRes.money?.pending.baht ?? 0) +
+              (summaryRes.money?.sent_hr.baht ?? 0) +
+              (summaryRes.money?.deducted.baht ?? 0),
+          }
+        : null,
+    );
 
     if (storeRes.data?.store_name) setStoreName(storeRes.data.store_name);
 
@@ -380,7 +435,9 @@ export default function OwnerReviewPage() {
       });
     }
     staffList.sort((a, b) => {
-      if (a.role !== b.role) return a.role === 'bar' ? -1 : 1;
+      // bar + head_bar group first (they count stock), then staff; alphabetical within group.
+      const grp = (r: string) => (r === 'staff' ? 1 : 0);
+      if (grp(a.role) !== grp(b.role)) return grp(a.role) - grp(b.role);
       return (a.display_name || a.username).localeCompare(
         b.display_name || b.username,
         'th',
@@ -575,30 +632,63 @@ export default function OwnerReviewPage() {
     // to whoever was on shift the counted business date, and crossing the monthly SOP threshold
     // alerts HQ / warns the head_bar. A-02 amount is auto → send null; other codes send the entry.
     const amountToSend = code.code === 'A-02' ? null : penaltyModal.amount ? Number(penaltyModal.amount) : null;
-    const res = await fetch('/api/stock/penalties', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        store_id: currentStoreId,
-        code: code.code,
-        staff_id: penaltyModal.staffId,
-        comparison_id: penaltyModal.comparison?.id || null,
-        amount: amountToSend,
-        notes: penaltyModal.notes || null,
-        business_date: penaltyModal.businessDate || null,
-      }),
-    });
-    const json = (await res.json().catch(() => ({}))) as {
+    const postPenalty = (confirmAll: boolean) =>
+      fetch('/api/stock/penalties', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          store_id: currentStoreId,
+          code: code.code,
+          staff_id: penaltyModal.staffId,
+          comparison_id: penaltyModal.comparison?.id || null,
+          amount: amountToSend,
+          notes: penaltyModal.notes || null,
+          business_date: penaltyModal.businessDate || null,
+          confirm_all: confirmAll,
+        }),
+      });
+
+    type PenaltyPostResponse = {
       error?: string;
+      code?: string;
+      role_member_count?: number;
       created?: Penalty[];
       week_seq?: number | null;
       amount?: number | null;
       sop_points?: number;
+      threshold?: number;
       warning?: { issued?: boolean };
     };
+    let res = await postPenalty(false);
+    let json = (await res.json().catch(() => ({}))) as PenaltyPostResponse;
+
+    // Group charge but no schedule/check-in data for that business date → the engine refuses to
+    // blanket the whole role unless HQ confirms. Offer that confirmation instead of dead-ending.
+    if (res.status === 422 && json.code === 'no_shift_data') {
+      const ok = window.confirm(
+        `ไม่พบข้อมูลกะ/การเช็คอินของวันที่ถูกตรวจ\n\n` +
+          `ยืนยันปรับทั้งกลุ่ม (${json.role_member_count ?? '?'} คน) เลยไหม?\n` +
+          `ถ้าไม่แน่ใจ กด "ยกเลิก" แล้วเลือกพนักงานรายคนแทน`,
+      );
+      if (!ok) return;
+      res = await postPenalty(true);
+      json = (await res.json().catch(() => ({}))) as PenaltyPostResponse;
+    }
     if (!res.ok) {
       toast({ type: 'error', title: 'บันทึกล้มเหลว', message: json.error || '' });
       return;
+    }
+
+    // Keep the banner in sync with the canonical rollup the server just recomputed. The route
+    // returns sop_points=0 for non-quota codes (EXP-01) — those must NOT clobber the real total,
+    // but their fine still adds to the month's money.
+    {
+      const createdBaht = (json.created ?? []).reduce((s, p) => s + Number(p.amount || 0), 0);
+      setSopSummary((prev) => ({
+        points: code.included_in_quota && json.sop_points !== undefined ? json.sop_points : prev?.points ?? 0,
+        threshold: json.threshold ?? prev?.threshold ?? DEFAULT_WARNING_THRESHOLD,
+        moneyBaht: (prev?.moneyBaht ?? 0) + createdBaht,
+      }));
     }
 
     const newRows: PenaltyRow[] = (json.created ?? []).map((p) => ({
@@ -698,7 +788,7 @@ export default function OwnerReviewPage() {
           staff_name: v.staff_name,
           violations: v.violations,
           total_amount: v.total_amount,
-          level: v.violations >= QUOTA_WARN ? 'warn' : 'normal',
+          level: v.violations >= sopThreshold ? 'warn' : 'normal',
         })),
         // Use the same showAll-filtered list the screen uses so the PDF
         // matches what the owner sees on screen at print time.
@@ -731,6 +821,9 @@ export default function OwnerReviewPage() {
     }
   };
 
+  // Two separate numbers, clearly labeled: the STORE's SOP points vs the threshold (what
+  // actually triggers the head_bar warning), plus this person's own count as supporting
+  // context — never compare a per-person count against the per-store threshold.
   const handleSendQuotaAlert = (v: ViolationCount) => {
     if (!currentStoreId) return;
     const name = storeName || 'สาขา';
@@ -738,9 +831,9 @@ export default function OwnerReviewPage() {
       storeId: currentStoreId,
       type: 'system',
       content:
-        `⚠️ แจ้งเตือนหัวหน้าบาร์ ${name} — ${v.staff_name} มีความผิดสะสม ${v.violations} ครั้ง ` +
-        `ในเดือน ${monthYearLabel} (เกณฑ์ร้าน ${QUOTA_WARN} ครั้ง/เดือน) ` +
-        `กรุณาตรวจสอบและออกใบเตือนตาม SOP`,
+        `⚠️ แจ้งเตือนหัวหน้าบาร์ ${name} — แต้มความผิดร้านเดือน ${monthYearLabel} รวม ${sopPoints}/${sopThreshold} ครั้ง ` +
+        `(ครบ ${sopThreshold} = ใบเตือนหัวหน้าบาร์) · ${v.staff_name} ถูกบันทึก ${v.violations} ครั้ง ` +
+        `กรุณาตรวจสอบและกำชับทีมตาม SOP`,
     });
     toast({ type: 'success', title: 'ส่งแจ้งเตือนเข้าแชทสาขาแล้ว' });
   };
@@ -852,7 +945,7 @@ export default function OwnerReviewPage() {
       <div
         className={cn(
           'flex flex-wrap items-center gap-3 rounded-xl px-4 py-3',
-          storeMonthTotals.count >= QUOTA_WARN
+          sopPoints >= sopThreshold
             ? 'bg-red-50 ring-1 ring-red-200 dark:bg-red-900/20 dark:ring-red-800'
             : 'bg-indigo-50 ring-1 ring-indigo-200 dark:bg-indigo-900/20 dark:ring-indigo-800',
         )}
@@ -864,19 +957,19 @@ export default function OwnerReviewPage() {
           </p>
           <p className="text-base font-bold text-gray-900 dark:text-white">
             ความผิดร้านเดือนนี้{' '}
-            <span className="tabular-nums">{storeMonthTotals.count}</span>
-            <span className="text-sm font-medium text-gray-400"> / {QUOTA_WARN}</span> ครั้ง
-            {storeMonthTotals.amount > 0 && (
+            <span className="tabular-nums">{sopPoints}</span>
+            <span className="text-sm font-medium text-gray-400"> / {sopThreshold}</span> ครั้ง
+            {sopMoney > 0 && (
               <span className="ml-2 text-sm font-medium text-gray-600 dark:text-gray-300">
-                (ค่าปรับสะสม {formatNumber(storeMonthTotals.amount)} บาท)
+                (ค่าปรับสะสม {formatNumber(sopMoney)} บาท)
               </span>
             )}
           </p>
         </div>
-        <Badge variant={storeMonthTotals.count >= QUOTA_WARN ? 'danger' : 'info'}>
-          {storeMonthTotals.count >= QUOTA_WARN
-            ? `≥ ${QUOTA_WARN} — ออกใบเตือนหัวหน้าบาร์`
-            : `ยังไม่ถึง ${QUOTA_WARN}`}
+        <Badge variant={sopPoints >= sopThreshold ? 'danger' : 'info'}>
+          {sopPoints >= sopThreshold
+            ? `≥ ${sopThreshold} — ออกใบเตือนหัวหน้าบาร์`
+            : `ยังไม่ถึง ${sopThreshold}`}
         </Badge>
       </div>
 
@@ -938,7 +1031,7 @@ export default function OwnerReviewPage() {
           <CardHeader title={`ความผิดรายคน — เดือน ${monthYearLabel}`} />
           <CardContent>
             <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
-              จำนวนครั้งที่แต่ละคนถูกบันทึก (ไว้ดูประกอบ) — เกณฑ์ออกใบเตือนนับ &ldquo;รวมทั้งร้าน&rdquo; ที่ {QUOTA_WARN} ครั้ง/เดือน
+              จำนวนครั้งที่แต่ละคนถูกบันทึก (ไว้ดูประกอบ) — เกณฑ์ออกใบเตือนนับ &ldquo;รวมทั้งร้าน&rdquo; ที่ {sopThreshold} ครั้ง/เดือน
             </p>
             <div className="space-y-2">
               {violations.map((v) => (
@@ -1136,7 +1229,7 @@ export default function OwnerReviewPage() {
             </p>
             {filterMode !== 'all' && (
               <p className="mt-1 text-xs text-gray-400">
-                เลือก "ทั้งหมด" ด้านบนเพื่อดูรายการอื่น
+                เลือก &ldquo;ทั้งหมด&rdquo; ด้านบนเพื่อดูรายการอื่น
               </p>
             )}
           </div>
@@ -1456,7 +1549,11 @@ export default function OwnerReviewPage() {
                   prev && {
                     ...prev,
                     code: e.target.value,
-                    amount: code?.default_amount ? String(code.default_amount) : '',
+                    // A-02 → engine-computed, keep blank; others prefill the code default.
+                    amount:
+                      e.target.value !== 'A-02' && code?.default_amount
+                        ? String(code.default_amount)
+                        : '',
                   },
                 );
               }}
@@ -1472,15 +1569,24 @@ export default function OwnerReviewPage() {
                 setPenaltyModal((prev) => prev && { ...prev, staffId: e.target.value })
               }
             />
-            <Input
-              type="number"
-              step="0.01"
-              label="ค่าปรับ (บาท) — เว้นว่างถ้าไม่ใช่หักเงิน"
-              value={penaltyModal.amount}
-              onChange={(e) =>
-                setPenaltyModal((prev) => prev && { ...prev, amount: e.target.value })
-              }
-            />
+            {penaltyModal.code === 'A-02' ? (
+              // A-02 money is computed by the weekly escalation engine (ครั้งที่ 1/2/3 ของ
+              // สัปดาห์ = ฟรี/300/500) — typing a number here used to be silently ignored,
+              // so show the rule instead of an editable field.
+              <div className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:bg-gray-700/50 dark:text-gray-300">
+                💰 ค่าปรับ A-02 ระบบคำนวณอัตโนมัติตามครั้งของสัปดาห์ (จ–อา): ครั้งที่ 1 ไม่หัก · ครั้งที่ 2 ฿300 · ครั้งที่ 3 ฿500
+              </div>
+            ) : (
+              <Input
+                type="number"
+                step="0.01"
+                label="ค่าปรับ (บาท) — เว้นว่างถ้าไม่ใช่หักเงิน"
+                value={penaltyModal.amount}
+                onChange={(e) =>
+                  setPenaltyModal((prev) => prev && { ...prev, amount: e.target.value })
+                }
+              />
+            )}
             <Textarea
               label="โน๊ต"
               value={penaltyModal.notes}
