@@ -86,16 +86,23 @@ export default function EmployeesPage() {
   // accounts tab when the detail modal jumps to a specific username.
   const [tab, setTab] = useState<PeopleTab>('employees');
   const [accountsSeed, setAccountsSeed] = useState('');
+  // ?view=claims opens the accounts tab straight into the merged identity-claims workflow
+  // (formerly /hr/identity-claims — hub badge chips and old links land here).
+  const [accountsClaims, setAccountsClaims] = useState(false);
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
     const tp = p.get('tab');
     if (tp === 'accounts' || tp === 'links') {
-      if (tp === 'accounts') setAccountsSeed(p.get('q') ?? '');
+      if (tp === 'accounts') {
+        setAccountsSeed(p.get('q') ?? '');
+        setAccountsClaims(p.get('view') === 'claims');
+      }
       setTab(tp);
     }
   }, []);
   const switchTab = (next: PeopleTab, seed = '') => {
     setAccountsSeed(seed);
+    setAccountsClaims(false);
     setTab(next);
     const qs =
       next === 'accounts' ? `?tab=accounts${seed ? `&q=${encodeURIComponent(seed)}` : ''}`
@@ -514,7 +521,13 @@ export default function EmployeesPage() {
         ))}
       </div>
 
-      {tab === 'accounts' && <UsersManager key={accountsSeed || 'accounts'} initialSearch={accountsSeed} />}
+      {tab === 'accounts' && (
+        <UsersManager
+          key={accountsSeed || (accountsClaims ? 'claims' : 'accounts')}
+          initialSearch={accountsSeed}
+          initialShowClaims={accountsClaims}
+        />
+      )}
 
       {tab === 'links' && <InviteLinksManager />}
 

@@ -28,7 +28,6 @@ import {
   FileText,
   UserCog,
   UserMinus,
-  UserCheck2,
   Network,
   Building2,
   SlidersHorizontal,
@@ -45,10 +44,10 @@ import { PageHeader } from '@/components/ui';
 const NAV_TILES: { key: string; icon: LucideIcon; href?: string }[] = [
   { key: 'close', icon: CalendarCheck, href: '/hr/close' },
   { key: 'today', icon: LayoutDashboard, href: '/hr/dashboard' },
-  // "ผู้ใช้ในระบบ" merged into the employees surface (2026-07-27) — accounts live on
-  // /hr/employees?tab=accounts, so ONE tile covers both the person and their login.
+  // "ผู้ใช้ในระบบ" + "ยืนยันตัวตนพนักงาน" merged into the employees surface (2026-07-27) —
+  // accounts live on /hr/employees?tab=accounts, the identity-claims queue behind its
+  // คำขอยืนยันตัวตน card (?view=claims). ONE tile covers the person, their login, and claims.
   { key: 'employees', icon: Users, href: '/hr/employees' },
-  { key: 'identityClaims', icon: UserCheck2, href: '/hr/identity-claims' },
   { key: 'org', icon: Briefcase, href: '/hr/org' },
   { key: 'orgChart', icon: Network, href: '/hr/org-chart' },
   { key: 'companies', icon: Building2, href: '/hr/companies' },
@@ -92,9 +91,11 @@ const BADGE_KEYS = [
   'identityClaims',
 ] as const;
 
-const HREF_BY_KEY: Record<string, string | undefined> = Object.fromEntries(
-  NAV_TILES.map((tile) => [tile.key, tile.href])
-);
+const HREF_BY_KEY: Record<string, string | undefined> = {
+  ...Object.fromEntries(NAV_TILES.map((tile) => [tile.key, tile.href])),
+  // identity-claims merged into the accounts tab — its "needs action" chip deep-links there.
+  identityClaims: '/hr/employees?tab=accounts&view=claims',
+};
 
 export default function HrDashboardPage() {
   const t = useTranslations('hr');
@@ -134,13 +135,21 @@ export default function HrDashboardPage() {
   );
   const total = pending.reduce((s, p) => s + p.count, 0);
 
+  // Tile badges — identity-claims merged into the employees surface, so its count rides on the
+  // employees tile (the standalone tile is gone; the summary chip still deep-links to the queue).
+  const tileBadges = useMemo(() => {
+    const t: Record<string, number> = { ...badges };
+    t.employees = (t.employees ?? 0) + (t.identityClaims ?? 0);
+    return t;
+  }, [badges]);
+
   // Tiles with something pending float to the top (keeping their relative order); the rest stay
   // in the normal layout. If nothing is pending, the order is unchanged.
   const orderedTiles = useMemo(() => {
-    const withBadge = NAV_TILES.filter((tile) => (badges[tile.key] ?? 0) > 0);
-    const rest = NAV_TILES.filter((tile) => (badges[tile.key] ?? 0) === 0);
+    const withBadge = NAV_TILES.filter((tile) => (tileBadges[tile.key] ?? 0) > 0);
+    const rest = NAV_TILES.filter((tile) => (tileBadges[tile.key] ?? 0) === 0);
     return [...withBadge, ...rest];
-  }, [badges]);
+  }, [tileBadges]);
 
   return (
     <div className="mx-auto max-w-5xl space-y-4 p-4">
@@ -186,7 +195,7 @@ export default function HrDashboardPage() {
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         {orderedTiles.map(({ key, icon: Icon, href }) => {
-          const count = badges[key] ?? 0;
+          const count = tileBadges[key] ?? 0;
           const flagged = count > 0;
           const inner = (
             <>

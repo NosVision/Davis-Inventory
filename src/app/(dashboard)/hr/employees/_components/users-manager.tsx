@@ -33,8 +33,8 @@ import {
   Clock,
   Copy,
   ClipboardCheck,
-  ArrowUpRight,
 } from 'lucide-react';
+import { IdentityClaimsManager } from './identity-claims-manager';
 
 function formatLastSignIn(iso: string | null): string {
   if (!iso) return 'ยังไม่เคยเข้าใช้';
@@ -88,7 +88,14 @@ const roleBadgeVariants: Record<string, 'info' | 'success' | 'warning' | 'danger
  * profiles.role = "สิทธิ์ระบบ (Role)" — what the account can open in the app — NEVER "ตำแหน่ง",
  * which is reserved for the HR job position (hr_positions).
  */
-export function UsersManager({ initialSearch }: { initialSearch?: string }) {
+export function UsersManager({
+  initialSearch,
+  initialShowClaims,
+}: {
+  initialSearch?: string;
+  /** Open with the คำขอยืนยันตัวตน (identity-claims) view active — deep link ?view=claims. */
+  initialShowClaims?: boolean;
+}) {
   const { user: currentUser } = useAuthStore();
   const t = useTranslations('users');
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -103,9 +110,11 @@ export function UsersManager({ initialSearch }: { initialSearch?: string }) {
   const [filterRole, setFilterRole] = useState<string>('all');
   const [filterLinked, setFilterLinked] = useState<'all' | 'linked' | 'unlinked'>('all');
   const [linkedIds, setLinkedIds] = useState<Set<string>>(new Set());
-  // คิว "คำขอยืนยันตัวตน" (hr_pending_identities status=claimed) — same number the
-  // ยืนยันตัวตนพนักงาน page shows; the 4th summary card links there. Best-effort.
+  // คิว "คำขอยืนยันตัวตน" (hr_pending_identities status=claimed). The 4th summary card
+  // switches this tab into the identity-claims workflow (merged from /hr/identity-claims,
+  // owner ask 2026-07-27). Count is best-effort.
   const [claimsPending, setClaimsPending] = useState<number | null>(null);
+  const [showClaims, setShowClaims] = useState(!!initialShowClaims);
   const [roleEditUser, setRoleEditUser] = useState<UserProfile | null>(null);
   const [editRole, setEditRole] = useState<string>('staff');
   const [savingRole, setSavingRole] = useState(false);
@@ -158,21 +167,18 @@ export function UsersManager({ initialSearch }: { initialSearch?: string }) {
   }, [loadUsers, loadStores]);
 
   // Pending identity-claims count for the summary card (never blocks the list on failure).
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const res = await fetch('/api/hr/identity-claims');
-        const json = await res.json().catch(() => ({}));
-        if (alive && res.ok) setClaimsPending(Number(json.data?.counts?.claimed ?? 0));
-      } catch {
-        /* card shows "—" */
-      }
-    })();
-    return () => {
-      alive = false;
-    };
+  const loadClaimsCount = useCallback(async () => {
+    try {
+      const res = await fetch('/api/hr/identity-claims');
+      const json = await res.json().catch(() => ({}));
+      if (res.ok) setClaimsPending(Number(json.data?.counts?.claimed ?? 0));
+    } catch {
+      /* card shows "—" */
+    }
   }, []);
+  useEffect(() => {
+    loadClaimsCount();
+  }, [loadClaimsCount]);
 
   const handleCreateUser = async () => {
     if (!formUsername || !formPassword || !currentUser) return;
@@ -383,10 +389,13 @@ export function UsersManager({ initialSearch }: { initialSearch?: string }) {
               <button
                 key={key}
                 type="button"
-                onClick={() => setFilterLinked(key)}
+                onClick={() => {
+                  setShowClaims(false);
+                  setFilterLinked(key);
+                }}
                 className={cn(
                   cardBase,
-                  filterLinked === key
+                  !showClaims && filterLinked === key
                     ? 'border-indigo-300 bg-indigo-50/50 ring-1 ring-indigo-200 dark:border-indigo-700 dark:bg-indigo-900/10 dark:ring-indigo-800'
                     : 'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800'
                 )}
@@ -400,26 +409,44 @@ export function UsersManager({ initialSearch }: { initialSearch?: string }) {
                 </span>
               </button>
             ))}
-            <Link
-              href="/hr/identity-claims"
-              className={cn(cardBase, 'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800')}
+            {/* คำขอยืนยันตัวตน — switches this tab into the merged identity-claims workflow */}
+            <button
+              type="button"
+              onClick={() => setShowClaims(true)}
+              className={cn(
+                cardBase,
+                showClaims
+                  ? 'border-rose-300 bg-rose-50/50 ring-1 ring-rose-200 dark:border-rose-700 dark:bg-rose-900/10 dark:ring-rose-800'
+                  : 'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800'
+              )}
             >
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-rose-50 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400">
                 <ClipboardCheck className="h-4 w-4" />
               </span>
-              <span className="min-w-0 flex-1">
-                <span className="flex items-center gap-1 text-[11px] font-medium text-gray-500 dark:text-gray-400">
-                  <span className="truncate">คำขอยืนยันตัวตน</span>
-                  <ArrowUpRight className="h-3 w-3 shrink-0" />
-                </span>
+              <span className="min-w-0">
+                <span className="block truncate text-[11px] font-medium text-gray-500 dark:text-gray-400">คำขอยืนยันตัวตน</span>
                 <span className="block text-xl font-bold tabular-nums text-gray-900 dark:text-white">
                   {claimsPending === null ? '—' : claimsPending}
                 </span>
               </span>
-            </Link>
+            </button>
           </div>
         );
       })()}
+
+      {/* คำขอยืนยันตัวตน view — the full review workflow, merged from /hr/identity-claims.
+          Approvals link a profile ↔ employee, so refresh the list + counters afterwards. */}
+      {showClaims && (
+        <IdentityClaimsManager
+          onChanged={() => {
+            loadUsers();
+            loadClaimsCount();
+          }}
+        />
+      )}
+
+      {!showClaims && (
+      <>
 
       {/* Search + Filters */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -607,6 +634,8 @@ export function UsersManager({ initialSearch }: { initialSearch?: string }) {
             </Card>
           ))}
         </div>
+      )}
+      </>
       )}
 
       {/* Create User Modal */}
