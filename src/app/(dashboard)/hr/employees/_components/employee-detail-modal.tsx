@@ -167,7 +167,7 @@ export function EmployeeDetailModal({
             <div>
               <dt className="text-xs text-gray-400 dark:text-gray-500">{t('detail.systemRole')}</dt>
               <dd className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                <Badge variant="outline" size="sm">
+                <Badge variant={detail.profile?.role === 'not_assign' ? 'warning' : 'outline'} size="sm">
                   <span className="inline-flex items-center gap-1">
                     <Shield className="h-3 w-3" />
                     {detail.profile?.role ? ROLE_LABELS[detail.profile.role as UserRole] || detail.profile.role : '—'}

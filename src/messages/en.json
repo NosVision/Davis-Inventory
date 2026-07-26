@@ -4184,6 +4184,8 @@
       "tabEmployees": "Employees",
       "tabAccounts": "User accounts & system roles",
       "tabAccountsSubtitle": "Login accounts, system roles, and branch access",
+      "tabLinks": "Onboarding links",
+      "tabLinksSubtitle": "Self-register & invite links — two different types, pick what fits",
       "add": "Add employee",
       "searchPlaceholder": "Search name or employee code",
       "empty": "No employees found",
@@ -4332,7 +4334,6 @@
       "history": {
         "action": "Change history"
       },
-      "regLink": "Registration link",
       "payHistory": {
         "action": "Pay history (imported)"
       },

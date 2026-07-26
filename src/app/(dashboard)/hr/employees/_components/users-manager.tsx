@@ -29,7 +29,6 @@ import {
   UserCog,
   UserX,
   Store,
-  Mail,
   KeyRound,
   Clock,
   Copy,
@@ -77,6 +76,8 @@ const roleBadgeVariants: Record<string, 'info' | 'success' | 'warning' | 'danger
   head_bar: 'success',
   staff: 'default',
   customer: 'default',
+  // เหลือง = ยังไม่ได้กำหนดสิทธิ์ — สะดุดตาให้ HR รีบจัดการ (owner ask 2026-07-27)
+  not_assign: 'warning',
 };
 
 /**
@@ -312,7 +313,7 @@ export function UsersManager({ initialSearch }: { initialSearch?: string }) {
     return true;
   });
 
-  const FILTERABLE_ROLES: UserRole[] = ['owner', 'accountant', 'manager', 'bar', 'head_bar', 'technician', 'staff', 'hq', 'hr', 'cashier', 'housekeeping_staff', 'boh_staff'];
+  const FILTERABLE_ROLES: UserRole[] = ['owner', 'accountant', 'manager', 'bar', 'head_bar', 'technician', 'staff', 'hq', 'hr', 'cashier', 'housekeeping_staff', 'boh_staff', 'not_assign'];
   // Owner + HR may administer users; only the OWNER keeps the permissions editor.
   const isOwner = currentUser?.role === 'owner';
   // HR may administer every account except owner accounts (owner ask 2026-07-23:
@@ -328,19 +329,13 @@ export function UsersManager({ initialSearch }: { initialSearch?: string }) {
 
   return (
     <div className="space-y-6">
-      {/* Toolbar — the page header/tabs live on /hr/employees; this is the tab's own action row */}
+      {/* Toolbar — the page header/tabs live on /hr/employees; this is the tab's own action row.
+          (ลิงก์เชิญ moved to the ลิงก์รับพนักงาน tab, 2026-07-27.) */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-gray-500 dark:text-gray-400">{t('subtitle')}</p>
-        <div className="flex flex-wrap items-center gap-2">
-          <Link href="/users/invitations">
-            <Button variant="outline" icon={<Mail className="h-4 w-4" />}>
-              จัดการลิงก์เชิญ
-            </Button>
-          </Link>
-          <Button icon={<Plus className="h-4 w-4" />} onClick={() => setShowCreateModal(true)}>
-            {t('addUser')}
-          </Button>
-        </div>
+        <Button icon={<Plus className="h-4 w-4" />} onClick={() => setShowCreateModal(true)}>
+          {t('addUser')}
+        </Button>
       </div>
 
       {/* Search + Filters */}

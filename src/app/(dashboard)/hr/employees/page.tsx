@@ -13,8 +13,8 @@ import { TransferModal } from './_components/transfer-modal';
 import { EmployeeHistoryModal } from './_components/employee-history-modal';
 import { EmployeePayHistoryModal } from './_components/employee-pay-history-modal';
 import { EmployeeDetailModal } from './_components/employee-detail-modal';
-import { RegistrationLinkModal } from './_components/registration-link-modal';
 import { UsersManager } from './_components/users-manager';
+import { InviteLinksManager } from './_components/invite-links-manager';
 
 interface Ref {
   id: string;
@@ -73,9 +73,10 @@ function employeeName(e: EmployeeRow): string {
   return e.full_name?.trim() || e.profile?.display_name || e.profile?.username || '—';
 }
 
-// The merged "people" surface: HR employee registry + user accounts (formerly /users) as two
-// tabs, so one person is managed in one place. Deep-linkable: ?tab=accounts[&q=<search>].
-type PeopleTab = 'employees' | 'accounts';
+// The merged "people" surface: HR employee registry + user accounts (formerly /users) +
+// onboarding links (ลิงก์สมัคร/ลิงก์เชิญ, formerly a modal + /users/invitations) as three
+// tabs, so one person is managed in one place. Deep-linkable: ?tab=accounts[&q=<search>], ?tab=links.
+type PeopleTab = 'employees' | 'accounts' | 'links';
 
 export default function EmployeesPage() {
   const t = useTranslations('hr.employees');
@@ -87,15 +88,19 @@ export default function EmployeesPage() {
   const [accountsSeed, setAccountsSeed] = useState('');
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
-    if (p.get('tab') === 'accounts') {
-      setAccountsSeed(p.get('q') ?? '');
-      setTab('accounts');
+    const tp = p.get('tab');
+    if (tp === 'accounts' || tp === 'links') {
+      if (tp === 'accounts') setAccountsSeed(p.get('q') ?? '');
+      setTab(tp);
     }
   }, []);
   const switchTab = (next: PeopleTab, seed = '') => {
     setAccountsSeed(seed);
     setTab(next);
-    const qs = next === 'accounts' ? `?tab=accounts${seed ? `&q=${encodeURIComponent(seed)}` : ''}` : '';
+    const qs =
+      next === 'accounts' ? `?tab=accounts${seed ? `&q=${encodeURIComponent(seed)}` : ''}`
+      : next === 'links' ? '?tab=links'
+      : '';
     window.history.replaceState(null, '', `/hr/employees${qs}`);
   };
 
@@ -138,7 +143,6 @@ export default function EmployeesPage() {
     () => Object.fromEntries(REGISTER_COLS.map((c) => [c.key, c.defaultOn])) as Record<RegisterColKey, boolean>
   );
   const [profilePrintId, setProfilePrintId] = useState<string | null>(null);
-  const [showRegLink, setShowRegLink] = useState(false);
 
   const printProfile = async (e: EmployeeRow) => {
     setProfilePrintId(e.id);
@@ -366,7 +370,8 @@ export default function EmployeesPage() {
           const role = e.profile?.role as UserRole | undefined;
           return (
             <div className="flex flex-wrap items-center gap-1">
-              <Badge variant="outline" size="sm">
+              {/* เหลือง = ยังไม่ได้กำหนดสิทธิ์ (not_assign) ให้ HR เห็นแล้วรีบจัดการ */}
+              <Badge variant={role === 'not_assign' ? 'warning' : 'outline'} size="sm">
                 <span className="inline-flex items-center gap-1">
                   <Shield className="h-3 w-3" />
                   {role ? ROLE_LABELS[role] || role : '—'}
@@ -457,14 +462,14 @@ export default function EmployeesPage() {
     <div className="mx-auto max-w-6xl space-y-4 p-4">
       <PageHeader
         title={t('title')}
-        subtitle={tab === 'employees' ? `${t('subtitle')} · ${t('count', { count })}` : t('tabAccountsSubtitle')}
+        subtitle={
+          tab === 'employees' ? `${t('subtitle')} · ${t('count', { count })}`
+          : tab === 'accounts' ? t('tabAccountsSubtitle')
+          : t('tabLinksSubtitle')
+        }
         actions={
           tab === 'employees' ? (
             <>
-              <Button variant="outline" type="button" onClick={() => setShowRegLink(true)}>
-                <Link2 className="h-4 w-4" />
-                {t('regLink')}
-              </Button>
               <Button variant="outline" type="button" onClick={openPrintModal}>
                 <Printer className="h-4 w-4" />
                 {t('register.action')}
@@ -483,12 +488,13 @@ export default function EmployeesPage() {
         }
       />
 
-      {/* พนักงาน (HR registry) | บัญชีผู้ใช้ & สิทธิ์ระบบ (login accounts, formerly /users) */}
-      <div className="flex w-fit gap-1 rounded-lg bg-gray-100 p-1 dark:bg-gray-800">
+      {/* พนักงาน (HR registry) | บัญชีผู้ใช้ & สิทธิ์ระบบ (formerly /users) | ลิงก์รับพนักงาน */}
+      <div className="flex w-fit flex-wrap gap-1 rounded-lg bg-gray-100 p-1 dark:bg-gray-800">
         {(
           [
             { key: 'employees', icon: Users, label: t('tabEmployees') },
             { key: 'accounts', icon: UserCog, label: t('tabAccounts') },
+            { key: 'links', icon: Link2, label: t('tabLinks') },
           ] as const
         ).map(({ key, icon: Icon, label }) => (
           <button
@@ -509,6 +515,8 @@ export default function EmployeesPage() {
       </div>
 
       {tab === 'accounts' && <UsersManager key={accountsSeed || 'accounts'} initialSearch={accountsSeed} />}
+
+      {tab === 'links' && <InviteLinksManager />}
 
       {tab === 'employees' && (
       <>
@@ -638,7 +646,6 @@ export default function EmployeesPage() {
         }}
       />
 
-      <RegistrationLinkModal isOpen={showRegLink} onClose={() => setShowRegLink(false)} />
     </div>
   );
 }
