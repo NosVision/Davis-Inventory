@@ -34,7 +34,7 @@ interface DashboardLayoutClientProps {
 }
 
 /** หน้าที่ใช้ได้แม้ยังไม่มีสาขา */
-const NO_STORE_ALLOWED = ['/settings', '/overview', '/profile', '/users'];
+const NO_STORE_ALLOWED = ['/settings', '/overview', '/profile', '/users', '/hr/employees'];
 
 export function DashboardLayoutClient({
   children,

@@ -45,8 +45,9 @@ import { PageHeader } from '@/components/ui';
 const NAV_TILES: { key: string; icon: LucideIcon; href?: string }[] = [
   { key: 'close', icon: CalendarCheck, href: '/hr/close' },
   { key: 'today', icon: LayoutDashboard, href: '/hr/dashboard' },
+  // "ผู้ใช้ในระบบ" merged into the employees surface (2026-07-27) — accounts live on
+  // /hr/employees?tab=accounts, so ONE tile covers both the person and their login.
   { key: 'employees', icon: Users, href: '/hr/employees' },
-  { key: 'users', icon: UserCog, href: '/users' },
   { key: 'identityClaims', icon: UserCheck2, href: '/hr/identity-claims' },
   { key: 'org', icon: Briefcase, href: '/hr/org' },
   { key: 'orgChart', icon: Network, href: '/hr/org-chart' },

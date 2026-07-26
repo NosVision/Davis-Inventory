@@ -349,8 +349,9 @@ export const modules: ModuleConfig[] = [
     descriptionKey: 'modules.users.description',
     icon: 'user-cog',
     color: 'orange',
-    href: '/users',
-    // Owner + HR only (owner ask 2026-07-08). Also surfaced as a tile on the HR hub.
+    // Merged into the HR people surface (2026-07-27): accounts tab of /hr/employees.
+    // Owner + HR only (owner ask 2026-07-08).
+    href: '/hr/employees?tab=accounts',
     roles: ['owner', 'hr'],
     permission: 'can_manage_hr',
     groupKey: 'moduleGroups.system',

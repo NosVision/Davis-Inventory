@@ -86,7 +86,8 @@ const LIST_SELECT =
   'ot_hour_divisor, standard_days_off, tax_mode, sso_enrolled, status, start_date, probation_end, ' +
   'bank_name, bank_account_no, ' + // for the printable register (HR-gated route)
   'company_id, position_id, department_id, created_at, ' +
-  'profile:profiles!hr_employees_profile_id_fkey(id, username, display_name, active, avatar_url), ' +
+  'profile:profiles!hr_employees_profile_id_fkey(id, username, display_name, active, avatar_url, role), ' + // role → สิทธิ์ระบบ column
+
   'position:hr_positions(id, name), department:hr_departments(id, name), company:hr_companies(id, name)';
 
 // GET /api/hr/employees — list with filters: q, store_id, position_id, department_id, company_id, pay_type, status, limit, offset

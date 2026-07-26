@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Loader2 } from 'lucide-react';
-import { Modal, StatusBadge, type StatusTone } from '@/components/ui';
+import { Loader2, Shield, UserCog } from 'lucide-react';
+import { Badge, Button, Modal, StatusBadge, type StatusTone } from '@/components/ui';
 import { formatThaiDate } from '@/lib/utils/format';
+import { ROLE_LABELS, type UserRole } from '@/types/roles';
 
 // Read-only "everything about this employee" viewer (owner ask 2026-07-08): opened from the
 // person icon on each /hr/employees row. Shows the profile photo + real name / nickname and every
@@ -45,7 +46,7 @@ interface EmployeeDetail {
   bank_account_name: string | null;
   emergency_contact: string | null;
   notes: string | null;
-  profile: { display_name?: string | null; username?: string | null; avatar_url?: string | null } | null;
+  profile: { display_name?: string | null; username?: string | null; avatar_url?: string | null; role?: string | null; active?: boolean | null } | null;
   supervisor: { display_name?: string | null } | null;
 }
 
@@ -59,7 +60,16 @@ const STATUS_TONE: Record<string, StatusTone> = {
 const bahtFromSatang = (satang: number): string =>
   (satang / 100).toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
-export function EmployeeDetailModal({ employee, onClose }: { employee: EmployeeDetailSeed | null; onClose: () => void }) {
+export function EmployeeDetailModal({
+  employee,
+  onClose,
+  onManageAccount,
+}: {
+  employee: EmployeeDetailSeed | null;
+  onClose: () => void;
+  /** Jump to the accounts tab prefiltered to this username (merged people surface). */
+  onManageAccount?: (username: string) => void;
+}) {
   const t = useTranslations('hr.employees');
   const [detail, setDetail] = useState<EmployeeDetail | null>(null);
   const [loading, setLoading] = useState(false);
@@ -148,6 +158,38 @@ export function EmployeeDetailModal({ employee, onClose }: { employee: EmployeeD
             <Field label={t('detail.workHours')} value={val(detail.work_hours_per_day)} />
             <Field label={t('detail.breakHours')} value={val(detail.break_hours)} />
             <Field label={t('detail.otEligible')} value={yesNo(detail.ot_eligible)} />
+          </Section>
+
+          {/* บัญชีเข้าระบบ — login account + สิทธิ์ระบบ (Role), kept visually apart from the
+              job-position fields above so "ตำแหน่งงาน" and "สิทธิ์ระบบ" never blur together. */}
+          <Section title={t('detail.account')}>
+            <Field label={t('detail.username')} value={detail.profile?.username ? `@${detail.profile.username}` : '—'} />
+            <div>
+              <dt className="text-xs text-gray-400 dark:text-gray-500">{t('detail.systemRole')}</dt>
+              <dd className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                <Badge variant="outline" size="sm">
+                  <span className="inline-flex items-center gap-1">
+                    <Shield className="h-3 w-3" />
+                    {detail.profile?.role ? ROLE_LABELS[detail.profile.role as UserRole] || detail.profile.role : '—'}
+                  </span>
+                </Badge>
+                <Badge variant={detail.profile?.active === false ? 'danger' : 'success'} size="sm">
+                  {detail.profile?.active === false ? t('detail.accountDisabled') : t('detail.accountActive')}
+                </Badge>
+              </dd>
+            </div>
+            {onManageAccount && detail.profile?.username && (
+              <div className="sm:col-span-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  icon={<UserCog className="h-4 w-4" />}
+                  onClick={() => onManageAccount(detail.profile!.username!)}
+                >
+                  {t('detail.manageAccount')}
+                </Button>
+              </div>
+            )}
           </Section>
 
           <Section title={t('profile.statutory')}>

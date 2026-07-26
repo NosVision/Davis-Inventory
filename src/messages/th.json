@@ -2651,8 +2651,8 @@
     "saveSettings": "บันทึกการตั้งค่า"
   },
   "users": {
-    "title": "จัดการผู้ใช้",
-    "subtitle": "จัดการพนักงานและกำหนดสิทธิ์การเข้าถึง",
+    "title": "บัญชีผู้ใช้ & สิทธิ์ระบบ",
+    "subtitle": "จัดการบัญชีเข้าระบบ สิทธิ์ระบบ (Role) และสาขาที่เข้าถึง",
     "addUser": "เพิ่มผู้ใช้",
     "searchPlaceholder": "ค้นหาผู้ใช้...",
     "noUsers": "ไม่พบผู้ใช้",
@@ -2671,7 +2671,7 @@
     "passwordPlaceholder": "กำหนดรหัสผ่าน",
     "displayName": "ชื่อที่แสดง",
     "displayNamePlaceholder": "เช่น สมชาย (ไม่บังคับ)",
-    "role": "ตำแหน่ง",
+    "role": "สิทธิ์ระบบ (Role)",
     "roleStaff": "พนักงาน (Staff)",
     "roleBar": "บาร์ (Bar)",
     "roleTechnician": "ช่าง (Technician)",
@@ -2770,8 +2770,7 @@
     "dashboard": "แดชบอร์ด HR",
     "comingSoon": "ส่วนนี้กำลังพัฒนา",
     "nav": {
-      "employees": "พนักงาน",
-      "users": "ผู้ใช้ในระบบ",
+      "employees": "พนักงาน & บัญชีผู้ใช้",
       "identityClaims": "ยืนยันตัวตนพนักงาน",
       "orgChart": "ผังองค์กร",
       "documentRequests": "คำขอเอกสาร/50ทวิ",
@@ -4181,8 +4180,11 @@
       "decisionNote": "เหตุผล (ไม่บังคับ)"
     },
     "employees": {
-      "title": "พนักงาน",
+      "title": "พนักงาน & บัญชีผู้ใช้",
       "subtitle": "ทะเบียนพนักงาน",
+      "tabEmployees": "พนักงาน",
+      "tabAccounts": "บัญชีผู้ใช้ & สิทธิ์ระบบ",
+      "tabAccountsSubtitle": "บัญชีเข้าระบบ สิทธิ์ระบบ (Role) และสาขาที่เข้าถึง",
       "add": "เพิ่มพนักงาน",
       "searchPlaceholder": "ค้นหาชื่อหรือรหัสพนักงาน",
       "empty": "ไม่พบพนักงาน",
@@ -4195,7 +4197,9 @@
         "venue": "สาขา",
         "payType": "ประเภทการจ่าย",
         "status": "สถานะ",
-        "rate": "เรต"
+        "rate": "เรต",
+        "systemRole": "สิทธิ์ระบบ",
+        "accountDisabled": "ปิดใช้งาน"
       },
       "filter": {
         "all": "ทั้งหมด",
@@ -4404,7 +4408,13 @@
         "endDate": "วันสิ้นสุด",
         "endReason": "เหตุผลสิ้นสุด",
         "other": "อื่นๆ",
-        "loadFailed": "โหลดข้อมูลไม่สำเร็จ"
+        "loadFailed": "โหลดข้อมูลไม่สำเร็จ",
+        "account": "บัญชีเข้าระบบ",
+        "username": "ชื่อผู้ใช้",
+        "systemRole": "สิทธิ์ระบบ (Role)",
+        "accountActive": "ใช้งานได้",
+        "accountDisabled": "ปิดใช้งาน",
+        "manageAccount": "จัดการบัญชี & สิทธิ์ระบบ"
       }
     }
   },

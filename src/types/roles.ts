@@ -99,7 +99,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[] | ['*']> = {
   not_assign: [],
 };
 
-// Position labels are shown in ENGLISH always (owner ask 2026-07-09), regardless of app locale.
+// System-role (สิทธิ์ระบบ) labels — shown in ENGLISH always (owner ask 2026-07-09), regardless of
+// app locale. NOT the HR job position (ตำแหน่งงาน = hr_positions); a role only decides app access.
 export const ROLE_LABELS: Record<UserRole, string> = {
   owner: 'Owner',
   accountant: 'Accountant',

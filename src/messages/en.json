@@ -2650,8 +2650,8 @@
     "saveSettings": "Save settings"
   },
   "users": {
-    "title": "Manage Users",
-    "subtitle": "Manage staff and access permissions",
+    "title": "User accounts & system roles",
+    "subtitle": "Manage login accounts, system roles, and branch access",
     "addUser": "Add User",
     "searchPlaceholder": "Search users...",
     "noUsers": "No users found",
@@ -2670,7 +2670,7 @@
     "passwordPlaceholder": "Set password",
     "displayName": "Display Name",
     "displayNamePlaceholder": "e.g. John (optional)",
-    "role": "Role",
+    "role": "System role",
     "roleStaff": "Staff",
     "roleBar": "Bar",
     "roleTechnician": "Technician",
@@ -2769,8 +2769,7 @@
     "dashboard": "HR Dashboard",
     "comingSoon": "This section is under construction",
     "nav": {
-      "employees": "Employees",
-      "users": "System users",
+      "employees": "Employees & user accounts",
       "identityClaims": "Identity claims",
       "orgChart": "Org chart",
       "documentRequests": "Document requests",
@@ -4180,8 +4179,11 @@
       "decisionNote": "Reason (optional)"
     },
     "employees": {
-      "title": "Employees",
+      "title": "Employees & user accounts",
       "subtitle": "Employee registry",
+      "tabEmployees": "Employees",
+      "tabAccounts": "User accounts & system roles",
+      "tabAccountsSubtitle": "Login accounts, system roles, and branch access",
       "add": "Add employee",
       "searchPlaceholder": "Search name or employee code",
       "empty": "No employees found",
@@ -4194,7 +4196,9 @@
         "venue": "Venue",
         "payType": "Pay type",
         "status": "Status",
-        "rate": "Rate"
+        "rate": "Rate",
+        "systemRole": "System role",
+        "accountDisabled": "Disabled"
       },
       "filter": {
         "all": "All",
@@ -4403,7 +4407,13 @@
         "endDate": "End date",
         "endReason": "End reason",
         "other": "Other",
-        "loadFailed": "Failed to load"
+        "loadFailed": "Failed to load",
+        "account": "Login account",
+        "username": "Username",
+        "systemRole": "System role",
+        "accountActive": "Active",
+        "accountDisabled": "Disabled",
+        "manageAccount": "Manage account & role"
       }
     }
   },

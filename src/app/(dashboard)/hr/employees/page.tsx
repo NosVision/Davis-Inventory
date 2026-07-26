@@ -2,16 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Plus, ArrowLeftRight, History, Printer, IdCard, Archive, UserRound, Link2 } from 'lucide-react';
+import { Plus, ArrowLeftRight, History, Printer, IdCard, Archive, UserRound, Link2, Users, Shield, UserCog } from 'lucide-react';
 import { Button, Select, Badge, PageHeader, StatusBadge, Modal, ModalFooter, type StatusTone, toast } from '@/components/ui';
 import { DataTable, type Column } from '@/components/data/data-table';
 import { createClient } from '@/lib/supabase/client';
+import { cn } from '@/lib/utils/cn';
+import { ROLE_LABELS, type UserRole } from '@/types/roles';
 import { EmployeeFormModal } from './_components/employee-form-modal';
 import { TransferModal } from './_components/transfer-modal';
 import { EmployeeHistoryModal } from './_components/employee-history-modal';
 import { EmployeePayHistoryModal } from './_components/employee-pay-history-modal';
 import { EmployeeDetailModal } from './_components/employee-detail-modal';
 import { RegistrationLinkModal } from './_components/registration-link-modal';
+import { UsersManager } from './_components/users-manager';
 
 interface Ref {
   id: string;
@@ -27,7 +30,7 @@ interface EmployeeRow extends Record<string, unknown> {
   status: string;
   bank_name: string | null;
   bank_account_no: string | null;
-  profile: { display_name?: string | null; username?: string | null } | null;
+  profile: { display_name?: string | null; username?: string | null; role?: string | null; active?: boolean | null } | null;
   position: { name?: string | null } | null;
   department: { name?: string | null } | null;
   company: { name?: string | null } | null;
@@ -70,8 +73,31 @@ function employeeName(e: EmployeeRow): string {
   return e.full_name?.trim() || e.profile?.display_name || e.profile?.username || '—';
 }
 
+// The merged "people" surface: HR employee registry + user accounts (formerly /users) as two
+// tabs, so one person is managed in one place. Deep-linkable: ?tab=accounts[&q=<search>].
+type PeopleTab = 'employees' | 'accounts';
+
 export default function EmployeesPage() {
   const t = useTranslations('hr.employees');
+
+  // Tab + seed for the accounts search (read off window.location so no Suspense boundary is
+  // needed — same pattern as /hr/timesheet deep links). `accountsSeed` also remounts the
+  // accounts tab when the detail modal jumps to a specific username.
+  const [tab, setTab] = useState<PeopleTab>('employees');
+  const [accountsSeed, setAccountsSeed] = useState('');
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    if (p.get('tab') === 'accounts') {
+      setAccountsSeed(p.get('q') ?? '');
+      setTab('accounts');
+    }
+  }, []);
+  const switchTab = (next: PeopleTab, seed = '') => {
+    setAccountsSeed(seed);
+    setTab(next);
+    const qs = next === 'accounts' ? `?tab=accounts${seed ? `&q=${encodeURIComponent(seed)}` : ''}` : '';
+    window.history.replaceState(null, '', `/hr/employees${qs}`);
+  };
 
   const [rows, setRows] = useState<EmployeeRow[]>([]);
   const [count, setCount] = useState(0);
@@ -332,6 +358,28 @@ export default function EmployeesPage() {
         ),
       },
       {
+        // สิทธิ์ระบบ (login role) — deliberately distinct from the ตำแหน่ง (job position) column
+        // so HR sees at a glance when the two drifted apart (e.g. หัวหน้าบาร์ still on Staff access).
+        key: 'systemRole',
+        header: t('col.systemRole'),
+        render: (e) => {
+          const role = e.profile?.role as UserRole | undefined;
+          return (
+            <div className="flex flex-wrap items-center gap-1">
+              <Badge variant="outline" size="sm">
+                <span className="inline-flex items-center gap-1">
+                  <Shield className="h-3 w-3" />
+                  {role ? ROLE_LABELS[role] || role : '—'}
+                </span>
+              </Badge>
+              {e.profile?.active === false && (
+                <Badge variant="danger" size="sm">{t('col.accountDisabled')}</Badge>
+              )}
+            </div>
+          );
+        },
+      },
+      {
         key: 'actions',
         header: '',
         className: 'w-40 text-right',
@@ -409,30 +457,61 @@ export default function EmployeesPage() {
     <div className="mx-auto max-w-6xl space-y-4 p-4">
       <PageHeader
         title={t('title')}
-        subtitle={`${t('subtitle')} · ${t('count', { count })}`}
+        subtitle={tab === 'employees' ? `${t('subtitle')} · ${t('count', { count })}` : t('tabAccountsSubtitle')}
         actions={
-          <>
-            <Button variant="outline" type="button" onClick={() => setShowRegLink(true)}>
-              <Link2 className="h-4 w-4" />
-              {t('regLink')}
-            </Button>
-            <Button variant="outline" type="button" onClick={openPrintModal}>
-              <Printer className="h-4 w-4" />
-              {t('register.action')}
-            </Button>
-            <Button
-              onClick={() => {
-                setEditId(null);
-                setFormOpen(true);
-              }}
-            >
-              <Plus className="h-4 w-4" />
-              {t('add')}
-            </Button>
-          </>
+          tab === 'employees' ? (
+            <>
+              <Button variant="outline" type="button" onClick={() => setShowRegLink(true)}>
+                <Link2 className="h-4 w-4" />
+                {t('regLink')}
+              </Button>
+              <Button variant="outline" type="button" onClick={openPrintModal}>
+                <Printer className="h-4 w-4" />
+                {t('register.action')}
+              </Button>
+              <Button
+                onClick={() => {
+                  setEditId(null);
+                  setFormOpen(true);
+                }}
+              >
+                <Plus className="h-4 w-4" />
+                {t('add')}
+              </Button>
+            </>
+          ) : undefined
         }
       />
 
+      {/* พนักงาน (HR registry) | บัญชีผู้ใช้ & สิทธิ์ระบบ (login accounts, formerly /users) */}
+      <div className="flex w-fit gap-1 rounded-lg bg-gray-100 p-1 dark:bg-gray-800">
+        {(
+          [
+            { key: 'employees', icon: Users, label: t('tabEmployees') },
+            { key: 'accounts', icon: UserCog, label: t('tabAccounts') },
+          ] as const
+        ).map(({ key, icon: Icon, label }) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => switchTab(key)}
+            className={cn(
+              'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+              tab === key
+                ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white'
+                : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+            )}
+          >
+            <Icon className="h-4 w-4" />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'accounts' && <UsersManager key={accountsSeed || 'accounts'} initialSearch={accountsSeed} />}
+
+      {tab === 'employees' && (
+      <>
       {/* filters */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
         <input
@@ -465,6 +544,8 @@ export default function EmployeesPage() {
           setFormOpen(true);
         }}
       />
+      </>
+      )}
 
       {/* Print-register modal: pick the company scope + which columns to print */}
       <Modal
@@ -548,7 +629,14 @@ export default function EmployeesPage() {
         onClose={() => setHistoryFor(null)}
       />
 
-      <EmployeeDetailModal employee={detailFor} onClose={() => setDetailFor(null)} />
+      <EmployeeDetailModal
+        employee={detailFor}
+        onClose={() => setDetailFor(null)}
+        onManageAccount={(username) => {
+          setDetailFor(null);
+          switchTab('accounts', username);
+        }}
+      />
 
       <RegistrationLinkModal isOpen={showRegLink} onClose={() => setShowRegLink(false)} />
     </div>

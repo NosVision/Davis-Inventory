@@ -555,7 +555,7 @@ function getActivityHref(actionType: string, tableName: string | null): string |
   // Users
   if (actionType === 'USER_CREATED' || actionType === 'USER_UPDATED' ||
       actionType === 'USER_DEACTIVATED') {
-    return '/users';
+    return '/hr/employees?tab=accounts';
   }
 
   // Settings
