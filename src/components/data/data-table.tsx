@@ -9,6 +9,8 @@ export interface Column<T> {
   key: string;
   header: string;
   sortable?: boolean;
+  /** Value used for sorting when the raw item[key] isn't comparable (joined/derived cells). */
+  sortValue?: (item: T) => string | number | null;
   className?: string;
   render?: (item: T, index: number) => React.ReactNode;
 }
@@ -56,13 +58,17 @@ export function DataTable<T extends Record<string, unknown>>({
     }
   };
 
+  const sortCol = sortKey ? columns.find((c) => c.key === sortKey) : undefined;
   const sortedData = sortKey
     ? [...data].sort((a, b) => {
-        const aVal = a[sortKey];
-        const bVal = b[sortKey];
-        if (aVal == null) return 1;
-        if (bVal == null) return -1;
-        const cmp = String(aVal).localeCompare(String(bVal), 'th');
+        const aVal = sortCol?.sortValue ? sortCol.sortValue(a) : a[sortKey];
+        const bVal = sortCol?.sortValue ? sortCol.sortValue(b) : b[sortKey];
+        if (aVal == null || aVal === '') return 1;
+        if (bVal == null || bVal === '') return -1;
+        const cmp =
+          typeof aVal === 'number' && typeof bVal === 'number'
+            ? aVal - bVal
+            : String(aVal).localeCompare(String(bVal), 'th');
         return sortDir === 'asc' ? cmp : -cmp;
       })
     : data;

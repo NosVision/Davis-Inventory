@@ -4204,7 +4204,11 @@
         "status": "Status",
         "rate": "Rate",
         "systemRole": "System role",
-        "accountDisabled": "Disabled"
+        "accountDisabled": "Disabled",
+        "info": "Info",
+        "hasBank": "Bank account on file",
+        "noBank": "No bank account yet",
+        "hoursHint": "Work hours/day + break hours"
       },
       "filter": {
         "all": "All",

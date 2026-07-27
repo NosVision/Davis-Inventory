@@ -932,6 +932,15 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
                   />
                 </label>
               </div>
+              {/* Login username — read-only context (same as the accounts tab); changing a
+                  login name is not an HR-record edit. */}
+              <Input
+                label={t('username')}
+                value={form.username ? `@${form.username}` : '—'}
+                disabled
+                readOnly
+                hint={isTh ? 'ชื่อบัญชีเข้าระบบ — แก้ไขจากหน้านี้ไม่ได้' : 'Login account name — not editable here'}
+              />
               <Input label={t('displayName')} value={form.display_name} onChange={(e) => update('display_name', e.target.value)} />
               {/* System role — show current + let HR change it (owner ask 2026-07-10). */}
               <Select

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Plus, ArrowLeftRight, History, Printer, IdCard, Archive, UserRound, Link2, Users, Shield, UserCog } from 'lucide-react';
+import { Plus, ArrowLeftRight, History, Printer, IdCard, Archive, UserRound, Link2, Users, Shield, UserCog, Banknote, Clock } from 'lucide-react';
 import { Button, Select, Badge, PageHeader, StatusBadge, Modal, ModalFooter, type StatusTone, toast } from '@/components/ui';
 import { DataTable, type Column } from '@/components/data/data-table';
 import { createClient } from '@/lib/supabase/client';
@@ -28,6 +28,8 @@ interface EmployeeRow extends Record<string, unknown> {
   rate_satang: number;
   pay_type: string;
   status: string;
+  work_hours_per_day: number | null;
+  break_hours: number | null;
   bank_name: string | null;
   bank_account_no: string | null;
   profile: { display_name?: string | null; username?: string | null; role?: string | null; active?: boolean | null } | null;
@@ -327,28 +329,36 @@ export default function EmployeesPage() {
       {
         key: 'name',
         header: t('col.name'),
+        sortable: true,
+        sortValue: (e) => employeeName(e),
         render: (e) => (
           <div className="min-w-0">
             <div className="truncate font-medium text-gray-900 dark:text-white">
               {employeeName(e)}
             </div>
-            {e.employee_code && (
-              <div className="text-xs text-gray-400">{e.employee_code}</div>
-            )}
+            <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-gray-400">
+              {e.employee_code && <span>{e.employee_code}</span>}
+              {/* login username — read-only context, same as the accounts tab shows */}
+              {e.profile?.username && <span>@{e.profile.username}</span>}
+            </div>
           </div>
         ),
       },
-      { key: 'position', header: t('col.position'), render: (e) => e.position?.name || '—' },
-      { key: 'department', header: t('col.department'), render: (e) => e.department?.name || '—' },
-      { key: 'company', header: t('col.company'), render: (e) => e.company?.name || '—' },
+      { key: 'position', header: t('col.position'), sortable: true, sortValue: (e) => e.position?.name ?? null, render: (e) => e.position?.name || '—' },
+      { key: 'department', header: t('col.department'), sortable: true, sortValue: (e) => e.department?.name ?? null, render: (e) => e.department?.name || '—' },
+      { key: 'company', header: t('col.company'), sortable: true, sortValue: (e) => e.company?.name ?? null, render: (e) => e.company?.name || '—' },
       {
         key: 'venue',
         header: t('col.venue'),
+        sortable: true,
+        sortValue: (e) => (e.stores.length ? e.stores.map((s) => s.store_name).join(', ') : null),
         render: (e) => (e.stores.length ? e.stores.map((s) => s.store_name).join(', ') : '—'),
       },
       {
         key: 'payType',
         header: t('col.payType'),
+        sortable: true,
+        sortValue: (e) => e.pay_type,
         render: (e) => (
           <Badge variant={e.pay_type === 'full_monthly' ? 'info' : 'outline'} size="sm">
             {t(`payType.${e.pay_type}`)}
@@ -359,20 +369,56 @@ export default function EmployeesPage() {
         key: 'rate',
         header: t('col.rate'),
         className: 'text-right',
+        sortable: true,
+        sortValue: (e) => e.rate_satang,
         render: (e) => <span className="tabular-nums">{bahtFromSatang(e.rate_satang)}</span>,
       },
       {
         key: 'status',
         header: t('col.status'),
+        sortable: true,
+        sortValue: (e) => e.status,
         render: (e) => (
           <StatusBadge tone={STATUS_TONE[e.status] ?? 'neutral'} label={t(`status.${e.status}`)} />
         ),
+      },
+      {
+        // Compact data-completeness icons: bank account on file + daily hours (งาน+พัก).
+        key: 'info',
+        header: t('col.info'),
+        sortable: true,
+        // Sort: missing bank first when ascending (so HR spots gaps), then by hours.
+        sortValue: (e) => `${e.bank_account_no ? 1 : 0}-${e.work_hours_per_day ?? 0}`,
+        render: (e) => {
+          const hasBank = !!e.bank_account_no;
+          return (
+            <div className="flex items-center gap-2">
+              <span
+                title={hasBank ? `${t('col.hasBank')}${e.bank_name ? ` (${e.bank_name})` : ''}` : t('col.noBank')}
+                className={hasBank ? 'text-emerald-500' : 'text-gray-300 dark:text-gray-600'}
+              >
+                <Banknote className="h-4 w-4" />
+              </span>
+              <span
+                className="inline-flex items-center gap-1 text-xs tabular-nums text-gray-600 dark:text-gray-300"
+                title={t('col.hoursHint')}
+              >
+                <Clock className="h-3.5 w-3.5 text-gray-400" />
+                {e.work_hours_per_day != null
+                  ? `${e.work_hours_per_day}+${e.break_hours ?? 0}`
+                  : '—'}
+              </span>
+            </div>
+          );
+        },
       },
       {
         // สิทธิ์ระบบ (login role) — deliberately distinct from the ตำแหน่ง (job position) column
         // so HR sees at a glance when the two drifted apart (e.g. หัวหน้าบาร์ still on Staff access).
         key: 'systemRole',
         header: t('col.systemRole'),
+        sortable: true,
+        sortValue: (e) => (e.profile?.role as string) ?? null,
         render: (e) => {
           const role = e.profile?.role as UserRole | undefined;
           return (

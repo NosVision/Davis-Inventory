@@ -82,7 +82,7 @@ const ALLOWED_NEW_ROLES = ['staff', 'bar', 'head_bar', 'manager', 'accountant', 
 const SEARCH_CAP = 500;
 
 const LIST_SELECT =
-  'id, profile_id, employee_code, full_name, rate_satang, pay_type, work_hours_per_day, ot_eligible, ' +
+  'id, profile_id, employee_code, full_name, rate_satang, pay_type, work_hours_per_day, break_hours, ot_eligible, ' +
   'ot_hour_divisor, standard_days_off, tax_mode, sso_enrolled, status, start_date, probation_end, ' +
   'bank_name, bank_account_no, ' + // for the printable register (HR-gated route)
   'company_id, position_id, department_id, created_at, ' +
