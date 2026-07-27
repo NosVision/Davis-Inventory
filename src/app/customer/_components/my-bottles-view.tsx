@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { useTranslations } from 'next-intl';
+import { useTranslations, useLocale } from 'next-intl';
 import { useCustomerAuth } from './customer-provider';
+import { createClient } from '@/lib/supabase/client';
 import { formatNumber, daysUntil } from '@/lib/utils/format';
 import {
   Search,
@@ -53,6 +54,7 @@ export function MyBottlesView() {
   } = useCustomerAuth();
   const searchParams = useSearchParams();
   const t = useTranslations('customer.home');
+  const locale = useLocale();
 
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -71,6 +73,11 @@ export function MyBottlesView() {
   const [tableError, setTableError] = useState<string | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [cancelTarget, setCancelTarget] = useState<DepositItem | null>(null);
+  // วันงดเบิกดื่มในร้าน per store (store_settings.withdrawal_blocked_days, default Fri/Sat —
+  // same rule the staff withdrawals page and the API enforce). On a blocked calendar day the
+  // "ดื่มที่ร้าน" option locks and only take-home goes through, so the customer learns the rule
+  // BEFORE submitting instead of hitting a generic error afterwards.
+  const [blockedStoreIds, setBlockedStoreIds] = useState<Set<string>>(new Set());
 
   const getAuthPayload = useCallback(() => {
     if (mode === 'token') {
@@ -162,6 +169,50 @@ export function MyBottlesView() {
     };
   }, [lineUserId, loadDeposits]);
 
+  // Today's weekday label ("วันศุกร์" / "Friday") for the blocked-day messages.
+  const todayLabel = useMemo(
+    () =>
+      new Date().toLocaleDateString(locale === 'th' ? 'th-TH' : 'en-US', {
+        weekday: 'long',
+        timeZone: 'Asia/Bangkok',
+      }),
+    [locale],
+  );
+
+  // Which of the visible stores block in-store withdrawal TODAY (actual Bangkok calendar day,
+  // no cutoff — mirrors /customer/withdraw and the API's isWithdrawalBlocked()).
+  useEffect(() => {
+    const storeIds = [...new Set(deposits.map((d) => d.storeId).filter((s): s is string => !!s))];
+    if (storeIds.length === 0) return;
+    (async () => {
+      try {
+        const supabase = createClient();
+        const { data } = await supabase
+          .from('store_settings')
+          .select('store_id, withdrawal_blocked_days')
+          .in('store_id', storeIds);
+        const byStore = new Map<string, string[]>(
+          (data ?? []).map((r) => [r.store_id as string, (r.withdrawal_blocked_days as string[] | null) ?? ['Fri', 'Sat']]),
+        );
+        const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Bangkok' }));
+        const day = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][now.getDay()];
+        const blocked = new Set<string>();
+        for (const id of storeIds) {
+          const days = byStore.get(id) ?? ['Fri', 'Sat'];
+          if (days.includes(day)) blocked.add(id);
+        }
+        setBlockedStoreIds(blocked);
+      } catch {
+        /* best-effort — the API still enforces the rule server-side */
+      }
+    })();
+  }, [deposits]);
+
+  const isStoreBlockedToday = useCallback(
+    (d: DepositItem) => !!d.storeId && blockedStoreIds.has(d.storeId),
+    [blockedStoreIds],
+  );
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function mapDeposits(raw: any[]): DepositItem[] {
     return raw.map((d) => {
@@ -233,8 +284,11 @@ export function MyBottlesView() {
         ),
       );
       setWithdrawModal(null);
-    } catch {
-      setError(t('withdrawError'));
+    } catch (err) {
+      // Surface the server's real reason (e.g. the blocked-day rule with its take-home
+      // exception) instead of a generic "try again" that tells the customer nothing.
+      const msg = err instanceof Error ? err.message : '';
+      setError(msg && msg !== 'Request failed' ? msg : t('withdrawError'));
     } finally {
       setRequestingId(null);
     }
@@ -286,7 +340,8 @@ export function MyBottlesView() {
     setWithdrawModal({
       deposit,
       selected: new Set(bottles.map((b) => b.id)),
-      withdrawalType: 'in_store',
+      // Blocked day → only take-home is allowed, so start there (in-store is disabled below).
+      withdrawalType: isStoreBlockedToday(deposit) ? 'take_home' : 'in_store',
       tableNumber: deposit.tableNumber || '',
     });
     setTableError(null);
@@ -371,6 +426,16 @@ export function MyBottlesView() {
         <div className="customer-error-banner mb-3">
           <AlertCircle className="h-3.5 w-3.5 shrink-0" />
           <span>{error}</span>
+        </div>
+      )}
+
+      {/* Blocked-day notice — tells the customer the rule up front: today only take-home. */}
+      {active.some(isStoreBlockedToday) && (
+        <div className="mb-3 flex items-start gap-2 rounded-xl border border-[rgba(248,215,148,0.35)] bg-[rgba(248,215,148,0.12)] px-3 py-2.5">
+          <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#F8D794]" />
+          <span className="text-[11px] leading-snug text-[#F8D794]">
+            {t('blockedDayNotice', { day: todayLabel })}
+          </span>
         </div>
       )}
 
@@ -681,19 +746,30 @@ export function MyBottlesView() {
                     {t('expired')}
                   </div>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => handleWithdrawClick(deposit)}
-                    disabled={!canWithdraw}
-                    className="customer-btn-withdraw"
-                  >
-                    {isRequesting ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Package className="h-3.5 w-3.5" />
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleWithdrawClick(deposit)}
+                      disabled={!canWithdraw}
+                      className="customer-btn-withdraw"
+                    >
+                      {isRequesting ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Package className="h-3.5 w-3.5" />
+                      )}
+                      {isRequesting
+                        ? t('requesting')
+                        : isStoreBlockedToday(deposit)
+                          ? t('requestWithdrawalTakeHomeOnly')
+                          : t('requestWithdrawal')}
+                    </button>
+                    {isStoreBlockedToday(deposit) && (
+                      <p className="mt-1.5 text-center text-[10px] leading-snug text-[rgba(248,215,148,0.6)]">
+                        {t('blockedDayCardHint', { day: todayLabel })}
+                      </p>
                     )}
-                    {isRequesting ? t('requesting') : t('requestWithdrawal')}
-                  </button>
+                  </>
                 )}
               </div>
             );
@@ -753,6 +829,7 @@ export function MyBottlesView() {
         const bottles = availableBottles(deposit);
         const isMultiBottle = bottles.length > 1;
         const isRequesting = requestingId === deposit.id;
+        const inStoreBlocked = isStoreBlockedToday(deposit);
         const toggle = (id: string) => {
           setWithdrawModal((prev) => {
             if (!prev) return prev;
@@ -824,13 +901,16 @@ export function MyBottlesView() {
               <div className="grid grid-cols-2 gap-2">
                 {(['in_store', 'take_home'] as const).map((type) => {
                   const isSelected = withdrawalType === type;
+                  // Blocked day: in-store is not selectable — the same rule the staff side
+                  // enforces (เบิกได้เฉพาะกลับบ้าน). The API double-checks server-side.
+                  const isDisabled = isRequesting || (type === 'in_store' && inStoreBlocked);
                   return (
                     <button
                       key={type}
                       type="button"
-                      disabled={isRequesting}
+                      disabled={isDisabled}
                       onClick={() => setType(type)}
-                      className="rounded-md border px-3 py-2 text-xs font-semibold transition-colors"
+                      className="rounded-md border px-3 py-2 text-xs font-semibold transition-colors disabled:cursor-not-allowed"
                       style={{
                         borderColor: isSelected
                           ? '#F8D794'
@@ -838,7 +918,13 @@ export function MyBottlesView() {
                         background: isSelected
                           ? 'rgba(248,215,148,0.18)'
                           : 'rgba(74,16,22,0.65)',
-                        color: isSelected ? '#F8D794' : 'rgba(248,215,148,0.7)',
+                        color: isSelected
+                          ? '#F8D794'
+                          : type === 'in_store' && inStoreBlocked
+                            ? 'rgba(248,215,148,0.35)'
+                            : 'rgba(248,215,148,0.7)',
+                        textDecoration:
+                          type === 'in_store' && inStoreBlocked ? 'line-through' : 'none',
                       }}
                     >
                       {type === 'in_store'
@@ -848,6 +934,11 @@ export function MyBottlesView() {
                   );
                 })}
               </div>
+              {inStoreBlocked && (
+                <p className="mt-2 rounded-md border border-[rgba(248,215,148,0.25)] bg-[rgba(248,215,148,0.08)] px-2.5 py-2 text-[11px] leading-snug text-[#F8D794]">
+                  {t('blockedDayModalNote', { day: todayLabel })}
+                </p>
+              )}
 
               {/* Table number — required when drinking at the venue */}
               {withdrawalType === 'in_store' && (
