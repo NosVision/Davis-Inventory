@@ -1,8 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
+import { createClient } from '@/lib/supabase/client';
+import { useAuthStore } from '@/stores/auth-store';
+import { cn } from '@/lib/utils/cn';
+import { Button } from '@/components/ui';
 import {
   LayoutDashboard,
   Users,
@@ -33,6 +37,9 @@ import {
   SlidersHorizontal,
   Archive,
   MapPin,
+  Pin,
+  PinOff,
+  Check,
   type LucideIcon,
 } from 'lucide-react';
 import { PageHeader } from '@/components/ui';
@@ -100,6 +107,37 @@ const HREF_BY_KEY: Record<string, string | undefined> = {
 export default function HrDashboardPage() {
   const t = useTranslations('hr');
   const isTh = useLocale() === 'th';
+  const { user } = useAuthStore();
+
+  // Per-account pinned tiles (owner ask 2026-07-27) — saved to user_ui_prefs.hr_tile_order and
+  // auto-loaded here, so each account keeps its own default order. In จัดเรียง mode, tapping a
+  // tile pins/unpins it; pin order = tap order; every change saves immediately.
+  const [pinned, setPinned] = useState<string[]>([]);
+  const [editMode, setEditMode] = useState(false);
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      const supabase = createClient();
+      // RLS scopes the row to the signed-in account — no explicit user filter needed.
+      const { data } = await supabase.from('user_ui_prefs').select('hr_tile_order').maybeSingle();
+      const saved = (data?.hr_tile_order as string[] | null) ?? [];
+      setPinned(saved.filter((k) => NAV_TILES.some((tile) => tile.key === k)));
+    })();
+  }, [user]);
+
+  const savePinned = useCallback(
+    async (next: string[]) => {
+      setPinned(next);
+      if (!user) return;
+      const supabase = createClient();
+      await supabase
+        .from('user_ui_prefs')
+        .upsert({ user_id: user.id, hr_tile_order: next, updated_at: new Date().toISOString() });
+    },
+    [user]
+  );
+  const togglePin = (key: string) =>
+    savePinned(pinned.includes(key) ? pinned.filter((k) => k !== key) : [...pinned, key]);
 
   // Per-area "needs action" counts → red badge on the relevant tile. Auto-refreshes so the hub
   // reflects new requests/approvals without a manual reload (owner ask 2026-07-09).
@@ -143,17 +181,57 @@ export default function HrDashboardPage() {
     return t;
   }, [badges]);
 
-  // Tiles with something pending float to the top (keeping their relative order); the rest stay
-  // in the normal layout. If nothing is pending, the order is unchanged.
+  // Order: pinned tiles first (in the account's saved order), then tiles with something pending
+  // (badge float), then everything else in the default layout.
   const orderedTiles = useMemo(() => {
-    const withBadge = NAV_TILES.filter((tile) => (tileBadges[tile.key] ?? 0) > 0);
-    const rest = NAV_TILES.filter((tile) => (tileBadges[tile.key] ?? 0) === 0);
-    return [...withBadge, ...rest];
-  }, [tileBadges]);
+    const byKey = new Map(NAV_TILES.map((tile) => [tile.key, tile]));
+    const pinSet = new Set(pinned);
+    const pinnedTiles = pinned
+      .map((k) => byKey.get(k))
+      .filter((tile): tile is (typeof NAV_TILES)[number] => !!tile);
+    const rest = NAV_TILES.filter((tile) => !pinSet.has(tile.key));
+    const withBadge = rest.filter((tile) => (tileBadges[tile.key] ?? 0) > 0);
+    const calm = rest.filter((tile) => (tileBadges[tile.key] ?? 0) === 0);
+    return [...pinnedTiles, ...withBadge, ...calm];
+  }, [tileBadges, pinned]);
 
   return (
     <div className="mx-auto max-w-5xl space-y-4 p-4">
-      <PageHeader title={t('dashboard')} subtitle={t('subtitle')} />
+      <PageHeader
+        title={t('dashboard')}
+        subtitle={t('subtitle')}
+        actions={
+          <Button
+            size="sm"
+            variant={editMode ? 'primary' : 'outline'}
+            onClick={() => setEditMode((v) => !v)}
+            icon={editMode ? <Check className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+          >
+            {editMode ? (isTh ? 'เสร็จสิ้น' : 'Done') : isTh ? 'ปักหมุดเมนู' : 'Pin tiles'}
+          </Button>
+        }
+      />
+
+      {editMode && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm text-indigo-700 dark:border-indigo-800 dark:bg-indigo-900/20 dark:text-indigo-300">
+          <Pin className="h-4 w-4 shrink-0" />
+          <span className="flex-1">
+            {isTh
+              ? 'แตะเมนูเพื่อปักหมุด/ถอนหมุด — เมนูที่ปักจะขึ้นก่อนตามลำดับที่แตะ และบันทึกเป็นค่าเริ่มต้นของบัญชีนี้ทันที'
+              : 'Tap a tile to pin/unpin — pinned tiles come first in tap order, saved instantly as this account’s default.'}
+          </span>
+          {pinned.length > 0 && (
+            <button
+              type="button"
+              onClick={() => savePinned([])}
+              className="inline-flex items-center gap-1 rounded-lg border border-indigo-300 px-2 py-1 text-xs font-medium hover:bg-indigo-100 dark:border-indigo-700 dark:hover:bg-indigo-900/40"
+            >
+              <PinOff className="h-3 w-3" />
+              {isTh ? 'ล้างหมุดทั้งหมด' : 'Clear all pins'}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Auto-updating "needs action" summary */}
       {total > 0 ? (
@@ -197,12 +275,31 @@ export default function HrDashboardPage() {
         {orderedTiles.map(({ key, icon: Icon, href }) => {
           const count = tileBadges[key] ?? 0;
           const flagged = count > 0;
+          const pinIdx = pinned.indexOf(key);
+          const isPinned = pinIdx >= 0;
           const inner = (
             <>
               {flagged && (
                 <span className="absolute right-2 top-2 inline-flex min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[11px] font-bold leading-none text-white shadow-sm">
                   {count > 99 ? '99+' : count}
                 </span>
+              )}
+              {/* Pin marker: edit mode shows the toggle + order number; normal mode a subtle pin */}
+              {editMode ? (
+                <span
+                  className={cn(
+                    'absolute left-2 top-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1 text-[11px] font-bold leading-none',
+                    isPinned
+                      ? 'bg-indigo-500 text-white shadow-sm'
+                      : 'border border-dashed border-gray-300 text-gray-300 dark:border-gray-600 dark:text-gray-600'
+                  )}
+                >
+                  {isPinned ? pinIdx + 1 : <Pin className="h-3 w-3" />}
+                </span>
+              ) : (
+                isPinned && (
+                  <Pin className="absolute left-2 top-2 h-3.5 w-3.5 text-indigo-400 dark:text-indigo-500" />
+                )
               )}
               <div
                 className={`flex h-10 w-10 items-center justify-center rounded-lg ${
@@ -222,6 +319,25 @@ export default function HrDashboardPage() {
               ? 'border-amber-300 ring-1 ring-amber-200 dark:border-amber-800 dark:ring-amber-900/40'
               : 'border-gray-200 dark:border-gray-700'
           }`;
+          // จัดเรียง mode: tiles become pin toggles (no navigation) so a stray tap can't leave.
+          if (editMode) {
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => togglePin(key)}
+                className={cn(
+                  base,
+                  'text-left transition-colors',
+                  isPinned
+                    ? 'border-indigo-300 ring-1 ring-indigo-200 dark:border-indigo-700 dark:ring-indigo-900/40'
+                    : 'hover:border-indigo-300 dark:hover:border-indigo-700'
+                )}
+              >
+                {inner}
+              </button>
+            );
+          }
           return href ? (
             <Link
               key={key}
