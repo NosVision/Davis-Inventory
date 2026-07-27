@@ -24,19 +24,27 @@ export async function GET(request: NextRequest) {
     if (error) return NextResponse.json({ error: 'Failed to count usage' }, { status: 500 });
     return NextResponse.json({ data: { count: count ?? 0 } });
   }
-  const { data, error } = await service
-    .from(TABLE)
-    .select(SELECT)
-    .eq('store_id', storeId)
-    .order('start_time');
+  // Scope: a store's templates, a company's, or the global none-bucket (company_id='none').
+  const companyParam = request.nextUrl.searchParams.get('company_id') ?? '';
+  let listQ = service.from(TABLE).select(SELECT).order('start_time');
+  if (companyParam) {
+    listQ = companyParam === 'none'
+      ? listQ.is('store_id', null).is('company_id', null)
+      : listQ.eq('company_id', companyParam);
+  } else {
+    listQ = listQ.eq('store_id', storeId);
+  }
+  const { data, error } = await listQ;
   if (error) return NextResponse.json({ error: 'Failed to load shift templates' }, { status: 500 });
   return NextResponse.json({ data: data ?? [] });
 }
 
-// POST — create a template { store_id, label, start_time, end_time, color? }.
+// POST — create a template { (store_id|company_id), label, start_time, end_time, color? }.
+// company_id 'none' = the global bucket for staff with no company yet (both columns NULL).
 export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const storeId = typeof body.store_id === 'string' ? body.store_id : '';
+  const companyParam = typeof body.company_id === 'string' ? body.company_id : '';
   const auth = await requireScheduler();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
@@ -53,7 +61,8 @@ export async function POST(request: NextRequest) {
   const { data, error } = await service
     .from(TABLE)
     .insert({
-      store_id: storeId,
+      store_id: companyParam ? null : storeId || null,
+      company_id: companyParam && companyParam !== 'none' ? companyParam : null,
       label,
       start_time: startTime,
       end_time: endTime,

@@ -5,6 +5,7 @@ import { isDateInFinalizedPeriod, employeeStoreIds, FINALIZED_PERIOD_ERROR } fro
 
 const MONTH_RE = /^\d{4}-\d{2}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 
 const DEFAULT_WORK_HOURS = 9;
 const DEFAULT_DAYS_OFF = 6;
@@ -25,6 +26,28 @@ interface EmployeeRow {
   status: string | null;
   end_date: string | null;
   company_id: string | null;
+  position?: { name: string | null; sort_order: number | null } | { name: string | null; sort_order: number | null }[] | null;
+}
+
+// Roster scope (owner ask 2026-07-27): a month is scheduled per STORE (user_stores members,
+// the original mode) or per COMPANY (every hr_employees of that company — reaches housekeepers/
+// technicians with no store membership). company_id may be the literal 'none' = employees with
+// no company yet. Row storage: store rows keep store_id; company rows have store_id NULL and
+// company_id set (NULL for the none-bucket).
+type Scope =
+  | { kind: 'store'; storeId: string }
+  | { kind: 'company'; companyId: string | null };
+
+function parseScope(storeId: string, companyParam: string): Scope | null {
+  if (companyParam) return { kind: 'company', companyId: companyParam === 'none' ? null : companyParam };
+  if (storeId) return { kind: 'store', storeId };
+  return null;
+}
+
+function positionOf(e: EmployeeRow): { name: string | null; sort_order: number | null } | null {
+  const p = e.position;
+  if (!p) return null;
+  return Array.isArray(p) ? p[0] ?? null : p;
 }
 interface TemplateRow {
   id: string;
@@ -62,11 +85,13 @@ function shiftMinutes(start: string, end: string): number {
   return d === 0 ? 1440 : d;
 }
 
-// GET /api/hr/schedule?store_id&month=YYYY-MM — a store's monthly roster (§C):
-// employees + shift templates + assignments + a per-employee balance summary.
+// GET /api/hr/schedule?(store_id|company_id)&month=YYYY-MM — a monthly roster (§C):
+// employees + shift templates + assignments + a per-employee balance summary. Company scope
+// (company_id, or 'none' for company-less staff) reaches employees with no store membership.
 export async function GET(request: NextRequest) {
   const sp = request.nextUrl.searchParams;
-  const storeId = sp.get('store_id') ?? '';
+  const scope = parseScope(sp.get('store_id') ?? '', sp.get('company_id') ?? '');
+  if (!scope) return NextResponse.json({ error: 'store_id or company_id is required' }, { status: 400 });
   const auth = await requireScheduler();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
@@ -76,44 +101,70 @@ export async function GET(request: NextRequest) {
 
   const service = createServiceClient();
 
-  // Staff assigned to this store.
-  const { data: membersData, error: membersErr } = await service
-    .from('user_stores')
-    .select('user_id')
-    .eq('store_id', storeId);
-  if (membersErr) return NextResponse.json({ error: 'Failed to load staff' }, { status: 500 });
-  const userIds = (membersData as StoreMember[] | null)?.map((r) => r.user_id) ?? [];
+  const EMP_SELECT =
+    'profile_id, full_name, work_hours_per_day, standard_days_off, status, end_date, company_id, ' +
+    'position:hr_positions(name, sort_order)';
 
-  const [profilesRes, employeesRes, templatesRes, entriesRes] = await Promise.all([
+  let userIds: string[] = [];
+  let employees: EmployeeRow[] = [];
+  if (scope.kind === 'store') {
+    // Staff assigned to this store.
+    const { data: membersData, error: membersErr } = await service
+      .from('user_stores')
+      .select('user_id')
+      .eq('store_id', scope.storeId);
+    if (membersErr) return NextResponse.json({ error: 'Failed to load staff' }, { status: 500 });
+    userIds = (membersData as StoreMember[] | null)?.map((r) => r.user_id) ?? [];
+    if (userIds.length) {
+      const { data, error } = await service.from('hr_employees').select(EMP_SELECT).in('profile_id', userIds);
+      if (error) return NextResponse.json({ error: 'Failed to load staff' }, { status: 500 });
+      employees = (data ?? []) as unknown as EmployeeRow[];
+    }
+  } else {
+    // Every employee of the company (or of no company yet), store membership irrelevant.
+    let q = service.from('hr_employees').select(EMP_SELECT);
+    q = scope.companyId ? q.eq('company_id', scope.companyId) : q.is('company_id', null);
+    const { data, error } = await q;
+    if (error) return NextResponse.json({ error: 'Failed to load staff' }, { status: 500 });
+    employees = (data ?? []) as unknown as EmployeeRow[];
+    userIds = employees.map((e) => e.profile_id);
+  }
+
+  // Templates belong to the scope: a store's set, a company's set, or the global none-bucket.
+  let tplQuery = service
+    .from('hr_shift_templates')
+    .select('id, label, start_time, end_time, color')
+    .eq('active', true)
+    .order('start_time');
+  if (scope.kind === 'store') tplQuery = tplQuery.eq('store_id', scope.storeId);
+  else if (scope.companyId) tplQuery = tplQuery.eq('company_id', scope.companyId);
+  else tplQuery = tplQuery.is('store_id', null).is('company_id', null);
+
+  // Entries: store scope keeps the original store filter; company scope shows EVERY row of the
+  // listed people that month (their store rows included) — the company view is the full picture.
+  let entryQuery = service
+    .from('hr_schedule')
+    .select('id, user_id, work_date, shift_template_id, is_day_off, status, note')
+    .gte('work_date', first)
+    .lte('work_date', last);
+  if (scope.kind === 'store') entryQuery = entryQuery.eq('store_id', scope.storeId);
+  else entryQuery = userIds.length ? entryQuery.in('user_id', userIds) : entryQuery.eq('user_id', NIL_UUID);
+
+  const [profilesRes, templatesRes, entriesRes, companiesRes] = await Promise.all([
     userIds.length
       ? service.from('profiles').select('id, username, display_name').in('id', userIds)
       : Promise.resolve({ data: [], error: null }),
-    userIds.length
-      ? service
-          .from('hr_employees')
-          .select('profile_id, full_name, work_hours_per_day, standard_days_off, status, end_date, company_id')
-          .in('profile_id', userIds)
-      : Promise.resolve({ data: [], error: null }),
-    service
-      .from('hr_shift_templates')
-      .select('id, label, start_time, end_time, color')
-      .eq('store_id', storeId)
-      .eq('active', true)
-      .order('start_time'),
-    service
-      .from('hr_schedule')
-      .select('id, user_id, work_date, shift_template_id, is_day_off, status, note')
-      .eq('store_id', storeId)
-      .gte('work_date', first)
-      .lte('work_date', last),
+    tplQuery,
+    entryQuery,
+    // Companies for the page's scope picker (small list, sent along every load).
+    service.from('hr_companies').select('id, name').order('name'),
   ]);
 
-  if (profilesRes.error || employeesRes.error || templatesRes.error || entriesRes.error) {
+  if (profilesRes.error || templatesRes.error || entriesRes.error) {
     return NextResponse.json({ error: 'Failed to load schedule' }, { status: 500 });
   }
 
   const profiles = (profilesRes.data ?? []) as ProfileRow[];
-  const employees = (employeesRes.data ?? []) as EmployeeRow[];
   const templates = (templatesRes.data ?? []) as TemplateRow[];
   const entries = (entriesRes.data ?? []) as ScheduleRow[];
 
@@ -128,13 +179,14 @@ export async function GET(request: NextRequest) {
     .filter((p) => !(p.username ?? '').startsWith('printer-'))
     .filter((p) => {
       const e = empByProfile.get(p.id);
-      if (!e) return true;
+      if (!e) return scope.kind === 'store'; // company scope is employee-driven — no record, no row
       if (e.status !== 'resigned' && e.status !== 'terminated') return true;
       return !!e.end_date && e.end_date >= first;
     })
     .map((p) => {
       const e = empByProfile.get(p.id);
       const departed = e?.status === 'resigned' || e?.status === 'terminated';
+      const pos = e ? positionOf(e) : null;
       return {
         user_id: p.id,
         name: p.display_name || p.username || '—',
@@ -142,13 +194,26 @@ export async function GET(request: NextRequest) {
         // login username as the last-resort fallback.
         full_name: e?.full_name ?? null,
         username: p.username ?? null,
+        // Company scope sorts/labels by job position ("ไม่มี" group for the unassigned).
+        position_name: pos?.name ?? null,
+        position_sort: pos?.sort_order ?? null,
         work_hours_per_day: e?.work_hours_per_day ?? DEFAULT_WORK_HOURS,
         standard_days_off: e?.standard_days_off ?? DEFAULT_DAYS_OFF,
         // Signals the roster UI that this person has left (their end_date caps assignments).
         end_date: departed ? (e?.end_date ?? null) : null,
       };
     })
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort((a, b) => {
+      if (scope.kind === 'company') {
+        // Position first (positions' own sort_order, "no position" last), then name.
+        const sa = a.position_sort ?? Number.MAX_SAFE_INTEGER;
+        const sb = b.position_sort ?? Number.MAX_SAFE_INTEGER;
+        if (sa !== sb) return sa - sb;
+        const pn = (a.position_name ?? 'ๆๆๆ').localeCompare(b.position_name ?? 'ๆๆๆ', 'th');
+        if (pn !== 0) return pn;
+      }
+      return a.name.localeCompare(b.name, 'th');
+    });
 
   const tplById = new Map(templates.map((t) => [t.id, t]));
 
@@ -183,7 +248,8 @@ export async function GET(request: NextRequest) {
   // Company public holidays for the month → the roster auto-marks them as day-off (they already
   // skip payroll/leave counting; the roster used to require manual entry). Global holidays
   // (company_id IS NULL) apply to every store; company holidays only to this store's company.
-  const companyId = employees.find((e) => e.company_id)?.company_id ?? null;
+  const companyId =
+    scope.kind === 'company' ? scope.companyId : employees.find((e) => e.company_id)?.company_id ?? null;
   let holidayFilter = service
     .from('hr_holidays')
     .select('holiday_date, name_th, name_en')
@@ -203,14 +269,17 @@ export async function GET(request: NextRequest) {
     balance,
     monthStatus,
     holidays,
+    companies: companiesRes.data ?? [],
   });
 }
 
-// POST — upsert one cell { store_id, user_id, work_date, shift_template_id|null, is_day_off }.
+// POST — upsert one cell { (store_id|company_id), user_id, work_date, shift_template_id|null, is_day_off }.
 // Any manager edit returns the cell to 'draft' so the roster must be re-submitted.
 export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const storeId = typeof body.store_id === 'string' ? body.store_id : '';
+  const scope = parseScope(storeId, typeof body.company_id === 'string' ? body.company_id : '');
+  if (!scope) return NextResponse.json({ error: 'store_id or company_id is required' }, { status: 400 });
   const auth = await requireScheduler();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
@@ -234,16 +303,28 @@ export async function POST(request: NextRequest) {
 
   const service = createServiceClient();
 
-  // The employee must belong to this store.
-  const { data: member, error: memberErr } = await service
-    .from('user_stores')
-    .select('user_id')
-    .eq('store_id', storeId)
-    .eq('user_id', userId)
-    .maybeSingle();
-  if (memberErr) return NextResponse.json({ error: 'Failed to verify staff' }, { status: 500 });
-  if (!member) {
-    return NextResponse.json({ error: 'Employee is not assigned to this store' }, { status: 400 });
+  // The employee must belong to this scope: store membership, or the company on their HR record.
+  if (scope.kind === 'store') {
+    const { data: member, error: memberErr } = await service
+      .from('user_stores')
+      .select('user_id')
+      .eq('store_id', scope.storeId)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (memberErr) return NextResponse.json({ error: 'Failed to verify staff' }, { status: 500 });
+    if (!member) {
+      return NextResponse.json({ error: 'Employee is not assigned to this store' }, { status: 400 });
+    }
+  } else {
+    const { data: emp, error: empErr } = await service
+      .from('hr_employees')
+      .select('company_id')
+      .eq('profile_id', userId)
+      .maybeSingle();
+    if (empErr) return NextResponse.json({ error: 'Failed to verify staff' }, { status: 500 });
+    if (!emp || (emp.company_id ?? null) !== scope.companyId) {
+      return NextResponse.json({ error: 'Employee is not in this company scope' }, { status: 400 });
+    }
   }
 
   // A leaver stays visible on the roster for their final month, so cap edits at their
@@ -265,18 +346,20 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // A shift assignment must reference an active template of THIS store.
+  // A shift assignment must reference an active template of THIS scope.
   if (shiftTemplateId) {
-    const { data: tpl, error: tplErr } = await service
+    let tplQ = service
       .from('hr_shift_templates')
       .select('id')
       .eq('id', shiftTemplateId)
-      .eq('store_id', storeId)
-      .eq('active', true)
-      .maybeSingle();
+      .eq('active', true);
+    if (scope.kind === 'store') tplQ = tplQ.eq('store_id', scope.storeId);
+    else if (scope.companyId) tplQ = tplQ.eq('company_id', scope.companyId);
+    else tplQ = tplQ.is('store_id', null).is('company_id', null);
+    const { data: tpl, error: tplErr } = await tplQ.maybeSingle();
     if (tplErr) return NextResponse.json({ error: 'Failed to verify shift' }, { status: 500 });
     if (!tpl) {
-      return NextResponse.json({ error: 'Invalid shift template for this store' }, { status: 400 });
+      return NextResponse.json({ error: 'Invalid shift template for this scope' }, { status: 400 });
     }
   }
 
@@ -284,7 +367,7 @@ export async function POST(request: NextRequest) {
   // hr_schedule is unique on (user_id, work_date), so the lock must span EVERY store the employee
   // works — not just this one — or an upsert here could overwrite another store's finalized row.
   try {
-    const storeIds = await employeeStoreIds(service, userId, storeId);
+    const storeIds = await employeeStoreIds(service, userId, scope.kind === 'store' ? scope.storeId : null);
     if (await isDateInFinalizedPeriod(service, workDate, storeIds)) {
       return NextResponse.json({ error: FINALIZED_PERIOD_ERROR }, { status: 409 });
     }
@@ -296,7 +379,8 @@ export async function POST(request: NextRequest) {
     .from('hr_schedule')
     .upsert(
       {
-        store_id: storeId,
+        store_id: scope.kind === 'store' ? scope.storeId : null,
+        company_id: scope.kind === 'company' ? scope.companyId : null,
         user_id: userId,
         work_date: workDate,
         shift_template_id: isDayOff ? null : shiftTemplateId,

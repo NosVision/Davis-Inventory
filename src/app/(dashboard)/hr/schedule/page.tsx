@@ -19,10 +19,16 @@ interface Employee {
   /** Real full name from the HR record — for the nickname ↔ full-name display toggle. */
   full_name?: string | null;
   username?: string | null;
+  /** Job position — company scope sorts by it; null = ยังไม่กำหนดตำแหน่ง. */
+  position_name?: string | null;
   work_hours_per_day: number;
   standard_days_off: number;
   /** Set only for departed staff — visible for their final month, capped by the API. */
   end_date?: string | null;
+}
+interface CompanyOpt {
+  id: string;
+  name: string;
 }
 interface Template {
   id: string;
@@ -81,7 +87,22 @@ export default function SchedulePage({
 
   const [stores, setStores] = useState<StoreOpt[]>([]);
   const [storeId, setStoreId] = useState('');
+  // Roster scope (owner ask 2026-07-27): per STORE (default) or per COMPANY — company mode
+  // reaches everyone incl. staff with no store (housekeepers/technicians); 'none' = no company.
+  const [scopeKind, setScopeKind] = useState<'store' | 'company'>('store');
+  const [companyId, setCompanyId] = useState('');
+  const [companies, setCompanies] = useState<CompanyOpt[]>([]);
   const [month, setMonth] = useState<string>(() => initialMonth || todayBangkok().slice(0, 7));
+
+  // Query params for the active scope — shared by load/save/publish/template calls.
+  const scopeReady = scopeKind === 'store' ? !!storeId : !!companyId;
+  const scopeBody = useMemo(
+    () => (scopeKind === 'store' ? { store_id: storeId } : { company_id: companyId }),
+    [scopeKind, storeId, companyId],
+  );
+  const scopeQS = scopeKind === 'store'
+    ? `store_id=${encodeURIComponent(storeId)}`
+    : `company_id=${encodeURIComponent(companyId)}`;
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -135,13 +156,13 @@ export default function SchedulePage({
   }, []);
 
   const load = useCallback(async () => {
-    if (!storeId) {
+    if (!scopeReady) {
       setLoading(false);
       return;
     }
     setLoading(true);
     try {
-      const res = await fetch(`/api/hr/schedule?store_id=${storeId}&month=${month}`);
+      const res = await fetch(`/api/hr/schedule?${scopeQS}&month=${month}`);
       if (!res.ok) throw new Error('load failed');
       const j = await res.json();
       setEmployees((j.employees ?? []) as Employee[]);
@@ -149,22 +170,24 @@ export default function SchedulePage({
       setEntries((j.entries ?? []) as Entry[]);
       setMonthStatus((j.monthStatus ?? 'empty') as MonthStatus);
       setHolidays((j.holidays ?? []) as { holiday_date: string; name_th: string; name_en: string }[]);
+      setCompanies((j.companies ?? []) as CompanyOpt[]);
     } catch {
       toast({ type: 'error', title: t('actionFailed') });
     } finally {
       setLoading(false);
     }
-  }, [storeId, month, t]);
+     
+  }, [scopeReady, scopeQS, month, t]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  // Switching store/month is a fresh context — drop any draft + selection.
+  // Switching scope/month is a fresh context — drop any draft + selection.
   useEffect(() => {
     setDraft(new Map());
     setSelectedEmps(new Set());
-  }, [storeId, month]);
+  }, [storeId, companyId, scopeKind, month]);
 
   // Keep a sensible default brush: first active shift; reset if the current one vanished.
   useEffect(() => {
@@ -235,7 +258,7 @@ export default function SchedulePage({
         return next;
       });
     },
-    [brush, selectedEmps, days] // eslint-disable-line react-hooks/exhaustive-deps
+    [brush, selectedEmps, days]  
   );
 
   // Bulk: stamp a 1-week pattern across the month for every selected employee.
@@ -271,7 +294,7 @@ export default function SchedulePage({
       const res = await fetch('/api/hr/schedule/batch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ store_id: storeId, cells }),
+        body: JSON.stringify({ ...scopeBody, cells }),
       });
       const j = (await res.json().catch(() => ({}))) as { error?: string; data?: { saved: number; skipped: number } };
       if (!res.ok) {
@@ -288,7 +311,7 @@ export default function SchedulePage({
     } finally {
       setSaving(false);
     }
-  }, [dirty, draft, storeId, load, t]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [dirty, draft, scopeBody, load, t]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- shift templates (unchanged) ---
   const addTemplate = useCallback(async () => {
@@ -297,7 +320,7 @@ export default function SchedulePage({
       const res = await fetch('/api/hr/shift-templates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ store_id: storeId, label: form.label.trim(), start_time: form.start, end_time: form.end, color: form.color }),
+        body: JSON.stringify({ ...scopeBody, label: form.label.trim(), start_time: form.start, end_time: form.end, color: form.color }),
       });
       if (!res.ok) throw new Error();
       setForm({ label: '', start: '17:00', end: '01:00', color: '#6366f1' });
@@ -306,7 +329,7 @@ export default function SchedulePage({
     } catch {
       toast({ type: 'error', title: t('saveFailed') });
     }
-  }, [form, storeId, load, t]);
+  }, [form, scopeBody, load, t]);
 
   // --- publish ---
   // HQ publishes the roster (draft → submitted); employees see it immediately. The HR "acknowledge"
@@ -316,7 +339,7 @@ export default function SchedulePage({
       const res = await fetch('/api/hr/schedule/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ store_id: storeId, month }),
+        body: JSON.stringify({ ...scopeBody, month }),
       });
       if (!res.ok) throw new Error();
       toast({ type: 'success', title: t('submittedToast') });
@@ -324,7 +347,7 @@ export default function SchedulePage({
     } catch {
       toast({ type: 'error', title: t('actionFailed') });
     }
-  }, [storeId, month, load, t]);
+  }, [scopeBody, month, load, t]);
 
   // Publishing is allowed even if some staff have no shift yet — but warn first (owner ask). An
   // "unassigned" employee has no shift AND no day-off anywhere this month.
@@ -394,13 +417,45 @@ export default function SchedulePage({
         actions={
           <>
             <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
-              {t('filterStore')}
-              <select value={storeId} onChange={(e) => setStoreId(e.target.value)} className="control mt-1">
-                {stores.length === 0 && <option value="">{t('noStores')}</option>}
-                {stores.map((s) => (
-                  <option key={s.id} value={s.id}>{s.store_name}</option>
+              {/* Scope switch: roster by store (default) or by company — company mode reaches
+                  staff with no store membership (แม่บ้าน/ช่าง) so EVERYONE is schedulable. */}
+              <span className="inline-flex rounded-md bg-gray-100 p-0.5 dark:bg-gray-700">
+                {([
+                  { kind: 'store', label: tt('สาขา', 'Store') },
+                  { kind: 'company', label: tt('บริษัท', 'Company') },
+                ] as const).map(({ kind, label }) => (
+                  <button
+                    key={kind}
+                    type="button"
+                    onClick={() => {
+                      setScopeKind(kind);
+                      if (kind === 'company' && !companyId) setCompanyId(companies[0]?.id ?? 'none');
+                    }}
+                    className={`rounded px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                      scopeKind === kind
+                        ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-800 dark:text-indigo-300'
+                        : 'text-gray-500 dark:text-gray-400'
+                    }`}
+                  >
+                    {label}
+                  </button>
                 ))}
-              </select>
+              </span>
+              {scopeKind === 'store' ? (
+                <select value={storeId} onChange={(e) => setStoreId(e.target.value)} className="control mt-1">
+                  {stores.length === 0 && <option value="">{t('noStores')}</option>}
+                  {stores.map((s) => (
+                    <option key={s.id} value={s.id}>{s.store_name}</option>
+                  ))}
+                </select>
+              ) : (
+                <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} className="control mt-1">
+                  {companies.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                  <option value="none">{tt('— ไม่ระบุบริษัท —', '— No company —')}</option>
+                </select>
+              )}
             </label>
             <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
               {t('filterMonth')}
@@ -579,6 +634,12 @@ export default function SchedulePage({
                       <input type="checkbox" checked={selectedEmps.has(emp.user_id)} onChange={() => toggleEmp(emp.user_id)}
                         className="h-3.5 w-3.5 rounded border-gray-300 text-indigo-600" />
                       {empName(emp)}
+                      {/* Company scope is sorted by position — show it so the grouping reads */}
+                      {scopeKind === 'company' && (
+                        <span className={`text-[10px] ${emp.position_name ? 'text-gray-400' : 'text-amber-500'}`}>
+                          · {emp.position_name || tt('ไม่มีตำแหน่ง', 'no position')}
+                        </span>
+                      )}
                       {emp.end_date && (
                         <span
                           className="inline-flex shrink-0 items-center rounded-full bg-rose-50 px-1.5 py-0.5 text-[9px] font-medium text-rose-600 dark:bg-rose-900/30 dark:text-rose-400"

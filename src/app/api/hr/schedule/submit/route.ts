@@ -11,34 +11,44 @@ function monthRange(month: string): { first: string; last: string } {
   return { first: `${month}-01`, last: `${month}-${String(lastDay).padStart(2, '0')}` };
 }
 
-// POST /api/hr/schedule/submit { store_id, month } — HQ/HR PUBLISHES the month's roster: every
-// draft row → 'submitted' (now visible to employees in ESS), and HR is notified to acknowledge.
+// POST /api/hr/schedule/submit { (store_id|company_id), month } — HQ/HR PUBLISHES the month's
+// roster: every draft row → 'submitted' (now visible to employees in ESS), and HR is notified to
+// acknowledge. Company scope ('none' = staff with no company yet) publishes the company rows.
 export async function POST(request: NextRequest) {
   const auth = await requireScheduler();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const storeId = typeof body.store_id === 'string' ? body.store_id : '';
-  if (!storeId) return NextResponse.json({ error: 'store_id is required' }, { status: 400 });
+  const companyParam = typeof body.company_id === 'string' ? body.company_id : '';
+  if (!storeId && !companyParam) {
+    return NextResponse.json({ error: 'store_id or company_id is required' }, { status: 400 });
+  }
   const month = typeof body.month === 'string' ? body.month : '';
   if (!MONTH_RE.test(month)) return NextResponse.json({ error: 'Invalid month' }, { status: 400 });
   const { first, last } = monthRange(month);
 
   const service = createServiceClient();
-  const { data, error } = await service
+  let pub = service
     .from('hr_schedule')
     .update({ status: 'submitted' })
-    .eq('store_id', storeId)
     .eq('status', 'draft')
     .gte('work_date', first)
-    .lte('work_date', last)
-    .select('id');
+    .lte('work_date', last);
+  if (companyParam) {
+    pub = pub.is('store_id', null);
+    pub = companyParam === 'none' ? pub.is('company_id', null) : pub.eq('company_id', companyParam);
+  } else {
+    pub = pub.eq('store_id', storeId);
+  }
+  const { data, error } = await pub.select('id');
   if (error) return NextResponse.json({ error: 'Failed to publish schedule' }, { status: 500 });
   const updated = (data ?? []).length;
 
   // Tell HR a roster was published and awaits their acknowledgment (best-effort — a notification
   // failure must never fail the publish). Skips when nothing changed (idempotent re-publish).
-  if (updated > 0) {
+  // Company-scope publishes skip the notify: the publisher IS company-wide HR/HQ.
+  if (updated > 0 && !companyParam) {
     try {
       const { data: store } = await service
         .from('stores')
