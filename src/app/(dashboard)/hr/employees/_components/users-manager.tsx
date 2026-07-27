@@ -486,12 +486,21 @@ export function UsersManager({
         </select>
         <select
           value={filterLinked}
-          onChange={(e) => setFilterLinked(e.target.value as 'all' | 'linked' | 'unlinked')}
+          onChange={(e) => {
+            // "claims" isn't a list filter — it flips the tab into the merged identity-claims
+            // workflow, exactly like clicking the 4th summary card.
+            if (e.target.value === 'claims') {
+              setShowClaims(true);
+              return;
+            }
+            setFilterLinked(e.target.value as 'all' | 'linked' | 'unlinked');
+          }}
           className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
         >
           <option value="all">ทั้งหมด</option>
           <option value="linked">ยืนยันตัวตนแล้ว</option>
           <option value="unlinked">ยังไม่ยืนยันตัวตน</option>
+          <option value="claims">คำขอยืนยันตัวตน{claimsPending ? ` (${claimsPending})` : ''}</option>
         </select>
         {(filterStoreId !== 'all' || filterRole !== 'all' || filterLinked !== 'all') && (
           <button
