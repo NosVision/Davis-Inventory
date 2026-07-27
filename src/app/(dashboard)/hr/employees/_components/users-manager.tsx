@@ -35,6 +35,7 @@ import {
   ClipboardCheck,
 } from 'lucide-react';
 import { IdentityClaimsManager } from './identity-claims-manager';
+import { EmployeeFormModal } from './employee-form-modal';
 
 function formatLastSignIn(iso: string | null): string {
   if (!iso) return 'ยังไม่เคยเข้าใช้';
@@ -110,6 +111,10 @@ export function UsersManager({
   const [filterRole, setFilterRole] = useState<string>('all');
   const [filterLinked, setFilterLinked] = useState<'all' | 'linked' | 'unlinked'>('all');
   const [linkedIds, setLinkedIds] = useState<Set<string>>(new Set());
+  // profile_id → hr_employees.id so clicking a linked user's name opens the same edit modal
+  // the employees tab uses (owner ask 2026-07-27).
+  const [employeeIdByProfile, setEmployeeIdByProfile] = useState<Map<string, string>>(new Map());
+  const [editEmployeeId, setEditEmployeeId] = useState<string | null>(null);
   // คิว "คำขอยืนยันตัวตน" (hr_pending_identities status=claimed). The 4th summary card
   // switches this tab into the identity-claims workflow (merged from /hr/identity-claims,
   // owner ask 2026-07-27). Count is best-effort.
@@ -143,11 +148,13 @@ export function UsersManager({
       // page's audience) through hr_employees RLS. Drives the "ยืนยันตัวตนแล้ว" indicator +
       // filter (same wording as the ยืนยันตัวตนพนักงาน / identity-claims flow that creates
       // most of these links).
-      supabase.from('hr_employees').select('profile_id'),
+      supabase.from('hr_employees').select('id, profile_id'),
     ]);
 
     if (data) setUsers(data as unknown as UserProfile[]);
-    setLinkedIds(new Set((emps ?? []).map((e: { profile_id: string }) => e.profile_id as string)));
+    const empRows = (emps ?? []) as { id: string; profile_id: string }[];
+    setLinkedIds(new Set(empRows.map((e) => e.profile_id)));
+    setEmployeeIdByProfile(new Map(empRows.map((e) => [e.profile_id, e.id])));
     setIsLoading(false);
   }, []);
 
@@ -349,9 +356,11 @@ export function UsersManager({
   const canAdminTarget = (u: UserProfile) => isOwner || u.role !== 'owner';
   // System-role changes: never on owner accounts; everything else is fair game for owner + HR.
   const canEditRole = (u: UserProfile) => u.role !== 'owner' && u.role !== 'customer';
-  // Roles offered in the change-role modal — every role except owner.
+  // Roles offered in the change-role modal — every role except owner. "Not Assigned" leads the
+  // list as the reset-to-baseline choice (only chat/me/tasks until HR assigns a real role).
   const roleEditOptions: UserRole[] = [
-    'staff', 'bar', 'head_bar', 'technician', 'cashier', 'housekeeping_staff', 'boh_staff', 'not_assign',
+    'not_assign',
+    'staff', 'bar', 'head_bar', 'technician', 'cashier', 'housekeeping_staff', 'boh_staff',
     'manager', 'accountant', 'hq', 'hr',
   ];
 
@@ -533,7 +542,21 @@ export function UsersManager({
           {filteredUsers.map((u) => (
             <Card key={u.id} padding="none">
               <div className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-3">
+                {/* Name block — for verified users it opens the SAME employee edit modal the
+                    employees tab uses (owner ask 2026-07-27); unlinked accounts have no HR
+                    record yet, so nothing to open. */}
+                <div
+                  className={cn(
+                    'flex items-center gap-3',
+                    employeeIdByProfile.has(u.id) && 'cursor-pointer rounded-lg -m-1 p-1 transition-colors hover:bg-indigo-50/60 dark:hover:bg-indigo-900/10'
+                  )}
+                  role={employeeIdByProfile.has(u.id) ? 'button' : undefined}
+                  title={employeeIdByProfile.has(u.id) ? 'แก้ไขข้อมูลพนักงาน' : undefined}
+                  onClick={() => {
+                    const empId = employeeIdByProfile.get(u.id);
+                    if (empId) setEditEmployeeId(empId);
+                  }}
+                >
                   {/* Avatar */}
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
                     {(u.display_name || u.username).charAt(0).toUpperCase()}
@@ -646,6 +669,17 @@ export function UsersManager({
       )}
       </>
       )}
+
+      {/* Edit employee modal — same component the employees tab uses, opened from the name */}
+      <EmployeeFormModal
+        isOpen={!!editEmployeeId}
+        employeeId={editEmployeeId}
+        onClose={() => setEditEmployeeId(null)}
+        onSaved={() => {
+          setEditEmployeeId(null);
+          loadUsers();
+        }}
+      />
 
       {/* Create User Modal */}
       <Modal

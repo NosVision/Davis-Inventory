@@ -19,6 +19,7 @@ interface ProfileRow {
 }
 interface EmployeeRow {
   profile_id: string;
+  full_name: string | null;
   work_hours_per_day: number | null;
   standard_days_off: number | null;
   status: string | null;
@@ -90,7 +91,7 @@ export async function GET(request: NextRequest) {
     userIds.length
       ? service
           .from('hr_employees')
-          .select('profile_id, work_hours_per_day, standard_days_off, status, end_date, company_id')
+          .select('profile_id, full_name, work_hours_per_day, standard_days_off, status, end_date, company_id')
           .in('profile_id', userIds)
       : Promise.resolve({ data: [], error: null }),
     service
@@ -122,6 +123,9 @@ export async function GET(request: NextRequest) {
   // start), mirroring the payroll leaver-window, then drops off in later months. This
   // keeps a just-offboarded person's final-month roster viewable (client ask 2026-07-22).
   const staff = profiles
+    // Printer system accounts (printer-{store_code}) are store members for the print server,
+    // never people — keep them off the roster (owner ask 2026-07-27).
+    .filter((p) => !(p.username ?? '').startsWith('printer-'))
     .filter((p) => {
       const e = empByProfile.get(p.id);
       if (!e) return true;
@@ -134,6 +138,10 @@ export async function GET(request: NextRequest) {
       return {
         user_id: p.id,
         name: p.display_name || p.username || '—',
+        // For the roster's nickname ↔ full-name toggle: real name from the HR record,
+        // login username as the last-resort fallback.
+        full_name: e?.full_name ?? null,
+        username: p.username ?? null,
         work_hours_per_day: e?.work_hours_per_day ?? DEFAULT_WORK_HOURS,
         standard_days_off: e?.standard_days_off ?? DEFAULT_DAYS_OFF,
         // Signals the roster UI that this person has left (their end_date caps assignments).

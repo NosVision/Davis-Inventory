@@ -152,12 +152,21 @@ export async function GET(request: NextRequest) {
       }, null)
     : null;
 
+  // Printer system accounts (printer-{store_code}) must never show as employees, even if one
+  // was accidentally linked to an hr_employees row (owner ask 2026-07-27).
+  const { data: printerProfiles } = await service
+    .from('profiles')
+    .select('id')
+    .ilike('username', 'printer-%');
+  const printerIds = (printerProfiles ?? []).map((r) => r.id as string);
+
   let query = service.from('hr_employees').select(LIST_SELECT, { count: 'exact' });
   for (const key of ['position_id', 'department_id', 'company_id', 'pay_type', 'status'] as const) {
     const v = sp.get(key);
     if (v) query = query.eq(key, v);
   }
   if (profileIdFilter) query = query.in('profile_id', profileIdFilter.length ? profileIdFilter : [NIL_UUID]);
+  if (printerIds.length) query = query.not('profile_id', 'in', `(${printerIds.join(',')})`);
   query = query.order('created_at', { ascending: false }).range(offset, offset + limit - 1);
 
   const { data, count, error } = await query;

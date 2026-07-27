@@ -16,6 +16,9 @@ interface StoreOpt {
 interface Employee {
   user_id: string;
   name: string;
+  /** Real full name from the HR record — for the nickname ↔ full-name display toggle. */
+  full_name?: string | null;
+  username?: string | null;
   work_hours_per_day: number;
   standard_days_off: number;
   /** Set only for departed staff — visible for their final month, capped by the API. */
@@ -86,6 +89,24 @@ export default function SchedulePage({
   const [monthStatus, setMonthStatus] = useState<MonthStatus>('empty');
   const [holidays, setHolidays] = useState<{ holiday_date: string; name_th: string; name_en: string }[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Roster name display: nickname (display_name) ↔ real full name (hr_employees.full_name),
+  // login username as the last resort either way (owner ask 2026-07-27). Sticky per browser.
+  const [nameMode, setNameMode] = useState<'nick' | 'full'>('nick');
+  useEffect(() => {
+    if (localStorage.getItem('hr-schedule-name-mode') === 'full') setNameMode('full');
+  }, []);
+  const switchNameMode = (mode: 'nick' | 'full') => {
+    setNameMode(mode);
+    localStorage.setItem('hr-schedule-name-mode', mode);
+  };
+  const empName = useCallback(
+    (emp: Employee) =>
+      nameMode === 'full'
+        ? emp.full_name || emp.username || emp.name || '—'
+        : emp.name || emp.username || '—',
+    [nameMode],
+  );
 
   // Draft (unsaved) edits + the paint brush + which employees the bulk tools act on.
   const [draft, setDraft] = useState<Map<string, DraftVal>>(new Map());
@@ -308,13 +329,13 @@ export default function SchedulePage({
   // Publishing is allowed even if some staff have no shift yet — but warn first (owner ask). An
   // "unassigned" employee has no shift AND no day-off anywhere this month.
   const attemptSubmit = useCallback(() => {
-    const unassigned = employees.filter((emp) => !days.some((d) => effectiveCell(emp.user_id, d))).map((e) => e.name);
+    const unassigned = employees.filter((emp) => !days.some((d) => effectiveCell(emp.user_id, d))).map((e) => empName(e));
     if (unassigned.length > 0) {
       setPublishWarn(unassigned);
       return;
     }
     publishRoster();
-  }, [employees, days, effectiveCell, publishRoster]);
+  }, [employees, days, effectiveCell, publishRoster, empName]);
 
   // Live per-employee balance from the EFFECTIVE (draft-aware) cells, so day-off counts update as
   // you edit — before saving.
@@ -436,6 +457,27 @@ export default function SchedulePage({
           className="inline-flex items-center gap-1 rounded-full border border-dashed border-gray-300 px-2.5 py-1 text-xs text-gray-500 hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-600">
           <Plus className="h-3 w-3" /> {t('addShift')}
         </button>
+
+        {/* nickname ↔ full-name display toggle (missing → login username) */}
+        <div className="ml-auto inline-flex rounded-lg bg-gray-100 p-0.5 text-xs dark:bg-gray-700">
+          {([
+            { mode: 'nick', label: tt('ชื่อเล่น', 'Nickname') },
+            { mode: 'full', label: tt('ชื่อ-นามสกุล', 'Full name') },
+          ] as const).map(({ mode, label }) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => switchNameMode(mode)}
+              className={`rounded-md px-2 py-1 font-medium transition-colors ${
+                nameMode === mode
+                  ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-800 dark:text-indigo-300'
+                  : 'text-gray-500 dark:text-gray-400'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {showAdd && (
@@ -536,7 +578,7 @@ export default function SchedulePage({
                     <label className="flex items-center gap-1.5">
                       <input type="checkbox" checked={selectedEmps.has(emp.user_id)} onChange={() => toggleEmp(emp.user_id)}
                         className="h-3.5 w-3.5 rounded border-gray-300 text-indigo-600" />
-                      {emp.name}
+                      {empName(emp)}
                       {emp.end_date && (
                         <span
                           className="inline-flex shrink-0 items-center rounded-full bg-rose-50 px-1.5 py-0.5 text-[9px] font-medium text-rose-600 dark:bg-rose-900/30 dark:text-rose-400"
@@ -610,7 +652,7 @@ export default function SchedulePage({
                   const std = b ? (b.standard_minutes / 60).toFixed(1) : '0.0';
                   return (
                     <tr key={emp.user_id} className="border-t border-gray-100 dark:border-gray-700/50">
-                      <td className="px-3 py-1.5 font-medium text-gray-800 dark:text-gray-200">{emp.name}</td>
+                      <td className="px-3 py-1.5 font-medium text-gray-800 dark:text-gray-200">{empName(emp)}</td>
                       <td className="px-3 py-1.5 tabular-nums text-gray-600 dark:text-gray-400">{b?.work_days ?? 0}</td>
                       <td className={`px-3 py-1.5 tabular-nums ${offBad ? 'font-semibold text-red-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-400'}`}>
                         {b?.day_off_days ?? 0} / {b?.off_target ?? 0}

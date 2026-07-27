@@ -158,6 +158,18 @@ export async function POST(request: NextRequest) {
     const memberSet = new Set((members ?? []).map((m: { user_id: string }) => m.user_id));
     employees = employees.filter((e) => memberSet.has(e.profile_id));
   }
+
+  // Printer system accounts (printer-{store_code}) are machines, not payees — drop them even
+  // if one was accidentally linked to an hr_employees row (owner ask 2026-07-27).
+  if (employees.length) {
+    const { data: printerProfiles } = await service
+      .from('profiles')
+      .select('id')
+      .ilike('username', 'printer-%')
+      .in('id', employees.map((e) => e.profile_id));
+    const printerIds = new Set((printerProfiles ?? []).map((r) => r.id as string));
+    if (printerIds.size) employees = employees.filter((e) => !printerIds.has(e.profile_id));
+  }
   const userIds = employees.map((e) => e.profile_id);
 
   // Upsert the payrun (draft). A finalized payrun must not be regenerated. The
