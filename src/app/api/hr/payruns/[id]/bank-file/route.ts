@@ -7,6 +7,7 @@ import {
   resolveBankCode,
   bankFileLabel,
   normalizeAccountNo,
+  isCashBank,
   type BankTransferRow,
 } from '@/lib/hr/bank-transfer';
 import { buildXlsx } from '@/lib/xlsx';
@@ -100,7 +101,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       const emp = s.employee_id ? bankByEmp.get(s.employee_id) : undefined;
       const account = normalizeAccountNo(emp?.bank_account_no);
       const bank = emp?.bank_name?.trim() || null;
-      const target = !account || !bank ? 'cash' : bank === 'BBL' ? 'bbl' : 'other';
+      // 'cash'/'เงินสด'/'-' typed into bank_name means hand-paid even if an account exists.
+      const target = !account || !bank || isCashBank(bank) ? 'cash' : bank === 'BBL' ? 'bbl' : 'other';
       if (target !== group) continue;
       if (s.net_satang <= 0) continue; // nothing to pay
       lines.push({

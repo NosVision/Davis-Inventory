@@ -129,6 +129,16 @@ export function normalizeAccountNo(acct: string | null | undefined): string {
   return (acct ?? '').replace(/\D/g, '');
 }
 
+/**
+ * True when the stored bank value means "no bank — pay cash". HR has historically typed
+ * 'cash' / 'เงินสด' / '-' into bank_name for hand-paid staff (client note 2026-07-27), so those
+ * must classify as the cash group — never fall through resolveBankCode()'s BBL default.
+ */
+export function isCashBank(bankName: string | null | undefined): boolean {
+  const v = (bankName ?? '').trim().toLowerCase();
+  return v === '' || v === '-' || v === 'cash' || v === 'เงินสด' || v === 'none';
+}
+
 /** satang integer → "N.NN" without thousands separators (final display string, no re-rounding). */
 export function satangToAmountField(satang: number): string {
   const sign = satang < 0 ? '-' : '';
