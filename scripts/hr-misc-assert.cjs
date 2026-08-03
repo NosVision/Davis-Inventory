@@ -66,19 +66,39 @@ eq('ec scope defaults company', ec.parseEvalPeriod({ period_month: '2026-07-01',
 eq('ec scope stores honored', ec.parseEvalPeriod({ period_month: '2026-07-01', title: 'x', scope_type: 'stores' }).fields.scope_type, 'stores');
 
 // ── leaves.ts: §H classifyLeaveEffect (the 3-column pay-effect) + countLeaveDays + cert ──
-const cle = (code, paid, hasCert) => lv.classifyLeaveEffect({ code, paid }, hasCert);
-eq('leave personal → หักหมด', cle('personal', false, false), { paid: false, deductSalary: true, deductSc: true, deductTravel: true });
-eq('leave sick no-cert → หักหมด', cle('sick', false, false), { paid: false, deductSalary: true, deductSc: true, deductTravel: true });
-eq('leave sick +cert → salary ไม่หัก, SC+travel หัก', cle('sick', false, true), { paid: true, deductSalary: false, deductSc: true, deductTravel: true });
-eq('leave vacation → ไม่หักเลย', cle('vacation', true, false), { paid: true, deductSalary: false, deductSc: false, deductTravel: false });
-eq('leave other-paid → ไม่หัก', cle('other', true, false), { paid: true, deductSalary: false, deductSc: false, deductTravel: false });
-eq('leave other-unpaid → หักหมด', cle('other', false, false), { paid: false, deductSalary: true, deductSc: true, deductTravel: true });
+// Since 00169 the effect is CONFIG-driven (hr_leave_types columns), not derived from `code`.
+// TYPES below mirrors the seeded config in production (verified 2026-07-28: identical across all
+// 5 companies), so these assertions still pin the §H handbook table end-to-end — if someone edits
+// a leave type's flags in a way that breaks the handbook, the mismatch shows up here.
+const TYPES = {
+  //                       paid,  paid_with_cert, deduct_sc, deduct_travel, requires_cert, cert_threshold_days
+  personal: { paid: false, paid_with_cert: false, deduct_sc: true, deduct_travel: true, requires_cert: false, cert_threshold_days: null },
+  sick: { paid: false, paid_with_cert: true, deduct_sc: true, deduct_travel: true, requires_cert: true, cert_threshold_days: 3 },
+  vacation: { paid: true, paid_with_cert: false, deduct_sc: false, deduct_travel: false, requires_cert: false, cert_threshold_days: null },
+  // 'special'/'training'/'marriage'… — paid types that dock nothing
+  otherPaid: { paid: true, paid_with_cert: false, deduct_sc: false, deduct_travel: false, requires_cert: false, cert_threshold_days: null },
+  // 'unpaid'/'ordination'/'military' — unpaid types treated as an absent day
+  otherUnpaid: { paid: false, paid_with_cert: false, deduct_sc: true, deduct_travel: true, requires_cert: false, cert_threshold_days: null },
+};
+const cle = (key, hasCert) => lv.classifyLeaveEffect(TYPES[key], hasCert);
+const ALL_DEDUCTED = { paid: false, deductSalary: true, deductSc: true, deductTravel: true };
+const NOTHING_DEDUCTED = { paid: true, deductSalary: false, deductSc: false, deductTravel: false };
+eq('leave personal → หักหมด', cle('personal', false), ALL_DEDUCTED);
+eq('leave sick no-cert → หักหมด', cle('sick', false), ALL_DEDUCTED);
+eq('leave sick +cert → salary ไม่หัก, SC+travel หัก', cle('sick', true), { paid: true, deductSalary: false, deductSc: true, deductTravel: true });
+eq('leave vacation → ไม่หักเลย', cle('vacation', false), NOTHING_DEDUCTED);
+eq('leave other-paid → ไม่หัก', cle('otherPaid', false), NOTHING_DEDUCTED);
+eq('leave other-unpaid → หักหมด', cle('otherUnpaid', false), ALL_DEDUCTED);
+// a cert on a type that does NOT grant paid-with-cert changes nothing
+eq('leave personal +cert → ยังหักหมด (ไม่มีสิทธิ์ paid_with_cert)', cle('personal', true), ALL_DEDUCTED);
 // countLeaveDays excludes holidays
 eq('countLeaveDays 5 days no holiday', lv.countLeaveDays('2026-07-01', '2026-07-05', []), 5);
 eq('countLeaveDays minus 1 holiday', lv.countLeaveDays('2026-07-01', '2026-07-05', ['2026-07-03']), 4);
-// cert required: sick > 3 days only; others when requires_cert
-eq('cert sick 3 days → not required', lv.isCertRequired({ code: 'sick', requires_cert: true }, 3), false);
-eq('cert sick 4 days → required', lv.isCertRequired({ code: 'sick', requires_cert: true }, 4), true);
+// cert required: sick only above its threshold (3); a type with no threshold always needs one
+eq('cert sick 3 days → not required', lv.isCertRequired(TYPES.sick, 3), false);
+eq('cert sick 4 days → required', lv.isCertRequired(TYPES.sick, 4), true);
+eq('cert personal (requires_cert=false) → never required', lv.isCertRequired(TYPES.personal, 10), false);
+eq('cert requires_cert + no threshold → always required', lv.isCertRequired({ requires_cert: true, cert_threshold_days: null }, 1), true);
 eq('cert non-sick requires_cert → always', lv.isCertRequired({ code: 'personal', requires_cert: true }, 1), true);
 eq('cert requires_cert=false → never', lv.isCertRequired({ code: 'sick', requires_cert: false }, 10), false);
 

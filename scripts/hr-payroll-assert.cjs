@@ -61,10 +61,13 @@ eq('S1 service_charge', earn(s1, 'service_charge'), 500_000);
 eq('S1 gross', s1.gross_satang, 2_472_500);
 eq('S1 leave_unpaid', ded(s1, 'leave_unpaid'), 120_000);
 eq('S1 travel_leave', ded(s1, 'travel_leave'), 10_000);
-eq('S1 late', ded(s1, 'late'), 5_000);
+// 20 min late → tier 2 under the current rule (1–14 ฿50 · 15–29 ฿100 · ≥30 ฿250 max, 2026-07-28)
+eq('S1 late (20min → tier2 ฿100)', ded(s1, 'late'), 10_000);
 eq('S1 sso (capped)', ded(s1, 'sso'), 87_500);
 eq('S1 tax (below bracket)', ded(s1, 'tax'), 0);
-eq('S1 net', s1.net_satang, 2_250_000);
+// net = gross − deductions − SC: Service Charge is paid as its own transfer (the 15th of the
+// following month), so it rides the slip as a reference earning but never the salary net.
+eq('S1 net (SC excluded — paid separately)', s1.net_satang, 1_745_000);
 
 // ── S2: div-9 OT, warning wiped SC (SC=0), no salary impact from warning ───────
 const s2 = slip(
@@ -92,9 +95,10 @@ const s4 = slip(
   { ts: { unauthorized_absent_days: 1, late_minutes_per_occurrence: [16, 31, 61] } },
 );
 eq('S4 absent', ded(s4, 'absent'), 30_000);
-eq('S4 late (3 tiers)', ded(s4, 'late'), 40_000);
+// [16, 31, 61] min → ฿100 + ฿250 + ฿250 = ฿600 (61 min is CAPPED at ฿250, not 2× per hour)
+eq('S4 late (3 tiers, top one capped)', ded(s4, 'late'), 60_000);
 eq('S4 sso (uncapped)', ded(s4, 'sso'), 45_000);
-eq('S4 net', s4.net_satang, 785_000);
+eq('S4 net', s4.net_satang, 765_000);
 
 // ── S5: ล.ย.01 progressive tax allowance ──────────────────────────────────────
 // ฿50,000 salary + SSO ฿875 → PND1 ฿1,704.17/mo. Matches the client's real payroll sheet
@@ -124,7 +128,9 @@ eq('S6 part-time no pvd line',
 const empTip = { rate_satang: 5_000_000, pay_type: 'full_monthly', ot_eligible: false, ot_hour_divisor: 8, tax_mode: 'none', sso_enrolled: false };
 const sTip = slip(empTip, { tipNetSatang: 2_500_000 });
 eq('S7 tip earning', earn(sTip, 'tip'), 2_500_000);
-eq('S7 tip in net', sTip.net_satang, slip(empTip).net_satang + 2_500_000);
+// Tips follow the Service-Charge model: shown on the slip, paid as a separate transfer — so the
+// salary net is identical with or without them.
+eq('S7 tip NOT in salary net (paid separately)', sTip.net_satang, slip(empTip).net_satang);
 eq('S7 part-time gets tip', earn(slip({ ...empTip, pay_type: 'pt_daily', rate_satang: 50_000 }, { tipNetSatang: 100_000, scNetSatang: 999_999 }), 'tip'), 100_000);
 eq('S7 part-time no SC', earn(slip({ ...empTip, pay_type: 'pt_daily', rate_satang: 50_000 }, { tipNetSatang: 100_000, scNetSatang: 999_999 }), 'service_charge'), 0);
 
