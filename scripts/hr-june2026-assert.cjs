@@ -3,7 +3,8 @@
  * Engine vs the client's REAL payroll sheet — "6. Payment June 2026" (Baccarat, cycle 26 May–25 Jun,
  * 24 employees). Verifies every money column the sheet computes against the engine's pure formulas:
  *   daily rate (÷30) · PAY OT ((÷30÷8)×1.5×h) · LWP/SLW docks (daily×days) · travel proration
- *   (docked ÷30/day for SL/PL/LWP/SLW/AB, NOT VL/H; sheet rounds to whole baht) · late tiers ·
+ *   (docked ÷30/day for SL/PL/LWP/SLW/AB, NOT VL/H; sheet rounds to whole baht) · late tiers
+ *   (the JUNE-2026 table, pinned locally — the live rule changed 2026-07-28) ·
  *   SSO (5% cap 875) · Total & Net arithmetic · PND1 for the standard fixed-salary case.
  * Anonymized: row numbers + structural figures only (no names / bank accounts / start dates).
  *
@@ -23,6 +24,23 @@ const js = ts.transpileModule(src, { compilerOptions: { module: 'commonjs', targ
 const mod = { exports: {} };
 new Function('module', 'exports', 'require', js)(mod, mod.exports, require);
 const { lateDeductionForMinutes, progressiveMonthlyTaxSatang } = mod.exports;
+
+// The late-fine table IN FORCE when this sheet was paid (1–30→฿50 · 31–59→฿100 · ≥60→฿250 per
+// full hour). The live default changed on 2026-07-28 (1–14→50 · 15–29→100 · ≥30→250 flat max), so
+// this historical reconciliation pins the legacy table explicitly — it must keep proving the
+// engine reproduces what was ACTUALLY paid in June 2026, not what today's rule would charge.
+const JUNE2026_LATE_TIERS = {
+  tier1_satang: 5000,
+  tier2_from_min: 31,
+  tier2_satang: 10000,
+  tier3_from_min: 60,
+  tier3_satang: 25000,
+};
+// Legacy semantics: tier 3 charged PER FULL HOUR (2h = ฿500) — the current engine caps it.
+const legacyLate = (m) =>
+  m >= JUNE2026_LATE_TIERS.tier3_from_min
+    ? JUNE2026_LATE_TIERS.tier3_satang * Math.floor(m / JUNE2026_LATE_TIERS.tier3_from_min)
+    : lateDeductionForMinutes(m, JUNE2026_LATE_TIERS);
 
 const R = [];
 const eq = (name, got, want) => R.push({ name, pass: JSON.stringify(got) === JSON.stringify(want), got, want });
@@ -70,7 +88,7 @@ for (const row of ROWS) {
   eq(`R${row.r} travel pay`, travelCalc, row.payTrans);
 
   // Late: engine tier fn vs the sheet's AB./LATE (satang → baht).
-  const lateCalc = row.lates.reduce((s, m) => s + lateDeductionForMinutes(m), 0) / 100;
+  const lateCalc = row.lates.reduce((s, m) => s + legacyLate(m), 0) / 100;
   const lateSheet = row.lateSheet ?? lateCalc;
   if (row.lateAnomaly) {
     // known mis-keyed row: assert the model value so a future tier change still trips this line

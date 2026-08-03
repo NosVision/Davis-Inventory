@@ -10,38 +10,39 @@
 // point it becomes a satang figure. All ÷30 uses the company day_divisor (default 30).
 
 // ── §E late-deduction table (per late occurrence, by minutes late) ──────────────
-// Calibrated to the client's LIVE payroll sheet ("6. Payment June 2026", 13 late rows):
-// 1–30 min → ฿50 · 31–59 → ฿100 · ≥1h → ฿250 per full hour (60–119 → 250, 120 → 500 — both
-// observed). The earlier plan text ("free under 15, flat 250 over an hour") does not match the
-// sheet, which charges ฿50 from the very first minute (L:1 → 50) and ฿250 at exactly 60.
-export const LATE_TIER_15_SATANG = 5000;
-export const LATE_TIER_30_SATANG = 10000;
-export const LATE_TIER_60_SATANG = 25000;
+// Client rule 2026-07-28 (ALL companies; a 18:00 shift is the worked example):
+//   18:01–18:14 (1–14 min)  → ฿50
+//   18:15–18:29 (15–29 min) → ฿100
+//   18:30 onwards (≥30 min) → ฿250 — this is the CEILING ("สูงสุดที่ 250"), it does NOT keep
+//   escalating per hour the way the previous rule did (the old table came from the June-2026
+//   sheet: 1–30→50, 31–59→100, ≥60→250 per full hour, so 2h used to cost ฿500).
+export const LATE_TIER1_SATANG = 5000; // ฿50
+export const LATE_TIER2_SATANG = 10000; // ฿100
+export const LATE_TIER3_SATANG = 25000; // ฿250 — flat maximum
 
-// Owner-tunable (hr_policy_settings key 'late_tiers'); the default equals the sheet-calibrated
-// constants above, so with no setting rows the math is byte-identical to before.
+// Owner-tunable (hr_policy_settings key 'late_tiers'); the default equals the constants above,
+// so with no setting rows the engine follows the client rule as written.
 export interface LateTiers {
   tier1_satang: number;
   tier2_from_min: number;
   tier2_satang: number;
   tier3_from_min: number;
-  tier3_satang_per_hour: number;
+  /** Flat fine at/after tier3_from_min — the maximum a single late arrival can cost. */
+  tier3_satang: number;
 }
 export const DEFAULT_LATE_TIERS: LateTiers = {
-  tier1_satang: LATE_TIER_15_SATANG,
-  tier2_from_min: 31,
-  tier2_satang: LATE_TIER_30_SATANG,
-  tier3_from_min: 60,
-  tier3_satang_per_hour: LATE_TIER_60_SATANG,
+  tier1_satang: LATE_TIER1_SATANG,
+  tier2_from_min: 15,
+  tier2_satang: LATE_TIER2_SATANG,
+  tier3_from_min: 30,
+  tier3_satang: LATE_TIER3_SATANG,
 };
 
 export function lateDeductionForMinutes(lateMin: number, tiers: LateTiers = DEFAULT_LATE_TIERS): number {
   if (lateMin <= 0) return 0;
-  if (lateMin >= tiers.tier3_from_min) {
-    return tiers.tier3_satang_per_hour * Math.floor(lateMin / tiers.tier3_from_min);
-  }
+  if (lateMin >= tiers.tier3_from_min) return tiers.tier3_satang; // capped — never per-hour
   if (lateMin >= tiers.tier2_from_min) return tiers.tier2_satang;
-  return tiers.tier1_satang; // charged from the very first minute (sheet: L:1 → ฿50)
+  return tiers.tier1_satang; // charged from the very first minute
 }
 
 // ── Thai progressive PND1 annual brackets (baht) ────────────────────────────────

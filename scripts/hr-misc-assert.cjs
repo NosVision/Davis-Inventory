@@ -195,14 +195,24 @@ eq('score: band boundaries 90/75/60', [as.bandOf(90), as.bandOf(89), as.bandOf(7
 // ── policy knobs (owner-tunable) — defaults MUST equal historical constants ──
 const pol = load('policy.ts');
 const pr = load('payroll.ts');
-eq('policy: defaults equal historical late tiers', pol.POLICY_DEFAULTS.late_tiers, { tier1_satang: 5000, tier2_from_min: 31, tier2_satang: 10000, tier3_from_min: 60, tier3_satang_per_hour: 25000 });
+// Client rule 2026-07-28 (all companies): 1–14 → ฿50 · 15–29 → ฿100 · ≥30 → ฿250 CAPPED.
+eq('policy: defaults equal the current late-tier rule', pol.POLICY_DEFAULTS.late_tiers, { tier1_satang: 5000, tier2_from_min: 15, tier2_satang: 10000, tier3_from_min: 30, tier3_satang: 25000 });
+eq('policy: legacy tier3_satang_per_hour key still maps onto tier3_satang', pol.mergePolicies([{ key: 'late_tiers', value: { tier3_satang_per_hour: 30000 } }]).late_tiers.tier3_satang, 30000);
 eq('policy: probation default 119 / sc divisor 30 / carry on', [pol.POLICY_DEFAULTS.probation_days, pol.POLICY_DEFAULTS.sc_leave_divisor, pol.POLICY_DEFAULTS.warning_carry_enabled], [119, 30, true]);
 eq('policy: mergePolicies clamps junk to defaults', pol.mergePolicies([{ key: 'probation_days', value: { days: 9999 } }, { key: 'sc_leave_divisor', value: { divisor: 'x' } }]).probation_days, 119);
 eq('policy: mergePolicies applies valid overrides', pol.mergePolicies([{ key: 'probation_days', value: { days: 90 } }]).probation_days, 90);
-// late fn honours custom tiers, and default path unchanged
-eq('late: default 25min → ฿50', pr.lateDeductionForMinutes(25), 5000);
-eq('late: custom tiers 25min → ฿70', pr.lateDeductionForMinutes(25, { tier1_satang: 7000, tier2_from_min: 31, tier2_satang: 10000, tier3_from_min: 60, tier3_satang_per_hour: 25000 }), 7000);
-eq('late: custom tier2 from 16 → 25min hits tier2', pr.lateDeductionForMinutes(25, { tier1_satang: 5000, tier2_from_min: 16, tier2_satang: 12000, tier3_from_min: 60, tier3_satang_per_hour: 25000 }), 12000);
+// late fn: every boundary of the current rule (18:00 shift → 18:01/18:14/18:15/18:29/18:30/19:00)
+eq('late: 0min → ฿0', pr.lateDeductionForMinutes(0), 0);
+eq('late: 1min → ฿50', pr.lateDeductionForMinutes(1), 5000);
+eq('late: 14min → ฿50', pr.lateDeductionForMinutes(14), 5000);
+eq('late: 15min → ฿100', pr.lateDeductionForMinutes(15), 10000);
+eq('late: 29min → ฿100', pr.lateDeductionForMinutes(29), 10000);
+eq('late: 30min → ฿250', pr.lateDeductionForMinutes(30), 25000);
+eq('late: 60min → ฿250 (capped, NOT per-hour)', pr.lateDeductionForMinutes(60), 25000);
+eq('late: 180min → ฿250 (still capped)', pr.lateDeductionForMinutes(180), 25000);
+// and it still honours custom tiers
+eq('late: custom tier1 ฿70 at 10min', pr.lateDeductionForMinutes(10, { tier1_satang: 7000, tier2_from_min: 15, tier2_satang: 10000, tier3_from_min: 30, tier3_satang: 25000 }), 7000);
+eq('late: custom tier2 from 16 → 15min still tier1', pr.lateDeductionForMinutes(15, { tier1_satang: 5000, tier2_from_min: 16, tier2_satang: 12000, tier3_from_min: 30, tier3_satang: 25000 }), 5000);
 // probation custom days
 eq('probation: custom 30 days', em.computeProbationEnd('2026-01-01', 30), '2026-01-31');
 eq('probation: default still 119', em.computeProbationEnd('2026-01-01'), '2026-04-30');

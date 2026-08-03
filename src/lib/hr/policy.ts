@@ -10,7 +10,7 @@ export interface LateTierPolicy {
   tier2_from_min: number;
   tier2_satang: number; // tier2_from..tier3_from-1
   tier3_from_min: number;
-  tier3_satang_per_hour: number; // ≥ tier3_from: per FULL hour
+  tier3_satang: number; // ≥ tier3_from: flat MAXIMUM (client rule 2026-07-28 — no per-hour escalation)
 }
 
 export interface WorkIndexPolicy {
@@ -41,12 +41,13 @@ export interface HrPolicies {
 }
 
 export const POLICY_DEFAULTS: HrPolicies = {
+  // Client rule 2026-07-28 (all companies): 1–14 min → ฿50 · 15–29 → ฿100 · ≥30 → ฿250 (max).
   late_tiers: {
-    tier1_satang: 5000, // ฿50 from the very first minute (real June-2026 sheet)
-    tier2_from_min: 31,
+    tier1_satang: 5000, // ฿50 from the very first minute
+    tier2_from_min: 15,
     tier2_satang: 10000, // ฿100
-    tier3_from_min: 60,
-    tier3_satang_per_hour: 25000, // ฿250 per full hour
+    tier3_from_min: 30,
+    tier3_satang: 25000, // ฿250 — ceiling, not per hour
   },
   probation_days: 119,
   sc_leave_divisor: 30,
@@ -88,7 +89,9 @@ export function mergePolicies(rows: { key: string; value: unknown }[]): HrPolici
       tier2_from_min: num(lt.tier2_from_min, d.late_tiers.tier2_from_min, 1, 1440),
       tier2_satang: num(lt.tier2_satang, d.late_tiers.tier2_satang, 0, 10_000_000),
       tier3_from_min: num(lt.tier3_from_min, d.late_tiers.tier3_from_min, 1, 1440),
-      tier3_satang_per_hour: num(lt.tier3_satang_per_hour, d.late_tiers.tier3_satang_per_hour, 0, 10_000_000),
+      // `tier3_satang_per_hour` is the legacy key (pre-2026-07-28 per-hour rule) — a stored row
+      // written under it still carries its amount over as the new flat ceiling.
+      tier3_satang: num(lt.tier3_satang ?? lt.tier3_satang_per_hour, d.late_tiers.tier3_satang, 0, 10_000_000),
     },
     probation_days: num(scalar('probation_days')?.days, d.probation_days, 0, 730),
     sc_leave_divisor: num(scalar('sc_leave_divisor')?.divisor, d.sc_leave_divisor, 1, 31),
