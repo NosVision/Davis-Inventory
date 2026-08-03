@@ -21,7 +21,7 @@ const ensureDraft = async (hr) => {
   const hr = await login(u('hr-test-hr').email, u('hr-test-hr').password);
   const staff = await login(u('hr-test-staff').email, u('hr-test-staff').password);
 
-  const empList = await req(hr, 'GET', '/api/hr/employees');
+  const empList = await req(hr, 'GET', '/api/hr/employees?limit=200');
   const subjEmp = (empList.json?.data || []).find((e) => e.profile_id === SUBJ_UID);
   check('resolved staff9 hr_employees.id', !!subjEmp?.id, empList.json?.data?.length);
   const empId9 = subjEmp?.id;
@@ -35,7 +35,7 @@ const ensureDraft = async (hr) => {
     const gen = await req(hr, 'POST', '/api/hr/payruns', { company_id: COMPANY, period_year: YEAR, period_month: MONTH });
     payrunId = gen.json?.data?.id;
     check('generate payrun ok', gen.status === 200 && !!payrunId, gen.status);
-    const fin = await req(hr, 'POST', `/api/hr/payruns/${payrunId}/finalize`);
+    const fin = await req(hr, 'POST', `/api/hr/payruns/${payrunId}/finalize`, { override_reason: 'e2e: no accountant link on the throwaway run' });
     check('finalize payrun 200', fin.status === 200, `status=${fin.status} ${(fin.text || '').slice(0, 140)}`);
 
     // ── ภ.ง.ด.1 (monthly withholding) ──

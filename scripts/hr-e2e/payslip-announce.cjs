@@ -38,7 +38,7 @@ async function cleanupPayrun(svc, payrunId) {
     const draftAnn = await req(hr, 'POST', `/api/hr/payruns/${run1}/announce`, {});
     check('announce on draft 409', draftAnn.status === 409, draftAnn.status);
 
-    const fin1 = await req(hr, 'POST', `/api/hr/payruns/${run1}/finalize`, {});
+    const fin1 = await req(hr, 'POST', `/api/hr/payruns/${run1}/finalize`, { override_reason: 'e2e: no accountant link on the throwaway run' });
     check('finalize 200 (manual mode: announced=false)', fin1.status === 200 && fin1.json?.data?.announced === false, fin1.json?.data);
     const { data: n0 } = await svc.from('notifications').select('id').eq('type', 'hr_payslip_ready');
     check('manual mode: finalize sends nothing', (n0 ?? []).length === 0, n0?.length);
@@ -66,7 +66,7 @@ async function cleanupPayrun(svc, payrunId) {
     const gen2 = await req(hr, 'POST', '/api/hr/payruns', { company_id: COMPANY, period_year: 2027, period_month: 1 });
     run2 = gen2.json?.data?.id;
     const before = (await svc.from('notifications').select('id').eq('type', 'hr_payslip_ready')).data?.length ?? 0;
-    const fin2 = await req(hr, 'POST', `/api/hr/payruns/${run2}/finalize`, {});
+    const fin2 = await req(hr, 'POST', `/api/hr/payruns/${run2}/finalize`, { override_reason: 'e2e: no accountant link on the throwaway run' });
     check('immediate mode: finalize announces', fin2.status === 200 && fin2.json?.data?.announced === true, fin2.json?.data);
     const after = (await svc.from('notifications').select('id').eq('type', 'hr_payslip_ready')).data?.length ?? 0;
     check('notifications sent on finalize', after > before, `${before} → ${after}`);

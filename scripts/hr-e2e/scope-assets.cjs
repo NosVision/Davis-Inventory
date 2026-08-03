@@ -16,7 +16,7 @@ const st = async (pr) => (await pr).status;
   const mgr = await login(u('hr-test-manager').email, u('hr-test-manager').password);
   const staff = await login(u('hr-test-staff').email, u('hr-test-staff').password);
 
-  const all = (await req(hr, 'GET', '/api/hr/employees')).json?.data || [];
+  const all = (await req(hr, 'GET', '/api/hr/employees?limit=200')).json?.data || [];
   const outProfile = (all.find((e) => !(e.stores || []).some((s) => s.id === HRTEST)) || {}).profile_id;
   check('resolved out-of-scope employee', !!outProfile, null);
 

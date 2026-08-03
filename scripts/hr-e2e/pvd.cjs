@@ -19,7 +19,7 @@ const genSubjSlip = async (hr) => {
 (async () => {
   const hr = await login(u('hr-test-hr').email, u('hr-test-hr').password);
 
-  const empList = await req(hr, 'GET', '/api/hr/employees');
+  const empList = await req(hr, 'GET', '/api/hr/employees?limit=200');
   const subjEmp = (empList.json?.data || []).find((e) => e.profile_id === SUBJ_UID);
   const empId = subjEmp?.id;
   check('resolved staff hr_employees.id', !!empId, null);

@@ -57,7 +57,10 @@ const anon = (path, init) => fetch(`${BASE}${path}`, { redirect: 'manual', ...in
     const rows = gj?.data?.rows ?? [];
     const staffRow = rows.find((r) => r.name && r.payslip_id);
     check('rows include payslips + money fields', rows.length > 0 && 'gross_satang' in (staffRow ?? {}) && 'tax_satang' in (staffRow ?? {}), rows.length);
-    check('rows carry YTD fields (fresh run = 0)', 'ytd_gross_satang' in (staffRow ?? {}) && rows.every((r) => r.ytd_gross_satang === 0), staffRow?.ytd_gross_satang);
+    // YTD is the accumulated gross BEFORE this run — it cannot be pinned to 0, because the test
+    // tenant keeps earlier finalized runs (months 2-6 exist today). Assert the contract instead:
+    // the field is exposed and is a sane non-negative number on every row.
+    check('rows carry YTD fields (numeric, >= 0)', 'ytd_gross_satang' in (staffRow ?? {}) && rows.every((r) => typeof r.ytd_gross_satang === 'number' && r.ytd_gross_satang >= 0), staffRow?.ytd_gross_satang);
     check('link starts unconfirmed', gj?.data?.link?.confirmed_at === null, gj?.data?.link?.confirmed_at);
     check('anon page route also public', (await anon(`/review/${token}`)).status === 200, 'page');
 
@@ -152,7 +155,7 @@ const anon = (path, init) => fetch(`${BASE}${path}`, { redirect: 'manual', ...in
     check('export is a zip (PK) with content', bytes.length > 500 && bytes[0] === 0x50 && bytes[1] === 0x4b, bytes.length);
 
     // finalize → link becomes read-only
-    const fin = await req(hr, 'POST', `/api/hr/payruns/${payrunId}/finalize`, {});
+    const fin = await req(hr, 'POST', `/api/hr/payruns/${payrunId}/finalize`, { override_reason: 'e2e: no accountant link on the throwaway run' });
     check('finalize 200', fin.status === 200, fin.status);
     const putAfterFin = await anon(`/api/hr/payrun-review/${token}/taxes`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },

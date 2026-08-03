@@ -16,7 +16,7 @@ const st = async (pr) => (await pr).status;
   const staff = await login(u('hr-test-staff').email, u('hr-test-staff').password);
 
   // HR view = all company employees (enriched with .stores). Pick one in HRTEST + one not.
-  const all = (await req(hr, 'GET', '/api/hr/employees')).json?.data || [];
+  const all = (await req(hr, 'GET', '/api/hr/employees?limit=200')).json?.data || [];
   const inScope = all.find((e) => e.profile_id === STAFF);
   const outScope = all.find((e) => !(e.stores || []).some((s) => s.id === HRTEST));
   check('resolved in-scope (staff) + out-of-scope employees', !!inScope?.id && !!outScope?.id, { in: inScope?.id, out: outScope?.id });
@@ -41,7 +41,7 @@ const st = async (pr) => (await pr).status;
   check('mgr GET out-of-scope recurring → 403', (await st(req(mgr, 'GET', `/api/hr/employees/${outScope.id}/recurring`))) === 403, null);
 
   // ── list scope ──
-  const mgrList = (await req(mgr, 'GET', '/api/hr/employees')).json?.data || [];
+  const mgrList = (await req(mgr, 'GET', '/api/hr/employees?limit=200')).json?.data || [];
   check('scoped mgr list = only HRTEST employees', mgrList.length > 0 && mgrList.every((e) => (e.stores || []).some((s) => s.id === HRTEST)), mgrList.length);
   check('scoped mgr list EXCLUDES out-of-scope employee', !mgrList.some((e) => e.id === outScope.id), null);
   check('HR list INCLUDES out-of-scope employee', all.some((e) => e.id === outScope.id) && all.length > mgrList.length, { all: all.length, mgr: mgrList.length });

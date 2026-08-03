@@ -23,7 +23,7 @@ const HR_ID = () => u('hr-test-hr').id;
     // a finalized 2025-06 payrun so the 50 ทวิ (year 2025) has income
     const gen = await req(hr, 'POST', '/api/hr/payruns', { company_id: COMPANY, period_year: 2025, period_month: 6 });
     payrunId = gen.json?.data?.id;
-    await req(hr, 'POST', `/api/hr/payruns/${payrunId}/finalize`, {});
+    await req(hr, 'POST', `/api/hr/payruns/${payrunId}/finalize`, { override_reason: 'e2e: no accountant link on the throwaway run' });
     check('setup: finalized 2025-06 payrun', !!payrunId, gen.status);
 
     // year required for 50twi

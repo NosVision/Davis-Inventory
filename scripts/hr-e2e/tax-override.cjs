@@ -62,7 +62,7 @@ const STAFF_ID_KEY = 'hr-test-staff';
     check('staff override FORBIDDEN', sPut.status === 401 || sPut.status === 403, sPut.status);
 
     // 5) finalized payrun rejects overrides
-    const fin = await req(hr, 'POST', `/api/hr/payruns/${payrunId}/finalize`, {});
+    const fin = await req(hr, 'POST', `/api/hr/payruns/${payrunId}/finalize`, { override_reason: 'e2e: no accountant link on the throwaway run' });
     check('finalize 200', fin.status === 200, fin.status);
     const putAfter = await req(hr, 'PUT', `/api/hr/payslips/${slip2.id}/tax-override`, { tax_satang: 55 });
     check('override on finalized 409', putAfter.status === 409, putAfter.status);

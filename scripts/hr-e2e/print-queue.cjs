@@ -33,7 +33,7 @@ const YEAR = 2026, MONTH = 11;
     check('request on draft 409', draftReq.status === 409, draftReq.status);
 
     // finalize → request works
-    const fin = await req(hr, 'POST', `/api/hr/payruns/${payrunId}/finalize`, {});
+    const fin = await req(hr, 'POST', `/api/hr/payruns/${payrunId}/finalize`, { override_reason: 'e2e: no accountant link on the throwaway run' });
     check('finalize 200', fin.status === 200, fin.status);
     const r1 = await req(staff, 'POST', `/api/hr/ess/payslips/${staffSlip.id}/request-paper`, {});
     check('paper request 201', r1.status === 201, `${r1.status} ${(r1.text || '').slice(0, 100)}`);

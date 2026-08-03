@@ -17,7 +17,7 @@ const initBody = (userId) => ({ user_id: userId, kind: 'resignation', last_worki
   const mgr = await login(u('hr-test-manager').email, u('hr-test-manager').password);
   const staff = await login(u('hr-test-staff').email, u('hr-test-staff').password);
 
-  const all = (await req(hr, 'GET', '/api/hr/employees')).json?.data || [];
+  const all = (await req(hr, 'GET', '/api/hr/employees?limit=200')).json?.data || [];
   const inEmp = all.find((e) => e.profile_id === STAFF);
   const outEmp = all.find((e) => !(e.stores || []).some((s) => s.id === HRTEST));
   check('resolved in-scope + out-of-scope employees', !!inEmp?.id && !!outEmp?.id && !!outEmp?.profile_id, null);
