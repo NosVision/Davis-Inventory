@@ -9,7 +9,9 @@ const { check, summary } = makeCounter();
 const u = (n) => creds.users.find((x) => x.username === n);
 const COMPANY = 'faf154a4-ffc4-406b-bf44-58cf1162f873';
 const STORE = '3dd19143-aec1-41ac-bc40-dbc0d72196bc';
-const MONTH = '2026-07-01';
+// The payslip carries the PREVIOUS month's tip pool (payruns read N-1, same timing as SV), so a
+// pool meant to land on the 7/2026 slip must be June's.
+const MONTH = '2026-06-01';
 const STAFF = u('hr-test-staff').id;
 const ALLOCATED = 3_000_000, DEDUCT = 500_000, NET = ALLOCATED - DEDUCT; // 2,500,000
 
@@ -60,7 +62,9 @@ const genStaffSlip = async (hr) => {
     check('tip earning = net tip (2.5M)', tipLine?.amount_satang === NET, { tip: tipLine?.amount_satang, expected: NET });
     check('gross rises by exactly the net tip', withTip.summ.gross_satang - base.summ.gross_satang === NET,
       { base: base.summ.gross_satang, withTip: withTip.summ.gross_satang });
-    check('net pay rises when tip added', withTip.summ.net_satang > base.summ.net_satang, { base: base.summ.net_satang, withTip: withTip.summ.net_satang });
+    // Tips follow the SV model: they show on the slip but are transferred separately, so the
+    // salary net must NOT move.
+    check('salary net unchanged (tip paid separately)', withTip.summ.net_satang === base.summ.net_satang, { base: base.summ.net_satang, withTip: withTip.summ.net_satang });
 
     // Finalize locks the pool.
     const fin = await req(hr, 'POST', `/api/hr/tip-pool/${poolId}/finalize`);

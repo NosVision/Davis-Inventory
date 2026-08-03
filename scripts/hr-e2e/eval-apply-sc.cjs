@@ -6,7 +6,10 @@ const { login, req, creds, serviceClient, makeCounter } = require('./lib.cjs');
 const { check, summary } = makeCounter();
 const u = (n) => creds.users.find((x) => x.username === n);
 const HRTEST = '3dd19143-aec1-41ac-bc40-dbc0d72196bc';
-const MONTH = '2026-07-01';
+// Own month, like sc-carry: the shared July allocation accumulates auto 'warning' SC deductions
+// from the warning suites, which floor net at 0 and make 'net = allocated - eval' unprovable.
+// This suite creates and deletes its own pool here, so the arithmetic stays clean.
+const MONTH = '2026-10-01';
 const EMP = u('hr-test-staff').id;      // scored employee (SC allocation holder)
 const EVAL1 = u('hr-test-manager').id;  // evaluator
 const ALLOC = 1_000_000, DED = 20_000;  // negative payout 20k ≤ allocation → deduction 20k, net 980k
@@ -44,10 +47,19 @@ const P = (id, s) => `/api/hr/eval/periods/${id}${s}`;
       { min_pct: 51, max_pct: 100, amount_satang: 0, label: 'ok', sort_order: 1 },
     ] });
     check('tiered payout rule 200', rule.status === 200, `status=${rule.status} ${(rule.text || '').slice(0, 140)}`);
+    // §G: payouts are computed once the period is CLOSED — close before asking for money.
+    check('close period 200', (await req(hr, 'PATCH', '/api/hr/eval/periods', { id: periodId, status: 'closed' })).status === 200, null);
     const pay = await req(hr, 'POST', P(periodId, '/payouts'));
     check('compute payouts 200', pay.status === 200, pay.status);
     const payout = (await req(hr, 'GET', P(periodId, '/payouts'))).json?.data?.find((x) => x.result?.employee_id === EMP);
     check('payout is negative (−20k)', payout?.amount_satang === -DED, payout?.amount_satang);
+
+    // Only APPROVED negatives may dock SC — symmetric with the positive side, so an unreviewed
+    // number can never reach someone's Service Charge. Assert that rail, then approve.
+    const applyDraft = await req(hr, 'POST', P(periodId, '/apply-sc'));
+    check('apply-sc ignores a DRAFT negative', applyDraft.status === 200 && applyDraft.json?.data?.applied === 0, applyDraft.json?.data);
+    const appr = await req(hr, 'PATCH', P(periodId, '/payouts'), { payout_id: payout.id, status: 'approved' });
+    check('approve negative payout 200', appr.status === 200 && appr.json?.data?.status === 'approved', appr.json?.data || appr.status);
 
     // Apply → SC deduction.
     const apply = await req(hr, 'POST', P(periodId, '/apply-sc'));

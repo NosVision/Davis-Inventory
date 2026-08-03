@@ -31,7 +31,9 @@ const genStaffEarnings = async (hr) => {
     check('baseline slip has no eval_bonus', !base.some((e) => e.type === 'eval_bonus'), base.map((e) => e.type));
 
     // Set up a period → score 100% → compute → linear payout rule → compute payouts (draft).
-    const mk = await req(hr, 'POST', '/api/hr/eval/periods', { title: 'e2e eval-money Jul', period_month: '2026-07-01' });
+    // SV / tip / eval pools ride the payslip one month LATER (the payrun reads period N-1), so an
+    // eval period meant to reach the 7/2026 payrun must be JUNE's.
+    const mk = await req(hr, 'POST', '/api/hr/eval/periods', { title: 'e2e eval-money Jun', period_month: '2026-06-01' });
     periodId = mk.json?.data?.id;
     check('create period 201', mk.status === 201 && !!periodId, mk.status);
     const criteria = (await req(hr, 'GET', P(periodId, '/criteria'))).json?.data || [];
@@ -42,6 +44,8 @@ const genStaffEarnings = async (hr) => {
     check('evaluator submit 200', sub.status === 200, sub.status);
     check('compute 200', (await req(hr, 'POST', P(periodId, '/compute'))).status === 200, null);
     check('payout rule 200', (await req(hr, 'PUT', P(periodId, '/payout-rule'), { formula_type: 'linear', flat_satang: FLAT, satang_per_pct: PER_PCT })).status === 200, null);
+    // §G: payouts are computed once the period is CLOSED — close before asking for money.
+    check('close period 200', (await req(hr, 'PATCH', '/api/hr/eval/periods', { id: periodId, status: 'closed' })).status === 200, null);
     const pay = await req(hr, 'POST', P(periodId, '/payouts'));
     check('compute payouts 200', pay.status === 200 && (pay.json?.data?.payouts ?? 0) >= 1, pay.json?.data);
 

@@ -54,7 +54,10 @@ const HR_ID = u('hr-test-hr').id;
     const found = (opt.json?.data ?? []).find((o) => o.full_name_th === FULLNAME);
     check('options: seeded name searchable', !!found, opt.json?.data?.length);
     check('options: no salary fields leaked', found && !('rate_satang' in found) && !('tax_mode' in found), found && Object.keys(found));
-    check('options: full account NOT leaked, only last4 hint', found && !('bank_account_no' in found) && found.bank_last4 === '6789' && found.requires_bank_verify === true, found && Object.keys(found));
+    // Hardened deliberately: the options feed exposes only WHETHER a bank number will be asked
+    // for at claim time. Neither the account nor its last 4 digits may appear — leaking those
+    // let any signed-in user enumerate payroll PII and narrow the claim's second factor.
+    check('options: no bank digits leaked, only the verify flag', found && !('bank_account_no' in found) && !('bank_last4' in found) && found.requires_bank_verify === true, found && Object.keys(found));
 
     // bank second factor: no number → 400, wrong number → 400 (audited, name NOT claimed)
     const clNoBank = await req(me, 'POST', '/api/hr/ess/identity/claim', { identity_id: identId });

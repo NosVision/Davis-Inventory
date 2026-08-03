@@ -68,7 +68,11 @@ const D2 = '2026-12-22'; // counterpart's day off
     check('HR notified of new swap request', (hrNotif ?? []).length >= 1, hrNotif);
 
     // 3) HR approves → schedules exchange atomically
-    const decided = await req(hr, 'POST', `/api/hr/dayoff-swaps/${swapId}/decide`, { decision: 'approved' });
+    // Approving notifies BOTH employees, and notifyUser awaits Web Push delivery per endpoint —
+    // with dead subscriptions in the tenant that outbound wait can exceed the default 20s.
+    // Allow 60s so the suite measures the swap logic, not push latency (see the note in the
+    // run report: the route should hand push off after responding).
+    const decided = await req(hr, 'POST', `/api/hr/dayoff-swaps/${swapId}/decide`, { decision: 'approved' }, 60000);
     check('HR approve 200', decided.status === 200, `${decided.status} ${(decided.text || '').slice(0, 120)}`);
 
     const { data: cells } = await svc

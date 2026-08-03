@@ -93,8 +93,10 @@ const P = (id, s) => `/api/hr/eval/periods/${id}${s}`;
 
     const rule = await req(hr, 'PUT', P(periodId, '/payout-rule'), { formula_type: 'linear', flat_satang: 100000, satang_per_pct: 1000 });
     check('set payout rule 200', rule.status === 200, `status=${rule.status} ${(rule.text || '').slice(0, 140)}`);
-    const pay = await req(hr, 'POST', P(periodId, '/payouts'));
-    check('compute payouts 200', pay.status === 200 && (pay.json?.data?.payouts ?? 0) >= 1, pay.json?.data || pay.status);
+    // Money is only produced once the period is CLOSED (§G) — paying while scoring is still open
+    // would pay on mid-scoring data. Assert that guard, then close, then compute.
+    const payEarly = await req(hr, 'POST', P(periodId, '/payouts'));
+    check('payouts before close → 409', payEarly.status === 409 && payEarly.json?.code === 'period_not_closed', `status=${payEarly.status} ${(payEarly.text || '').slice(0, 120)}`);
 
     const beforeClose = await req(emp, 'GET', '/api/hr/ess/eval/my-results');
     const visOpen = (beforeClose.json?.data || []).some((r) => r.title === 'e2e eval Jul');
@@ -102,6 +104,9 @@ const P = (id, s) => `/api/hr/eval/periods/${id}${s}`;
 
     const close = await req(hr, 'PATCH', '/api/hr/eval/periods', { id: periodId, status: 'closed' });
     check('close period 200', close.status === 200, close.status);
+
+    const pay = await req(hr, 'POST', P(periodId, '/payouts'));
+    check('compute payouts 200 (after close)', pay.status === 200 && (pay.json?.data?.payouts ?? 0) >= 1, pay.json?.data || pay.status);
 
     const mine = await req(emp, 'GET', '/api/hr/ess/eval/my-results');
     const myRow = (mine.json?.data || []).find((r) => r.title === 'e2e eval Jul');
