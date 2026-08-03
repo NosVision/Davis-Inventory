@@ -41,9 +41,14 @@ const findPeriod = (list) => (list || []).find((s) => s.period_year === YEAR && 
   check('staff ESS 200', essDraft.status === 200, essDraft.status);
   check('draft payrun HIDDEN from staff ESS', !findPeriod(essDraft.json?.data), findPeriod(essDraft.json?.data));
 
-  // 4. HR finalizes.
-  const fin = await req(hr, 'POST', `/api/hr/payruns/${payrunId}/finalize`);
-  check('HR finalize 200', fin.status === 200 && fin.json?.data?.status === 'finalized', `status=${fin.status} ${(fin.text || '').slice(0, 160)}`);
+  // 4. HR finalizes. Since 2026-07-10 a run cannot lock until the ACCOUNTANT confirms the review
+  // link; HR may proceed anyway with an audited override_reason (the real HR escape hatch, and the
+  // only one available here — this throwaway run has no accountant link). The gate itself (409
+  // without a reason) is asserted first so the override can never mask a broken gate.
+  const finNoReason = await req(hr, 'POST', `/api/hr/payruns/${payrunId}/finalize`);
+  check('finalize without accountant confirm → 409', finNoReason.status === 409 && finNoReason.json?.code === 'accountant_not_confirmed', `status=${finNoReason.status} ${(finNoReason.text || '').slice(0, 120)}`);
+  const fin = await req(hr, 'POST', `/api/hr/payruns/${payrunId}/finalize`, { override_reason: 'e2e: no accountant link on the throwaway run' });
+  check('HR finalize 200 (with override)', fin.status === 200 && fin.json?.data?.status === 'finalized', `status=${fin.status} ${(fin.text || '').slice(0, 160)}`);
 
   // 5. After finalize, staff sees their OWN slip; self-scoped (net equals HR-detail net for that user).
   const essStaff = await req(staff, 'GET', '/api/hr/ess/payslips');
