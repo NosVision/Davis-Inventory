@@ -114,6 +114,11 @@ export function UsersManager({
   // profile_id → hr_employees.id so clicking a linked user's name opens the same edit modal
   // the employees tab uses (owner ask 2026-07-27).
   const [employeeIdByProfile, setEmployeeIdByProfile] = useState<Map<string, string>>(new Map());
+  // profile_id → hr_employees.full_name. The two tabs used to disagree about a person's name:
+  // this tab showed profiles.display_name (an account label like "ACC Baccarat") while the
+  // employees tab showed the real ชื่อ-นามสกุล, and 114 of 124 linked accounts differed.
+  // Both now lead with full_name; display_name drops to the secondary line.
+  const [fullNameByProfile, setFullNameByProfile] = useState<Map<string, string>>(new Map());
   const [editEmployeeId, setEditEmployeeId] = useState<string | null>(null);
   // คิว "คำขอยืนยันตัวตน" (hr_pending_identities status=claimed). The 4th summary card
   // switches this tab into the identity-claims workflow (merged from /hr/identity-claims,
@@ -148,13 +153,20 @@ export function UsersManager({
       // page's audience) through hr_employees RLS. Drives the "ยืนยันตัวตนแล้ว" indicator +
       // filter (same wording as the ยืนยันตัวตนพนักงาน / identity-claims flow that creates
       // most of these links).
-      supabase.from('hr_employees').select('id, profile_id'),
+      supabase.from('hr_employees').select('id, profile_id, full_name'),
     ]);
 
     if (data) setUsers(data as unknown as UserProfile[]);
-    const empRows = (emps ?? []) as { id: string; profile_id: string }[];
+    const empRows = (emps ?? []) as { id: string; profile_id: string; full_name: string | null }[];
     setLinkedIds(new Set(empRows.map((e) => e.profile_id)));
     setEmployeeIdByProfile(new Map(empRows.map((e) => [e.profile_id, e.id])));
+    setFullNameByProfile(
+      new Map(
+        empRows
+          .filter((e) => e.full_name?.trim())
+          .map((e) => [e.profile_id, e.full_name!.trim()])
+      )
+    );
     setIsLoading(false);
   }, []);
 
@@ -329,11 +341,17 @@ export function UsersManager({
     }
   };
 
+  // Same precedence as the employees tab's employeeName(): real ชื่อ-นามสกุล first, then the
+  // account label, then the username.
+  const personName = (u: UserProfile): string =>
+    fullNameByProfile.get(u.id) || u.display_name || u.username;
+
   const filteredUsers = users.filter((u) => {
     if (
       searchQuery &&
       !u.username.toLowerCase().includes(searchQuery.toLowerCase()) &&
-      !u.display_name?.toLowerCase().includes(searchQuery.toLowerCase())
+      !u.display_name?.toLowerCase().includes(searchQuery.toLowerCase()) &&
+      !fullNameByProfile.get(u.id)?.toLowerCase().includes(searchQuery.toLowerCase())
     ) {
       return false;
     }
@@ -559,12 +577,12 @@ export function UsersManager({
                 >
                   {/* Avatar */}
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
-                    {(u.display_name || u.username).charAt(0).toUpperCase()}
+                    {personName(u).charAt(0).toUpperCase()}
                   </div>
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-1.5">
                       <p className="text-sm font-medium text-gray-900 dark:text-white">
-                        {u.display_name || u.username}
+                        {personName(u)}
                       </p>
                       {/* Shield = สิทธิ์ระบบ (what the account can open) — NOT the HR job position */}
                       <Badge variant={roleBadgeVariants[u.role] || 'default'}>
@@ -590,6 +608,10 @@ export function UsersManager({
                       title={u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }) : ''}
                     >
                       <span>@{u.username}</span>
+                      {/* Keep the account label visible once the headline switched to full_name */}
+                      {u.display_name && u.display_name !== personName(u) && (
+                        <span className="truncate">{u.display_name}</span>
+                      )}
                       {u.stores && u.stores.length > 0 && (
                         <span className="flex items-center gap-0.5">
                           <Store className="h-3 w-3" />
@@ -794,7 +816,7 @@ export function UsersManager({
         title="จัดการสาขา"
         description={
           storeEditUser
-            ? `${storeEditUser.display_name || storeEditUser.username} — เลือกสาขาที่ดูแล (เลือกได้หลายสาขา)`
+            ? `${personName(storeEditUser)} — เลือกสาขาที่ดูแล (เลือกได้หลายสาขา)`
             : undefined
         }
       >
@@ -842,7 +864,7 @@ export function UsersManager({
         title="เปลี่ยนสิทธิ์ระบบ"
         description={
           roleEditUser
-            ? `${roleEditUser.display_name || roleEditUser.username} — สิทธิ์ระบบปัจจุบัน: ${ROLE_LABELS[roleEditUser.role] || roleEditUser.role}`
+            ? `${personName(roleEditUser)} — สิทธิ์ระบบปัจจุบัน: ${ROLE_LABELS[roleEditUser.role] || roleEditUser.role}`
             : undefined
         }
       >
@@ -887,7 +909,7 @@ export function UsersManager({
             <p className="text-sm text-gray-600 dark:text-gray-400">
               ต้องการรีเซ็ตรหัสผ่านของ{' '}
               <span className="font-semibold text-gray-900 dark:text-white">
-                {resetTarget?.display_name || resetTarget?.username}
+                {resetTarget ? personName(resetTarget) : ''}
               </span>
               {' '}ใช่ไหม?
             </p>
