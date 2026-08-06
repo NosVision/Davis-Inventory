@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { isDateInFinalizedPeriod, FINALIZED_PERIOD_ERROR } from '@/lib/hr/period-lock';
+import { isFutureAttendanceDate, FUTURE_ATTENDANCE_ERROR } from '@/lib/hr/attendance-window';
+import { businessDateBangkok } from '@/lib/utils/date';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_OPEN_ATTENDANCE_REQUESTS = 20;
@@ -65,6 +67,10 @@ export async function POST(request: NextRequest) {
 
   if (!isCalendarDate(businessDate)) {
     return NextResponse.json({ error: 'Invalid business_date' }, { status: 400 });
+  }
+  // A shift that hasn't happened can't have a missing or wrong punch yet.
+  if (isFutureAttendanceDate(businessDate, businessDateBangkok())) {
+    return NextResponse.json({ error: FUTURE_ATTENDANCE_ERROR }, { status: 400 });
   }
   if (!KINDS.includes(kind)) {
     return NextResponse.json({ error: 'Invalid kind' }, { status: 400 });

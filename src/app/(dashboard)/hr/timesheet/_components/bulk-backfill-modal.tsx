@@ -40,13 +40,13 @@ export function BulkBackfillModal({
         brush: 'สถานะที่จะระบาย', lateMin: 'สาย (นาที)', otMin: 'OT (นาที)', fillAll: 'เติมทั้งหมด', legend: 'สีสถานะ',
         rowHint: 'คลิกชื่อ = เติมทั้งแถว', colHint: 'คลิกวันที่ = เติมทั้งคอลัมน์', cellHint: 'คลิกเพื่อดู/แก้รายวัน',
         detail: 'รายละเอียดวัน', empty: 'ว่าง (ไม่ระบุ)', apply: 'ตกลง', close: 'ปิด', leaveType: 'ประเภทการลา', pickType: 'เลือกประเภทการลาก่อนบันทึก',
-        save: 'บันทึก', cancel: 'ยกเลิก', saved: (w: number, c: number) => `บันทึกแล้ว: ${w} รายการ${c ? ` (ล้าง ${c})` : ''}`, none: 'ยังไม่ได้ระบุอะไร', fail: 'บันทึกไม่สำเร็จ', loadFail: 'โหลดไม่สำเร็จ', noEmp: 'ไม่มีพนักงานในสาขานี้', emp: 'พนักงาน',
+        save: 'บันทึก', cancel: 'ยกเลิก', saved: (w: number, c: number, f: number) => `บันทึกแล้ว: ${w} รายการ${c ? ` (ล้าง ${c})` : ''}${f ? ` · ข้าม ${f} ช่องที่เป็นวันข้างหน้า` : ''}`, none: 'ยังไม่ได้ระบุอะไร', fail: 'บันทึกไม่สำเร็จ', loadFail: 'โหลดไม่สำเร็จ', noEmp: 'ไม่มีพนักงานในสาขานี้', emp: 'พนักงาน',
         s: { normal: 'ปกติ', absent: 'ขาด', leave: 'ลา', late: 'มาสาย', dayoff: 'วันหยุด', ot: 'OT', clear: 'ล้าง' } as Record<Brush, string>, wd: ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'] }
     : { title: 'Bulk backfill (branch grid)', desc: (s: string) => `“${s}” — fill all/row/column with a status, or click a cell to view & edit the day`,
         brush: 'Status to paint', lateMin: 'Late (min)', otMin: 'OT (min)', fillAll: 'Fill all', legend: 'Legend',
         rowHint: 'Click name = fill row', colHint: 'Click date = fill column', cellHint: 'Click to view/edit day',
         detail: 'Day detail', empty: 'Empty', apply: 'OK', close: 'Close', leaveType: 'Leave type', pickType: 'Pick a leave type before saving',
-        save: 'Save', cancel: 'Cancel', saved: (w: number, c: number) => `Saved: ${w}${c ? ` (cleared ${c})` : ''}`, none: 'Nothing set', fail: 'Save failed', loadFail: 'Load failed', noEmp: 'No staff in this store', emp: 'Employee',
+        save: 'Save', cancel: 'Cancel', saved: (w: number, c: number, f: number) => `Saved: ${w}${c ? ` (cleared ${c})` : ''}${f ? ` · skipped ${f} future day(s)` : ''}`, none: 'Nothing set', fail: 'Save failed', loadFail: 'Load failed', noEmp: 'No staff in this store', emp: 'Employee',
         s: { normal: 'Normal', absent: 'Absent', leave: 'Leave', late: 'Late', dayoff: 'Day off', ot: 'OT', clear: 'Clear' } as Record<Brush, string>, wd: ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'] };
 
   const STYLE: Record<Status, { block: string; glyph: string; dot: string }> = {
@@ -155,7 +155,7 @@ export function BulkBackfillModal({
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json?.error || L.fail);
-      toast({ type: 'success', title: L.saved(json.data?.written ?? 0, json.data?.cleared ?? 0) });
+      toast({ type: 'success', title: L.saved(json.data?.written ?? 0, json.data?.cleared ?? 0, json.data?.skipped_future ?? 0) });
       onDone();
     } catch (e) {
       toast({ type: 'error', title: e instanceof Error ? e.message : L.fail });

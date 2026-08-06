@@ -4,6 +4,7 @@ import { requireStoreManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import { enumerateDates } from '@/lib/hr/leaves';
 import { fetchLeaveTypeOptions } from '@/lib/hr/leave-types';
+import { businessDateBangkok } from '@/lib/utils/date';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TABLE = 'hr_timesheet_overrides';
@@ -191,9 +192,20 @@ export async function POST(request: NextRequest) {
     let written = 0;
     let cleared = 0;
     let skipped = 0;
+    let skippedFuture = 0;
+    const closedThrough = businessDateBangkok();
 
     for (const c of cells) {
       const key = `${c.user_id}|${c.business_date}`;
+
+      // มาทำงาน / สาย / ขาด state what happened, so they can't be painted onto a day that hasn't
+      // happened. วันหยุด, ลา and 'clear' are plans (or undo) and stay allowed ahead of time —
+      // that is how next month's roster gets filled in.
+      const isWorkFact = c.status === 'normal' || c.status === 'late' || c.status === 'absent';
+      if (isWorkFact && c.business_date > closedThrough) {
+        skippedFuture++;
+        continue;
+      }
       const existingLeave = singleDayLeaveByKey.get(key);
       const emp = empByUser.get(c.user_id);
 
@@ -256,10 +268,10 @@ export async function POST(request: NextRequest) {
 
     await logHrAudit(service, {
       actorId: auth.userId, action: 'update', table: TABLE, recordId: storeId,
-      before: null, after: { written, cleared, skipped, leaves_created: leavesToInsert.length, leaves_removed: leaveIdsToDelete.length },
+      before: null, after: { written, cleared, skipped, skipped_future: skippedFuture, leaves_created: leavesToInsert.length, leaves_removed: leaveIdsToDelete.length },
       reason: `Bulk backfill (grid): ${written} set, ${cleared} cleared, ${leavesToInsert.length} leaves`,
     });
-    return NextResponse.json({ data: { written, cleared, skipped } });
+    return NextResponse.json({ data: { written, cleared, skipped, skipped_future: skippedFuture } });
   }
 
   // ---- Legacy whole-branch fill mode ----
@@ -296,10 +308,16 @@ export async function POST(request: NextRequest) {
   const reason = `Bulk backfill: ${status}`;
   const rows: Record<string, unknown>[] = [];
   let skipped = 0;
+  let skippedFuture = 0;
+  // Same rule as the grid: มาทำงาน/สาย/ขาด state what happened and stop at the last closed day;
+  // วันหยุด/ลา are plans and may run ahead.
+  const closedThrough = businessDateBangkok();
+  const isWorkFact = status === 'normal' || status === 'late' || status === 'absent';
   for (const e of employees) {
     const fullDayMin = Math.round((e.work_hours_per_day ?? DEFAULT_WORK_HOURS) * 60);
     const f = fieldsForCell(status, fullDayMin, status === 'late' ? lateMinDefault : 0, null);
     for (const d of dates) {
+      if (isWorkFact && d > closedThrough) { skippedFuture++; continue; }
       if (!overwrite && existing.has(`${e.profile_id}|${d}`)) { skipped++; continue; }
       rows.push({ user_id: e.profile_id, business_date: d, store_id: storeId, worked_min: f.worked_min, late_min: f.late_min, ot_min: f.ot_min, absent: f.absent, reason, edited_by: auth.userId });
     }
@@ -310,8 +328,8 @@ export async function POST(request: NextRequest) {
   }
   await logHrAudit(service, {
     actorId: auth.userId, action: 'update', table: TABLE, recordId: storeId,
-    before: null, after: { status, date_from: dateFrom, date_to: dateTo, written: rows.length, skipped, overwrite },
+    before: null, after: { status, date_from: dateFrom, date_to: dateTo, written: rows.length, skipped, skipped_future: skippedFuture, overwrite },
     reason: `Bulk backfill ${status}: ${rows.length} cells`,
   });
-  return NextResponse.json({ data: { employees: employees.length, days: dates.length, written: rows.length, skipped } });
+  return NextResponse.json({ data: { employees: employees.length, days: dates.length, written: rows.length, skipped, skipped_future: skippedFuture } });
 }

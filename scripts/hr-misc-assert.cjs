@@ -278,6 +278,14 @@ const slip3sc = pr.computePayslip({
 eq('3%% excludes SC: tax still ฿470.44 with SC 13,500 on the slip', slip3sc.tax_satang, 47044);
 eq('3%% excludes SC: gross DOES include SC', slip3sc.gross_satang, 1_350_000 + 218_125 + 1_350_000);
 
+// ── attendance-window.ts: worked time can never be recorded for a day that hasn't closed ──
+// The roster legitimately runs weeks ahead (that is how shifts get planned); what must not run
+// ahead is anything asserting someone WORKED, was LATE, or was ABSENT.
+const aw = load('attendance-window.ts');
+eq('aw future date is refused', aw.isFutureAttendanceDate('2026-08-25', '2026-08-06'), true);
+eq('aw the last closed day is allowed', aw.isFutureAttendanceDate('2026-08-06', '2026-08-06'), false);
+eq('aw a past day is allowed', aw.isFutureAttendanceDate('2026-07-31', '2026-08-06'), false);
+
 // ── sc-line.ts: re-read the MEANING of an SC deduction line stored with an English label ──
 // These strings are what recompute wrote into hr_sc_deductions.label before the payslip learned
 // to localize them; the parser is the only thing standing between a stored row and a Thai slip.

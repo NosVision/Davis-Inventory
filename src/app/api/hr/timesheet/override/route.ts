@@ -3,6 +3,8 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManagerForEmployeeProfile } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import { isDateInFinalizedPeriod, employeeStoreIds, FINALIZED_PERIOD_ERROR } from '@/lib/hr/period-lock';
+import { isFutureAttendanceDate, FUTURE_ATTENDANCE_ERROR } from '@/lib/hr/attendance-window';
+import { businessDateBangkok } from '@/lib/utils/date';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TABLE = 'hr_timesheet_overrides';
@@ -63,6 +65,12 @@ export async function PUT(request: NextRequest) {
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   if (!reason) {
     return NextResponse.json({ error: 'A reason is required for a timesheet override' }, { status: 400 });
+  }
+
+  // A day that hasn't happened has no worked time to correct. Marking a future day ขาด/สาย is
+  // what put phantom absences into payroll before, so the date is checked here, not in the form.
+  if (isFutureAttendanceDate(businessDate, businessDateBangkok())) {
+    return NextResponse.json({ error: FUTURE_ATTENDANCE_ERROR }, { status: 400 });
   }
 
   const service = createServiceClient();
