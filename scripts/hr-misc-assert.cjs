@@ -278,6 +278,20 @@ const slip3sc = pr.computePayslip({
 eq('3%% excludes SC: tax still ฿470.44 with SC 13,500 on the slip', slip3sc.tax_satang, 47044);
 eq('3%% excludes SC: gross DOES include SC', slip3sc.gross_satang, 1_350_000 + 218_125 + 1_350_000);
 
+// ── sc-line.ts: re-read the MEANING of an SC deduction line stored with an English label ──
+// These strings are what recompute wrote into hr_sc_deductions.label before the payslip learned
+// to localize them; the parser is the only thing standing between a stored row and a Thai slip.
+const sl = load('sc-line.ts');
+eq('sc-line warning level', sl.parseScLine({ source_type: 'warning', label: 'Warning: deduct_50' }), { kind: 'warning', level: 'deduct_50' });
+eq('sc-line absent days', sl.parseScLine({ source_type: 'absent', label: 'Absent (7d)' }), { kind: 'absent', days: 7 });
+eq('sc-line leave code + days', sl.parseScLine({ source_type: 'leave', label: 'Leave: personal (2d)' }), { kind: 'leave', code: 'personal', days: 2 });
+eq('sc-line carry family', sl.parseScLine({ source_type: 'stock_penalty_carry', label: 'Stock penalty carry (prev month)' }), { kind: 'carry', family: 'stock_penalty' });
+// A human-authored line (HR typed it) is never reinterpreted — it passes through verbatim.
+eq('sc-line manual passes through', sl.parseScLine({ source_type: 'manual', label: 'ใบเตือน A-02 (ทดสอบ)' }), { kind: 'raw', text: 'ใบเตือน A-02 (ทดสอบ)' });
+// Unparseable/legacy shapes degrade to "no detail" rather than throwing mid-render.
+eq('sc-line absent without a count', sl.parseScLine({ source_type: 'absent', label: 'Absent' }), { kind: 'absent', days: null });
+eq('sc-line null label', sl.parseScLine({ source_type: 'warning', label: null }), { kind: 'warning', level: null });
+
 const fail = R.filter((r) => !r.pass);
 for (const r of R) if (!r.pass) console.log(`FAIL ${r.name}: got=${JSON.stringify(r.got)} want=${JSON.stringify(r.want)}`);
 console.log(`\nHR_MISC_ASSERT = ${R.length - fail.length}/${R.length} ${fail.length ? 'FAILED' : 'ALL PASS'}`);

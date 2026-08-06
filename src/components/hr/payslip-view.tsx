@@ -2,6 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 import { formatBaht } from '@/lib/pos/money';
+import { useScLineLabel } from '@/components/hr/use-sc-line-label';
 
 export interface PayslipLine {
   type: string;
@@ -83,6 +84,8 @@ interface PayslipViewProps {
 
 export function PayslipView({ data, print = false }: PayslipViewProps) {
   const t = useTranslations('hr.payslip');
+  // SV lines were stored with English labels at recompute time — localize them on the way out.
+  const scLineLabel = useScLineLabel();
   const { payslip, payrun, earnings, deductions } = data;
 
   const lineLabel = (l: PayslipLine): string => {
@@ -283,7 +286,7 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
             {data.service_charge.deductions.map((d, i) => (
               <li key={i} className="flex items-start justify-between gap-2 py-1">
                 <span className="min-w-0">
-                  {d.label || SV_SOURCE_TH[d.source_type] || d.source_type}
+                  {scLineLabel(d) || SV_SOURCE_TH[d.source_type] || d.source_type}
                   {d.note ? <span className="text-gray-400"> · {d.note}</span> : null}
                   {d.carry_satang > 0 ? (
                     <span className="text-amber-600 dark:text-amber-400"> · {t('sc.carry', { amount: formatBaht(d.carry_satang) })}</span>

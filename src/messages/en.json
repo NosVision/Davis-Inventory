@@ -3348,7 +3348,23 @@
       "srcEvalCarry": "Evaluation (carried)",
       "srcStockPenalty": "Stock penalty",
       "srcStockPenaltyCarry": "Stock penalty (carried)",
-      "srcManual": "Manual"
+      "srcManual": "Manual",
+      "lineDays": "{name} ({days}d)",
+      "leaveNames": {
+        "bereavement": "Bereavement leave",
+        "health_check": "Health-check leave",
+        "marriage": "Marriage leave",
+        "maternity": "Maternity leave",
+        "military": "Military service",
+        "ordination": "Ordination leave",
+        "paternity": "Paternity leave",
+        "personal": "Personal leave",
+        "sick": "Sick leave",
+        "special": "Special leave",
+        "training": "Training leave",
+        "unpaid": "Unpaid leave",
+        "vacation": "Vacation"
+      }
     },
     "offboarding": {
       "title": "Offboarding",

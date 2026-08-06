@@ -2,6 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 import { formatBaht } from '@/lib/pos/money';
+import { useScLineLabel } from '@/components/hr/use-sc-line-label';
 import type { ScData, ScRow } from './types';
 
 interface ScPrintViewProps {
@@ -17,6 +18,7 @@ interface ScPrintViewProps {
  */
 export function ScPrintView({ data, rows, storeName, periodMonth }: ScPrintViewProps) {
   const t = useTranslations('hr.serviceCharge');
+  const scLineLabel = useScLineLabel();
 
   return (
     <div id="sc-print-area" className="text-black">
@@ -54,7 +56,7 @@ export function ScPrintView({ data, rows, storeName, periodMonth }: ScPrintViewP
                     <ul className="mt-0.5 text-xs text-gray-700">
                       {a.deductions.map((d) => (
                         <li key={d.id}>
-                          {d.label}: −{formatBaht(d.amount_satang)} ฿
+                          {scLineLabel(d)}: −{formatBaht(d.amount_satang)} ฿
                           {d.carry_satang > 0
                             ? ` (${t('carryLabel')} ${formatBaht(d.carry_satang)} ฿)`
                             : ''}

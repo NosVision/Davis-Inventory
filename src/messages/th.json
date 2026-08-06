@@ -3349,7 +3349,23 @@
       "srcEvalCarry": "ประเมินผล (ยกมา)",
       "srcStockPenalty": "ค่าปรับสต๊อก",
       "srcStockPenaltyCarry": "ค่าปรับสต๊อก (ยกมา)",
-      "srcManual": "หักเอง"
+      "srcManual": "หักเอง",
+      "lineDays": "{name} ({days} วัน)",
+      "leaveNames": {
+        "bereavement": "ลางานศพ",
+        "health_check": "ลาตรวจสุขภาพ",
+        "marriage": "ลาสมรส",
+        "maternity": "ลาคลอด",
+        "military": "ลาเกณฑ์ทหาร",
+        "ordination": "ลาอุปสมบท",
+        "paternity": "ลาบิดา",
+        "personal": "ลากิจ",
+        "sick": "ลาป่วย",
+        "special": "ลากิจกรณีพิเศษ",
+        "training": "ลาฝึกอบรม",
+        "unpaid": "ลาโดยไม่รับค่าจ้าง",
+        "vacation": "ลาพักร้อน"
+      }
     },
     "offboarding": {
       "title": "การพ้นสภาพพนักงาน",

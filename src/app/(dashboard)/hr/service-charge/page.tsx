@@ -31,6 +31,7 @@ import {
   toast,
 } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
+import { useScLineLabel } from '@/components/hr/use-sc-line-label';
 import { formatBaht, bahtToSatang } from '@/lib/pos/money';
 import { ManualDeductionModal, type ManualTarget } from './_components/manual-deduction-modal';
 import { ScPrintView } from './_components/sc-print-view';
@@ -73,6 +74,8 @@ function currentMonth(): string {
 
 export default function HrServiceChargePage() {
   const t = useTranslations('hr.serviceCharge');
+  // auto lines carry an English label written at recompute time — localize on render
+  const scLineLabel = useScLineLabel();
   const { confirm, dialog } = useConfirm();
 
   const [stores, setStores] = useState<StoreOpt[]>([]);
@@ -761,7 +764,7 @@ export default function HrServiceChargePage() {
                                           {sourceLabel(d.source_type)}
                                         </span>
                                         <span className="text-gray-700 dark:text-gray-200">
-                                          {d.label}
+                                          {scLineLabel(d, { detailOnly: true })}
                                         </span>
                                         <span className="font-medium text-red-600 dark:text-red-400">
                                           −{formatBaht(d.amount_satang)} ฿
