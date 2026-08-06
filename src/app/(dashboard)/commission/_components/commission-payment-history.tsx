@@ -114,6 +114,9 @@ export function CommissionPaymentHistory({ month: monthProp, refreshKey, rounded
           bank_label: ae?.bank_name
             ? `${ae.bank_name} ${ae.bank_account_no || ''}${ae.bank_account_name ? ` (${ae.bank_account_name})` : ''}`.trim()
             : null,
+          // This PDF is the receipt for one transfer, not the monthly report — the ใบ 50 ทวิ
+          // status belongs on the latter, so it is deliberately left off here.
+          wht_label: null,
           rows,
           totals,
         }],

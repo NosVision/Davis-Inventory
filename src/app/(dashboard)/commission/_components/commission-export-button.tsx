@@ -59,6 +59,7 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
   const [open, setOpen] = useState(false);
   const [exportMonth, setExportMonth] = useState(monthProp);
   const [groups, setGroups] = useState<AEGroup[]>([]);
+  const [certStatus, setCertStatus] = useState<Record<string, string>>({});
   const [loadingGroups, setLoadingGroups] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [exporting, setExporting] = useState(false);
@@ -100,6 +101,16 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
       const ae = (json.ae_summary as AEGroup[]) || [];
       setGroups(ae);
       setSelectedIds(new Set(ae.map((a) => a.ae_id)));
+
+      // ใบ 50 ทวิ marks for the same month — printed under each AE so the accountant can see
+      // who asked without going back to the screen. Best-effort: the PDF is still valid without it.
+      const certRes = await fetch(`/api/commission/wht-certs?${params}`);
+      if (certRes.ok) {
+        const rows = (await certRes.json()) as Array<{ ae_id: string; status: string }>;
+        setCertStatus(Object.fromEntries(rows.map((r) => [r.ae_id, r.status])));
+      } else {
+        setCertStatus({});
+      }
     } finally {
       setLoadingGroups(false);
     }
@@ -174,10 +185,13 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
         const bankLabel = g.bank_name
           ? `${g.bank_name} ${g.bank_account_no || ''}${g.bank_account_name ? ` (${g.bank_account_name})` : ''}`.trim()
           : null;
+        const cert = certStatus[g.ae_id];
         return {
           ae_name: g.ae_name,
           ae_nickname: g.ae_nickname,
           bank_label: bankLabel,
+          wht_label:
+            cert === 'issued' ? 'ใบ 50 ทวิ: ออกให้แล้ว' : cert === 'requested' ? 'ใบ 50 ทวิ: ขอแล้ว' : null,
           rows,
           totals,
         };

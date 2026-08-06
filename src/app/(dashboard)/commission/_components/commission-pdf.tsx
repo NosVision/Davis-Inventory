@@ -216,6 +216,8 @@ export interface CommissionPdfAEGroup {
   ae_name: string;
   ae_nickname: string | null;
   bank_label: string | null;        // e.g. "กสิกร 123-4-56789 (สมชาย ใจดี)"
+  /** ใบ 50 ทวิ status for the month, or null when this AE did not ask. */
+  wht_label: string | null;
   rows: CommissionPdfRow[];
   totals: {
     subtotal: number;
@@ -294,6 +296,7 @@ function ReportDocument({ data }: { data: CommissionReportData }) {
               </Text>
               <Text style={styles.aeBank}>
                 {g.bank_label || 'ไม่มีข้อมูลธนาคาร'}
+                {g.wht_label ? `  •  ${g.wht_label}` : ''}
               </Text>
             </View>
 

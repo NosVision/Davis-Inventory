@@ -46,6 +46,10 @@ export function CommissionEntryForm({ onSuccess }: CommissionEntryFormProps) {
   const [aeList, setAeList] = useState<AEProfile[]>([]);
   const [selectedAE, setSelectedAE] = useState<AEProfile | null>(null);
   const [showAeDropdown, setShowAeDropdown] = useState(false);
+  // "ขอใบ 50 ทวิ" at bill time (owner ask 2026-08-06). Default OFF — most AEs never ask, and a
+  // tick here is a claim about the whole month, not this one bill. Ticking marks the AE on the
+  // month the bill falls in, which is exactly the row the รายงาน tab shows.
+  const [requestWhtCert, setRequestWhtCert] = useState(false);
   const [subtotalAmount, setSubtotalAmount] = useState('');
   const [commissionRate, setCommissionRate] = useState('10');
   const [taxRate, setTaxRate] = useState('3');
@@ -295,6 +299,28 @@ export function CommissionEntryForm({ onSuccess }: CommissionEntryFormProps) {
         const created = await res.json();
         toast({ type: 'success', title: t('entryForm.saveSuccess') });
         logAudit({ store_id: currentStoreId, action_type: AUDIT_ACTIONS.COMMISSION_ENTRY_CREATED, table_name: 'commission_entries', record_id: created.id, new_value: payload as Record<string, unknown>, changed_by: user?.id });
+
+        // Mark the ใบ 50 ทวิ request for the month this bill belongs to. Best-effort: the bill is
+        // already saved, so a failure here warns instead of pretending the save failed — the
+        // accountant can still tick the box on the รายงาน tab.
+        if (requestWhtCert && type === 'ae_commission' && selectedAE) {
+          try {
+            const certRes = await fetch('/api/commission/wht-certs', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                store_id: currentStoreId,
+                ae_id: selectedAE.id,
+                month: billDate.slice(0, 7),
+              }),
+            });
+            if (!certRes.ok) throw new Error();
+          } catch {
+            toast({ type: 'error', title: 'บันทึกบิลแล้ว แต่บันทึก "ขอใบ 50 ทวิ" ไม่สำเร็จ — ติ๊กได้ที่แท็บรายงาน' });
+          }
+        }
+
+        setRequestWhtCert(false);
         setReceiptNo(''); setReceiptPhoto(null); setTableNo(''); setNotes('');
         setSubtotalAmount(''); setSelectedAE(null); setAeSearch('');
         setBottleCount('1'); setSelectedStaffId(''); setSelectedStaffRole('');
@@ -354,11 +380,30 @@ export function CommissionEntryForm({ onSuccess }: CommissionEntryFormProps) {
             </div>
 
             {selectedAE && (
-              <div className="flex items-center gap-2 rounded-lg bg-amber-50 p-2 text-sm dark:bg-amber-900/20">
-                <span className="font-medium text-amber-700 dark:text-amber-400">{selectedAE.name}</span>
-                {selectedAE.phone && <span className="text-amber-600/70 dark:text-amber-400/70">| {selectedAE.phone}</span>}
-                <button onClick={() => { setSelectedAE(null); setAeSearch(''); }} className="ml-auto text-amber-500 hover:text-amber-700">&times;</button>
-              </div>
+              <>
+                <div className="flex items-center gap-2 rounded-lg bg-amber-50 p-2 text-sm dark:bg-amber-900/20">
+                  <span className="font-medium text-amber-700 dark:text-amber-400">{selectedAE.name}</span>
+                  {selectedAE.phone && <span className="text-amber-600/70 dark:text-amber-400/70">| {selectedAE.phone}</span>}
+                  <button onClick={() => { setSelectedAE(null); setAeSearch(''); }} className="ml-auto text-amber-500 hover:text-amber-700">&times;</button>
+                </div>
+
+                {/* Per-month request, recorded straight from the bill so the AE does not have to be
+                    chased again at close. Unticked by default. */}
+                <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-gray-200 p-2.5 text-sm transition-colors hover:border-indigo-300 hover:bg-indigo-50/50 dark:border-gray-600 dark:hover:border-indigo-500 dark:hover:bg-indigo-900/10">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    checked={requestWhtCert}
+                    onChange={(e) => setRequestWhtCert(e.target.checked)}
+                  />
+                  <span>
+                    <span className="font-medium text-gray-700 dark:text-gray-200">AE ขอใบ 50 ทวิ</span>
+                    <span className="block text-xs text-gray-500 dark:text-gray-400">
+                      บันทึกเป็นคำขอของเดือน {billDate.slice(0, 7)} — ดู/แก้ได้ที่แท็บรายงาน
+                    </span>
+                  </span>
+                </label>
+              </>
             )}
 
             {/* Quick Add AE — full fields */}

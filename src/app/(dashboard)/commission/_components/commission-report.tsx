@@ -11,9 +11,9 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Card, CardContent, Badge, toast } from '@/components/ui';
+import { Card, CardContent, Badge, Button, Modal, ModalFooter, Textarea, toast } from '@/components/ui';
 import { useAppStore } from '@/stores/app-store';
-import { Loader2, FileText, Check } from 'lucide-react';
+import { Loader2, FileText, Check, Plus, StickyNote } from 'lucide-react';
 import { netDisplay } from '@/types/commission';
 import { CommissionExportButton } from './commission-export-button';
 
@@ -42,10 +42,19 @@ interface BottleSummary {
   total_bottles: number;
   total_net: number;
 }
+interface CertActor {
+  display_name: string | null;
+  username: string | null;
+}
 interface WhtCert {
   ae_id: string;
   month: string;
   status: 'requested' | 'issued';
+  note: string | null;
+  requested_at: string | null;
+  issued_at: string | null;
+  requester: CertActor | null;
+  issuer: CertActor | null;
 }
 
 interface CommissionReportProps {
@@ -59,6 +68,27 @@ function formatCurrency(n: number) {
   return n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function actorLabel(a: CertActor | null): string {
+  return a?.display_name || a?.username || 'ไม่ทราบ';
+}
+
+function stampLabel(at: string | null): string {
+  if (!at) return '';
+  return new Date(at).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+/** Hover text spelling out who ticked what and when — the DB has always stored it, nothing showed it. */
+function certTooltip(cert: WhtCert | undefined): string {
+  if (!cert) return 'กดเพื่อทำเครื่องหมายว่า AE คนนี้ขอใบ 50 ทวิ';
+  const lines = [`ขอโดย ${actorLabel(cert.requester)} · ${stampLabel(cert.requested_at)}`];
+  if (cert.status === 'issued') {
+    lines.push(`ออกให้โดย ${actorLabel(cert.issuer)} · ${stampLabel(cert.issued_at)}`);
+  }
+  if (cert.note) lines.push(`หมายเหตุ: ${cert.note}`);
+  lines.push(cert.status === 'requested' ? 'กดเพื่อเปลี่ยนเป็น "ออกให้แล้ว"' : 'กดเพื่อล้างเป็น "ไม่ขอ"');
+  return lines.join('\n');
+}
+
 export function CommissionReport({ month, refreshKey, rounded = false }: CommissionReportProps) {
   const { currentStoreId } = useAppStore();
   const [ae, setAe] = useState<AESummary[]>([]);
@@ -66,6 +96,10 @@ export function CommissionReport({ month, refreshKey, rounded = false }: Commiss
   const [certs, setCerts] = useState<Record<string, WhtCert>>({});
   const [loading, setLoading] = useState(false);
   const [savingCert, setSavingCert] = useState<string | null>(null);
+  // หมายเหตุ editor — the API has always accepted `note`; there was no way to type one.
+  const [noteFor, setNoteFor] = useState<{ aeId: string; aeName: string } | null>(null);
+  const [noteDraft, setNoteDraft] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -128,6 +162,31 @@ export function CommissionReport({ month, refreshKey, rounded = false }: Commiss
       toast({ type: 'error', title: 'บันทึกสถานะใบ 50 ทวิ ไม่สำเร็จ' });
     } finally {
       setSavingCert(null);
+    }
+  }
+
+  /** Save the หมายเหตุ without touching the status (the API keeps the current one when omitted). */
+  async function saveNote() {
+    if (!noteFor || !currentStoreId) return;
+    setSavingNote(true);
+    try {
+      const res = await fetch('/api/commission/wht-certs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ store_id: currentStoreId, ae_id: noteFor.aeId, month, note: noteDraft }),
+      });
+      if (!res.ok) throw new Error();
+      const saved = (await res.json()) as WhtCert;
+      // The write does not embed the actor rows, so keep the ones already on screen.
+      setCerts((prev) => ({
+        ...prev,
+        [noteFor.aeId]: { ...prev[noteFor.aeId], ...saved },
+      }));
+      setNoteFor(null);
+    } catch {
+      toast({ type: 'error', title: 'บันทึกหมายเหตุไม่สำเร็จ' });
+    } finally {
+      setSavingNote(false);
     }
   }
 
@@ -227,26 +286,42 @@ export function CommissionReport({ month, refreshKey, rounded = false }: Commiss
                         <td className={`px-3 py-2 text-right tabular-nums ${r.outstanding > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-300'}`}>
                           {r.outstanding > 0 ? formatCurrency(r.outstanding) : '—'}
                         </td>
-                        <td className="px-3 py-2 text-center">
+                        <td className="px-3 py-2">
                           {/* One button cycling ไม่ขอ → ขอแล้ว → ออกให้แล้ว: the accountant ticks
-                              as the AE asks, then again when the certificate is handed over. */}
-                          <button
-                            type="button"
-                            onClick={() => cycleCert(r.ae_id)}
-                            disabled={savingCert === r.ae_id}
-                            className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs transition-colors disabled:opacity-50"
-                            title="กดเพื่อเปลี่ยนสถานะ: ไม่ขอ → ขอแล้ว → ออกให้แล้ว"
-                          >
-                            {savingCert === r.ae_id ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400" />
-                            ) : !cert ? (
-                              <span className="text-gray-300 hover:text-gray-500">— ไม่ขอ</span>
-                            ) : cert.status === 'requested' ? (
-                              <Badge variant="warning" size="sm"><FileText className="h-3 w-3" /> ขอแล้ว</Badge>
-                            ) : (
-                              <Badge variant="success" size="sm"><Check className="h-3 w-3" /> ออกให้แล้ว</Badge>
+                              as the AE asks, then again when the certificate is handed over. The
+                              empty state used to be flat grey text that read as "no data" — it now
+                              looks like the control it is. */}
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => cycleCert(r.ae_id)}
+                              disabled={savingCert === r.ae_id}
+                              className="inline-flex cursor-pointer items-center gap-1 rounded-full text-xs transition-colors disabled:cursor-wait disabled:opacity-50"
+                              title={certTooltip(cert)}
+                            >
+                              {savingCert === r.ae_id ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400" />
+                              ) : !cert ? (
+                                <span className="inline-flex items-center gap-1 rounded-full border border-dashed border-gray-300 px-2 py-0.5 text-gray-400 transition-colors hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-600 dark:border-gray-600 dark:text-gray-500 dark:hover:border-indigo-500 dark:hover:bg-indigo-900/20 dark:hover:text-indigo-300">
+                                  <Plus className="h-3 w-3" /> ทำเครื่องหมาย
+                                </span>
+                              ) : cert.status === 'requested' ? (
+                                <Badge variant="warning" size="sm"><FileText className="h-3 w-3" /> ขอแล้ว</Badge>
+                              ) : (
+                                <Badge variant="success" size="sm"><Check className="h-3 w-3" /> ออกให้แล้ว</Badge>
+                              )}
+                            </button>
+                            {cert && (
+                              <button
+                                type="button"
+                                onClick={() => { setNoteFor({ aeId: r.ae_id, aeName: r.ae_name }); setNoteDraft(cert.note ?? ''); }}
+                                title={cert.note ? `หมายเหตุ: ${cert.note}` : 'เพิ่มหมายเหตุ'}
+                                className={`cursor-pointer rounded p-0.5 transition-colors hover:bg-gray-100 dark:hover:bg-gray-700 ${cert.note ? 'text-indigo-500' : 'text-gray-300 dark:text-gray-600'}`}
+                              >
+                                <StickyNote className="h-3.5 w-3.5" />
+                              </button>
                             )}
-                          </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -271,6 +346,12 @@ export function CommissionReport({ month, refreshKey, rounded = false }: Commiss
               )}
             </table>
           </div>
+          {rows.length > 0 && (
+            <p className="border-t border-gray-100 px-3 py-2 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">
+              คอลัมน์ <span className="font-medium">ใบ 50 ทวิ</span> กดได้ — วนสถานะ ไม่ขอ → ขอแล้ว → ออกให้แล้ว
+              และกดไอคอนโน้ตเพื่อใส่หมายเหตุ
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -296,6 +377,28 @@ export function CommissionReport({ month, refreshKey, rounded = false }: Commiss
           </CardContent>
         </Card>
       )}
+
+      <Modal
+        isOpen={!!noteFor}
+        onClose={() => setNoteFor(null)}
+        title="หมายเหตุใบ 50 ทวิ"
+        description={noteFor ? `${noteFor.aeName} · เดือน ${month}` : undefined}
+      >
+        <Textarea
+          label="หมายเหตุ"
+          value={noteDraft}
+          onChange={(e) => setNoteDraft(e.target.value)}
+          rows={3}
+          placeholder="เช่น ส่งทางไลน์แล้ว / รอเอกสารจากบัญชี"
+        />
+        <ModalFooter>
+          <Button variant="ghost" onClick={() => setNoteFor(null)} disabled={savingNote}>ยกเลิก</Button>
+          <Button variant="primary" onClick={saveNote} disabled={savingNote}>
+            {savingNote && <Loader2 className="h-4 w-4 animate-spin" />}
+            บันทึก
+          </Button>
+        </ModalFooter>
+      </Modal>
     </div>
   );
 }

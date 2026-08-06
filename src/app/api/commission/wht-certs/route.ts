@@ -11,6 +11,11 @@ import { createClient } from '@/lib/supabase/server';
 
 const TABLE = 'commission_wht_certs';
 
+// Both actor FKs point at profiles, so each embed is disambiguated by its column name. Writes
+// return the same shape as GET so the report never has to re-fetch to show who ticked the row.
+const SELECT_WITH_ACTORS =
+  '*, requester:profiles!requested_by(display_name, username), issuer:profiles!issued_by(display_name, username)';
+
 // GET /api/commission/wht-certs?month=2026-08&store_id=…
 export async function GET(req: NextRequest) {
   const supabase = await createClient();
@@ -21,7 +26,7 @@ export async function GET(req: NextRequest) {
   const storeId = req.nextUrl.searchParams.get('store_id');
   if (!month) return NextResponse.json({ error: 'month parameter required (YYYY-MM)' }, { status: 400 });
 
-  let query = supabase.from(TABLE).select('*').eq('month', month);
+  let query = supabase.from(TABLE).select(SELECT_WITH_ACTORS).eq('month', month);
   if (storeId) query = query.eq('store_id', storeId);
 
   const { data, error } = await query;
@@ -47,27 +52,39 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'invalid status' }, { status: 400 });
   }
 
-  const isIssued = status === 'issued';
-  const { data, error } = await supabase
+  // Read-then-write rather than a blind upsert: an upsert re-sends every column, which used to
+  // overwrite requested_by with whoever flipped the row to 'issued' (losing who actually asked)
+  // and wipe the note on any status change. Only the fields in this call are touched now.
+  const { data: existing } = await supabase
     .from(TABLE)
-    .upsert(
-      {
-        store_id,
-        ae_id,
-        month,
-        status: status ?? 'requested',
-        note: typeof note === 'string' ? note.trim() || null : null,
-        requested_by: user.id,
-        // Stamped only on the way to 'issued'; reverting to 'requested' clears it so the two
-        // fields can never disagree.
-        issued_by: isIssued ? user.id : null,
-        issued_at: isIssued ? new Date().toISOString() : null,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'store_id,ae_id,month' },
-    )
-    .select()
-    .single();
+    .select('id, status, note')
+    .eq('store_id', store_id)
+    .eq('ae_id', ae_id)
+    .eq('month', month)
+    .maybeSingle();
+
+  const nextStatus = status ?? existing?.status ?? 'requested';
+  const isIssued = nextStatus === 'issued';
+  // note omitted → keep what is there; note given → trim, and an empty string clears it.
+  const nextNote = note === undefined ? (existing?.note ?? null) : (note?.trim() || null);
+
+  const stamps = {
+    status: nextStatus,
+    note: nextNote,
+    // Stamped only on the way to 'issued'; reverting to 'requested' clears it so the two
+    // fields can never disagree.
+    issued_by: isIssued ? user.id : null,
+    issued_at: isIssued ? new Date().toISOString() : null,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data, error } = existing
+    ? await supabase.from(TABLE).update(stamps).eq('id', existing.id).select(SELECT_WITH_ACTORS).single()
+    : await supabase
+        .from(TABLE)
+        .insert({ store_id, ae_id, month, requested_by: user.id, ...stamps })
+        .select(SELECT_WITH_ACTORS)
+        .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json(data);
