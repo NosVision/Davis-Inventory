@@ -3,6 +3,11 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { resolveHrScope } from '@/lib/hr/route-auth';
 import { openBusinessDateBangkok } from '@/lib/utils/date';
 import { computeDaySummary, applyOverride, type Punch, type TimesheetOverride } from '@/lib/hr/time-engine';
+import { businessDateBangkok } from '@/lib/utils/date';
+
+// Last business day that has CLOSED. A rostered day after this is still ahead of us, so it must
+// never count as an absence (see time-engine's closedThrough).
+const CLOSED_THROUGH = () => businessDateBangkok();
 
 // GET /api/hr/dashboard/overview?business_date=&store_id= — the HR dashboard's aggregate feed
 // (redesign, §P5.3): today's attendance buckets + per-venue breakdown, and current-month
@@ -201,6 +206,7 @@ export async function GET(request: NextRequest) {
       punches: punchesByCell.get(key) ?? [],
       workHoursPerDay: workHoursById.get(uid) ?? DEFAULT_WORK_HOURS,
       otEligible: false,
+      closedThrough: CLOSED_THROUGH(),
     });
     const merged = applyOverride(derived, overrideByCell.get(key));
     if ((merged.late_min ?? 0) > 0) {

@@ -146,6 +146,15 @@ eq('te worked 420min (8h span − 1h break)', dBreak.worked_min, 420);
 const dAbsent = te.computeDaySummary({ ...baseDay, punches: [] });
 eq('te absent (scheduled, no in)', dAbsent.absent, true);
 eq('te absent worked null', dAbsent.worked_min, null);
+// ...but only once the day has CLOSED. A rostered day still ahead of us is not an absence — the
+// shift simply hasn't happened, and payroll/SC must not dock salary, travel or Service Charge for
+// it (the whole-month-red timesheet + 'Absent (7d)' SC line came from this missing guard).
+const dFuture = te.computeDaySummary({ ...baseDay, punches: [], closedThrough: '2026-06-30' });
+eq('te future rostered day is NOT absent', dFuture.absent, false);
+const dToday = te.computeDaySummary({ ...baseDay, punches: [], closedThrough: DAY });
+eq('te absent on the last closed day still counts', dToday.absent, true);
+const dPast = te.computeDaySummary({ ...baseDay, punches: [], closedThrough: '2026-07-31' });
+eq('te absent on an older closed day still counts', dPast.absent, true);
 
 // incomplete: in but no out
 const dInc = te.computeDaySummary({ ...baseDay, punches: [{ type: 'in', ts: at(9, 0) }] });

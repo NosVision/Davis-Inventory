@@ -10,6 +10,11 @@ import {
 } from '@/lib/hr/time-engine';
 import { computeAttendanceScore, type AttendanceScore } from '@/lib/hr/attendance-score';
 import { getHrPolicies } from '@/lib/hr/policy';
+import { businessDateBangkok } from '@/lib/utils/date';
+
+// Last business day that has CLOSED. A rostered day after this is still ahead of us, so it must
+// never count as an absence (see time-engine's closedThrough).
+const CLOSED_THROUGH = () => businessDateBangkok();
 
 // GET /api/hr/attendance-index?user_ids=a,b,c&from&to — the work index (attendance score) for a
 // SET of employees at once, cross-store, for HR surfaces that aren't store-scoped (e.g. the
@@ -141,6 +146,7 @@ export async function GET(request: NextRequest) {
           punches: punches?.get(date) ?? [],
           workHoursPerDay: emp?.work_hours_per_day ?? DEFAULT_WORK_HOURS,
           otEligible: emp?.ot_eligible ?? false,
+          closedThrough: CLOSED_THROUGH(),
         }),
         ovr?.get(date)
       );

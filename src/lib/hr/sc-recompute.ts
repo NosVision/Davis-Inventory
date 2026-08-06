@@ -7,6 +7,7 @@ import {
   computeCarryScDeduction,
 } from '@/lib/hr/service-charge';
 import { reconcilePoolDeductions } from '@/lib/hr/sc-reconcile';
+import { businessDateBangkok } from '@/lib/utils/date';
 
 const POOL = 'hr_sc_pools';
 const ALLOC = 'hr_sc_allocations';
@@ -197,11 +198,15 @@ export async function recomputePoolDeductions(
       if (r.absent !== null) absentOverride.set(r.business_date as string, r.absent as boolean);
     }
 
+    // Only days that have CLOSED can be an absence — a rostered day still ahead of us cannot have a
+    // punch yet, and docking SC for it would take money for work nobody could have done (mirrors
+    // the same guard in time-engine). An explicit HR override still wins either way.
+    const closedThrough = businessDateBangkok();
     const absentDays = enumerateDates(periodStart, periodEnd).filter((d) => {
       if (leaveCovered.has(d)) return false;
       const forced = absentOverride.get(d);
       if (forced !== undefined) return forced;
-      return rosteredSet.has(d) && !punchedSet.has(d);
+      return rosteredSet.has(d) && !punchedSet.has(d) && d <= closedThrough;
     }).length;
 
     if (absentDays > 0) {

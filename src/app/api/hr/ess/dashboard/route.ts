@@ -10,6 +10,11 @@ import {
   type TimesheetOverride,
 } from '@/lib/hr/time-engine';
 import { buildLeaveSummary } from '@/lib/hr/leave-summary';
+import { businessDateBangkok } from '@/lib/utils/date';
+
+// Last business day that has CLOSED. A rostered day after this is still ahead of us, so it must
+// never count as an absence (see time-engine's closedThrough).
+const CLOSED_THROUGH = () => businessDateBangkok();
 
 const DEFAULT_WORK_HOURS = 9;
 const PAY_HISTORY_MONTHS = 6;
@@ -163,6 +168,7 @@ export async function GET() {
       punches: punchesByDate.get(date) ?? [],
       workHoursPerDay: workHours,
       otEligible,
+      closedThrough: CLOSED_THROUGH(),
     });
     const day = applyOverride(derived, overrideByDate.get(date));
     days.push(day);

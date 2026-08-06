@@ -10,6 +10,11 @@ import {
   type TimesheetOverride,
 } from '@/lib/hr/time-engine';
 import { getHrPolicies } from '@/lib/hr/policy';
+import { businessDateBangkok } from '@/lib/utils/date';
+
+// Last business day that has CLOSED. A rostered day after this is still ahead of us, so it must
+// never count as an absence (see time-engine's closedThrough).
+const CLOSED_THROUGH = () => businessDateBangkok();
 
 interface OverrideRow {
   business_date: string;
@@ -152,6 +157,7 @@ export async function GET(request: NextRequest) {
       punches: punchesByDate.get(date) ?? [],
       workHoursPerDay: workHours,
       otEligible,
+      closedThrough: CLOSED_THROUGH(),
     });
     return applyOverride(derived, overrideByDate.get(date));
   });

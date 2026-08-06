@@ -13,6 +13,11 @@ import { classifyLeaveEffect, countLeaveDays, enumerateDates } from '@/lib/hr/le
 import { computePayslip, type PayrollInput, type PayslipLine, type PayType, type TaxMode } from '@/lib/hr/payroll';
 import { getHrPolicies } from '@/lib/hr/policy';
 import { isUniqueViolation } from '@/lib/hr/db-errors';
+import { businessDateBangkok } from '@/lib/utils/date';
+
+// Last business day that has CLOSED. A rostered day after this is still ahead of us, so it must
+// never count as an absence (see time-engine's closedThrough).
+const CLOSED_THROUGH = () => businessDateBangkok();
 
 const DEFAULT_WORK_HOURS = 9;
 
@@ -445,6 +450,7 @@ export async function POST(request: NextRequest) {
         punches: punchesByCell.get(`${uid}|${date}`) ?? [],
         workHoursPerDay: workHours,
         otEligible,
+        closedThrough: CLOSED_THROUGH(),
       });
       return applyOverride(derived, overrideByCell.get(`${uid}|${date}`));
     });

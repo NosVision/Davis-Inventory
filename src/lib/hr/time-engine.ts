@@ -36,6 +36,13 @@ export interface DaySummaryInput {
   punches: Punch[];
   workHoursPerDay: number; // hr_employees.work_hours_per_day (8 | 9)
   otEligible: boolean;
+  /**
+   * Last business date that has actually CLOSED (typically `businessDateBangkok()`). A rostered
+   * day AFTER this is still in the future — nobody could have punched yet — so it must never read
+   * as an absence. Omit only where the caller knows every date it passes is in the past (the
+   * offline asserts do). Kept as an input rather than a clock read so this stays pure.
+   */
+  closedThrough?: string | null;
 }
 
 export interface DaySummary {
@@ -202,7 +209,11 @@ export function computeDaySummary(input: DaySummaryInput): DaySummary {
     lateMin = Math.max(0, Math.round(minutesBetween(firstIn, startInstant)));
   }
 
-  const absent = scheduled && !firstIn;
+  // A future (or still-running) rostered day is NOT an absence — the shift simply hasn't happened.
+  // Without this guard a published roster marks every upcoming day 'ขาด', and payroll/SC then dock
+  // salary, travel and Service Charge for days nobody could have worked yet.
+  const dayClosed = !input.closedThrough || input.businessDate <= input.closedThrough;
+  const absent = scheduled && !firstIn && dayClosed;
 
   // OT only accrues for eligible employees, past THEIR OWN daily hours. Non-eligible
   // employees who work longer get nothing extra (their Nth hour is already in salary).
