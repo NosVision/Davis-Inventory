@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Card, CardContent, Badge, Modal } from '@/components/ui';
+import { Button, Card, CardContent, Badge, Modal, toast } from '@/components/ui';
 import { useAppStore } from '@/stores/app-store';
-import { Loader2, Eye, Image } from 'lucide-react';
+import { Loader2, Eye, Image, FileDown } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { formatThaiDate } from '@/lib/utils/format';
 import { netDisplay } from '@/types/commission';
@@ -47,6 +47,8 @@ export function CommissionPaymentHistory({ month: monthProp, refreshKey, rounded
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [detailModal, setDetailModal] = useState<PaymentRecord | null>(null);
+  const [photoModal, setPhotoModal] = useState<string | null>(null);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const isMonthControlled = monthProp !== undefined;
 
   const fetchHistory = useCallback(async () => {
@@ -68,6 +70,62 @@ export function CommissionPaymentHistory({ month: monthProp, refreshKey, rounded
   async function openDetail(paymentId: string) {
     const res = await fetch(`/api/commission/payment/${paymentId}`);
     if (res.ok) setDetailModal(await res.json());
+  }
+
+  /**
+   * PDF of ONE settled round — the same layout as the monthly report, scoped to the bills this
+   * payment actually covered, so an AE asking "what was this transfer for?" gets an answer months
+   * later. Lazy-imported to keep react-pdf out of the history chunk.
+   */
+  async function exportPaymentPdf(p: PaymentRecord) {
+    setExportingPdf(true);
+    try {
+      const mod = await import('./commission-pdf');
+      const rows = (p.entries || []).map((e) => ({
+        bill_date: String(e.bill_date || ''),
+        receipt_no: (e.receipt_no as string | null) ?? null,
+        table_no: (e.table_no as string | null) ?? null,
+        subtotal: Number(e.subtotal_amount) || 0,
+        commission_amount: Number(e.commission_amount) || 0,
+        net_amount: netDisplay(e.net_amount as number, rounded),
+        notes: (e.notes as string | null) ?? null,
+      }));
+      const totals = rows.reduce(
+        (acc, r) => ({
+          subtotal: acc.subtotal + r.subtotal,
+          commission: acc.commission + r.commission_amount,
+          net: acc.net + r.net_amount,
+          bill_count: acc.bill_count + 1,
+        }),
+        { subtotal: 0, commission: 0, net: 0, bill_count: 0 },
+      );
+      const ae = p.ae_profile as (PaymentRecord['ae_profile'] & { bank_name?: string | null; bank_account_no?: string | null; bank_account_name?: string | null }) | undefined;
+      const name = p.type === 'ae_commission'
+        ? ae?.name || '-'
+        : p.staff_profile?.display_name || p.staff_profile?.username || '-';
+      const [y, m] = p.month.split('-').map(Number);
+      const blob = await mod.buildCommissionPdf({
+        store_name: 'สาขา',
+        month_label: `${new Intl.DateTimeFormat('th-TH-u-ca-buddhist', { month: 'long', year: 'numeric' }).format(new Date(y, m - 1, 1))} · จ่ายเมื่อ ${formatThaiDate(p.paid_at)}${p.status === 'cancelled' ? ' (ยกเลิกแล้ว)' : ''}`,
+        generated_at_label: new Intl.DateTimeFormat('th-TH-u-ca-buddhist', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date()),
+        groups: [{
+          ae_name: name,
+          ae_nickname: ae?.nickname ?? null,
+          bank_label: ae?.bank_name
+            ? `${ae.bank_name} ${ae.bank_account_no || ''}${ae.bank_account_name ? ` (${ae.bank_account_name})` : ''}`.trim()
+            : null,
+          rows,
+          totals,
+        }],
+        grand: totals,
+      });
+      mod.downloadBlob(blob, `รอบจ่าย-${name}-${p.month}.pdf`);
+    } catch (err) {
+      console.error('Payment PDF export error:', err);
+      toast({ type: 'error', title: 'สร้าง PDF ล้มเหลว' });
+    } finally {
+      setExportingPdf(false);
+    }
   }
 
   // Group by month
@@ -190,23 +248,71 @@ export function CommissionPaymentHistory({ month: monthProp, refreshKey, rounded
                 </div>
               );
             })()}
+            {/* The bills behind the payout — kept viewable after settlement (owner ask 2026-08-06:
+                a paid round must still show its bills, not just the transfer slip), with the same
+                columns as the bill list plus the receipt photo. */}
             {detailModal.entries && detailModal.entries.length > 0 && (
               <div>
-                <p className="mb-1 text-sm font-medium text-gray-700 dark:text-gray-300">{t('paymentHistory.paidEntries')}</p>
-                <table className="w-full text-xs">
-                  <thead><tr className="text-gray-500"><th className="py-1 text-left">{t('paymentHistory.date')}</th><th className="py-1 text-left">{t('paymentHistory.receipt')}</th><th className="py-1 text-right">{t('paymentHistory.amount')}</th></tr></thead>
-                  <tbody className="text-gray-700 dark:text-gray-300">
-                    {detailModal.entries.map((e: Record<string, unknown>) => (
-                      <tr key={e.id as string} className="border-t border-gray-100 dark:border-gray-700">
-                        <td className="py-1">{formatThaiDate(e.bill_date as string)}</td>
-                        <td className="py-1">{(e.receipt_no as string) || '-'}</td>
-                        <td className="py-1 text-right font-medium">{formatCurrency(netDisplay(e.net_amount as number, rounded))}</td>
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{t('paymentHistory.paidEntries')}</p>
+                  <Button size="sm" variant="ghost" onClick={() => exportPaymentPdf(detailModal)} disabled={exportingPdf}>
+                    {exportingPdf ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />}
+                    ดาวน์โหลด PDF
+                  </Button>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-gray-500">
+                        <th className="py-1 text-left">{t('paymentHistory.date')}</th>
+                        <th className="py-1 text-left">{t('paymentHistory.receipt')}</th>
+                        <th className="py-1 text-left">โต๊ะ</th>
+                        <th className="py-1 text-right">ยอดบิล</th>
+                        <th className="py-1 text-right">คอม</th>
+                        <th className="py-1 text-right">{t('paymentHistory.amount')}</th>
+                        <th className="py-1 text-center">บิล</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="text-gray-700 dark:text-gray-300">
+                      {detailModal.entries.map((e: Record<string, unknown>) => (
+                        <tr key={e.id as string} className="border-t border-gray-100 dark:border-gray-700">
+                          <td className="py-1 whitespace-nowrap">{formatThaiDate(e.bill_date as string)}</td>
+                          <td className="py-1">{(e.receipt_no as string) || '-'}</td>
+                          <td className="py-1">{(e.table_no as string) || '-'}</td>
+                          <td className="py-1 text-right">{e.subtotal_amount ? formatCurrency(Number(e.subtotal_amount)) : '-'}</td>
+                          <td className="py-1 text-right">{e.commission_amount ? formatCurrency(Number(e.commission_amount)) : '-'}</td>
+                          <td className="py-1 text-right font-medium">{formatCurrency(netDisplay(e.net_amount as number, rounded))}</td>
+                          <td className="py-1 text-center">
+                            {e.receipt_photo_url ? (
+                              <button
+                                type="button"
+                                onClick={() => setPhotoModal(e.receipt_photo_url as string)}
+                                className="text-indigo-500 hover:text-indigo-600"
+                                title={t('entryList.receiptPhoto')}
+                              >
+                                <Image className="mx-auto h-3.5 w-3.5" />
+                              </button>
+                            ) : (
+                              <span className="text-gray-300">-</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
+          </div>
+        )}
+      </Modal>
+
+      {/* Receipt photo viewer — reachable from the paid-bill rows above. */}
+      <Modal isOpen={!!photoModal} onClose={() => setPhotoModal(null)} title={t('entryList.receiptPhoto')} size="lg">
+        {photoModal && (
+          <div className="flex justify-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={photoModal} alt="Receipt" className="max-h-[70vh] rounded-lg object-contain" />
           </div>
         )}
       </Modal>

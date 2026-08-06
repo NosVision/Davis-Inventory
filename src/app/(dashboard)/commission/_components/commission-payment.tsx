@@ -11,6 +11,7 @@ import { logAudit, AUDIT_ACTIONS } from '@/lib/audit';
 import { useTranslations } from 'next-intl';
 import { formatThaiDate } from '@/lib/utils/format';
 import { netDisplay, type AEProfile } from '@/types/commission';
+import { hasCancelReason } from '@/lib/commission/cancel-reason';
 
 function formatCurrency(n: number) {
   return n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -927,15 +928,17 @@ export function CommissionPayment({ month: monthProp, refreshKey, rounded = fals
         <div className="space-y-3">
           <p className="text-sm text-gray-600 dark:text-gray-400">{t('entryList.confirmCancelEntryDesc')}</p>
           <Textarea
-            label={t('payment.reasonOptional')}
+            label={t('payment.reasonRequired')}
             value={cancelEntryReason}
             onChange={(e) => setCancelEntryReason(e.target.value)}
             rows={2}
+            required
+            hint={t('entryList.reasonRequiredHint')}
           />
         </div>
         <ModalFooter>
           <Button variant="ghost" onClick={() => { setCancelEntryModal(null); setCancelEntryReason(''); }}>{t('payment.dontCancel')}</Button>
-          <Button variant="danger" onClick={handleCancelEntry} disabled={cancellingEntry}>
+          <Button variant="danger" onClick={handleCancelEntry} disabled={cancellingEntry || !hasCancelReason(cancelEntryReason)}>
             {cancellingEntry ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             {t('payment.confirmCancelBtn')}
           </Button>
@@ -946,11 +949,11 @@ export function CommissionPayment({ month: monthProp, refreshKey, rounded = fals
       <Modal isOpen={!!cancelModal} onClose={() => { setCancelModal(null); setCancelReason(''); }} title={t('payment.confirmCancel')} size="sm">
         <div className="space-y-3">
           <p className="text-sm text-gray-600 dark:text-gray-400">{t('payment.confirmCancelDesc')}</p>
-          <Textarea label={t('payment.reasonOptional')} value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} rows={2} />
+          <Textarea label={t('payment.reasonRequired')} value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} rows={2} required hint={t('entryList.reasonRequiredHint')} />
         </div>
         <ModalFooter>
           <Button variant="ghost" onClick={() => { setCancelModal(null); setCancelReason(''); }}>{t('payment.dontCancel')}</Button>
-          <Button variant="danger" onClick={handleCancel} disabled={cancelling}>
+          <Button variant="danger" onClick={handleCancel} disabled={cancelling || !hasCancelReason(cancelReason)}>
             {cancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             {t('payment.confirmCancelBtn')}
           </Button>

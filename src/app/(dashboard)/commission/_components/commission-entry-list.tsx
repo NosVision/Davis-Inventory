@@ -10,6 +10,7 @@ import { logAudit, AUDIT_ACTIONS } from '@/lib/audit';
 import { useTranslations } from 'next-intl';
 import { formatThaiDate } from '@/lib/utils/format';
 import { netDisplay, type CommissionEntry } from '@/types/commission';
+import { hasCancelReason } from '@/lib/commission/cancel-reason';
 
 function formatCurrency(n: number) {
   return n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -183,6 +184,7 @@ export function CommissionEntryList({ month: monthProp, refreshKey, rounded = fa
   const [restoreEntryId, setRestoreEntryId] = useState<string | null>(null);
   const [restoringEntry, setRestoringEntry] = useState(false);
   const [deleteEntryId, setDeleteEntryId] = useState<string | null>(null);
+  const [deleteEntryReason, setDeleteEntryReason] = useState('');
   const [deletingEntry, setDeletingEntry] = useState(false);
 
   const canDelete = user?.role === 'owner' || user?.role === 'accountant';
@@ -217,20 +219,20 @@ export function CommissionEntryList({ month: monthProp, refreshKey, rounded = fa
     if (!deleteEntryId) return;
     setDeletingEntry(true);
     try {
-      const res = await fetch(`/api/commission/${deleteEntryId}`, { method: 'DELETE' });
+      // The route audits the deleted row + reason itself (the row won't exist to log afterwards).
+      const res = await fetch(`/api/commission/${deleteEntryId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: deleteEntryReason }),
+      });
       if (res.ok) {
         toast({ type: 'success', title: t('entryList.deleteSuccess') });
-        logAudit({
-          store_id: currentStoreId,
-          action_type: AUDIT_ACTIONS.COMMISSION_ENTRY_DELETED,
-          table_name: 'commission_entries',
-          record_id: deleteEntryId,
-          changed_by: user?.id,
-        });
         setDeleteEntryId(null);
+        setDeleteEntryReason('');
         fetchEntries();
       } else {
-        toast({ type: 'error', title: t('entryList.deleteFailed') });
+        const err = await res.json().catch(() => ({}));
+        toast({ type: 'error', title: err.error || t('entryList.deleteFailed') });
       }
     } finally {
       setDeletingEntry(false);
@@ -638,13 +640,16 @@ export function CommissionEntryList({ month: monthProp, refreshKey, rounded = fa
             value={cancelEntryReason}
             onChange={(e) => setCancelEntryReason(e.target.value)}
             rows={2}
+            required
+            hint={t('entryList.reasonRequiredHint')}
           />
         </div>
         <ModalFooter>
           <Button variant="ghost" onClick={() => { setCancelEntryId(null); setCancelEntryReason(''); }}>
             {t('payment.dontCancel')}
           </Button>
-          <Button variant="danger" onClick={confirmCancelEntry} disabled={cancellingEntry}>
+          {/* The server refuses a reason-less cancel; the button mirrors that so it fails visibly here. */}
+          <Button variant="danger" onClick={confirmCancelEntry} disabled={cancellingEntry || !hasCancelReason(cancelEntryReason)}>
             {cancellingEntry ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             {t('payment.confirmCancelBtn')}
           </Button>
@@ -677,12 +682,24 @@ export function CommissionEntryList({ month: monthProp, refreshKey, rounded = fa
         title={t('entryList.confirmDeleteTitle')}
         size="sm"
       >
-        <p className="text-sm text-gray-600 dark:text-gray-400">{t('entryList.confirmDeleteDesc')}</p>
+        <div className="space-y-3">
+          <p className="text-sm text-gray-600 dark:text-gray-400">{t('entryList.confirmDeleteDesc')}</p>
+          {/* Deleting destroys the row, so the reason (and the row itself) is copied to the audit
+              log server-side — it is the only place the trail can survive. */}
+          <Textarea
+            label={t('entryList.cancelPrompt')}
+            value={deleteEntryReason}
+            onChange={(e) => setDeleteEntryReason(e.target.value)}
+            rows={2}
+            required
+            hint={t('entryList.reasonRequiredHint')}
+          />
+        </div>
         <ModalFooter>
-          <Button variant="ghost" onClick={() => setDeleteEntryId(null)}>
+          <Button variant="ghost" onClick={() => { setDeleteEntryId(null); setDeleteEntryReason(''); }}>
             {t('entryForm.cancel')}
           </Button>
-          <Button variant="danger" onClick={confirmDeleteEntry} disabled={deletingEntry}>
+          <Button variant="danger" onClick={confirmDeleteEntry} disabled={deletingEntry || !hasCancelReason(deleteEntryReason)}>
             {deletingEntry ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             {t('entryList.deleteBtn')}
           </Button>

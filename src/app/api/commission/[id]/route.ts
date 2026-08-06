@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { requireCancelReason } from '@/lib/commission/cancel-reason';
 
 // GET /api/commission/[id]
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -38,6 +39,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   // ── Cancel / restore branches ──────────────────────────────────────────
   if (action === 'cancel' || action === 'restore') {
+    // A cancellation must always carry its reason (2026-08-06) — checked before anything is
+    // touched so a reason-less request changes nothing at all.
+    let cancelReason: string | null = null;
+    if (action === 'cancel') {
+      const checked = requireCancelReason(body.reason);
+      if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 });
+      cancelReason = checked.reason;
+    }
+
     // Block if the entry has been included in a payment — caller must cancel
     // the payment first to avoid breaking sum integrity.
     const { data: entry, error: fetchErr } = await supabase
@@ -54,7 +64,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       ? {
           cancelled_at: new Date().toISOString(),
           cancelled_by: user.id,
-          cancel_reason: typeof body.reason === 'string' ? body.reason.trim() || null : null,
+          cancel_reason: cancelReason,
         }
       : {
           cancelled_at: null,
@@ -154,12 +164,24 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   return NextResponse.json(data);
 }
 
-// DELETE /api/commission/[id]
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+// DELETE /api/commission/[id]?reason=…
+//
+// Hard delete. It carries the same reason requirement as 'cancel' — otherwise deleting is simply
+// the way to void a bill without explaining yourself, and the row (with its cancel_reason) is gone
+// too. Since there is no row left to write the reason on, the deleted entry and the reason are
+// copied into audit_logs FIRST, server-side, so the trail survives the delete.
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const bodyReason = await req.json().then((b) => (b as { reason?: unknown })?.reason).catch(() => undefined);
+  const checked = requireCancelReason(bodyReason ?? req.nextUrl.searchParams.get('reason'));
+  if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 });
+
+  const { data: entry } = await supabase.from('commission_entries').select('*').eq('id', id).maybeSingle();
+  if (!entry) return NextResponse.json({ error: 'ไม่พบรายการ' }, { status: 404 });
 
   const { error } = await supabase
     .from('commission_entries')
@@ -167,5 +189,22 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     .eq('id', id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // audit_logs is service-role-only for writes; a failure here must not resurrect the deleted row,
+  // so it is logged and swallowed exactly like the client-side logAudit path.
+  try {
+    await createServiceClient().from('audit_logs').insert({
+      store_id: (entry as { store_id?: string }).store_id ?? null,
+      action_type: 'COMMISSION_ENTRY_DELETED',
+      table_name: 'commission_entries',
+      record_id: id,
+      old_value: entry,
+      new_value: { reason: checked.reason },
+      changed_by: user.id,
+    });
+  } catch (auditErr) {
+    console.error('[commission] delete audit failed:', auditErr);
+  }
+
   return NextResponse.json({ success: true });
 }

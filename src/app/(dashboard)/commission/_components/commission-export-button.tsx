@@ -45,6 +45,14 @@ function formatCurrency(n: number) {
   return n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/** Keep Thai names but drop what a filesystem (or a zip entry) can't take. */
+function safeFileName(name: string): string {
+  return name.replace(/[\\/:*?"<>|]/g, '').trim() || 'ae';
+}
+
+/** 'all' = every selected AE in one report · 'per_ae' = one report per AE (zipped when >1). */
+type ExportMode = 'all' | 'per_ae';
+
 export function CommissionExportButton({ month: monthProp, allowMonthChange = false, rounded = false }: CommissionExportButtonProps) {
   const { currentStoreId } = useAppStore();
 
@@ -55,6 +63,7 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [exporting, setExporting] = useState(false);
   const [storeName, setStoreName] = useState('');
+  const [mode, setMode] = useState<ExportMode>('all');
 
   // Reset exportMonth when the parent's month changes (e.g. user navigates
   // to a different month at the page level) so the modal opens on what
@@ -174,16 +183,6 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
         };
       });
 
-      const grand = reportGroups.reduce(
-        (acc, g) => ({
-          subtotal: acc.subtotal + g.totals.subtotal,
-          commission: acc.commission + g.totals.commission,
-          net: acc.net + g.totals.net,
-          bill_count: acc.bill_count + g.totals.bill_count,
-        }),
-        { subtotal: 0, commission: 0, net: 0, bill_count: 0 },
-      );
-
       const [y, m] = exportMonth.split('-').map(Number);
       const monthLabel = new Intl.DateTimeFormat('th-TH-u-ca-buddhist', {
         month: 'long',
@@ -198,16 +197,46 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
         minute: '2-digit',
       }).format(new Date());
 
-      const data: import('./commission-pdf').CommissionReportData = {
+      // One report, whatever it covers: totals are always the sum of the groups actually in it,
+      // so a per-AE file's grand total equals that AE's total instead of the whole month's.
+      const makeData = (rgs: typeof reportGroups): import('./commission-pdf').CommissionReportData => ({
         store_name: storeName || 'สาขา',
         month_label: monthLabel,
         generated_at_label: generatedAtLabel,
-        groups: reportGroups,
-        grand,
-      };
+        groups: rgs,
+        grand: rgs.reduce(
+          (acc, g) => ({
+            subtotal: acc.subtotal + g.totals.subtotal,
+            commission: acc.commission + g.totals.commission,
+            net: acc.net + g.totals.net,
+            bill_count: acc.bill_count + g.totals.bill_count,
+          }),
+          { subtotal: 0, commission: 0, net: 0, bill_count: 0 },
+        ),
+      });
 
-      const blob = await mod.buildCommissionPdf(data);
-      mod.downloadBlob(blob, `รายงานคอมมิชชั่น-${storeName || 'store'}-${exportMonth}.pdf`);
+      if (mode === 'per_ae') {
+        // One PDF per AE — what the accountant forwards to each of them individually. A single
+        // pick downloads bare; several are zipped, because browsers throttle (and users lose
+        // track of) a burst of separate downloads.
+        const fileFor = (g: (typeof reportGroups)[number]) =>
+          `คอมมิชชั่น-${safeFileName(g.ae_nickname || g.ae_name)}-${exportMonth}.pdf`;
+        if (reportGroups.length === 1) {
+          const blob = await mod.buildCommissionPdf(makeData([reportGroups[0]]));
+          mod.downloadBlob(blob, fileFor(reportGroups[0]));
+        } else {
+          const JSZip = (await import('jszip')).default;
+          const zip = new JSZip();
+          for (const g of reportGroups) {
+            zip.file(fileFor(g), await mod.buildCommissionPdf(makeData([g])));
+          }
+          const zipBlob = await zip.generateAsync({ type: 'blob' });
+          mod.downloadBlob(zipBlob, `คอมมิชชั่นแยกรายคน-${safeFileName(storeName || 'store')}-${exportMonth}.zip`);
+        }
+      } else {
+        const blob = await mod.buildCommissionPdf(makeData(reportGroups));
+        mod.downloadBlob(blob, `รายงานคอมมิชชั่น-${storeName || 'store'}-${exportMonth}.pdf`);
+      }
       setOpen(false);
     } catch (err) {
       console.error('Commission PDF export error:', err);
@@ -236,6 +265,32 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
         size="md"
       >
         <div className="space-y-3">
+          {/* How the selection is split into files. Same data either way — one report holding
+              every AE, or one report per AE for forwarding individually. */}
+          <div className="grid grid-cols-2 gap-2">
+            {([
+              { id: 'all' as const, title: 'รวมเป็นไฟล์เดียว', desc: 'ทุกคนที่เลือกอยู่ในไฟล์เดียว' },
+              { id: 'per_ae' as const, title: 'แยกไฟล์รายคน', desc: 'คนละ 1 ไฟล์ · หลายคนดาวน์โหลดเป็น .zip' },
+            ]).map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => setMode(opt.id)}
+                aria-pressed={mode === opt.id}
+                className={`rounded-lg border p-2.5 text-left transition-colors ${
+                  mode === opt.id
+                    ? 'border-indigo-500 bg-indigo-50 dark:border-indigo-400 dark:bg-indigo-900/20'
+                    : 'border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600'
+                }`}
+              >
+                <p className={`text-sm font-medium ${mode === opt.id ? 'text-indigo-700 dark:text-indigo-300' : 'text-gray-900 dark:text-white'}`}>
+                  {opt.title}
+                </p>
+                <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{opt.desc}</p>
+              </button>
+            ))}
+          </div>
+
           {/* Month picker — only for History tab */}
           {allowMonthChange && (
             <div className="flex items-center gap-2">
@@ -300,6 +355,13 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
               </div>
               <div className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300">
                 เลือก {selectedIds.size} AE · ยอดสุทธิรวม {formatCurrency(pickedTotal)} บาท
+                <span className="block text-xs opacity-80">
+                  {mode === 'per_ae'
+                    ? selectedIds.size > 1
+                      ? `จะได้ ${selectedIds.size} ไฟล์ (รวมอยู่ใน .zip 1 ไฟล์)`
+                      : 'จะได้ 1 ไฟล์'
+                    : 'จะได้ 1 ไฟล์ รวมทุกคน'}
+                </span>
               </div>
             </>
           )}
@@ -312,7 +374,7 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
             disabled={exporting || selectedIds.size === 0 || loadingGroups}
           >
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
-            ดาวน์โหลด PDF
+            {mode === 'per_ae' && selectedIds.size > 1 ? 'ดาวน์โหลด .zip' : 'ดาวน์โหลด PDF'}
           </Button>
         </ModalFooter>
       </Modal>

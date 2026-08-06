@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { requireCancelReason } from '@/lib/commission/cancel-reason';
 
 // GET /api/commission/payment/[id] — get payment detail with entries
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -16,12 +17,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   if (error) return NextResponse.json({ error: error.message }, { status: 404 });
 
-  // Fetch linked entries
-  const { data: entries } = await supabase
-    .from('commission_entries')
-    .select('*')
-    .eq('payment_id', id)
-    .order('bill_date', { ascending: true });
+  // The bills this round covered. A CANCELLED payment has already released its entries
+  // (payment_id nulled so they can be paid again), so fall back to the id snapshot taken at
+  // creation — the round stays inspectable either way.
+  const snapshot = (payment as { entry_ids?: string[] | null }).entry_ids ?? null;
+  const entriesQuery = supabase.from('commission_entries').select('*').order('bill_date', { ascending: true });
+  const { data: entries } = snapshot?.length
+    ? await entriesQuery.or(`payment_id.eq.${id},id.in.(${snapshot.join(',')})`)
+    : await entriesQuery.eq('payment_id', id);
 
   return NextResponse.json({ ...payment, entries: entries || [] });
 }
@@ -36,6 +39,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const body = await req.json();
 
   if (body.action === 'cancel') {
+    // Voiding a payout must say why (2026-08-06) — validated before the update so a reason-less
+    // request can never unlink the entries.
+    const checked = requireCancelReason(body.reason);
+    if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 });
+
     // Cancel payment — reset entries payment_id
     const { error: payErr } = await supabase
       .from('commission_payments')
@@ -43,7 +51,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         status: 'cancelled',
         cancelled_by: user.id,
         cancelled_at: new Date().toISOString(),
-        cancel_reason: body.reason?.trim() || null,
+        cancel_reason: checked.reason,
       })
       .eq('id', id)
       .eq('status', 'paid');

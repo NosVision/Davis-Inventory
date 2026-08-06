@@ -106,10 +106,16 @@ export async function POST(req: NextRequest) {
   const resolvedStaffId = type === 'bottle_commission' ? (staff_id ?? entries[0].staff_id ?? null) : null;
   const totalAmount = entries.reduce((sum, e) => sum + (Number(e.net_amount) || 0), 0);
 
+  const entryIds = entries.map((e) => e.id);
+
   const { data: payment, error: payErr } = await supabase
     .from('commission_payments')
     .insert({
       store_id,
+      // Snapshot of the bills this round covers. commission_entries.payment_id is cleared when a
+      // payment is cancelled (the bills go back to the unpaid pool), so this is the only record
+      // of what the transfer was for once that happens.
+      entry_ids: entryIds,
       ae_id: resolvedAeId,
       staff_id: resolvedStaffId,
       type,
@@ -127,7 +133,6 @@ export async function POST(req: NextRequest) {
 
   if (payErr) return NextResponse.json({ error: payErr.message }, { status: 500 });
 
-  const entryIds = entries.map((e) => e.id);
   const { error: updateErr } = await supabase
     .from('commission_entries')
     .update({ payment_id: payment.id })
