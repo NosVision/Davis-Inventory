@@ -21,10 +21,12 @@ export function useAuth() {
         return;
       }
 
-      const [profileRes, permissionsRes, storesRes] = await Promise.all([
+      const [profileRes, permissionsRes, storesRes, scopesRes] = await Promise.all([
         supabase.from('profiles').select('*').eq('id', authUser.id).single(),
         supabase.from('user_permissions').select('permission').eq('user_id', authUser.id),
         supabase.from('user_stores').select('store_id').eq('user_id', authUser.id),
+        // Venues this person RUNS. RLS lets a user read their own scope rows, so no service call.
+        supabase.from('hr_manager_scopes').select('store_id').eq('user_id', authUser.id),
       ]);
 
       if (!profileRes.data) {
@@ -38,6 +40,7 @@ export function useAuth() {
         role: profileRes.data.role,
         permissions: (permissionsRes.data || []).map((p) => p.permission as Permission),
         storeIds: (storesRes.data || []).map((s) => s.store_id),
+        managedStoreIds: (scopesRes.data || []).map((s) => s.store_id as string),
         lineUserId: profileRes.data.line_user_id,
         displayName: profileRes.data.display_name,
         avatarUrl: profileRes.data.avatar_url,

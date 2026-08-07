@@ -10,6 +10,13 @@ export interface ModuleConfig {
   href: string;
   roles: UserRole[];
   permission?: Permission;
+  /**
+   * Also visible to anyone who RUNS a venue (a row in hr_manager_scopes), whatever their role.
+   * Venue management is a per-user grant, not a role, so it cannot be expressed in `roles`:
+   * listing 'manager' there would show the module to every manager including those who run
+   * nothing, and would still miss a head_bar who does run a venue.
+   */
+  managerScoped?: boolean;
   badge?: 'pending_count' | 'my_tasks_count' | 'hr_pending_count';
   groupKey: string;
 }
@@ -232,6 +239,22 @@ export const modules: ModuleConfig[] = [
     color: 'indigo',
     href: '/schedule',
     roles: ['owner', 'hr', 'hq'],
+    // A venue manager builds their own store's roster (2026-08-07).
+    managerScoped: true,
+    groupKey: 'moduleGroups.hr',
+  },
+
+  // Approvals a venue manager owes their own team. Lives outside /hr, which is HR-only — the
+  // manager could already approve through the API but had no screen to do it on.
+  {
+    id: 'approvals',
+    nameKey: 'modules.approvals.name',
+    descriptionKey: 'modules.approvals.description',
+    icon: 'clipboard-check',
+    color: 'emerald',
+    href: '/approvals',
+    roles: [],
+    managerScoped: true,
     groupKey: 'moduleGroups.hr',
   },
 
@@ -383,11 +406,14 @@ export function getModulesForRole(role: UserRole): ModuleConfig[] {
  * Owner (role มี '*' wildcard) เห็นทุกโมดูลอยู่แล้วผ่าน role check
  */
 export function getAccessibleModules(user: AuthUser): ModuleConfig[] {
+  const runsAVenue = (user.managedStoreIds ?? []).length > 0;
   return modules.filter((m) => {
     // 1) role-based access
     if (m.roles.includes(user.role)) return true;
     // 2) individual permission unlock — ต้องประกาศ permission ไว้
     if (m.permission && user.permissions.includes(m.permission)) return true;
+    // 3) venue managers (hr_manager_scopes) — scheduling + approvals for the venues they run
+    if (m.managerScoped && runsAVenue) return true;
     return false;
   });
 }

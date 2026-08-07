@@ -44,6 +44,15 @@ export default async function DashboardLayout({
 
   const storeIds = (userStores ?? []).map((us: { store_id: string }) => us.store_id);
 
+  // ร้านที่ผู้ใช้ "ดูแล" (hr_manager_scopes) — คนละอย่างกับร้านที่สังกัด. Drives the nav gate for
+  // scheduling + venue approvals, which are per-user grants rather than roles. RLS lets a user
+  // read their own scope rows.
+  const { data: managedScopes } = await supabase
+    .from('hr_manager_scopes')
+    .select('store_id')
+    .eq('user_id', authUser.id);
+  const managedStoreIds = (managedScopes ?? []).map((s: { store_id: string }) => s.store_id);
+
   // ดึงข้อมูลร้านค้า
   let stores: Store[] = [];
   if (profile.role === 'owner' || profile.role === 'accountant' || profile.role === 'hq' || profile.role === 'hr') {
@@ -81,6 +90,7 @@ export default async function DashboardLayout({
     role: profile.role as UserRole,
     permissions,
     storeIds,
+    managedStoreIds,
     lineUserId: profile.line_user_id,
     displayName: profile.display_name,
     avatarUrl: profile.avatar_url,

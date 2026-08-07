@@ -267,6 +267,10 @@
     "me": {
       "name": "Me",
       "description": "Self-service — time, leave, payslips, reviews"
+    },
+    "approvals": {
+      "name": "Venue approvals",
+      "description": "Leave and requests from the venues you run"
     }
   },
   "moduleGroups": {

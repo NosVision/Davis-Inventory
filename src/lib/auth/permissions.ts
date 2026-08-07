@@ -7,6 +7,12 @@ export interface AuthUser {
   role: UserRole;
   permissions: Permission[];
   storeIds: string[];
+  /**
+   * Venues this user RUNS (hr_manager_scopes) — a different thing from `storeIds`, which is just
+   * where they work. Grants scheduling and leave approval for those venues, and it is a per-user
+   * grant rather than a role, so nav gating has to consult it explicitly.
+   */
+  managedStoreIds: string[];
   lineUserId?: string | null;
   displayName?: string | null;
   avatarUrl?: string | null;
