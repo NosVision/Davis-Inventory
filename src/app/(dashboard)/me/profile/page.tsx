@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
-import { Loader2, UserCircle, Landmark, Phone, Send, Inbox, Wallet, CalendarClock } from 'lucide-react';
+import { Loader2, UserCircle, Landmark, Phone, Send, Inbox, Wallet, CalendarClock, Smile } from 'lucide-react';
 import { Button, Modal, ModalFooter, PageHeader, ViewToggle, useViewMode, DataList, DataCard, StatusBadge, useConfirm, toast } from '@/components/ui';
 import { TileNotices } from '../_components/tile-notices';
 import { AccountSettings } from './_components/account-settings';
 import { EmployeeName } from '@/components/hr/employee-name';
+import { useAuthStore } from '@/stores/auth-store';
 
 type Status = 'pending' | 'approved' | 'rejected' | 'cancelled';
 // full_name added 2026-08-07: the legal ชื่อ-นามสกุล drives ภ.ง.ด.1 / สปส. / ใบ 50 ทวิ and the
@@ -54,6 +55,9 @@ const STATUS_TONE: Record<Status, 'warn' | 'good' | 'critical' | 'neutral'> = {
   cancelled: 'neutral',
 };
 
+// Order matters: the longest prefix must be tested first, or "นางสาว" is read as "นาง" + "สาว…".
+const NAME_PREFIXES = ['นางสาว', 'นาง', 'นาย', ''] as const;
+
 const KNOWN_KEYS = [
   'bank_name',
   'bank_account_no',
@@ -66,6 +70,7 @@ const KNOWN_KEYS = [
 export default function MyProfilePage() {
   const t = useTranslations('hr.profile');
   const { confirm, dialog } = useConfirm();
+  const { updateUser } = useAuthStore();
 
   // ?tab=settings deep-links straight to the merged account settings — the avatar menu's
   // "ตั้งค่าการแจ้งเตือน" item uses it. Read off window.location so no Suspense boundary is needed
@@ -92,8 +97,17 @@ export default function MyProfilePage() {
   const [ecName, setEcName] = useState('');
   const [ecPhone, setEcPhone] = useState('');
   const [ecRelation, setEcRelation] = useState('');
-  // legal-name correction
-  const [fullNameDraft, setFullNameDraft] = useState('');
+  // legal-name correction — kept as three inputs because that is how a Thai name is written on
+  // the forms this feeds, but stored as the single hr_employees.full_name column.
+  const [namePrefix, setNamePrefix] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const fullNameDraft = `${namePrefix}${firstName.trim()} ${lastName.trim()}`.trim().replace(/\s+/g, ' ');
+
+  // ชื่อเล่น — self-service and immediate (it is only a label), unlike the legal name above.
+  const [nickOpen, setNickOpen] = useState(false);
+  const [nickDraft, setNickDraft] = useState('');
+  const [nickBusy, setNickBusy] = useState(false);
 
   const statusLabel = useCallback(
     (s: Status) =>
@@ -179,6 +193,31 @@ export default function MyProfilePage() {
     }
   }, [t]);
 
+  // ชื่อเล่น applies immediately — it is only how the app addresses you, not a payroll field.
+  // Goes through /api/me/profile because a browser-side UPDATE on `profiles` is owner-only RLS
+  // and silently saves nothing for everyone else.
+  const saveNickname = useCallback(async () => {
+    setNickBusy(true);
+    try {
+      const res = await fetch('/api/me/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ display_name: nickDraft.trim() || null }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof json.error === 'string' ? json.error : undefined);
+      const saved = (json.data?.display_name as string | null) ?? null;
+      setProfile((p) => (p ? { ...p, display_name: saved } : p));
+      updateUser({ displayName: saved }); // keep the top bar in step
+      setNickOpen(false);
+      toast({ type: 'success', title: 'บันทึกชื่อเล่นแล้ว' });
+    } catch (e) {
+      toast({ type: 'error', title: t('actionFailed'), message: e instanceof Error ? e.message : undefined });
+    } finally {
+      setNickBusy(false);
+    }
+  }, [nickDraft, t, updateUser]);
+
   const savePhone = useCallback(async () => {
     setPhoneBusy(true);
     try {
@@ -232,11 +271,21 @@ export default function MyProfilePage() {
     setEcName('');
     setEcPhone('');
     setEcRelation('');
-    setFullNameDraft('');
+    setNamePrefix('');
+    setFirstName('');
+    setLastName('');
   }, []);
 
+  // Split the stored full_name back into its three parts so the employee edits what they see.
+  // Everything after the first space is the surname — Thai given names on these sheets are one word.
   const openFullName = useCallback(() => {
-    setFullNameDraft(profile?.full_name ?? '');
+    const raw = (profile?.full_name ?? '').trim();
+    const matchedPrefix = NAME_PREFIXES.find((p) => p && raw.startsWith(p)) ?? '';
+    const rest = raw.slice(matchedPrefix.length).trim();
+    const [first = '', ...restWords] = rest.split(/\s+/);
+    setNamePrefix(matchedPrefix);
+    setFirstName(first);
+    setLastName(restWords.join(' '));
     setReason('');
     setOpenField('full_name');
   }, [profile]);
@@ -262,7 +311,9 @@ export default function MyProfilePage() {
   const emergencyValid = Boolean(ecName.trim()) && Boolean(ecPhone.trim());
   // A name "correction" that changes nothing is not a request worth queuing for HR.
   const fullNameValid =
-    Boolean(fullNameDraft.trim()) && fullNameDraft.trim() !== (profile?.full_name ?? '').trim();
+    Boolean(firstName.trim()) &&
+    Boolean(lastName.trim()) &&
+    fullNameDraft !== (profile?.full_name ?? '').trim().replace(/\s+/g, ' ');
   const canSubmit =
     !submitting &&
     (openField === 'bank_account' ? bankValid : openField === 'full_name' ? fullNameValid : emergencyValid);
@@ -277,7 +328,7 @@ export default function MyProfilePage() {
             bank_account_name: bankAccountName.trim(),
           }
         : openField === 'full_name'
-          ? { full_name: fullNameDraft.trim() }
+          ? { full_name: fullNameDraft }
           : {
             name: ecName.trim(),
             phone: ecPhone.trim(),
@@ -377,7 +428,8 @@ export default function MyProfilePage() {
       </div>
 
       {tab === 'settings' ? (
-        <AccountSettings />
+        // Same `profile` object the ข้อมูลส่วนตัว tab renders, so the two can never disagree.
+        <AccountSettings profile={profile} onProfileSaved={loadProfile} />
       ) : (
         <>
       <TileNotices tile="profile" />
@@ -465,6 +517,24 @@ export default function MyProfilePage() {
                 </Button>
               </div>
             )}
+
+            {/* ชื่อเล่น — self-service, applies immediately */}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-2 text-xs">
+                <Smile className="h-4 w-4 shrink-0 text-gray-400" />
+                <span className="text-gray-500 dark:text-gray-400">ชื่อเล่น:</span>
+                <span className="truncate font-medium text-gray-800 dark:text-gray-100">
+                  {profile.display_name || '—'}
+                </span>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => { setNickDraft(profile.display_name ?? ''); setNickOpen(true); }}
+              >
+                แก้ไข
+              </Button>
+            </div>
 
             {/* phone — self-service, applies immediately */}
             <div className="flex items-center justify-between gap-2">
@@ -661,6 +731,33 @@ export default function MyProfilePage() {
         </ModalFooter>
       </Modal>
 
+      {/* ชื่อเล่น — applies straight away */}
+      <Modal isOpen={nickOpen} onClose={() => setNickOpen(false)} title="แก้ไขชื่อเล่น" size="sm">
+        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">
+          ชื่อเล่น (ชื่อที่ใช้เรียกในระบบ)
+          <input
+            value={nickDraft}
+            onChange={(e) => setNickDraft(e.target.value)}
+            maxLength={60}
+            placeholder="เช่น นก"
+            className="control mt-1 w-full"
+            onKeyDown={(e) => { if (e.key === 'Enter' && !nickBusy) saveNickname(); }}
+          />
+        </label>
+        <p className="mt-2 text-xs text-gray-400">
+          ชื่อเล่นใช้แสดงในแชท ตารางเวร และการแจ้งเตือน — ไม่มีผลกับเอกสารเงินเดือนหรือภาษี
+        </p>
+        <ModalFooter>
+          <Button variant="ghost" size="sm" onClick={() => setNickOpen(false)} disabled={nickBusy}>
+            {t('cancel')}
+          </Button>
+          <Button size="sm" onClick={saveNickname} disabled={nickBusy}>
+            {nickBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+            บันทึก
+          </Button>
+        </ModalFooter>
+      </Modal>
+
       {/* Legal-name correction — request only, HR applies it after approving */}
       <Modal
         isOpen={openField === 'full_name'}
@@ -674,15 +771,44 @@ export default function MyProfilePage() {
             <span className="text-gray-500 dark:text-gray-400">ชื่อปัจจุบัน: </span>
             <span className="font-medium text-gray-800 dark:text-gray-100">{profile?.full_name || '—'}</span>
           </div>
-          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">
-            ชื่อ-นามสกุลที่ถูกต้อง
-            <input
-              value={fullNameDraft}
-              onChange={(e) => setFullNameDraft(e.target.value)}
-              placeholder="เช่น นางสาวไอนิชา อินต๊ะ"
-              className="control mt-1 w-full"
-            />
-          </label>
+          <div className="grid grid-cols-3 gap-2">
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">
+              คำนำหน้า
+              <select
+                value={namePrefix}
+                onChange={(e) => setNamePrefix(e.target.value)}
+                className="control mt-1 w-full"
+              >
+                {NAME_PREFIXES.map((p) => (
+                  <option key={p || 'none'} value={p}>{p || '— ไม่ระบุ —'}</option>
+                ))}
+              </select>
+            </label>
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">
+              ชื่อ
+              <input
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                placeholder="ไอนิชา"
+                className="control mt-1 w-full"
+              />
+            </label>
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">
+              นามสกุล
+              <input
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                placeholder="อินต๊ะ"
+                className="control mt-1 w-full"
+              />
+            </label>
+          </div>
+
+          {fullNameDraft && (
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              ชื่อที่จะส่งให้ HR: <span className="font-medium text-gray-800 dark:text-gray-100">{fullNameDraft}</span>
+            </p>
+          )}
           <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">
             {t('reasonOptional')}
             <textarea

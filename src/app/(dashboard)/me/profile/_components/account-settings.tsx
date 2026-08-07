@@ -67,8 +67,28 @@ const defaultPrefs: NotifPrefs = {
 // so this became the "การตั้งค่าบัญชี" tab of /me/profile and /profile now redirects there.
 // ---------------------------------------------------------------------------
 
-export function AccountSettings() {
+export interface AccountSettingsProfile {
+  display_name: string | null;
+  full_name: string | null;
+  avatar_url: string | null;
+  username: string | null;
+}
+
+interface AccountSettingsProps {
+  /**
+   * The one profile both tabs render. Owned by the page so the two tabs can never disagree about
+   * the same person's photo or nickname — they used to read different sources (this tab the auth
+   * store, the other /api/hr/ess/profile) and drift apart after an edit.
+   */
+  profile: AccountSettingsProfile | null;
+  /** Re-read the shared profile after this tab writes to it. */
+  onProfileSaved: () => void | Promise<void>;
+}
+
+export function AccountSettings({ profile, onProfileSaved }: AccountSettingsProps) {
   const t = useTranslations('profile');
+  // The auth store still owns identity (id / role / username) and the top-bar avatar; only the
+  // editable name+photo come from `profile`.
   const { user, updateUser } = useAuthStore();
   const pushSub = usePushSubscription();
 
@@ -84,10 +104,8 @@ export function AccountSettings() {
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (user) {
-      setNickname(user.displayName || '');
-    }
-  }, [user]);
+    setNickname(profile?.display_name ?? '');
+  }, [profile?.display_name]);
 
   // ---------------------------------------------------------------------------
   // Avatar upload
@@ -134,7 +152,8 @@ export function AccountSettings() {
       });
       if (!saveRes.ok) throw new Error('Save failed');
 
-      updateUser({ avatarUrl: url });
+      updateUser({ avatarUrl: url }); // top bar
+      await onProfileSaved(); // shared profile → the other tab sees the new photo too
       toast({ type: 'success', title: t('avatarUploadSuccess') });
     } catch {
       toast({ type: 'error', title: t('avatarUploadFailed') });
@@ -164,9 +183,10 @@ export function AccountSettings() {
       if (!res.ok) throw new Error(json.error || 'Save failed');
 
       const saved = (json.data?.display_name as string | null) ?? null;
-      updateUser({ displayName: saved });
+      updateUser({ displayName: saved }); // top bar
       setNickname(saved ?? '');
       setIsEditingNickname(false);
+      await onProfileSaved(); // shared profile → the other tab sees the new nickname too
       toast({ type: 'success', title: t('nicknameSaveSuccess') });
     } catch (err) {
       toast({
@@ -303,10 +323,10 @@ export function AccountSettings() {
         <CardContent className="flex flex-col items-center gap-4 py-6">
           {/* Avatar with upload */}
           <div className="relative">
-            {user.avatarUrl ? (
+            {profile?.avatar_url ? (
               <img
-                src={user.avatarUrl}
-                alt={user.displayName ?? user.username}
+                src={profile.avatar_url}
+                alt={profile.display_name ?? user.username}
                 className="h-24 w-24 rounded-full object-cover ring-2 ring-indigo-100 dark:ring-indigo-900"
               />
             ) : (
@@ -349,7 +369,7 @@ export function AccountSettings() {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') handleSaveNickname();
                     if (e.key === 'Escape') {
-                      setNickname(user.displayName || '');
+                      setNickname(profile?.display_name ?? '');
                       setIsEditingNickname(false);
                     }
                   }}
@@ -363,7 +383,7 @@ export function AccountSettings() {
                 </button>
                 <button
                   onClick={() => {
-                    setNickname(user.displayName || '');
+                    setNickname(profile?.display_name ?? '');
                     setIsEditingNickname(false);
                   }}
                   className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-200 text-gray-600 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300"
@@ -377,12 +397,12 @@ export function AccountSettings() {
                 className="group flex items-center gap-2"
               >
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {user.displayName || user.username}
+                  {profile?.display_name || user.username}
                 </h1>
                 <Pencil className="h-4 w-4 text-gray-400 opacity-0 transition-opacity group-hover:opacity-100" />
               </button>
             )}
-            {!user.displayName && !isEditingNickname && (
+            {!profile?.display_name && !isEditingNickname && (
               <button
                 onClick={() => setIsEditingNickname(true)}
                 className="text-xs text-indigo-500 hover:text-indigo-600"
@@ -402,6 +422,14 @@ export function AccountSettings() {
               @{user.username}
             </span>
           </div>
+
+          {/* The legal ชื่อ-นามสกุล, same row the ข้อมูลส่วนตัว tab shows. Read-only here: it goes
+              on tax filings and the bank file, so corrections are requested on that tab. */}
+          {profile?.full_name && (
+            <p className="text-center text-xs text-gray-500 dark:text-gray-400">
+              ชื่อ-นามสกุล: <span className="font-medium text-gray-700 dark:text-gray-200">{profile.full_name}</span>
+            </p>
+          )}
         </CardContent>
       </Card>
 
