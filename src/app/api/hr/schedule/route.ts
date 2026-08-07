@@ -263,6 +263,14 @@ export async function GET(request: NextRequest) {
   const { data: holidayRows } = await holidayFilter;
   const holidays = (holidayRows ?? []) as { holiday_date: string; name_th: string; name_en: string }[];
 
+  // Who has NOTHING on the roster this month. HR asked to see this plainly (2026-08-07): an
+  // employee with no rows is not "scheduled for zero days" — nobody has thought about them at
+  // all, and it is invisible in a grid where their line just looks empty like any other.
+  const scheduledUserIds = new Set(entries.map((e) => e.user_id));
+  const unscheduled = staff
+    .filter((s) => !scheduledUserIds.has(s.user_id))
+    .map((s) => ({ user_id: s.user_id, name: s.full_name || s.name, position_name: s.position_name ?? null }));
+
   return NextResponse.json({
     employees: staff,
     templates,
@@ -270,6 +278,7 @@ export async function GET(request: NextRequest) {
     balance,
     monthStatus,
     holidays,
+    unscheduled,
     companies: companiesRes.data ?? [],
   });
 }

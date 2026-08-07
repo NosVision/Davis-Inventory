@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Plus, ArrowLeftRight, History, Printer, IdCard, Archive, UserRound, Link2, Users, Shield, UserCog, UserSearch, Banknote, Clock } from 'lucide-react';
+import { Plus, ArrowLeftRight, History, Printer, IdCard, Archive, UserRound, Link2, Users, Shield, UserCog, UserSearch, ShieldCheck, Banknote, Clock } from 'lucide-react';
 import { Button, Select, Badge, PageHeader, StatusBadge, Modal, ModalFooter, type StatusTone, toast } from '@/components/ui';
 import { DataTable, type Column } from '@/components/data/data-table';
 import { createClient } from '@/lib/supabase/client';
@@ -16,6 +16,7 @@ import { EmployeeDetailModal } from './_components/employee-detail-modal';
 import { UsersManager } from './_components/users-manager';
 import { InviteLinksManager } from './_components/invite-links-manager';
 import { UnclaimedIdentitiesManager } from './_components/unclaimed-identities-manager';
+import { ManagerScopesManager } from './_components/manager-scopes-manager';
 
 interface Ref {
   id: string;
@@ -81,7 +82,9 @@ function employeeName(e: EmployeeRow): string {
 // tabs, so one person is managed in one place. Deep-linkable: ?tab=accounts[&q=<search>], ?tab=links.
 // 'unclaimed' added 2026-08-07: the imported sheet names nobody has claimed yet. They are not
 // employees and not accounts, so neither existing tab showed them — and they silently miss payroll.
-type PeopleTab = 'employees' | 'accounts' | 'unclaimed' | 'links';
+// 'managers' added 2026-08-07: who runs which venue (hr_manager_scopes) — decides who can
+// approve their team's leave and build their store's roster.
+type PeopleTab = 'employees' | 'accounts' | 'unclaimed' | 'managers' | 'links';
 
 export default function EmployeesPage() {
   const t = useTranslations('hr.employees');
@@ -97,7 +100,7 @@ export default function EmployeesPage() {
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
     const tp = p.get('tab');
-    if (tp === 'accounts' || tp === 'links' || tp === 'unclaimed') {
+    if (tp === 'accounts' || tp === 'links' || tp === 'unclaimed' || tp === 'managers') {
       if (tp === 'accounts') {
         setAccountsSeed(p.get('q') ?? '');
         setAccountsClaims(p.get('view') === 'claims');
@@ -113,6 +116,7 @@ export default function EmployeesPage() {
       next === 'accounts' ? `?tab=accounts${seed ? `&q=${encodeURIComponent(seed)}` : ''}`
       : next === 'links' ? '?tab=links'
       : next === 'unclaimed' ? '?tab=unclaimed'
+      : next === 'managers' ? '?tab=managers'
       : '';
     window.history.replaceState(null, '', `/hr/employees${qs}`);
   };
@@ -523,6 +527,7 @@ export default function EmployeesPage() {
           tab === 'employees' ? `${t('subtitle')} · ${t('count', { count })}`
           : tab === 'accounts' ? t('tabAccountsSubtitle')
           : tab === 'unclaimed' ? 'รายชื่อจากไฟล์เงินเดือนที่ยังไม่ได้ผูกกับบัญชีผู้ใช้ — ยังไม่เข้างวดเงินเดือน'
+          : tab === 'managers' ? 'ใครดูแลสาขาไหน — หัวหน้าสาขาอนุมัติใบลาและจัดตารางของสาขาตัวเองได้'
           : t('tabLinksSubtitle')
         }
         actions={
@@ -553,6 +558,7 @@ export default function EmployeesPage() {
             { key: 'employees', icon: Users, label: t('tabEmployees') },
             { key: 'accounts', icon: UserCog, label: t('tabAccounts') },
             { key: 'unclaimed', icon: UserSearch, label: 'รอยืนยันตัวตน' },
+            { key: 'managers', icon: ShieldCheck, label: 'หัวหน้าสาขา' },
             { key: 'links', icon: Link2, label: t('tabLinks') },
           ] as const
         ).map(({ key, icon: Icon, label }) => (
@@ -582,6 +588,8 @@ export default function EmployeesPage() {
       )}
 
       {tab === 'unclaimed' && <UnclaimedIdentitiesManager />}
+
+      {tab === 'managers' && <ManagerScopesManager />}
 
       {tab === 'links' && <InviteLinksManager />}
 

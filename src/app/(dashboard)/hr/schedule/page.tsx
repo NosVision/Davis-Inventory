@@ -109,6 +109,9 @@ export default function SchedulePage({
   const [entries, setEntries] = useState<Entry[]>([]);
   const [monthStatus, setMonthStatus] = useState<MonthStatus>('empty');
   const [holidays, setHolidays] = useState<{ holiday_date: string; name_th: string; name_en: string }[]>([]);
+  // Employees with NO roster row at all this month — "nobody thought about them", which an empty
+  // grid line hides (HR ask 2026-08-07).
+  const [unscheduled, setUnscheduled] = useState<{ user_id: string; name: string; position_name: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Roster name display: nickname (display_name) ↔ real full name (hr_employees.full_name),
@@ -170,6 +173,7 @@ export default function SchedulePage({
       setEntries((j.entries ?? []) as Entry[]);
       setMonthStatus((j.monthStatus ?? 'empty') as MonthStatus);
       setHolidays((j.holidays ?? []) as { holiday_date: string; name_th: string; name_en: string }[]);
+      setUnscheduled((j.unscheduled ?? []) as { user_id: string; name: string; position_name: string | null }[]);
       setCompanies((j.companies ?? []) as CompanyOpt[]);
     } catch {
       toast({ type: 'error', title: t('actionFailed') });
@@ -478,6 +482,28 @@ export default function SchedulePage({
           {t('submitToHr')}
         </Button>
       </div>
+
+      {/* Nobody has been rostered for these people this month. Called out rather than left as an
+          empty grid line, which is indistinguishable from a line that was considered and left
+          blank (HR ask 2026-08-07). */}
+      {unscheduled.length > 0 && (
+        <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50/70 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-800/60 dark:bg-amber-900/15 dark:text-amber-300">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="min-w-0">
+            <p className="font-semibold">
+              {tt(
+                `ยังไม่ได้จัดตาราง ${unscheduled.length} คน`,
+                `${unscheduled.length} not scheduled yet`
+              )}
+            </p>
+            <p className="mt-0.5">
+              {unscheduled
+                .map((u) => (u.position_name ? `${u.name} (${u.position_name})` : u.name))
+                .join(' · ')}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* shift templates strip + brush picker */}
       <div className="flex flex-wrap items-center gap-2">

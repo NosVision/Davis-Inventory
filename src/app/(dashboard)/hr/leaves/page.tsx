@@ -6,6 +6,7 @@ import { Loader2, Inbox, FileText, CalendarRange, ListChecks } from 'lucide-reac
 import { Button, Select, PageHeader, ViewToggle, useViewMode, DataList, DataCard, StatusBadge, SkeletonList, toast, usePromptDialog } from '@/components/ui';
 import { formatThaiDate } from '@/lib/utils/format';
 import { EmployeeName } from '@/components/hr/employee-name';
+import Link from 'next/link';
 
 interface StoreOpt {
   id: string;
@@ -24,6 +25,8 @@ interface LeaveRow {
   cert_path: string | null;
   status: Status;
   decision_note: string | null;
+  /** null = the employee has no venue (company-level / not yet assigned) → HR approves directly. */
+  store_id: string | null;
   requester: { id: string; full_name: string | null; display_name: string | null; username: string | null } | null;
   leave_type: { code: string; name_th: string; name_en: string } | null;
 }
@@ -35,6 +38,24 @@ const STATUS_TONE: Record<Status, 'warn' | 'good' | 'critical' | 'neutral'> = {
   cancelled: 'neutral',
 };
 const STATUS_FILTERS = ['all', 'pending', 'approved', 'rejected', 'cancelled'] as const;
+
+/**
+ * HR's view of the leave queue, split by WHO owes the decision (owner change 2026-08-07).
+ * Venue managers approve their own team; HR keeps the cases with no manager to fall back on,
+ * and can still step in anywhere.
+ *
+ *  manager_pending — waiting on a venue manager. HR may approve on their behalf.
+ *  manager_done    — already approved. Nothing to do here; corrections go to /hr/timesheet.
+ *  hr_pending      — no venue (company-level / unassigned), so it was always HR's to decide.
+ */
+type Queue = 'manager_pending' | 'manager_done' | 'hr_pending' | 'all';
+
+const QUEUES: { key: Queue; label: string; hint: string; status: string }[] = [
+  { key: 'manager_pending', label: 'รอหัวหน้าสาขาอนุมัติ', hint: 'HR กดอนุมัติแทนได้', status: 'pending' },
+  { key: 'manager_done', label: 'อนุมัติแล้ว', hint: 'ไม่ต้องทำอะไร — แก้ไขที่ /hr/timesheet', status: 'approved' },
+  { key: 'hr_pending', label: 'ไม่มีสังกัด — HR อนุมัติ', hint: 'พนักงานที่ยังไม่มีสาขา/ระดับบริษัท', status: 'pending' },
+  { key: 'all', label: 'ทั้งหมด', hint: '', status: 'all' },
+];
 
 // ── Quota & stats view (per-year quota overrides + usage matrix) ───────────────
 interface QuotaType {
@@ -86,6 +107,7 @@ export default function HrLeavesPage() {
   const [stores, setStores] = useState<StoreOpt[]>([]);
   const [storeId, setStoreId] = useState(''); // '' = company-wide (no store_id)
   const [status, setStatus] = useState<string>('pending');
+  const [queue, setQueue] = useState<Queue>('manager_pending');
 
   const [rows, setRows] = useState<LeaveRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -131,12 +153,21 @@ export default function HrLeavesPage() {
     try {
       const params = new URLSearchParams();
       if (storeId) params.set('store_id', storeId);
-      if (status !== 'all') params.set('status', status);
+      // The queue drives the status; 'ทั้งหมด' falls back to the raw status filter.
+      const effectiveStatus = queue === 'all' ? status : QUEUES.find((q) => q.key === queue)!.status;
+      if (effectiveStatus !== 'all') params.set('status', effectiveStatus);
       const qs = params.toString();
       const res = await fetch(`/api/hr/leaves${qs ? `?${qs}` : ''}`);
       if (!res.ok) throw new Error();
       const json = await res.json();
-      setRows((json.data ?? []) as LeaveRow[]);
+      const all = (json.data ?? []) as LeaveRow[];
+      // Split on whether the request belongs to a venue: with a store there is a manager who owes
+      // the decision; without one it was always HR's.
+      setRows(
+        queue === 'manager_pending' ? all.filter((r) => r.store_id)
+        : queue === 'hr_pending' ? all.filter((r) => !r.store_id)
+        : all
+      );
     } catch {
       setRows([]);
     } finally {
@@ -144,7 +175,7 @@ export default function HrLeavesPage() {
       setRejectId(null);
       setRejectNote('');
     }
-  }, [storeId, status]);
+  }, [storeId, status, queue]);
 
   useEffect(() => {
     load();
@@ -522,6 +553,38 @@ export default function HrLeavesPage() {
         renderQuotaView()
       ) : (
         <>
+          {/* Queue split — who owes the decision (2026-08-07) */}
+          <div className="flex flex-wrap gap-1 rounded-xl bg-gray-100 p-1 dark:bg-gray-800">
+            {QUEUES.map((q) => (
+              <button
+                key={q.key}
+                type="button"
+                onClick={() => setQueue(q.key)}
+                title={q.hint || undefined}
+                className={`flex-1 cursor-pointer whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                  queue === q.key
+                    ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-700 dark:text-indigo-300'
+                    : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                }`}
+              >
+                {q.label}
+              </button>
+            ))}
+          </div>
+          {queue !== 'all' && (
+            <p className="-mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {QUEUES.find((q) => q.key === queue)!.hint}
+              {queue === 'manager_done' && (
+                <>
+                  {' — '}
+                  <Link href="/hr/timesheet" className="font-medium text-indigo-600 hover:underline dark:text-indigo-400">
+                    ไปหน้า timesheet
+                  </Link>
+                </>
+              )}
+            </p>
+          )}
+
           {/* filters */}
           <div className="grid grid-cols-2 gap-3">
             <Select
@@ -530,12 +593,14 @@ export default function HrLeavesPage() {
               onChange={(e) => setStoreId(e.target.value)}
               options={storeOptions}
             />
-            <Select
-              label={t('status')}
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              options={statusOptions}
-            />
+            {queue === 'all' && (
+              <Select
+                label={t('status')}
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                options={statusOptions}
+              />
+            )}
           </div>
 
           {loading ? (
