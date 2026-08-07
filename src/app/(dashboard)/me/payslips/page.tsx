@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
-import { Loader2, Wallet, X, FileText } from 'lucide-react';
+import { Loader2, Calendar, Download, Wallet, X, FileText } from 'lucide-react';
 import { Button, EmptyState, Modal, ModalFooter, PageHeader, DataList, DataCard, MoneyValue, StatusBadge, ViewToggle, useViewMode, toast } from '@/components/ui';
 import { PayslipView, type PayslipDetailData } from '@/components/hr/payslip-view';
 import { ImportedPayslipView, periodLabel, type ImportedSlip } from '@/components/hr/imported-payslip-view';
@@ -34,6 +34,10 @@ export default function MyPayslipsPage() {
   const [importedSlip, setImportedSlip] = useState<ImportedSlip | null>(null);
   const [paperBusy, setPaperBusy] = useState<string | null>(null);
   const [view, setView] = useViewMode('me-payslips');
+  // Year filter defaulting to the CURRENT year — the slip people open is almost always the latest
+  // one, and the list otherwise runs back through every archived year at once.
+  const [year, setYear] = useState<number>(new Date().getFullYear());
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -116,6 +120,41 @@ export default function MyPayslipsPage() {
     return [...live, ...arch].sort((a, b) => b.year - a.year || b.month - a.month);
   }, [rows, imported]);
 
+  // Years that actually have a slip — offering an empty year is a dead end.
+  const years = useMemo(
+    () => [...new Set(merged.map((m) => m.year).filter(Boolean))].sort((a, b) => b - a),
+    [merged]
+  );
+  // If the current year has nothing yet (early January, or a new joiner), fall back to the newest
+  // year that does rather than showing an empty page.
+  useEffect(() => {
+    if (years.length > 0 && !years.includes(year)) setYear(years[0]);
+  }, [years, year]);
+
+  const visible = useMemo(() => merged.filter((m) => m.year === year), [merged, year]);
+
+  /** Download the open slip as a PDF. react-pdf is lazy-imported so it stays out of this chunk. */
+  const downloadPdf = useCallback(async () => {
+    if (!slip) return;
+    setPdfBusy(true);
+    try {
+      const { buildPayslipPdf } = await import('@/components/hr/payslip-pdf');
+      const blob = await buildPayslipPdf(slip);
+      const y = slip.payrun?.period_year ?? year;
+      const m = String(slip.payrun?.period_month ?? 0).padStart(2, '0');
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `payslip-${y}-${m}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast({ type: 'error', title: 'สร้างไฟล์ PDF ไม่สำเร็จ' });
+    } finally {
+      setPdfBusy(false);
+    }
+  }, [slip, year]);
+
   return (
     <div className="mx-auto max-w-lg space-y-4 p-4">
       <div>
@@ -144,13 +183,31 @@ export default function MyPayslipsPage() {
           </button>
         </label>
 
+        {/* Year picker — only years that actually have a slip. */}
+        {years.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Calendar className="h-4 w-4 shrink-0 text-gray-400" />
+            <select
+              value={year}
+              onChange={(e) => setYear(Number(e.target.value))}
+              className="rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+            >
+              {years.map((y) => (
+                <option key={y} value={y}>
+                  {y + 543} ({merged.filter((m) => m.year === y).length})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {loading ? (
           <div className="flex justify-center py-10 text-gray-400"><Loader2 className="h-5 w-5 animate-spin" /></div>
-        ) : merged.length === 0 ? (
+        ) : visible.length === 0 ? (
           <EmptyState icon={Wallet} title={t('noPayslips')} />
         ) : (
           <DataList compact={view === 'compact'}>
-            {merged.map((m) =>
+            {visible.map((m) =>
               m.kind === 'live' ? (
                 <DataCard
                   key={m.key}
@@ -194,6 +251,9 @@ export default function MyPayslipsPage() {
           </div>
           <ModalFooter>
             <Button variant="ghost" onClick={() => setSlip(null)} icon={<X className="h-4 w-4" />}>{t('close')}</Button>
+            <Button onClick={downloadPdf} disabled={pdfBusy} icon={pdfBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}>
+              ดาวน์โหลด PDF
+            </Button>
           </ModalFooter>
         </Modal>
       )}
