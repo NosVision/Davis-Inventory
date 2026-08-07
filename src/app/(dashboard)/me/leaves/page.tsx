@@ -127,7 +127,10 @@ export default function MyLeavesPage() {
   );
   const quotaTypes = useMemo(() => (summary?.types ?? []).filter((ty) => ty.quota != null), [summary]);
   const usedQuotaTypes = useMemo(() => quotaTypes.filter((ty) => ty.used > 0), [quotaTypes]);
-  const visibleQuotaTypes = showAllTypes ? quotaTypes : usedQuotaTypes;
+  // Collapsing the unused types only makes sense when SOMETHING has been used — otherwise the
+  // employee opens "ดูโควตา" and gets an empty box. 119 of 123 staff have taken no leave this
+  // year, so that was almost everyone (owner report 2026-08-07).
+  const visibleQuotaTypes = showAllTypes || usedQuotaTypes.length === 0 ? quotaTypes : usedQuotaTypes;
   const collapsedCount = quotaTypes.length - usedQuotaTypes.length;
   const requiresCert = Boolean(selectedType?.requires_cert);
   // reason mandatory unless the type opts out (requires_reason=false)

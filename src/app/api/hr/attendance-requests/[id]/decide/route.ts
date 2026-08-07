@@ -48,6 +48,32 @@ export async function POST(
   const decision = typeof body.decision === 'string' ? body.decision : '';
   const note = typeof body.note === 'string' ? body.note.slice(0, 300) : null;
 
+  /**
+   * How HR is settling this, beyond plain yes/no (owner ask 2026-08-07). Approving used to apply
+   * EXACTLY what the employee proposed — if the time was wrong, or the day was really an absence
+   * or a leave, HR had to approve it anyway and then go hunt the same person and date down in
+   * /hr/timesheet. All three outcomes are decided here now:
+   *
+   *   punch  (default) — record the punch. `override_ts` lets HR correct the proposed time first.
+   *   absent           — no punch; write an absent override for the day.
+   *   leave            — no punch; create an approved single-day leave.
+   *
+   * 'absent' and 'leave' reuse the same endpoints the /hr/timesheet day-edit modal calls, so a day
+   * settled from here is indistinguishable from one settled there.
+   */
+  const resolution = typeof body.resolution === 'string' ? body.resolution : 'punch';
+  if (!['punch', 'absent', 'leave'].includes(resolution)) {
+    return NextResponse.json({ error: 'invalid resolution' }, { status: 400 });
+  }
+  const overrideTs = typeof body.override_ts === 'string' && body.override_ts ? body.override_ts : null;
+  if (overrideTs && Number.isNaN(Date.parse(overrideTs))) {
+    return NextResponse.json({ error: 'override_ts is not a valid timestamp' }, { status: 400 });
+  }
+  const leaveTypeId = typeof body.leave_type_id === 'string' ? body.leave_type_id : '';
+  if (resolution === 'leave' && !leaveTypeId) {
+    return NextResponse.json({ error: 'leave_type_id is required to settle as leave' }, { status: 400 });
+  }
+
   if (decision === 'rejected') {
     const { data: updated, error } = await service
       .from(REQUEST_TABLE)
@@ -124,6 +150,67 @@ export async function POST(
     const kind = row.kind as string;
     const applyReason = `Attendance request approved: ${row.reason as string}`.slice(0, 500);
 
+    // Reclassified: the day was not a missing punch at all. No punch is written — an absence with
+    // a punch on it would be self-contradictory — and the day is settled the way /hr/timesheet
+    // would settle it. Both paths already refuse a finalized pay period, checked above.
+    if (resolution === 'absent' || resolution === 'leave') {
+      const settle =
+        resolution === 'absent'
+          ? service.from('hr_timesheet_overrides').upsert(
+              {
+                user_id: row.user_id,
+                business_date: row.business_date,
+                store_id: row.store_id,
+                absent: true,
+                worked_min: 0,
+                reason: note || applyReason,
+                edited_by: auth.userId,
+              },
+              { onConflict: 'user_id,business_date' }
+            )
+          : service.from('hr_leaves').insert({
+              user_id: row.user_id,
+              store_id: row.store_id,
+              leave_type_id: leaveTypeId,
+              from_date: row.business_date,
+              to_date: row.business_date,
+              days: 1,
+              reason: note || applyReason,
+              status: 'approved',
+              approver_id: auth.userId,
+              decided_at: new Date().toISOString(),
+            });
+
+      const { error: settleErr } = await settle;
+      if (settleErr) {
+        console.error('Attendance request approve: reclassify failed', {
+          attendanceRequestId: id,
+          resolution,
+          error: settleErr.message,
+        });
+        return NextResponse.json({
+          data: { id, status: 'approved' },
+          warning:
+            resolution === 'absent'
+              ? 'อนุมัติแล้ว แต่บันทึกวันขาดงานไม่สำเร็จ — ต้องแก้ที่ /hr/timesheet เอง'
+              : 'อนุมัติแล้ว แต่สร้างใบลาไม่สำเร็จ — ต้องสร้างเองที่ /hr/leaves',
+        });
+      }
+
+      await service.from(REQUEST_TABLE).update({ applied: true }).eq('id', id);
+      await logHrAudit(service, {
+        actorId: auth.userId,
+        action: 'update',
+        table: resolution === 'absent' ? 'hr_timesheet_overrides' : 'hr_leaves',
+        recordId: id,
+        before: null,
+        after: { user_id: row.user_id, business_date: row.business_date, resolution, leave_type_id: leaveTypeId || null },
+        reason: `${applyReason} — settled as ${resolution}`,
+      });
+
+      return NextResponse.json({ data: { id, status: 'approved', resolution } });
+    }
+
     // THEN: apply the correction. 'other' has no auto-apply — the manager handles it
     // manually per decision_note, and the request stays applied=false.
     if (kind === 'missing_in' || kind === 'missing_out') {
@@ -133,7 +220,8 @@ export async function POST(
           user_id: row.user_id,
           store_id: row.store_id,
           type: row.proposed_type,
-          ts: row.proposed_ts,
+          // HR may correct the employee's proposed time before it becomes the record.
+          ts: overrideTs ?? row.proposed_ts,
           business_date: row.business_date,
           is_vpn_suspect: false,
           device: 'hr_correction',
@@ -188,7 +276,7 @@ export async function POST(
 
       const { data: after, error: updateErr } = await service
         .from(ATTENDANCE_TABLE)
-        .update({ ts: row.proposed_ts })
+        .update({ ts: overrideTs ?? row.proposed_ts })
         .eq('id', row.target_attendance_id)
         .select('id, user_id, store_id, type, ts, business_date')
         .single();
