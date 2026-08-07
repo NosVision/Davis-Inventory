@@ -29,6 +29,7 @@ import {
   MessageSquare,
   Inbox,
   Hand,
+  Calendar,
 } from 'lucide-react';
 
 // 'uncounted' = POS sold it but there is no manual count (typically a product deactivated at
@@ -132,19 +133,48 @@ export default function ExplanationPage() {
     [comparisons]
   );
 
-  const displayItems = useMemo(() => {
-    const items =
+  // The bucket the tabs select, before the day filter.
+  const bucketItems = useMemo(
+    () =>
       viewFilter === 'pending' ? pendingItems
       : viewFilter === 'uncounted' ? uncountedItems
-      : explainedItems;
-    if (!searchQuery.trim()) return items;
+      : explainedItems,
+    [viewFilter, pendingItems, uncountedItems, explainedItems]
+  );
+
+  // Count days present in THIS bucket, newest first. Only days that actually have rows are
+  // offered — an empty day in the list is a dead end.
+  const availableDates = useMemo(
+    () => [...new Set(bucketItems.map((c) => c.comp_date))].sort().reverse(),
+    [bucketItems]
+  );
+
+  // This page had no day filter at all: it listed every unresolved row for the store across every
+  // count date at once (May→today), which read as "it is showing me everything" next to
+  // /stock/comparison, where you pick a day. Default to the newest day that still has rows;
+  // 'all' keeps the old behaviour for a backlog sweep.
+  const [selectedDate, setSelectedDate] = useState<string>('all');
+  useEffect(() => {
+    // Re-aim at the newest day whenever the chosen day leaves the bucket (tab switch, submit).
+    if (selectedDate !== 'all' && !availableDates.includes(selectedDate)) {
+      setSelectedDate(availableDates[0] ?? 'all');
+    }
+  }, [availableDates, selectedDate]);
+
+  const dateFilteredItems = useMemo(
+    () => (selectedDate === 'all' ? bucketItems : bucketItems.filter((c) => c.comp_date === selectedDate)),
+    [bucketItems, selectedDate]
+  );
+
+  const displayItems = useMemo(() => {
+    if (!searchQuery.trim()) return dateFilteredItems;
     const query = searchQuery.toLowerCase();
-    return items.filter(
+    return dateFilteredItems.filter(
       (c) =>
         (c.product_name || '').toLowerCase().includes(query) ||
         c.product_code.toLowerCase().includes(query)
     );
-  }, [viewFilter, pendingItems, uncountedItems, explainedItems, searchQuery]);
+  }, [dateFilteredItems, searchQuery]);
 
   const handleExplanationChange = (id: string, value: string) => {
     setExplanations((prev) => ({ ...prev, [id]: value }));
@@ -257,10 +287,10 @@ export default function ExplanationPage() {
   };
 
   const handleSubmitAll = async () => {
-    // Whichever bucket is on screen: both 'pending' and 'uncounted' are status='pending' rows
-    // awaiting an explanation, they just differ on whether a manual count exists.
-    const bucket = viewFilter === 'uncounted' ? uncountedItems : pendingItems;
-    const itemsToSubmit = bucket.filter(
+    // Exactly what the tab + day filter are showing: "ส่งทั้งหมด" must never reach a row the
+    // filters are hiding. Both 'pending' and 'uncounted' are status='pending' rows awaiting an
+    // explanation; they differ only on whether a manual count exists.
+    const itemsToSubmit = dateFilteredItems.filter(
       (c) => explanations[c.id]?.trim() && !chatClaims.get(c.comp_date)
     );
 
@@ -359,7 +389,7 @@ export default function ExplanationPage() {
 
   // Exclude items whose comp_date is being claimed in chat — those
   // rows are locked and can't participate in the batch submit.
-  const filledCount = (viewFilter === 'uncounted' ? uncountedItems : pendingItems).filter(
+  const filledCount = dateFilteredItems.filter(
     (c) => explanations[c.id]?.trim() && !chatClaims.get(c.comp_date)
   ).length;
 
@@ -428,13 +458,32 @@ export default function ExplanationPage() {
         onChange={(id) => setViewFilter(id as ViewFilter)}
       />
 
-      {/* Search */}
-      <Input
-        placeholder={t('explanation.searchProduct')}
-        leftIcon={<Search className="h-4 w-4" />}
-        value={searchQuery}
-        onChange={(e) => setSearchQuery(e.target.value)}
-      />
+      {/* Day + search. The day filter mirrors /stock/comparison, which has always had one. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1.5 text-sm">
+          <Calendar className="h-4 w-4 shrink-0 text-gray-400" />
+          <select
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+          >
+            <option value="all">ทุกวัน ({bucketItems.length})</option>
+            {availableDates.map((d) => (
+              <option key={d} value={d}>
+                {formatThaiDate(d)} ({bucketItems.filter((c) => c.comp_date === d).length})
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="min-w-[12rem] flex-1">
+          <Input
+            placeholder={t('explanation.searchProduct')}
+            leftIcon={<Search className="h-4 w-4" />}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+      </div>
 
       {/* Items List */}
       {displayItems.length === 0 ? (
@@ -612,7 +661,7 @@ export default function ExplanationPage() {
       )}
 
       {/* Batch Submit Footer (only for pending view) */}
-      {viewFilter !== 'explained' && (viewFilter === 'uncounted' ? uncountedItems : pendingItems).length > 0 && (
+      {viewFilter !== 'explained' && dateFilteredItems.length > 0 && (
         <div className="sticky bottom-0 -mx-4 border-t border-gray-200 bg-white/95 px-4 py-4 backdrop-blur-sm dark:border-gray-700 dark:bg-gray-900/95 sm:-mx-6 sm:px-6">
           <div className="flex items-center justify-between gap-3">
             <div className="text-sm text-gray-500 dark:text-gray-400">
