@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireScheduler } from '@/lib/hr/route-auth';
+import { requireSchedulerForScope } from '@/lib/hr/route-auth';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_CELLS = 3000; // ~100 staff × 31 days ceiling for one save
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
       : null;
   if (!scope) return NextResponse.json({ error: 'store_id or company_id is required' }, { status: 400 });
 
-  const auth = await requireScheduler();
+  const auth = await requireSchedulerForScope(scope.kind === 'store' ? scope.storeId : null);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const rawCells = Array.isArray(body.cells) ? body.cells : [];

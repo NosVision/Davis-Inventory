@@ -44,9 +44,13 @@ const not403 = (s) => s !== 403 && s !== 401;
     check('mgr delete override out-of-scope → 403', (await st(req(mgr, 'DELETE', `/api/hr/timesheet/override?user_id=${outProfile}&business_date=2026-07-10`))) === 403, null);
     check('mgr delete override in-scope staff → 200 (cleanup)', (await st(req(mgr, 'DELETE', `/api/hr/timesheet/override?user_id=${STAFF}&business_date=2026-07-10`))) === 200, null);
 
-    // ── schedule acknowledge (per-store) ──
-    check('mgr schedule-ack HRTEST → not 403', not403(await st(req(mgr, 'POST', '/api/hr/schedule/acknowledge', { store_id: HRTEST, month: '2026-07' }))), null);
-    check('mgr schedule-ack storeB → 403', (await st(req(mgr, 'POST', '/api/hr/schedule/acknowledge', { store_id: STORE_B, month: '2026-07' }))) === 403, null);
+    // ── scheduling (per-store, 2026-08-07): the venue manager builds their OWN store's roster;
+    //    company-scope rosters stay HQ/HR. The old acknowledge step is gone — publishing is final.
+    check('mgr read own store roster → not 403', not403(await st(req(mgr, 'GET', `/api/hr/schedule?store_id=${HRTEST}&month=2026-07`))), null);
+    check('mgr read other store roster → 403', (await st(req(mgr, 'GET', `/api/hr/schedule?store_id=${STORE_B}&month=2026-07`))) === 403, null);
+    check('mgr publish own store roster → not 403', not403(await st(req(mgr, 'POST', '/api/hr/schedule/submit', { store_id: HRTEST, month: '2026-07' }))), null);
+    check('mgr publish other store roster → 403', (await st(req(mgr, 'POST', '/api/hr/schedule/submit', { store_id: STORE_B, month: '2026-07' }))) === 403, null);
+    check('mgr publish COMPANY roster → 403 (HQ/HR only)', (await st(req(mgr, 'POST', '/api/hr/schedule/submit', { company_id: 'none', month: '2026-07' }))) === 403, null);
 
     // ── warnings void (row store_id) ──
     check('mgr void HRTEST warning → not 403 (gate passes)', not403(await st(req(mgr, 'POST', `/api/hr/warnings/${warnH.id}/void`, { reason: 'e2e' }))), null);

@@ -30,8 +30,10 @@ export async function GET() {
 
   const service = createServiceClient();
 
-  // Company-wide HR → every active store.
-  if (canManageHr({ role, permissions })) {
+  // Company-wide HR and the HQ scheduler → every active store. `hq` used to fall through to the
+  // scopes lookup, which is always empty for them, so the HQ scheduler's store picker came back
+  // blank and they could not schedule anything.
+  if (role === 'hq' || canManageHr({ role, permissions })) {
     const { data, error } = await service
       .from('stores')
       .select('id, store_code, store_name')

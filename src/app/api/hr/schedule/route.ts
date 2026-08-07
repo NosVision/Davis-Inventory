@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireScheduler } from '@/lib/hr/route-auth';
+import { requireSchedulerForScope } from '@/lib/hr/route-auth';
 import { isDateInFinalizedPeriod, employeeStoreIds, FINALIZED_PERIOD_ERROR } from '@/lib/hr/period-lock';
 
 const MONTH_RE = /^\d{4}-\d{2}$/;
@@ -92,7 +92,8 @@ export async function GET(request: NextRequest) {
   const sp = request.nextUrl.searchParams;
   const scope = parseScope(sp.get('store_id') ?? '', sp.get('company_id') ?? '');
   if (!scope) return NextResponse.json({ error: 'store_id or company_id is required' }, { status: 400 });
-  const auth = await requireScheduler();
+  // A store roster is the venue manager's to build; company rosters stay HQ/HR.
+  const auth = await requireSchedulerForScope(scope.kind === 'store' ? scope.storeId : null);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const month = sp.get('month') ?? '';
@@ -280,7 +281,7 @@ export async function POST(request: NextRequest) {
   const storeId = typeof body.store_id === 'string' ? body.store_id : '';
   const scope = parseScope(storeId, typeof body.company_id === 'string' ? body.company_id : '');
   if (!scope) return NextResponse.json({ error: 'store_id or company_id is required' }, { status: 400 });
-  const auth = await requireScheduler();
+  const auth = await requireSchedulerForScope(scope.kind === 'store' ? scope.storeId : null);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const userId = typeof body.user_id === 'string' ? body.user_id : '';
@@ -411,7 +412,7 @@ export async function DELETE(request: NextRequest) {
   if (rowErr) return NextResponse.json({ error: 'Failed to load assignment' }, { status: 500 });
   if (!row) return NextResponse.json({ error: 'Assignment not found' }, { status: 404 });
 
-  const auth = await requireScheduler();
+  const auth = await requireSchedulerForScope((row.store_id as string | null) ?? null);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   // §Phase 0B: a finalized (possibly paid) period's roster is locked from deletion too — across

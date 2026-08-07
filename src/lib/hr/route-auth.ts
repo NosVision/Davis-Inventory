@@ -103,10 +103,28 @@ export async function requireStoreManager(storeId: string): Promise<HrAuthResult
 }
 
 /**
- * Auth for SCHEDULING (HQ model, §C). Company-wide (NOT store-scoped): the HQ scheduler role
- * (`hq`) plus HR/owner (`canManageHr`). Under the HQ model, HQ builds and edits every store's
- * roster; store managers do not edit here (they view via ESS, and shift changes go through the
- * employee → HR swap-request flow). Used by the schedule + shift-template write routes.
+ * Auth for SCHEDULING a specific roster scope (owner change 2026-08-07).
+ *
+ * The venue's own manager now builds their store's roster; HQ/HR keep company-wide reach.
+ *   • store scope  → hq / HR / owner, OR a manager scoped to THAT store (hr_manager_scopes)
+ *   • company scope → hq / HR / owner only. Company rosters reach staff with no venue
+ *     (housekeeping, technicians, the not-yet-assigned), who have no manager to own them —
+ *     so they stay with HR exactly as before.
+ *
+ * `storeId = null` means company scope.
+ */
+export async function requireSchedulerForScope(storeId: string | null): Promise<HrAuthResult> {
+  const base = await requireScheduler();
+  if (base.ok) return base;
+  // Not HQ/HR — a store roster is still reachable by that store's own manager.
+  if (!storeId) return base;
+  return requireStoreManager(storeId);
+}
+
+/**
+ * Company-wide scheduling authority: the HQ scheduler role (`hq`) plus HR/owner. Store managers
+ * reach their own store through {@link requireSchedulerForScope}; this is the gate for actions
+ * that are not tied to one store (shift templates, company-scope rosters).
  */
 export async function requireScheduler(): Promise<HrAuthResult> {
   const supabase = await createClient();
