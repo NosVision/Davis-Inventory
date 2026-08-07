@@ -31,7 +31,10 @@ import {
   Hand,
 } from 'lucide-react';
 
-type ViewFilter = 'pending' | 'explained';
+// 'uncounted' = POS sold it but there is no manual count (typically a product deactivated at
+// zero, which therefore can never be counted). Still needs explaining, so it gets its own tab
+// rather than being dropped from the page (owner 2026-08-07).
+type ViewFilter = 'pending' | 'uncounted' | 'explained';
 
 const EXPLAIN_ROLES = ['owner', 'manager', 'bar', 'head_bar', 'staff', 'hq'];
 
@@ -76,12 +79,12 @@ export default function ExplanationPage() {
         .eq('store_id', currentStoreId)
         .in('status', ['pending', 'explained'])
         .neq('difference', 0)
-        // Hide POS-only rows. They share status='pending' with real
-        // over-tolerance rows but represent "staff hasn't counted yet"
-        // — there's no story to write here. They show up on
-        // /stock/comparison under the "รอนับเพิ่ม" tab + the
-        // /stock/daily-check supplementary section instead.
-        .not('manual_quantity', 'is', null)
+        // POS-only rows (manual_quantity IS NULL) used to be filtered out here as "staff hasn't
+        // counted yet — nothing to explain". That silently stranded a real case (owner 2026-08-07):
+        // a product deactivated at zero stock is never counted, so when POS shows it sold the row
+        // goes negative, lands on 'pending', and had nowhere to be explained — while the
+        // "รอนับเพิ่ม" tab told you to go count something that no longer exists. They are kept now
+        // and split into their own tab below.
         .order('comp_date', { ascending: false })
         .order('product_name', { ascending: true });
 
@@ -111,8 +114,16 @@ export default function ExplanationPage() {
     fetchComparisons();
   }, [fetchComparisons]);
 
+  // Counted AND over tolerance — a real variance with a story to write.
   const pendingItems = useMemo(
-    () => comparisons.filter((c) => c.status === 'pending'),
+    () => comparisons.filter((c) => c.status === 'pending' && c.manual_quantity !== null),
+    [comparisons]
+  );
+
+  // POS moved it but nobody counted it. Usually a product that was deactivated/zeroed, so it can
+  // never be counted — the shortfall still has to be explained by someone.
+  const uncountedItems = useMemo(
+    () => comparisons.filter((c) => c.status === 'pending' && c.manual_quantity === null),
     [comparisons]
   );
 
@@ -122,7 +133,10 @@ export default function ExplanationPage() {
   );
 
   const displayItems = useMemo(() => {
-    const items = viewFilter === 'pending' ? pendingItems : explainedItems;
+    const items =
+      viewFilter === 'pending' ? pendingItems
+      : viewFilter === 'uncounted' ? uncountedItems
+      : explainedItems;
     if (!searchQuery.trim()) return items;
     const query = searchQuery.toLowerCase();
     return items.filter(
@@ -130,7 +144,7 @@ export default function ExplanationPage() {
         (c.product_name || '').toLowerCase().includes(query) ||
         c.product_code.toLowerCase().includes(query)
     );
-  }, [viewFilter, pendingItems, explainedItems, searchQuery]);
+  }, [viewFilter, pendingItems, uncountedItems, explainedItems, searchQuery]);
 
   const handleExplanationChange = (id: string, value: string) => {
     setExplanations((prev) => ({ ...prev, [id]: value }));
@@ -243,7 +257,10 @@ export default function ExplanationPage() {
   };
 
   const handleSubmitAll = async () => {
-    const itemsToSubmit = pendingItems.filter(
+    // Whichever bucket is on screen: both 'pending' and 'uncounted' are status='pending' rows
+    // awaiting an explanation, they just differ on whether a manual count exists.
+    const bucket = viewFilter === 'uncounted' ? uncountedItems : pendingItems;
+    const itemsToSubmit = bucket.filter(
       (c) => explanations[c.id]?.trim() && !chatClaims.get(c.comp_date)
     );
 
@@ -342,7 +359,7 @@ export default function ExplanationPage() {
 
   // Exclude items whose comp_date is being claimed in chat — those
   // rows are locked and can't participate in the batch submit.
-  const filledCount = pendingItems.filter(
+  const filledCount = (viewFilter === 'uncounted' ? uncountedItems : pendingItems).filter(
     (c) => explanations[c.id]?.trim() && !chatClaims.get(c.comp_date)
   ).length;
 
@@ -404,6 +421,7 @@ export default function ExplanationPage() {
       <Tabs
         tabs={[
           { id: 'pending', label: t('explanation.pendingExplanation'), count: pendingItems.length },
+          { id: 'uncounted', label: 'ไม่ได้นับ (POS มีขาย)', count: uncountedItems.length },
           { id: 'explained', label: t('explanation.explained'), count: explainedItems.length },
         ]}
         activeTab={viewFilter}
@@ -594,7 +612,7 @@ export default function ExplanationPage() {
       )}
 
       {/* Batch Submit Footer (only for pending view) */}
-      {viewFilter === 'pending' && pendingItems.length > 0 && (
+      {viewFilter !== 'explained' && (viewFilter === 'uncounted' ? uncountedItems : pendingItems).length > 0 && (
         <div className="sticky bottom-0 -mx-4 border-t border-gray-200 bg-white/95 px-4 py-4 backdrop-blur-sm dark:border-gray-700 dark:bg-gray-900/95 sm:-mx-6 sm:px-6">
           <div className="flex items-center justify-between gap-3">
             <div className="text-sm text-gray-500 dark:text-gray-400">

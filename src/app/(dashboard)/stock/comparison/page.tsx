@@ -166,20 +166,21 @@ type VarianceRow = {
   pos_quantity: number | null;
 };
 
-// The compare API reads per-store tolerances from store_settings; the UI uses
-// the shared helper's defaults so the "level" chip + summary stats agree with
-// the server's auto-approve rule (and share the same whole-bottle detection).
-const isWithinTolerance = (row: VarianceRow) => {
+// Must be given the STORE's tolerances, not the helper defaults: this drives the "level" chip and
+// the summary counts, and a store with a non-default diff_tolerance was seeing chips that
+// disagreed with the server's own auto-approve decision on the very same row.
+const isWithinTolerance = (row: VarianceRow, tolerance: { percent: number; unit: number }) => {
   if (row.difference === null) return false;
   return isWithinToleranceFor({
     manual: row.manual_quantity,
     pos: row.pos_quantity,
     difference: row.difference,
     diffPercent: row.diff_percent,
+    tolerance,
   });
 };
 
-function getDiffColor(row: VarianceRow) {
+function getDiffColor(row: VarianceRow, tolerance: { percent: number; unit: number }) {
   if (isEffectivelyZero(row.difference)) {
     return {
       bg: 'bg-emerald-50 dark:bg-emerald-900/20',
@@ -188,7 +189,7 @@ function getDiffColor(row: VarianceRow) {
       labelKey: 'comparison.match',
     };
   }
-  if (isWithinTolerance(row)) {
+  if (isWithinTolerance(row, tolerance)) {
     return {
       bg: 'bg-yellow-50 dark:bg-yellow-900/20',
       text: 'text-yellow-700 dark:text-yellow-400',
@@ -566,12 +567,12 @@ export default function ComparisonPage() {
     const withinTolerance = dateItems.filter(
       (c) =>
         !isEffectivelyZero(c.difference) &&
-        isWithinTolerance(c),
+        isWithinTolerance(c, tolerance),
     ).length;
     const overTolerance = dateItems.filter(
       (c) =>
         !isEffectivelyZero(c.difference) &&
-        !isWithinTolerance(c),
+        !isWithinTolerance(c, tolerance),
     ).length;
 
     return { total, match, withinTolerance, overTolerance };
@@ -598,12 +599,12 @@ export default function ComparisonPage() {
         withinTolerance: items.filter(
           (i) =>
             !isEffectivelyZero(i.difference) &&
-            isWithinTolerance(i),
+            isWithinTolerance(i, tolerance),
         ).length,
         overTolerance: items.filter(
           (i) =>
             !isEffectivelyZero(i.difference) &&
-            !isWithinTolerance(i),
+            !isWithinTolerance(i, tolerance),
         ).length,
         pending: items.filter((i) => i.status === 'pending').length,
         explained: items.filter((i) => i.status === 'explained').length,
@@ -646,10 +647,10 @@ export default function ComparisonPage() {
         total: items.length,
         match: items.filter((i) => isEffectivelyZero(i.difference)).length,
         withinTolerance: items.filter(
-          (i) => !isEffectivelyZero(i.difference) && isWithinTolerance(i),
+          (i) => !isEffectivelyZero(i.difference) && isWithinTolerance(i, tolerance),
         ).length,
         overTolerance: items.filter(
-          (i) => !isEffectivelyZero(i.difference) && !isWithinTolerance(i),
+          (i) => !isEffectivelyZero(i.difference) && !isWithinTolerance(i, tolerance),
         ).length,
       });
     }
@@ -1122,7 +1123,7 @@ export default function ComparisonPage() {
                     // -100% diff is mathematically real but operationally
                     // meaningless (staff just hasn't counted yet).
                     const needsCount = isPendingCount(item);
-                    const diffColor = getDiffColor(item);
+                    const diffColor = getDiffColor(item, tolerance);
                     const statusConfig = needsCount
                       ? {
                           label: t('comparison.statusPendingCount'),
@@ -1261,7 +1262,7 @@ export default function ComparisonPage() {
           <div className="space-y-2 md:hidden">
             {filteredComparisons.map((item) => {
               const needsCount = isPendingCount(item);
-              const diffColor = getDiffColor(item);
+              const diffColor = getDiffColor(item, tolerance);
               const statusConfig = needsCount
                 ? {
                     label: t('comparison.statusPendingCount'),
@@ -1505,7 +1506,7 @@ export default function ComparisonPage() {
           <div className="space-y-2">
             {detailItems.map((item) => {
               const needsCount = isPendingCount(item);
-              const diffColor = getDiffColor(item);
+              const diffColor = getDiffColor(item, tolerance);
               const statusConfig = needsCount
                 ? {
                     label: t('comparison.statusPendingCount'),

@@ -52,10 +52,19 @@ export function resolveVarianceMode(
 /**
  * Is this difference within tolerance (auto-approved — no explanation needed)?
  *
- *  - unit mode (bottle): forgive only a sub-bottle difference; any whole
- *    bottle or more off (|diff| >= 1) must be explained. This is the fix.
- *  - percent mode (pour): legacy rule — a small absolute amount OR a small
- *    percentage is fine. Unchanged, so pour items get no new noise.
+ * A missing whole unit ALWAYS has to be explained, in either mode (owner decision 2026-08-07).
+ * The 2026-07-10 fix only closed this for `unit` mode, and `unit` mode is reached only when BOTH
+ * sides are whole integers — so a pour item counted to one decimal slipped straight past it:
+ * Reguta Red 27.10 vs 28.50 is −1.40 bottles but only −4.91%, under the 5% bar, auto-approved.
+ * That is the same hole the Dom Pérignon case was reported for, just wearing decimals.
+ *
+ *  - >= 1 unit off  → always explained, whatever the percentage says.
+ *  - below 1 unit   → unit mode forgives it; percent mode keeps the old
+ *                     "small absolute amount OR small percentage" rule, so genuine
+ *                     pour wobble (a few ml of evaporation/measurement error) stays quiet.
+ *
+ * The percent branch is deliberately still an OR *below* one unit: tightening it to AND there
+ * would flag sub-0.4-unit rounding noise on low-stock items, which is not a real shortage.
  */
 export function isVarianceWithinTolerance(params: {
   difference: number;
@@ -67,9 +76,10 @@ export function isVarianceWithinTolerance(params: {
   const tolerance = params.tolerance ?? DEFAULT_TOLERANCE;
   const absDiff = Math.abs(difference);
 
-  if (mode === 'unit') {
-    return absDiff < BOTTLE_UNIT_THRESHOLD;
-  }
+  // The floor both modes share: a whole unit gone is a whole unit gone.
+  if (absDiff >= BOTTLE_UNIT_THRESHOLD) return false;
+
+  if (mode === 'unit') return true;
   return (
     absDiff <= tolerance.unit ||
     (diffPercent !== null && Math.abs(diffPercent) <= tolerance.percent)
