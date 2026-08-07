@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
   // — only active (non-cancelled) entries count toward totals and unpaid lists.
   let query = supabase
     .from('commission_entries')
-    .select('*, ae_profile:ae_profiles(id, name, nickname, bank_name, bank_account_no, bank_account_name), staff_profile:profiles!commission_entries_staff_id_fkey(id, display_name, username, role), store:stores!commission_entries_store_id_fkey(id, store_name, store_code)')
+    .select('*, ae_profile:ae_profiles(id, name, nickname, bank_name, bank_account_no, bank_account_name, wht_cert_standing), staff_profile:profiles!commission_entries_staff_id_fkey(id, display_name, username, role), store:stores!commission_entries_store_id_fkey(id, store_name, store_code)')
     .is('cancelled_at', null)
     .gte('bill_date', start)
     .lte('bill_date', end)
@@ -38,6 +38,8 @@ export async function GET(req: NextRequest) {
     ae_id: string;
     ae_name: string;
     ae_nickname: string | null;
+    /** ขอใบ 50 ทวิ ประจำ — the report pre-marks this AE every month. */
+    wht_cert_standing: boolean;
     bank_name: string | null;
     bank_account_no: string | null;
     bank_account_name: string | null;
@@ -76,6 +78,7 @@ export async function GET(req: NextRequest) {
           ae_id: key,
           ae_name: (ae?.name as string) || 'Unknown',
           ae_nickname: (ae?.nickname as string) || null,
+          wht_cert_standing: !!ae?.wht_cert_standing,
           bank_name: (ae?.bank_name as string) || null,
           bank_account_no: (ae?.bank_account_no as string) || null,
           bank_account_name: (ae?.bank_account_name as string) || null,

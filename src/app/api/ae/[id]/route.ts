@@ -26,7 +26,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await req.json();
-  const { name, nickname, phone, bank_name, bank_account_no, bank_account_name, notes, is_active } = body;
+  const { name, nickname, phone, bank_name, bank_account_no, bank_account_name, notes, is_active, wht_cert_standing } = body;
 
   const updates: Record<string, unknown> = {};
   if (name !== undefined) updates.name = name.trim();
@@ -37,6 +37,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (bank_account_name !== undefined) updates.bank_account_name = bank_account_name?.trim() || null;
   if (notes !== undefined) updates.notes = notes?.trim() || null;
   if (is_active !== undefined) updates.is_active = is_active;
+  // "ขอใบ 50 ทวิ ประจำ" — a standing request, honoured by every monthly report.
+  if (wht_cert_standing !== undefined) updates.wht_cert_standing = !!wht_cert_standing;
 
   const { data, error } = await supabase
     .from('ae_profiles')

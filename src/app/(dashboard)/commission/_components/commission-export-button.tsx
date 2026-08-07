@@ -186,12 +186,21 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
           ? `${g.bank_name} ${g.bank_account_no || ''}${g.bank_account_name ? ` (${g.bank_account_name})` : ''}`.trim()
           : null;
         const cert = certStatus[g.ae_id];
+        // A standing request counts as asked even with no monthly row (ae_profiles.wht_cert_standing).
+        const standing = !!(g as { wht_cert_standing?: boolean }).wht_cert_standing;
+        const certLabel =
+          cert === 'issued' ? 'ออกให้แล้ว' : cert === 'requested' || standing ? 'ขอแล้ว' : null;
+        // Settled portion of this AE's month, for the cover sheet's จ่ายแล้ว / ค้างจ่าย columns.
+        const paid = sortedEntries
+          .filter((e) => (e as Record<string, unknown>).payment_id)
+          .reduce((s, e) => s + netDisplay((e as Record<string, unknown>).net_amount as number, rounded), 0);
         return {
           ae_name: g.ae_name,
           ae_nickname: g.ae_nickname,
           bank_label: bankLabel,
-          wht_label:
-            cert === 'issued' ? 'ใบ 50 ทวิ: ออกให้แล้ว' : cert === 'requested' ? 'ใบ 50 ทวิ: ขอแล้ว' : null,
+          wht_label: certLabel ? `ใบ 50 ทวิ: ${certLabel}` : null,
+          cover_wht_label: certLabel,
+          paid,
           rows,
           totals,
         };
@@ -217,6 +226,16 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
         store_name: storeName || 'สาขา',
         month_label: monthLabel,
         generated_at_label: generatedAtLabel,
+        // Page 1 — the ค้างจ่าย summary the accountant settles from, ahead of the bill detail
+        // (owner ask 2026-08-07). Built from the same groups, so the two can never disagree.
+        cover: rgs.map((g) => ({
+          ae_name: `${g.ae_name}${g.ae_nickname ? ` (${g.ae_nickname})` : ''}`,
+          bill_count: g.totals.bill_count,
+          net: g.totals.net,
+          paid: g.paid,
+          outstanding: g.totals.net - g.paid,
+          wht_label: g.cover_wht_label,
+        })),
         groups: rgs,
         grand: rgs.reduce(
           (acc, g) => ({

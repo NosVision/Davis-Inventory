@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, Badge, Button, Modal, ModalFooter, Textarea, toast } from '@/components/ui';
 import { useAppStore } from '@/stores/app-store';
-import { Loader2, FileText, Check, Plus, StickyNote } from 'lucide-react';
+import { Loader2, FileText, Check, Plus, StickyNote, Lock } from 'lucide-react';
 import { netDisplay } from '@/types/commission';
 import { CommissionExportButton } from './commission-export-button';
 
@@ -26,6 +26,8 @@ interface AESummary {
   ae_id: string;
   ae_name: string;
   ae_nickname: string | null;
+  /** ขอใบ 50 ทวิ ประจำ, set on the AE (จัดการ AE tab) — pre-marks them every month. */
+  wht_cert_standing?: boolean;
   bank_name: string | null;
   bank_account_no: string | null;
   entry_count: number;
@@ -129,14 +131,26 @@ export function CommissionReport({ month, refreshKey, rounded = false }: Commiss
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  /** Cycle one AE's certificate through: ไม่ขอ → ขอแล้ว → ออกให้แล้ว → ไม่ขอ. */
-  async function cycleCert(aeId: string) {
+  /**
+   * Cycle one AE's certificate: ไม่ขอ → ขอแล้ว → ออกให้แล้ว → ไม่ขอ.
+   *
+   * An AE with the standing flag is already "ขอแล้ว" every month without a row, so their first
+   * click goes straight to ออกให้แล้ว and clearing returns them to the standing state rather than
+   * to ไม่ขอ — the standing request is theirs to change on the จัดการ AE tab, not here.
+   */
+  async function cycleCert(aeId: string, standing = false) {
     if (!currentStoreId) {
       toast({ type: 'error', title: 'เลือกสาขาก่อน' });
       return;
     }
     const current = certs[aeId];
-    const next = !current ? 'requested' : current.status === 'requested' ? 'issued' : null;
+    const next = !current
+      ? standing
+        ? 'issued'
+        : 'requested'
+      : current.status === 'requested'
+        ? 'issued'
+        : null;
     setSavingCert(aeId);
     try {
       if (next === null) {
@@ -217,7 +231,11 @@ export function CommissionReport({ month, refreshKey, rounded = false }: Commiss
     [rows],
   );
 
-  const certCount = useMemo(() => Object.keys(certs).length, [certs]);
+  // Anyone with a monthly row OR a standing request counts as having asked this month.
+  const certCount = useMemo(
+    () => new Set([...Object.keys(certs), ...ae.filter((a) => a.wht_cert_standing).map((a) => a.ae_id)]).size,
+    [certs, ae]
+  );
   const bottleTotal = useMemo(() => bottle.reduce((s, b) => s + b.total_net, 0), [bottle]);
 
   if (loading) {
@@ -294,13 +312,20 @@ export function CommissionReport({ month, refreshKey, rounded = false }: Commiss
                           <div className="flex items-center justify-center gap-1">
                             <button
                               type="button"
-                              onClick={() => cycleCert(r.ae_id)}
+                              onClick={() => cycleCert(r.ae_id, !!r.wht_cert_standing)}
                               disabled={savingCert === r.ae_id}
                               className="inline-flex cursor-pointer items-center gap-1 rounded-full text-xs transition-colors disabled:cursor-wait disabled:opacity-50"
-                              title={certTooltip(cert)}
+                              title={
+                                r.wht_cert_standing && !cert
+                                  ? 'AE คนนี้ตั้งไว้ว่าขอใบ 50 ทวิ ประจำทุกเดือน (แก้ได้ที่แท็บจัดการ AE) — กดเพื่อบันทึกว่าออกใบให้แล้ว'
+                                  : certTooltip(cert)
+                              }
                             >
                               {savingCert === r.ae_id ? (
                                 <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400" />
+                              ) : !cert && r.wht_cert_standing ? (
+                                // Standing request: pre-marked, no monthly tick needed.
+                                <Badge variant="info" size="sm"><Lock className="h-3 w-3" /> ขอประจำ</Badge>
                               ) : !cert ? (
                                 <span className="inline-flex items-center gap-1 rounded-full border border-dashed border-gray-300 px-2 py-0.5 text-gray-400 transition-colors hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-600 dark:border-gray-600 dark:text-gray-500 dark:hover:border-indigo-500 dark:hover:bg-indigo-900/20 dark:hover:text-indigo-300">
                                   <Plus className="h-3 w-3" /> ทำเครื่องหมาย

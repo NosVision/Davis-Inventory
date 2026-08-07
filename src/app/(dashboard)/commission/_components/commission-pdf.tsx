@@ -117,6 +117,19 @@ const styles = StyleSheet.create({
     borderColor: '#e5e7eb',
   },
   rowAlt: { backgroundColor: '#f9fafb' },
+
+  // Cover sheet columns — wider than the per-bill grid, since this page has only 6 columns.
+  coverName: { flex: 1, fontSize: 10 },
+  coverBills: { width: 50, textAlign: 'right', fontSize: 10 },
+  coverMoney: { width: 95, textAlign: 'right', fontSize: 10 },
+  coverWht: { width: 90, textAlign: 'center', fontSize: 9 },
+  coverTotalRow: {
+    backgroundColor: '#f0fdfa',
+    fontWeight: 700,
+    borderTopWidth: 1,
+    borderColor: '#5eead4',
+  },
+  coverFootnote: { marginTop: 10, fontSize: 9, color: '#6b7280' },
   // หมายเหตุต่อบิล — บรรทัดย่อยเต็มความกว้าง เยื้องให้ตรงกับคอลัมน์รายการ
   noteRow: {
     paddingTop: 1,
@@ -227,10 +240,26 @@ export interface CommissionPdfAEGroup {
   };
 }
 
+/** One line of the cover sheet — mirrors a row of the ค้างจ่าย tab. */
+export interface CommissionPdfCoverRow {
+  ae_name: string;
+  bill_count: number;
+  net: number;
+  paid: number;
+  outstanding: number;
+  wht_label: string | null;
+}
+
 export interface CommissionReportData {
   store_name: string;
   month_label: string;              // e.g. "เมษายน 2569"
   generated_at_label: string;       // e.g. "8 พ.ค. 2569 14:32"
+  /**
+   * Page 1: who is owed what, before any of the per-AE bill detail. The accountant reads this to
+   * settle the month; the pages behind it are the backup (owner ask 2026-08-07). Omitted for the
+   * single-payment receipt PDF, which has nothing to summarise.
+   */
+  cover?: CommissionPdfCoverRow[];
   groups: CommissionPdfAEGroup[];
   grand: {
     subtotal: number;
@@ -267,6 +296,65 @@ function fmtShortDate(iso: string): string {
 function ReportDocument({ data }: { data: CommissionReportData }) {
   return (
     <Document title={`รายงานค่าคอมมิชชั่น ${data.month_label}`}>
+      {/* ── Cover sheet: the ค้างจ่าย summary, always page 1 ────────────────── */}
+      {data.cover && data.cover.length > 0 && (
+        <Page size="A4" orientation="landscape" style={styles.page}>
+          <View style={styles.header}>
+            <View>
+              <Text style={styles.title}>สรุปค่าคอมมิชชั่นค้างจ่าย (AE)</Text>
+              <Text style={styles.subTitle}>
+                {data.store_name} — เดือน {data.month_label}
+              </Text>
+              <Text style={styles.subTitle}>ออกรายงานเมื่อ {data.generated_at_label}</Text>
+            </View>
+            <View>
+              <Text style={styles.totals}>ค้างจ่ายรวม</Text>
+              <Text style={styles.totalsBig}>
+                {fmtMoney(data.cover.reduce((s, r) => s + r.outstanding, 0))} บาท
+              </Text>
+              <Text style={styles.totals}>
+                AE {data.cover.length} คน · {data.grand.bill_count} บิล
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.tableHead}>
+            <Text style={styles.coverName}>AE</Text>
+            <Text style={styles.coverBills}>บิล</Text>
+            <Text style={styles.coverMoney}>สุทธิ</Text>
+            <Text style={styles.coverMoney}>จ่ายแล้ว</Text>
+            <Text style={styles.coverMoney}>ค้างจ่าย</Text>
+            <Text style={styles.coverWht}>ใบ 50 ทวิ</Text>
+          </View>
+
+          {data.cover.map((r, idx) => (
+            <View key={r.ae_name} style={[styles.row, idx % 2 === 1 ? styles.rowAlt : {}]} wrap={false}>
+              <Text style={styles.coverName}>{r.ae_name}</Text>
+              <Text style={styles.coverBills}>{r.bill_count}</Text>
+              <Text style={styles.coverMoney}>{fmtMoney(r.net)}</Text>
+              <Text style={styles.coverMoney}>{fmtMoney(r.paid)}</Text>
+              <Text style={styles.coverMoney}>{r.outstanding > 0 ? fmtMoney(r.outstanding) : '-'}</Text>
+              <Text style={styles.coverWht}>{r.wht_label ?? '-'}</Text>
+            </View>
+          ))}
+
+          <View style={[styles.row, styles.coverTotalRow]} wrap={false}>
+            <Text style={styles.coverName}>รวม</Text>
+            <Text style={styles.coverBills}>{data.cover.reduce((s, r) => s + r.bill_count, 0)}</Text>
+            <Text style={styles.coverMoney}>{fmtMoney(data.cover.reduce((s, r) => s + r.net, 0))}</Text>
+            <Text style={styles.coverMoney}>{fmtMoney(data.cover.reduce((s, r) => s + r.paid, 0))}</Text>
+            <Text style={styles.coverMoney}>{fmtMoney(data.cover.reduce((s, r) => s + r.outstanding, 0))}</Text>
+            <Text style={styles.coverWht}>
+              {data.cover.filter((r) => r.wht_label).length} คน
+            </Text>
+          </View>
+
+          <Text style={styles.coverFootnote}>
+            รายละเอียดบิลรายคนอยู่ในหน้าถัดไป
+          </Text>
+        </Page>
+      )}
+
       <Page size="A4" orientation="landscape" style={styles.page}>
         {/* Header */}
         <View style={styles.header} fixed>

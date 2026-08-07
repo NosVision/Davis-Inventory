@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await req.json();
-  const { store_id, name, nickname, phone, bank_name, bank_account_no, bank_account_name, notes } = body;
+  const { store_id, name, nickname, phone, bank_name, bank_account_no, bank_account_name, notes, wht_cert_standing } = body;
 
   if (!store_id) {
     return NextResponse.json({ error: 'store_id is required' }, { status: 400 });
@@ -59,6 +59,7 @@ export async function POST(req: NextRequest) {
       bank_account_no: bank_account_no?.trim() || null,
       bank_account_name: bank_account_name?.trim() || null,
       notes: notes?.trim() || null,
+      wht_cert_standing: !!wht_cert_standing,
       created_by: user.id,
     })
     .select()

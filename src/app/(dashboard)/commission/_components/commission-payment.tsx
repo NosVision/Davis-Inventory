@@ -5,7 +5,7 @@ import { Button, Card, CardHeader, CardContent, Badge, Modal, ModalFooter, toast
 import { useAppStore } from '@/stores/app-store';
 import { useAuthStore } from '@/stores/auth-store';
 import { CommissionExportButton } from './commission-export-button';
-import { Loader2, Banknote, Clock, Search, CheckCircle2, XCircle, Eye, Image, ChevronDown, ChevronRight, RotateCcw, X } from 'lucide-react';
+import { Loader2, Banknote, Clock, Search, CheckCircle2, XCircle, Eye, Image, ChevronDown, ChevronRight, RotateCcw, X, Receipt } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/audit';
 import { useTranslations } from 'next-intl';
@@ -178,6 +178,8 @@ export function CommissionPayment({ month: monthProp, refreshKey, rounded = fals
   // Payment form state
   const [selectedType, setSelectedType] = useState<'ae' | 'bottle' | null>(null);
   const [selectedId, setSelectedId] = useState<string>('');
+  // "จ่ายครบแล้วเดือนนี้" → the bills that transfer covered.
+  const [billsFor, setBillsFor] = useState<{ ae_name: string; entries: Array<Record<string, unknown>> } | null>(null);
   const [slipPhotos, setSlipPhotos] = useState<string[]>([]);
   const [payNotes, setPayNotes] = useState('');
   const [paying, setPaying] = useState(false);
@@ -313,6 +315,22 @@ export function CommissionPayment({ month: monthProp, refreshKey, rounded = fals
       return { ...b, entries: unpaidEntries, entry_count: unpaidEntries.length, total_net: totalNet, total_bottles: totalBottles };
     })
     .filter((b) => b.entry_count > 0);
+
+  // The mirror of unpaidAE: AEs with nothing left owing this month. They vanish from the list
+  // above once settled, so this keeps a route back to the bills the transfer actually covered.
+  const settledAE = (summary?.ae_summary || [])
+    .map((a) => {
+      const paidEntries = (a.entries || []).filter((e) => !!(e as { payment_id?: string | null }).payment_id);
+      const unpaidCount = (a.entries || []).length - paidEntries.length;
+      return {
+        ae_id: a.ae_id,
+        ae_name: a.ae_name,
+        entries: paidEntries,
+        unpaidCount,
+        paidTotal: paidEntries.reduce((s, e) => s + netDisplay((e as { net_amount?: number }).net_amount, rounded), 0),
+      };
+    })
+    .filter((a) => a.entries.length > 0 && a.unpaidCount === 0);
 
   const totalUnpaid = unpaidAE.reduce((s, a) => s + a.total_net, 0) + unpaidBottle.reduce((s, b) => s + b.total_net, 0);
   const totalPaid = payments.filter(p => p.status === 'paid').reduce((s, p) => s + p.total_amount, 0);
@@ -696,6 +714,83 @@ export function CommissionPayment({ month: monthProp, refreshKey, rounded = fals
       {unpaidAE.length === 0 && unpaidBottle.length === 0 && (
         <p className="py-4 text-center text-sm text-gray-400">{t('payment.noUnpaid')}</p>
       )}
+
+      {/* จ่ายแล้วเดือนนี้ — a settled AE disappears from the list above (it is the ค้างจ่าย list),
+          which left no way back to the bills a transfer covered without knowing to dig through
+          ประวัติ. Each row opens the same bill list (owner ask 2026-08-07). */}
+      {settledAE.length > 0 && (
+        <Card>
+          <CardContent className="p-3">
+            <p className="mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
+              จ่ายครบแล้วเดือนนี้ · {settledAE.length} คน
+            </p>
+            <div className="space-y-1">
+              {settledAE.map((a) => (
+                <button
+                  key={a.ae_id}
+                  type="button"
+                  onClick={() => setBillsFor(a)}
+                  className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                >
+                  <span className="min-w-0 flex-1 truncate">
+                    <span className="font-medium text-gray-900 dark:text-white">{a.ae_name}</span>
+                    <span className="ml-1.5 text-xs text-gray-400">{a.entries.length} บิล</span>
+                  </span>
+                  <span className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+                    {formatCurrency(a.paidTotal)}
+                    <Receipt className="h-3.5 w-3.5" />
+                  </span>
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <Modal
+        isOpen={!!billsFor}
+        onClose={() => setBillsFor(null)}
+        title="บิลที่จ่ายไปแล้ว"
+        description={billsFor ? `${billsFor.ae_name} · ${month}` : undefined}
+        size="lg"
+      >
+        {billsFor && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-xs text-gray-500 dark:bg-gray-800/50 dark:text-gray-400">
+                <tr>
+                  <th className="px-2 py-1.5 text-left font-medium">วันที่</th>
+                  <th className="px-2 py-1.5 text-left font-medium">เลขใบเสร็จ</th>
+                  <th className="px-2 py-1.5 text-left font-medium">โต๊ะ</th>
+                  <th className="px-2 py-1.5 text-right font-medium">ยอดบิล</th>
+                  <th className="px-2 py-1.5 text-right font-medium">สุทธิ</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                {billsFor.entries.map((e) => {
+                  const r = e as Record<string, unknown>;
+                  return (
+                    <tr key={String(r.id)} className="text-gray-700 dark:text-gray-200">
+                      <td className="px-2 py-1.5">{formatThaiDate(String(r.bill_date ?? ''))}</td>
+                      <td className="px-2 py-1.5">{(r.receipt_no as string) || '—'}</td>
+                      <td className="px-2 py-1.5">{(r.table_no as string) || '—'}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">
+                        {formatCurrency(Number(r.subtotal_amount) || 0)}
+                      </td>
+                      <td className="px-2 py-1.5 text-right font-medium tabular-nums">
+                        {formatCurrency(netDisplay(r.net_amount as number, rounded))}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <ModalFooter>
+          <Button variant="ghost" size="sm" onClick={() => setBillsFor(null)}>ปิด</Button>
+        </ModalFooter>
+      </Modal>
 
       {/* Payment form modal */}
       {selectedType && selectedId && (() => {

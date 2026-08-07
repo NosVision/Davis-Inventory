@@ -21,6 +21,8 @@ export interface AEProfile {
   bank_account_name: string | null;
   notes: string | null;
   is_active: boolean;
+  /** ขอใบ 50 ทวิ ประจำ — the monthly report pre-marks this AE instead of asking every month. */
+  wht_cert_standing?: boolean;
   created_by: string | null;
   created_at: string;
   updated_at: string;

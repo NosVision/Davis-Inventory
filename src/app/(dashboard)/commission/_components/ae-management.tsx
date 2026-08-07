@@ -20,6 +20,7 @@ import {
   Building2,
   CreditCard,
   User,
+  FileText,
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/audit';
@@ -108,6 +109,12 @@ export function AEManagement() {
                         <span className="text-sm text-gray-400">({ae.nickname})</span>
                       )}
                       {!ae.is_active && <Badge variant="default" size="sm">{t('ae.inactive')}</Badge>}
+                      {/* Standing ใบ 50 ทวิ — set once here instead of ticked on every monthly report */}
+                      {ae.wht_cert_standing && (
+                        <Badge variant="info" size="sm">
+                          <FileText className="h-3 w-3" /> ขอใบ 50 ทวิ ประจำ
+                        </Badge>
+                      )}
                     </div>
                     <div className="mt-1 flex flex-wrap gap-3 text-xs text-gray-500 dark:text-gray-400">
                       {ae.phone && (
@@ -175,6 +182,8 @@ function AEFormModal({ ae, onClose, onSaved }: AEFormModalProps) {
   const [bankAccountName, setBankAccountName] = useState(ae?.bank_account_name || '');
   const [notes, setNotes] = useState(ae?.notes || '');
   const [isActive, setIsActive] = useState(ae?.is_active ?? true);
+  // Standing ใบ 50 ทวิ request — set once here so the monthly report stops asking.
+  const [whtStanding, setWhtStanding] = useState(ae?.wht_cert_standing ?? false);
   const [saving, setSaving] = useState(false);
 
   async function handleSave() {
@@ -190,8 +199,8 @@ function AEFormModal({ ae, onClose, onSaved }: AEFormModalProps) {
     setSaving(true);
     try {
       const payload = isNew
-        ? { store_id: currentStoreId, name, nickname, phone, bank_name: bankName, bank_account_no: bankAccountNo, bank_account_name: bankAccountName, notes, is_active: isActive }
-        : { name, nickname, phone, bank_name: bankName, bank_account_no: bankAccountNo, bank_account_name: bankAccountName, notes, is_active: isActive };
+        ? { store_id: currentStoreId, name, nickname, phone, bank_name: bankName, bank_account_no: bankAccountNo, bank_account_name: bankAccountName, notes, is_active: isActive, wht_cert_standing: whtStanding }
+        : { name, nickname, phone, bank_name: bankName, bank_account_no: bankAccountNo, bank_account_name: bankAccountName, notes, is_active: isActive, wht_cert_standing: whtStanding };
       const url = isNew ? '/api/ae' : `/api/ae/${ae!.id}`;
       const method = isNew ? 'POST' : 'PUT';
 
@@ -236,6 +245,23 @@ function AEFormModal({ ae, onClose, onSaved }: AEFormModalProps) {
           <Input label={t('ae.bankAccountName')} value={bankAccountName} onChange={(e) => setBankAccountName(e.target.value)} />
         </div>
         <Input label={t('ae.notes')} value={notes} onChange={(e) => setNotes(e.target.value)} />
+
+        {/* Set once, honoured every month — the report pre-marks this AE instead of the accountant
+            ticking the ใบ 50 ทวิ box again on each monthly report (owner ask 2026-08-07). */}
+        <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-gray-200 p-2.5 text-sm transition-colors hover:border-indigo-300 hover:bg-indigo-50/50 dark:border-gray-600 dark:hover:border-indigo-500 dark:hover:bg-indigo-900/10">
+          <input
+            type="checkbox"
+            checked={whtStanding}
+            onChange={(e) => setWhtStanding(e.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+          />
+          <span>
+            <span className="font-medium text-gray-700 dark:text-gray-200">ขอใบ 50 ทวิ ประจำทุกเดือน</span>
+            <span className="block text-xs text-gray-500 dark:text-gray-400">
+              เปิดไว้แล้วรายงานทุกเดือนจะขึ้นว่า AE คนนี้ขอใบ 50 ทวิ ให้อัตโนมัติ — เหลือแค่กดตอนออกใบให้จริง
+            </span>
+          </span>
+        </label>
 
         {!isNew && (
           <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
