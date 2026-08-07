@@ -20,6 +20,7 @@ import {
   toast,
 } from '@/components/ui';
 import { createClient } from '@/lib/supabase/client';
+import { employeeNameLabel } from '@/lib/hr/employee-name';
 
 interface Announcement {
   id: string;
@@ -37,6 +38,7 @@ interface StoreOption {
 
 interface ReceiptUser {
   id?: string;
+  full_name?: string | null;
   display_name?: string | null;
   username?: string | null;
 }
@@ -64,7 +66,7 @@ const EMPTY_EDITOR: EditorState = {
 
 function receiptName(user: ReceiptRow['user']): string {
   const u = Array.isArray(user) ? user[0] : user;
-  return u?.display_name || u?.username || '—';
+  return employeeNameLabel(u);
 }
 
 function formatDate(value: string | null): string {

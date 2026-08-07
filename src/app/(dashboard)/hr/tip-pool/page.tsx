@@ -17,6 +17,7 @@ import {
 } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { formatBaht, bahtToSatang } from '@/lib/pos/money';
+import { employeeNameLabel } from '@/lib/hr/employee-name';
 
 // Tip pool page — mirrors /hr/service-charge (00109 mirrors 00103) but tips are MANUAL-only:
 // no recompute (no auto warning/leave/eval lines), every deduction is a manual line.
@@ -27,7 +28,7 @@ interface TipDeduction { id: string; source_type: string; label: string; amount_
 interface TipAllocation { id: string; user_id: string; allocated_satang: number; net_satang: number; deductions: TipDeduction[]; employee?: { display_name: string | null; username: string | null } | null }
 interface TipPool { id: string; status: string; total_satang: number; pay_date: string | null; notes: string | null }
 interface TipData { pool: TipPool | null; allocations: TipAllocation[]; totals: { allocated: number; deducted: number; net: number } }
-interface EmployeeRef { id: string; display_name: string | null; username: string | null }
+interface EmployeeRef { id: string; full_name?: string | null; display_name: string | null; username: string | null }
 interface TipRow { userId: string; name: string; allocation: TipAllocation | null }
 
 const PRINT_CSS = `@media print { @page { margin: 1.6cm; } .tip-noprint { display: none !important; } }`;
@@ -90,8 +91,14 @@ export default function HrTipPoolPage() {
       const tipJson = await tipRes.json();
       const empJson = await empRes.json();
       setData((tipJson.data ?? null) as TipData | null);
-      const emps = (empJson.data ?? []) as { profile: EmployeeRef | null }[];
-      setEmployees(emps.map((e) => e.profile).filter((p): p is EmployeeRef => !!p));
+      // full_name sits on the employee row, not the nested profile — carry it across so the pool
+      // names people the way their payslip does.
+      const emps = (empJson.data ?? []) as { full_name: string | null; profile: EmployeeRef | null }[];
+      setEmployees(
+        emps
+          .filter((e): e is { full_name: string | null; profile: EmployeeRef } => !!e.profile)
+          .map((e) => ({ ...e.profile, full_name: e.full_name }))
+      );
     } catch {
       setError(true); setData(null); setEmployees([]);
       toast({ type: 'error', title: L.loadFailed });
@@ -105,8 +112,10 @@ export default function HrTipPoolPage() {
     data?.allocations.forEach((a) => allocByUser.set(a.user_id, a));
     const seen = new Set<string>();
     const out: TipRow[] = [];
-    employees.forEach((e) => { seen.add(e.id); out.push({ userId: e.id, name: e.display_name || e.username || '—', allocation: allocByUser.get(e.id) ?? null }); });
-    data?.allocations.forEach((a) => { if (seen.has(a.user_id)) return; out.push({ userId: a.user_id, name: a.employee?.display_name || a.employee?.username || '—', allocation: a }); });
+    employees.forEach((e) => { seen.add(e.id); out.push({ userId: e.id, name: employeeNameLabel(e), allocation: allocByUser.get(e.id) ?? null }); });
+    // Someone allocated but no longer in the employee list (transferred out) — only the profile
+    // is left to name them by.
+    data?.allocations.forEach((a) => { if (seen.has(a.user_id)) return; out.push({ userId: a.user_id, name: employeeNameLabel(a.employee), allocation: a }); });
     return out;
   }, [employees, data]);
 

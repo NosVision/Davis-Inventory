@@ -7,6 +7,7 @@ import { Button, Select, Modal, Input, Textarea, PageHeader, KpiRow, StatTile, M
 import { DataTable, type Column } from '@/components/data/data-table';
 import { createClient } from '@/lib/supabase/client';
 import { formatBaht } from '@/lib/pos/money';
+import { employeeNameLabel } from '@/lib/hr/employee-name';
 
 interface HolderOpt {
   id: string;
@@ -24,7 +25,7 @@ interface AssetRow extends Record<string, unknown> {
   issued_date: string | null;
   returned_date: string | null;
   notes: string | null;
-  holder: { id: string; display_name: string | null; username: string | null } | null;
+  holder: { id: string; full_name: string | null; display_name: string | null; username: string | null } | null;
 }
 
 const STATUSES = ['in_stock', 'issued', 'returned', 'lost', 'damaged'];
@@ -225,7 +226,7 @@ export default function AssetsPage() {
         key: 'holder',
         header: t('holder'),
         render: (a) =>
-          a.holder ? a.holder.display_name || a.holder.username || '—' : t('unassigned'),
+          a.holder ? employeeNameLabel(a.holder) : t('unassigned'),
       },
       {
         key: 'value',
@@ -264,7 +265,7 @@ export default function AssetsPage() {
           code: a.asset_code || '',
           name: a.name,
           category: a.category || '—',
-          holder: a.holder?.display_name || a.holder?.username || t('unassigned'),
+          holder: a.holder ? employeeNameLabel(a.holder) : t('unassigned'),
           value: formatBaht(a.value_satang ?? 0),
           status: t(`statusOpt.${a.status}`),
         })),

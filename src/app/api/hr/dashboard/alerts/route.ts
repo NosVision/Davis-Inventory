@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { resolveHrScope } from '@/lib/hr/route-auth';
+import { employeeNameLabel } from '@/lib/hr/employee-name';
 
 // GET /api/hr/dashboard/alerts?window_days= — forward-looking HR reminders for the caller's scope
 // (§P1.5): (1) probation ending within the window (status='probation', probation_end in range),
@@ -17,10 +18,13 @@ interface EmpRow {
   birth_date: string | null;
   pay_type: string | null;
   sso_enrolled: boolean | null;
+  full_name: string | null;
   profile: { display_name: string | null; username: string | null; active: boolean | null } | null;
 }
 const DAY_MS = 86_400_000;
-const nameOf = (p: EmpRow['profile']) => p?.display_name || p?.username || '—';
+// ชื่อจริง (ชื่อเล่น) in one string — these alerts are read as prose, not table columns.
+const nameOf = (e: EmpRow) =>
+  employeeNameLabel({ full_name: e.full_name, display_name: e.profile?.display_name, username: e.profile?.username });
 
 function todayBangkok(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
@@ -79,7 +83,7 @@ export async function GET(request: NextRequest) {
 
   let q = service
     .from('hr_employees')
-    .select('profile_id, status, start_date, probation_end, birth_date, pay_type, sso_enrolled, profile:profiles!hr_employees_profile_id_fkey(display_name, username, active)')
+    .select('profile_id, status, start_date, probation_end, birth_date, pay_type, sso_enrolled, full_name, profile:profiles!hr_employees_profile_id_fkey(display_name, username, active)')
     .in('status', ['active', 'probation']);
   if (scopedUserIds) q = q.in('profile_id', [...scopedUserIds]);
   const { data, error } = await q;
@@ -89,7 +93,7 @@ export async function GET(request: NextRequest) {
 
   const probation_ending = rows
     .filter((e) => e.status === 'probation' && e.probation_end && e.probation_end >= today && e.probation_end <= horizon)
-    .map((e) => ({ user_id: e.profile_id, name: nameOf(e.profile), date: e.probation_end as string, days_left: daysBetween(today, e.probation_end as string) }))
+    .map((e) => ({ user_id: e.profile_id, name: nameOf(e), date: e.probation_end as string, days_left: daysBetween(today, e.probation_end as string) }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
   const anniversaries = rows
@@ -97,7 +101,7 @@ export async function GET(request: NextRequest) {
       if (!e.start_date) return null;
       const next = nextAnniversary(e.start_date, today);
       if (!next || next.iso < today || next.iso > horizon || next.years <= 0) return null;
-      return { user_id: e.profile_id, name: nameOf(e.profile), date: next.iso, years: next.years, days_left: daysBetween(today, next.iso) };
+      return { user_id: e.profile_id, name: nameOf(e), date: next.iso, years: next.years, days_left: daysBetween(today, next.iso) };
     })
     .filter((x): x is { user_id: string; name: string; date: string; years: number; days_left: number } => x !== null)
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -109,7 +113,7 @@ export async function GET(request: NextRequest) {
       if (!e.birth_date) return null;
       const next = nextAnniversary(e.birth_date, today);
       if (!next || next.iso < today || next.iso > horizon) return null;
-      return { user_id: e.profile_id, name: nameOf(e.profile), date: next.iso, days_left: daysBetween(today, next.iso) };
+      return { user_id: e.profile_id, name: nameOf(e), date: next.iso, days_left: daysBetween(today, next.iso) };
     })
     .filter((x): x is { user_id: string; name: string; date: string; days_left: number } => x !== null)
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -126,7 +130,7 @@ export async function GET(request: NextRequest) {
     )
     .map((e) => ({
       user_id: e.profile_id,
-      name: nameOf(e.profile),
+      name: nameOf(e),
       date: e.probation_end as string,
       days_over: daysBetween(e.probation_end as string, today),
     }))

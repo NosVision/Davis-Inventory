@@ -23,6 +23,7 @@ import {
   SignaturePad,
   type SignaturePadHandle,
 } from '@/components/ui/signature-pad';
+import { employeeNameLabel } from '@/lib/hr/employee-name';
 
 type Level =
   | 'verbal'
@@ -36,6 +37,7 @@ type SignRole = 'employee' | 'manager' | 'hr';
 
 interface Person {
   id: string;
+  full_name: string | null;
   display_name: string | null;
   username: string | null;
 }
@@ -229,7 +231,7 @@ export default function MyWarningsPage() {
                   <p className="text-sm text-gray-800 dark:text-gray-200">{w.reason}</p>
                   {w.detail && <p className="text-gray-500 dark:text-gray-400">{w.detail}</p>}
                   <p className="text-[11px] text-gray-400">
-                    {t('issuedBy')}: {w.issuer?.display_name ?? w.issuer?.username ?? '—'}
+                    {t('issuedBy')}: {employeeNameLabel(w.issuer)}
                     {' · '}
                     {t('issuedAt')}: {formatDateTime(w.issued_at)}
                     {w.expires_at && ` · ${t('expiresAt')}: ${formatDate(w.expires_at)}`}

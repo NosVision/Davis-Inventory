@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManager } from '@/lib/hr/route-auth';
+import { buildEmployeeNameMap } from '@/lib/hr/employee-name-map';
 
 // GET /api/hr/stock-deductions — HR queue of stock fines HQ has forwarded (status 'sent_hr') for
 // deduction from Service Charge (owner ask 2026-07-09). Grouped by store + month with per-person
@@ -24,21 +25,19 @@ export async function GET() {
   const storeIds = [...new Set(rows.map((r) => r.store_id))];
   const staffIds = [...new Set(rows.map((r) => r.staff_id))];
   const months = [...new Set(rows.map((r) => `${r.month_year}-01`))];
-  const [storesRes, staffRes, poolsRes] = await Promise.all([
+  const [storesRes, staffName, poolsRes] = await Promise.all([
     storeIds.length ? service.from('stores').select('id, store_name').in('id', storeIds) : Promise.resolve({ data: [] }),
-    staffIds.length ? service.from('profiles').select('id, username, display_name').in('id', staffIds) : Promise.resolve({ data: [] }),
+    // ชื่อจริง (ชื่อเล่น) — these deductions land on a payslip, so they name the person the same way.
+    buildEmployeeNameMap(service, staffIds),
     storeIds.length ? service.from('hr_sc_pools').select('store_id, period_month, status').in('store_id', storeIds).in('period_month', months) : Promise.resolve({ data: [] }),
   ]);
   const storeName = new Map((storesRes.data ?? []).map((s) => [(s as { id: string }).id, (s as { store_name: string }).store_name]));
-  const staffName = new Map(
-    (staffRes.data ?? []).map((p) => [(p as { id: string }).id, (p as { display_name: string | null; username: string | null }).display_name || (p as { username: string | null }).username || '—'])
-  );
   const poolByKey = new Map(
     (poolsRes.data ?? []).map((p) => [`${(p as { store_id: string }).store_id}|${(p as { period_month: string }).period_month}`, (p as { status: string }).status])
   );
 
   // Group by (store, month) → per-person totals.
-  type Person = { staff_id: string; name: string; baht: number; count: number };
+  type Person = { staff_id: string; name: string; nickname: string | null; baht: number; count: number };
   type Group = { key: string; store_id: string; store_name: string; month: string; total_baht: number; count: number; pool_status: string | null; people: Person[] };
   const groups = new Map<string, Group>();
   for (const r of rows) {
@@ -62,7 +61,13 @@ export async function GET() {
     g.count += 1;
     let person = g.people.find((p) => p.staff_id === r.staff_id);
     if (!person) {
-      person = { staff_id: r.staff_id, name: staffName.get(r.staff_id) ?? '—', baht: 0, count: 0 };
+      person = {
+        staff_id: r.staff_id,
+        name: staffName.get(r.staff_id)?.name ?? '—',
+        nickname: staffName.get(r.staff_id)?.nickname ?? null,
+        baht: 0,
+        count: 0,
+      };
       g.people.push(person);
     }
     person.baht += baht;

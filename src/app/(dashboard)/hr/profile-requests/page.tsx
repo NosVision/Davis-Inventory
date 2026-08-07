@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Inbox } from 'lucide-react';
 import { Button, Select, PageHeader, DataList, DataCard, StatusBadge, SkeletonList, ViewToggle, useViewMode, toast } from '@/components/ui';
+import { EmployeeName } from '@/components/hr/employee-name';
 
 type Status = 'pending' | 'approved' | 'rejected' | 'cancelled';
 type FieldKey = 'bank_account' | 'emergency_contact';
@@ -18,7 +19,7 @@ interface ChangeRequest {
   decision_note: string | null;
   decided_at: string | null;
   created_at: string;
-  requester: { id: string; display_name: string | null; username: string | null } | null;
+  requester: { id: string; full_name: string | null; display_name: string | null; username: string | null } | null;
 }
 
 const STATUS_TONE: Record<Status, 'warn' | 'good' | 'critical' | 'neutral'> = {
@@ -152,7 +153,7 @@ export default function HrProfileRequestsPage() {
             <DataCard
               key={r.id}
               accent={STATUS_TONE[r.status]}
-              title={r.requester?.display_name ?? r.requester?.username ?? '—'}
+              title={<EmployeeName source={r.requester} />}
               subtitle={fieldLabel(r.field_key)}
               status={<StatusBadge tone={STATUS_TONE[r.status]} label={statusLabel(r.status)} />}
               actions={

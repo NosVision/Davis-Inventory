@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { attachFullNames } from '@/lib/hr/employee-name-map';
 
 const TABLE = 'hr_warnings';
 
@@ -29,5 +30,7 @@ export async function GET() {
     .order('issued_at', { ascending: false });
   if (error) return NextResponse.json({ error: 'Failed to load warnings' }, { status: 500 });
 
-  return NextResponse.json({ data: data ?? [] });
+  // The employee reading their own warning should see who issued it by their ชื่อจริง, not a
+  // login nickname — this is the same document HR prints for the personnel file.
+  return NextResponse.json({ data: await attachFullNames(service, data ?? [], 'issuer') });
 }

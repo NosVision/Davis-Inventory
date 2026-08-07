@@ -6,11 +6,12 @@ import { Loader2, X } from 'lucide-react';
 import { Modal, ModalFooter, Button, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { useLeaveTypes } from '@/hooks/use-leave-types';
+import { EmployeeName } from '@/components/hr/employee-name';
 
 type Status = 'normal' | 'absent' | 'leave' | 'late' | 'dayoff';
 type Brush = Status | 'ot' | 'clear';
 interface Cell { status: Status | 'clear'; late: number; ot: number; leave_type_id?: string | null }
-interface Employee { user_id: string; name: string }
+interface Employee { user_id: string; name: string; nickname?: string | null }
 interface DetailTarget { user_id: string; name: string; date: string }
 
 const STATUSES: Status[] = ['normal', 'absent', 'leave', 'late', 'dayoff'];
@@ -246,7 +247,7 @@ export function BulkBackfillModal({
                 <tr key={e.user_id}>
                   <td onClick={() => fillKeys(dates.map((d) => `${e.user_id}|${d}`))} title={L.rowHint}
                     className="sticky left-0 z-[5] min-w-[8.5rem] max-w-[8.5rem] cursor-pointer truncate border-b border-r border-gray-200 bg-white px-2 py-1 font-medium text-gray-800 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-indigo-900/20">
-                    {e.name}
+                    <EmployeeName name={e.name} nickname={e.nickname} />
                   </td>
                   {dates.map((d) => {
                     const key = `${e.user_id}|${d}`;

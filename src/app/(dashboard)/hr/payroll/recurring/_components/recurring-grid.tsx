@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils/cn';
 import { CellEditorModal } from './cell-editor-modal';
 import { BulkAddModal } from './bulk-add-modal';
 import type { GridEmployee, RecurringItem } from './types';
+import { EmployeeName } from '@/components/hr/employee-name';
 
 interface CompanyOpt { id: string; name: string }
 interface CellTarget { employee: GridEmployee; kind: 'earning' | 'deduction'; code: string }
@@ -122,7 +123,13 @@ export function RecurringGrid({ initialCompanyId, onChanged }: RecurringGridProp
     const q = search.trim().toLowerCase();
     return employees.filter((e) => {
       if (onlyWithItems && !empIdsWithItems.has(e.id)) return false;
-      if (q && !e.name.toLowerCase().includes(q) && !(e.position ?? '').toLowerCase().includes(q)) return false;
+      if (
+        q &&
+        !e.name.toLowerCase().includes(q) &&
+        !(e.nickname ?? '').toLowerCase().includes(q) &&
+        !(e.position ?? '').toLowerCase().includes(q)
+      )
+        return false;
       return true;
     });
   }, [employees, search, onlyWithItems, empIdsWithItems]);
@@ -206,7 +213,7 @@ export function RecurringGrid({ initialCompanyId, onChanged }: RecurringGridProp
               {visibleEmployees.map((emp) => (
                 <tr key={emp.id} className="group">
                   <td className="sticky left-0 z-10 bg-white px-3 py-1.5 group-hover:bg-gray-50 dark:bg-gray-800 dark:group-hover:bg-gray-700/40">
-                    <div className="font-medium text-gray-900 dark:text-white">{emp.name}</div>
+                    <EmployeeName name={emp.name} nickname={emp.nickname} className="block font-medium text-gray-900 dark:text-white" />
                     {emp.position && <div className="text-[11px] text-gray-400">{emp.position}</div>}
                   </td>
                   {COLUMNS.map((c) => {

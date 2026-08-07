@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManager } from '@/lib/hr/route-auth';
+import { attachFullNames } from '@/lib/hr/employee-name-map';
 
-// GET /api/hr/policies/[id]/acks — acknowledgements for a policy, joined to the
-// acknowledger's profile (display_name/username), newest first.
+// GET /api/hr/policies/[id]/acks — acknowledgements for a policy, joined to the acknowledger
+// (ชื่อจริง from hr_employees + ชื่อเล่น from profiles), newest first. An acknowledgement is a
+// signed record, so it has to name the person the way the rest of their HR file does.
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -22,5 +24,5 @@ export async function GET(
     .order('acked_at', { ascending: false });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ data: (data ?? []) as unknown[] });
+  return NextResponse.json({ data: await attachFullNames(service, data ?? []) });
 }

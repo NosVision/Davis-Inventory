@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManager } from '@/lib/hr/route-auth';
+import { attachFullNames } from '@/lib/hr/employee-name-map';
 
 // GET /api/hr/announcements/[id]/receipts — receipts for an announcement, joined to
 // the acknowledger's profile (display_name/username). Acknowledged rows sort first
@@ -23,5 +24,6 @@ export async function GET(
     .order('acknowledged_at', { ascending: false, nullsFirst: false });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ data: (data ?? []) as unknown[] });
+  // Who has read the announcement, named the way the rest of HR names them (ชื่อจริง + ชื่อเล่น).
+  return NextResponse.json({ data: await attachFullNames(service, data ?? []) });
 }

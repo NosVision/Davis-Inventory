@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManager } from '@/lib/hr/route-auth';
+import { buildFullNameMap } from '@/lib/hr/employee-name-map';
 
 const TABLE = 'hr_profile_change_requests';
 const STATUSES = ['pending', 'approved', 'rejected', 'cancelled'];
@@ -33,5 +34,14 @@ export async function GET(request: NextRequest) {
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: 'Failed to load change requests' }, { status: 500 });
 
-  return NextResponse.json({ data: data ?? [] });
+  // HR approves these against the employee record, so name the requester by their ชื่อจริง.
+  const rows = (data ?? []) as unknown as { user_id: string; requester: Record<string, unknown> | null }[];
+  const fullNames = await buildFullNameMap(service, rows.map((r) => r.user_id));
+
+  return NextResponse.json({
+    data: rows.map((r) => ({
+      ...r,
+      requester: r.requester ? { ...r.requester, full_name: fullNames.get(r.user_id) ?? null } : null,
+    })),
+  });
 }

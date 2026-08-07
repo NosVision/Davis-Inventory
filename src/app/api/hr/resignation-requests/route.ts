@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { resolveHrScope } from '@/lib/hr/route-auth';
+import { buildFullNameMap } from '@/lib/hr/employee-name-map';
 
 const TABLE = 'hr_resignation_requests';
 
@@ -33,5 +34,14 @@ export async function GET(request: NextRequest) {
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  return NextResponse.json({ data: data ?? [] });
+  // Same reason as the offboarding queue this feeds: a resignation is named under the ชื่อจริง.
+  const rows = (data ?? []) as unknown as { user_id: string; employee: Record<string, unknown> | null }[];
+  const fullNames = await buildFullNameMap(service, rows.map((r) => r.user_id));
+
+  return NextResponse.json({
+    data: rows.map((r) => ({
+      ...r,
+      employee: r.employee ? { ...r.employee, full_name: fullNames.get(r.user_id) ?? null } : null,
+    })),
+  });
 }

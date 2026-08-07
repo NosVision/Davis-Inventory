@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManagerForStore } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
+import { buildEmployeeNameMap } from '@/lib/hr/employee-name-map';
 import {
   buildBankTransferCsv,
   resolveBankCode,
@@ -80,10 +81,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   }
   const profileIds = [...new Set(slipRows.map((s) => s.user_id))];
   if (profileIds.length) {
-    const { data: profs } = await service.from('profiles').select('id, username, display_name').in('id', profileIds);
-    for (const p of (profs ?? []) as { id: string; username: string | null; display_name: string | null }[]) {
-      nameByProfile.set(p.id, p.display_name || p.username || '');
-    }
+    // A bank matches the payee against a legal name, so this fallback must be the ชื่อจริง — it
+    // used to be profiles.display_name, i.e. the person's ชื่อเล่น. bank_account_name still wins
+    // where it is on file; this is only the fallback for accounts without one.
+    const entries = await buildEmployeeNameMap(service, profileIds);
+    for (const [id, n] of entries) nameByProfile.set(id, n.name === '—' ? '' : n.name);
   }
 
   // ── Grouped .xlsx mode (client ask 2026-07-24) ─────────────────────────────

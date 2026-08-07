@@ -10,6 +10,7 @@ import {
   buildPnd1EfilingCsv,
   type PayslipLineInput,
 } from '@/lib/hr/tax-reports';
+import { buildEmployeeNameMap } from '@/lib/hr/employee-name-map';
 
 // The tax-report input plus the two register-only figures (net + total deduction), so a single
 // assembly pass feeds every report. The extra fields are ignored by buildPnd1/buildSso/buildCert50Twi.
@@ -176,11 +177,11 @@ async function assembleLines(
       });
     }
   }
-  const nameByUser = new Map<string, string>();
-  const { data: profs } = await service.from('profiles').select('id, username, display_name').in('id', userIds);
-  for (const p of (profs ?? []) as { id: string; username: string | null; display_name: string | null }[]) {
-    nameByUser.set(p.id, p.display_name || p.username || '—');
-  }
+  // ภ.ง.ด.1 / สปส. / ใบ 50 ทวิ / ทะเบียนค่าจ้าง are filed with the revenue department, so they carry
+  // the legal ชื่อจริง and nothing else — these rows used to go out under profiles.display_name,
+  // i.e. the person's ชื่อเล่น. Deliberately NOT the "ชื่อจริง (ชื่อเล่น)" form used on screen.
+  const nameEntries = await buildEmployeeNameMap(service, userIds);
+  const nameByUser = new Map<string, string>([...nameEntries].map(([id, n]) => [id, n.name]));
 
   return slipRows.map((s) => {
     const emp = s.employee_id ? empById.get(s.employee_id) : undefined;

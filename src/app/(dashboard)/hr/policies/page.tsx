@@ -21,6 +21,7 @@ import {
   toast,
 } from '@/components/ui';
 import { STOCK_SOP_CATEGORY } from '@/lib/stock/penalty-engine';
+import { employeeNameLabel } from '@/lib/hr/employee-name';
 
 interface Policy {
   id: string;
@@ -34,6 +35,7 @@ interface Policy {
 
 interface AckUser {
   id?: string;
+  full_name?: string | null;
   display_name?: string | null;
   username?: string | null;
 }
@@ -64,7 +66,7 @@ const EMPTY_EDITOR: EditorState = {
 
 function ackName(user: AckRow['user']): string {
   const u = Array.isArray(user) ? user[0] : user;
-  return u?.display_name || u?.username || '—';
+  return employeeNameLabel(u);
 }
 
 function formatDate(value: string | null): string {

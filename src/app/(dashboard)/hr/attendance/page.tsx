@@ -7,6 +7,7 @@ import { DataTable, type Column } from '@/components/data/data-table';
 import { createClient } from '@/lib/supabase/client';
 import { openBusinessDateBangkok, formatTimeBangkok } from '@/lib/utils/date';
 import { AttendanceReviewModal, type ReviewRow } from './_components/review-modal';
+import { EmployeeName } from '@/components/hr/employee-name';
 
 interface AttendanceRow extends Record<string, unknown> {
   id: string;
@@ -21,6 +22,7 @@ interface AttendanceRow extends Record<string, unknown> {
   is_vpn_suspect: boolean;
   ip_country: string | null;
   employee_name: string | null;
+  employee_nickname: string | null;
   store_label: string | null;
   photo_signed_url: string | null;
 }
@@ -113,9 +115,11 @@ export default function AttendanceReportPage() {
         key: 'employee',
         header: t('colEmployee'),
         render: (r) => (
-          <span className="font-medium text-gray-900 dark:text-white">
-            {r.employee_name || '—'}
-          </span>
+          <EmployeeName
+            name={r.employee_name || '—'}
+            nickname={r.employee_nickname}
+            className="font-medium text-gray-900 dark:text-white"
+          />
         ),
       },
       {
@@ -178,7 +182,7 @@ export default function AttendanceReportPage() {
           if (r.review_status === 'pending') {
             return (
               <Button size="sm" onClick={() => setReviewRow({
-                id: r.id, user_id: r.user_id, employee_name: r.employee_name, type: r.type, ts: r.ts,
+                id: r.id, user_id: r.user_id, employee_name: r.employee_name, employee_nickname: r.employee_nickname, type: r.type, ts: r.ts,
                 distance_m: r.distance_m, is_vpn_suspect: r.is_vpn_suspect,
               })}>
                 {t('colReview')}

@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { Loader2, Inbox, FileText, CalendarRange, ListChecks } from 'lucide-react';
 import { Button, Select, PageHeader, ViewToggle, useViewMode, DataList, DataCard, StatusBadge, SkeletonList, toast, usePromptDialog } from '@/components/ui';
 import { formatThaiDate } from '@/lib/utils/format';
+import { EmployeeName } from '@/components/hr/employee-name';
 
 interface StoreOpt {
   id: string;
@@ -23,7 +24,7 @@ interface LeaveRow {
   cert_path: string | null;
   status: Status;
   decision_note: string | null;
-  requester: { id: string; display_name: string | null; username: string | null } | null;
+  requester: { id: string; full_name: string | null; display_name: string | null; username: string | null } | null;
   leave_type: { code: string; name_th: string; name_en: string } | null;
 }
 
@@ -47,6 +48,7 @@ interface QuotaEmployee {
   employee_id: string;
   profile_id: string;
   name: string;
+  nickname: string | null;
   position: string | null;
 }
 interface QuotaBalance {
@@ -442,7 +444,7 @@ export default function HrLeavesPage() {
                 return (
                   <tr key={emp.employee_id} className="border-t border-gray-100 dark:border-gray-700/60">
                     <td className="sticky left-0 z-10 whitespace-nowrap bg-white px-3 py-1.5 dark:bg-gray-800">
-                      <span className="font-medium text-gray-900 dark:text-white">{emp.name}</span>
+                      <EmployeeName name={emp.name} nickname={emp.nickname} className="font-medium text-gray-900 dark:text-white" />
                       {emp.position && (
                         <span className="block text-[10px] text-gray-400 dark:text-gray-500">{emp.position}</span>
                       )}
@@ -551,7 +553,7 @@ export default function HrLeavesPage() {
                   accent={STATUS_TONE[r.status]}
                   title={
                     <>
-                      {r.requester?.display_name ?? r.requester?.username ?? '—'}
+                      <EmployeeName source={r.requester} />
                       {' · '}
                       {r.leave_type?.name_th ?? r.leave_type?.name_en ?? '—'}
                     </>

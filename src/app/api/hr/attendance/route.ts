@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { resolveHrScope } from '@/lib/hr/route-auth';
+import { buildEmployeeNameMap } from '@/lib/hr/employee-name-map';
 import { openBusinessDateBangkok } from '@/lib/utils/date';
 
 // Attendance selfies are uploaded by the ESS check-in route to the PRIVATE
@@ -100,6 +101,10 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // hr_attendance embeds profiles (the ชื่อเล่น). Pull the payroll ชื่อจริง alongside it so the
+  // review queue names people the same way /hr/payroll does.
+  const nameByUser = await buildEmployeeNameMap(service, rows.map((r) => r.user_id));
+
   const responseRows = rows.map((r) => ({
     id: r.id,
     user_id: r.user_id,
@@ -112,7 +117,8 @@ export async function GET(request: NextRequest) {
     review_status: r.review_status,
     is_vpn_suspect: r.is_vpn_suspect,
     ip_country: r.ip_country,
-    employee_name: r.employee?.display_name || r.employee?.username || null,
+    employee_name: nameByUser.get(r.user_id)?.name ?? r.employee?.display_name ?? r.employee?.username ?? null,
+    employee_nickname: nameByUser.get(r.user_id)?.nickname ?? null,
     store_label: r.store?.store_name || r.store?.store_code || null,
     photo_signed_url: r.photo_url ? signedByPath.get(r.photo_url) ?? null : null,
   }));

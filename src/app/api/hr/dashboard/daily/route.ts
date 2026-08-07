@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { resolveHrScope } from '@/lib/hr/route-auth';
 import { openBusinessDateBangkok } from '@/lib/utils/date';
+import { employeeNameLabel } from '@/lib/hr/employee-name';
 
 // GET /api/hr/dashboard/daily?business_date=&store_id= — the manager/HR "who's in today" summary
 // (§P5.3). Scoped: company-HR sees everyone; a store manager sees only their stores' staff. Buckets
@@ -11,8 +12,16 @@ interface Person { user_id: string; name: string; store_ids?: string[] }
 interface LeavePerson extends Person { leave_th: string | null; leave_en: string | null }
 interface StoreLite { id: string; name: string }
 
-const nameOf = (p: { display_name: string | null; username: string | null } | null) =>
-  p?.display_name || p?.username || '—';
+// ชื่อจริง (ชื่อเล่น) in one string — these names get pasted into LINE as prose, not a table.
+const nameOf = (e: {
+  full_name: string | null;
+  profile: { display_name: string | null; username: string | null } | null;
+} | null) =>
+  employeeNameLabel({
+    full_name: e?.full_name,
+    display_name: e?.profile?.display_name,
+    username: e?.profile?.username,
+  });
 
 export async function GET(request: NextRequest) {
   const scope = await resolveHrScope();
@@ -51,7 +60,7 @@ export async function GET(request: NextRequest) {
   // Active employees in scope.
   let empQuery = service
     .from('hr_employees')
-    .select('profile_id, status, profile:profiles!hr_employees_profile_id_fkey(display_name, username, active)')
+    .select('profile_id, status, full_name, profile:profiles!hr_employees_profile_id_fkey(display_name, username, active)')
     .eq('status', 'active');
   if (scopedUserIds) empQuery = empQuery.in('profile_id', [...scopedUserIds]);
   const { data: empRows, error: empErr } = await empQuery;
@@ -59,7 +68,7 @@ export async function GET(request: NextRequest) {
 
   const employees: Person[] = (empRows ?? [])
     .filter((e) => (e.profile as { active?: boolean } | null)?.active !== false)
-    .map((e) => ({ user_id: e.profile_id as string, name: nameOf(e.profile as never) }));
+    .map((e) => ({ user_id: e.profile_id as string, name: nameOf(e as never) }));
   const empIds = new Set(employees.map((e) => e.user_id));
   const nameById = new Map(employees.map((e) => [e.user_id, e.name]));
 

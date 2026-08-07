@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManager, resolveHrScope } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import { todayBangkok } from '@/lib/utils/date';
+import { resolveEmployeeName } from '@/lib/hr/employee-name';
 
 const TABLE = 'hr_leave_balances';
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';
@@ -106,7 +107,12 @@ export async function GET(request: NextRequest) {
       return {
         employee_id: r.id,
         profile_id: r.profile_id,
-        name: r.full_name || r.profile?.display_name || r.profile?.username || '—',
+        // ชื่อจริง (ชื่อเล่น) — same rule as /hr/payroll.
+        ...resolveEmployeeName({
+          full_name: r.full_name,
+          display_name: r.profile?.display_name,
+          username: r.profile?.username,
+        }),
         position: r.position?.name ?? null,
       };
     })

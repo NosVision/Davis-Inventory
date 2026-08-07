@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireStoreManager } from '@/lib/hr/route-auth';
+import { buildEmployeeNameMap } from '@/lib/hr/employee-name-map';
 
 const STATUSES = ['pending', 'approved', 'rejected', 'cancelled'];
 
-interface ProfileRow {
-  id: string;
-  username: string | null;
-  display_name: string | null;
-}
 interface OtRequestRow {
   id: string;
   user_id: string;
@@ -51,19 +47,14 @@ export async function GET(request: NextRequest) {
   const rows = (data ?? []) as OtRequestRow[];
   const userIds = [...new Set(rows.map((r) => r.user_id))];
 
-  const { data: profiles, error: profErr } = userIds.length
-    ? await service.from('profiles').select('id, username, display_name').in('id', userIds)
-    : { data: [] as ProfileRow[], error: null };
-  if (profErr) return NextResponse.json({ error: 'Failed to load OT requests' }, { status: 500 });
-
-  const nameById = new Map<string, string>();
-  for (const p of (profiles ?? []) as ProfileRow[]) {
-    nameById.set(p.id, p.display_name || p.username || '—');
-  }
+  // ชื่อจริง (ชื่อเล่น) — the same rule /hr/payroll uses, so OT approvals name the person the
+  // way their payslip does.
+  const nameById = await buildEmployeeNameMap(service, userIds);
 
   const out = rows.map((r) => ({
     ...r,
-    requester_name: nameById.get(r.user_id) ?? null,
+    requester_name: nameById.get(r.user_id)?.name ?? null,
+    requester_nickname: nameById.get(r.user_id)?.nickname ?? null,
   }));
 
   return NextResponse.json({ data: out });

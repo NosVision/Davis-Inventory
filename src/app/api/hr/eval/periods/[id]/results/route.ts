@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManager } from '@/lib/hr/route-auth';
+import { buildEmployeeNameMap } from '@/lib/hr/employee-name-map';
 
 const RESULTS = 'hr_eval_results';
 
@@ -27,11 +28,15 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   // Join names + latest payout amount per result.
   const employeeIds = [...new Set(results.map((r) => r.employee_id))];
   const resultIds = results.map((r) => r.id);
-  const [{ data: profs }, { data: payouts }] = await Promise.all([
-    service.from('profiles').select('id, display_name, username').in('id', employeeIds),
+  const [nameEntries, { data: payouts }] = await Promise.all([
+    // ชื่อจริง (ชื่อเล่น) — evaluation results feed bonus payouts, so they name the person the same
+    // way their payslip does.
+    buildEmployeeNameMap(service, employeeIds),
     service.from('hr_eval_payouts').select('result_id, amount_satang, status').in('result_id', resultIds),
   ]);
-  const nameById = new Map((profs ?? []).map((p) => [p.id as string, (p.display_name || p.username || '—') as string]));
+  const nameById = new Map(
+    [...nameEntries].map(([id, n]) => [id, n.nickname ? `${n.name} (${n.nickname})` : n.name])
+  );
   const payoutByResult = new Map(
     (payouts ?? []).map((p) => [p.result_id as string, { amount_satang: p.amount_satang as number, status: p.status as string }]),
   );

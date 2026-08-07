@@ -5,6 +5,7 @@ import { logHrAudit } from '@/lib/hr/audit';
 import { isUniqueViolation } from '@/lib/hr/db-errors';
 import { isCalendarDate } from '@/lib/hr/leaves';
 import { snapshotOffboardingAssets } from '@/lib/hr/offboarding';
+import { buildFullNameMap } from '@/lib/hr/employee-name-map';
 
 const TABLE = 'hr_offboarding';
 
@@ -145,5 +146,15 @@ export async function GET(request: NextRequest) {
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  return NextResponse.json({ data: data ?? [] });
+  // The embed only knows the ชื่อเล่น; an offboarding is a payroll/legal document, so the queue
+  // must lead with the same ชื่อจริง /hr/payroll uses.
+  const rows = (data ?? []) as unknown as { user_id: string; employee: Record<string, unknown> | null }[];
+  const fullNames = await buildFullNameMap(service, rows.map((r) => r.user_id));
+
+  return NextResponse.json({
+    data: rows.map((r) => ({
+      ...r,
+      employee: r.employee ? { ...r.employee, full_name: fullNames.get(r.user_id) ?? null } : null,
+    })),
+  });
 }

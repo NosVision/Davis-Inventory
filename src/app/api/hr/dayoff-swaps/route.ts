@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireStoreManager } from '@/lib/hr/route-auth';
+import { buildEmployeeNameMap } from '@/lib/hr/employee-name-map';
 
 const STATUSES = ['pending', 'approved', 'rejected', 'cancelled'];
 
-interface ProfileRow {
-  id: string;
-  username: string | null;
-  display_name: string | null;
-}
 interface SwapRow {
   id: string;
   requester_id: string;
@@ -64,10 +60,10 @@ export async function GET(request: NextRequest) {
   const userIds = [...new Set(swaps.flatMap((s) => [s.requester_id, s.counterpart_id]))];
   const dates = [...new Set(swaps.flatMap((s) => [s.requester_date, s.counterpart_date]))];
 
-  const [profilesRes, cellsRes] = await Promise.all([
-    userIds.length
-      ? service.from('profiles').select('id, username, display_name').in('id', userIds)
-      : Promise.resolve({ data: [], error: null }),
+  const [nameById, cellsRes] = await Promise.all([
+    // ชื่อจริง (ชื่อเล่น), same rule as /hr/payroll — a swap names two people, both of them the
+    // way their payslip does.
+    buildEmployeeNameMap(service, userIds),
     userIds.length
       ? service
           .from('hr_schedule')
@@ -76,14 +72,10 @@ export async function GET(request: NextRequest) {
           .in('work_date', dates)
       : Promise.resolve({ data: [], error: null }),
   ]);
-  if (profilesRes.error || cellsRes.error) {
+  if (cellsRes.error) {
     return NextResponse.json({ error: 'Failed to load swaps' }, { status: 500 });
   }
 
-  const nameById = new Map<string, string>();
-  for (const p of (profilesRes.data ?? []) as ProfileRow[]) {
-    nameById.set(p.id, p.display_name || p.username || '—');
-  }
   const cellByKey = new Map<string, CellRow>();
   for (const c of (cellsRes.data ?? []) as unknown as CellRow[]) {
     cellByKey.set(`${c.user_id}|${c.work_date}`, c);
@@ -91,8 +83,10 @@ export async function GET(request: NextRequest) {
 
   const out = swaps.map((s) => ({
     id: s.id,
-    requester_name: nameById.get(s.requester_id) ?? null,
-    counterpart_name: nameById.get(s.counterpart_id) ?? null,
+    requester_name: nameById.get(s.requester_id)?.name ?? null,
+    requester_nickname: nameById.get(s.requester_id)?.nickname ?? null,
+    counterpart_name: nameById.get(s.counterpart_id)?.name ?? null,
+    counterpart_nickname: nameById.get(s.counterpart_id)?.nickname ?? null,
     requester_date: s.requester_date,
     counterpart_date: s.counterpart_date,
     requester_assignment: assignmentOf(cellByKey.get(`${s.requester_id}|${s.requester_date}`)),

@@ -4,6 +4,7 @@ import { requireHrManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import { isUniqueViolation } from '@/lib/hr/db-errors';
 import { notifyUser } from '@/lib/notifications/service';
+import { buildFullNameMap } from '@/lib/hr/employee-name-map';
 
 const ASSIGNMENTS = 'hr_eval_assignments';
 const SELECT =
@@ -21,7 +22,27 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   const service = createServiceClient();
   const { data, error } = await service.from(ASSIGNMENTS).select(SELECT).eq('period_id', id).order('created_at');
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ data: data ?? [] });
+
+  // Both sides of an assignment are people; the embeds only know the ชื่อเล่น. Attach the ชื่อจริง
+  // so the page can name them the way /hr/payroll does.
+  const rows = (data ?? []) as unknown as {
+    evaluator_id: string;
+    employee_id: string;
+    evaluator: Record<string, unknown> | null;
+    employee: Record<string, unknown> | null;
+  }[];
+  const fullNames = await buildFullNameMap(
+    service,
+    rows.flatMap((r) => [r.evaluator_id, r.employee_id])
+  );
+
+  return NextResponse.json({
+    data: rows.map((r) => ({
+      ...r,
+      evaluator: r.evaluator ? { ...r.evaluator, full_name: fullNames.get(r.evaluator_id) ?? null } : null,
+      employee: r.employee ? { ...r.employee, full_name: fullNames.get(r.employee_id) ?? null } : null,
+    })),
+  });
 }
 
 // POST /api/hr/eval/periods/[id]/assignments — assign one evaluator→employee. store_id optional

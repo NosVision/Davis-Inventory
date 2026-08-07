@@ -6,6 +6,7 @@ import { Modal, ModalFooter, Button, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { formatTimeBangkok } from '@/lib/utils/date';
 import { useLeaveTypes } from '@/hooks/use-leave-types';
+import { EmployeeName } from '@/components/hr/employee-name';
 
 type Action = 'approve' | 'reject' | 'set_time' | 'absent' | 'leave';
 
@@ -13,6 +14,7 @@ export interface ReviewRow {
   id: string;
   user_id: string;
   employee_name: string | null;
+  employee_nickname: string | null;
   type: string;
   ts: string;
   distance_m: number | null;
@@ -93,7 +95,11 @@ export function AttendanceReviewModal({ row, onClose, onDone }: { row: ReviewRow
   return (
     <Modal isOpen onClose={onClose} title={L.title} size="md">
       <div className="rounded-lg bg-gray-50 px-3 py-2 text-sm dark:bg-gray-800/60">
-        <span className="font-semibold text-gray-900 dark:text-white">{row.employee_name || '—'}</span>
+        <EmployeeName
+          name={row.employee_name || '—'}
+          nickname={row.employee_nickname}
+          className="font-semibold text-gray-900 dark:text-white"
+        />
         <span className="text-gray-500 dark:text-gray-400"> · {L.type[row.type] ?? row.type} · {formatTimeBangkok(row.ts)}</span>
         {reason && <span className="ml-1 text-amber-600 dark:text-amber-400">· {reason}</span>}
       </div>

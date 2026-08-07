@@ -18,6 +18,7 @@ import {
   type StatusTone,
   toast,
 } from '@/components/ui';
+import { employeeNameLabel } from '@/lib/hr/employee-name';
 
 interface StoreOpt {
   id: string;
@@ -39,7 +40,7 @@ interface ClaimRow {
   decision_note: string | null;
   decided_at: string | null;
   created_at: string;
-  claimant: { id: string; display_name: string | null; username: string | null } | null;
+  claimant: { id: string; full_name: string | null; display_name: string | null; username: string | null } | null;
 }
 
 const STATUS_TONE: Record<Status, StatusTone> = {
@@ -81,8 +82,7 @@ export default function HrClaimsPage() {
   const [receiptLoadingId, setReceiptLoadingId] = useState<string | null>(null);
   const [view, setView] = useViewMode('hr-claims');
 
-  const claimantName = (r: ClaimRow) =>
-    r.claimant?.display_name ?? r.claimant?.username ?? '—';
+  const claimantName = (r: ClaimRow) => employeeNameLabel(r.claimant);
   const typeLabel = useCallback((ct: ClaimType) => t(`type_${ct}`), [t]);
   const statusLabel = useCallback((s: Status) => t(`status_${s}`), [t]);
 

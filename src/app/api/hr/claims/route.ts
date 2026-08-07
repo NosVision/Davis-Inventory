@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManager, requireStoreManager } from '@/lib/hr/route-auth';
+import { buildFullNameMap } from '@/lib/hr/employee-name-map';
 
 const TABLE = 'hr_claims';
 const STATUSES = ['pending', 'approved', 'rejected', 'paid', 'cancelled'];
@@ -41,5 +42,15 @@ export async function GET(request: NextRequest) {
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: 'Failed to load claims' }, { status: 500 });
 
-  return NextResponse.json({ data: data ?? [] });
+  // A claim is reimbursed through payroll, so the queue names the claimant the same way the
+  // payslip does — the embed alone only knows the ชื่อเล่น.
+  const rows = (data ?? []) as unknown as { user_id: string; claimant: Record<string, unknown> | null }[];
+  const fullNames = await buildFullNameMap(service, rows.map((r) => r.user_id));
+
+  return NextResponse.json({
+    data: rows.map((r) => ({
+      ...r,
+      claimant: r.claimant ? { ...r.claimant, full_name: fullNames.get(r.user_id) ?? null } : null,
+    })),
+  });
 }

@@ -565,7 +565,9 @@ export default function HrWarningsPage() {
                 {printRow.company_id && (
                   <PrintRow label={t('company')} value={companyNameById.get(printRow.company_id) ?? '—'} />
                 )}
-                <PrintRow label={t('issuedBy')} value={printRow.issuer?.display_name ?? printRow.issuer?.username ?? '—'} />
+                {/* A printed warning is a personnel-file document — name the issuer the same way
+                    the rest of the page names people, not by their login nickname. */}
+                <PrintRow label={t('issuedBy')} value={personName(printRow.issuer?.id ?? '', printRow.issuer)} />
                 <PrintRow label={t('level')} value={levelLabel(printRow.level)} />
                 <PrintRow label={t('scEffect')} value={scEffect(printRow)} />
                 <PrintRow label={t('reason')} value={printRow.reason} />

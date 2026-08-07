@@ -5,6 +5,7 @@ import { logHrAudit } from '@/lib/hr/audit';
 import { enumerateDates } from '@/lib/hr/leaves';
 import { fetchLeaveTypeOptions } from '@/lib/hr/leave-types';
 import { businessDateBangkok } from '@/lib/utils/date';
+import { resolveEmployeeName } from '@/lib/hr/employee-name';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TABLE = 'hr_timesheet_overrides';
@@ -21,8 +22,6 @@ function isCalendarDate(d: string): boolean {
   const dt = new Date(`${d}T00:00:00Z`);
   return !Number.isNaN(dt.getTime()) && dt.toISOString().slice(0, 10) === d;
 }
-const nameOf = (p: { display_name?: string | null; username?: string | null } | null) =>
-  p?.display_name || p?.username || '—';
 const intOrNull = (v: unknown): number | null =>
   typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.floor(v) : null;
 
@@ -80,7 +79,12 @@ export async function GET(request: NextRequest) {
   const employees = (emps ?? [])
     .map((e) => ({
       user_id: e.profile_id as string,
-      name: (e.full_name as string | null)?.trim() || nameOf(e.profile as never),
+      // ชื่อจริง (ชื่อเล่น) — same rule as /hr/payroll.
+      ...resolveEmployeeName({
+        full_name: e.full_name as string | null,
+        display_name: (e.profile as { display_name?: string | null } | null)?.display_name,
+        username: (e.profile as { username?: string | null } | null)?.username,
+      }),
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
   const companyId = (emps ?? []).find((e) => e.company_id)?.company_id ?? null;

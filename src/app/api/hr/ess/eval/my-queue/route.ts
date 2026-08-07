@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { buildEmployeeNameMap } from '@/lib/hr/employee-name-map';
 
 // GET /api/hr/ess/eval/my-queue?period_id= — the CALLER'S own evaluation assignments for a
 // period (§G evaluator UX: 1 person may evaluate ~50 people → a queue with the not-yet-scored
@@ -38,11 +39,15 @@ export async function GET(request: NextRequest) {
 
   const employeeIds = [...new Set(assignments.map((a) => a.employee_id))];
   const assignmentIds = assignments.map((a) => a.id);
-  const [{ data: profs }, { data: scoreRows }] = await Promise.all([
-    service.from('profiles').select('id, display_name, username').in('id', employeeIds),
+  const [nameEntries, { data: scoreRows }] = await Promise.all([
+    // ชื่อจริง (ชื่อเล่น): an evaluator picking a colleague out of a 50-person queue needs the
+    // formal name to be sure who it is, and the nickname to recognise them.
+    buildEmployeeNameMap(service, employeeIds),
     service.from('hr_eval_scores').select('assignment_id').in('assignment_id', assignmentIds),
   ]);
-  const nameById = new Map((profs ?? []).map((p) => [p.id as string, (p.display_name || p.username || '—') as string]));
+  const nameById = new Map(
+    [...nameEntries].map(([id, n]) => [id, n.nickname ? `${n.name} (${n.nickname})` : n.name])
+  );
   const scoreCountByAssignment = new Map<string, number>();
   for (const s of scoreRows ?? []) {
     const k = s.assignment_id as string;

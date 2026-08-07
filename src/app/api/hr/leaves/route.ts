@@ -7,6 +7,7 @@ import {
 } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import { countLeaveDays, isCalendarDate } from '@/lib/hr/leaves';
+import { buildFullNameMap } from '@/lib/hr/employee-name-map';
 
 const TABLE = 'hr_leaves';
 const STATUSES = ['pending', 'approved', 'rejected', 'cancelled'];
@@ -49,7 +50,17 @@ export async function GET(request: NextRequest) {
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: 'Failed to load leaves' }, { status: 500 });
 
-  return NextResponse.json({ data: data ?? [] });
+  // hr_leaves keys on profiles, which only knows the ชื่อเล่น. Attach the payroll ชื่อจริง so the
+  // queue names people the same way /hr/payroll does.
+  const rows = (data ?? []) as unknown as { user_id: string; requester: Record<string, unknown> | null }[];
+  const fullNames = await buildFullNameMap(service, rows.map((r) => r.user_id));
+
+  return NextResponse.json({
+    data: rows.map((r) => ({
+      ...r,
+      requester: r.requester ? { ...r.requester, full_name: fullNames.get(r.user_id) ?? null } : null,
+    })),
+  });
 }
 
 // POST /api/hr/leaves — HR records a leave ON BEHALF of an employee, already approved

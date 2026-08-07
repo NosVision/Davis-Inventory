@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Loader2, Users, Save, Trash2 } from 'lucide-react';
 import { Button, toast } from '@/components/ui';
+import { employeeNameLabel } from '@/lib/hr/employee-name';
 
 interface StoreOpt { id: string; store_name: string }
 interface PositionOpt { id: string; name: string }
@@ -82,7 +83,12 @@ export default function AssignWizard({ periodId, isTh, onDone }: Props) {
       const rows = ((await res.json()).data ?? []) as EmployeeApiRow[];
       return rows.map((r) => ({
         id: r.profile_id,
-        name: r.profile?.display_name || r.profile?.username || r.full_name || '—',
+        // full_name was last in this chain, so it never won — every picker showed the ชื่อเล่น.
+        name: employeeNameLabel({
+          full_name: r.full_name,
+          display_name: r.profile?.display_name,
+          username: r.profile?.username,
+        }),
         position: r.position?.name ?? null,
       }));
     },

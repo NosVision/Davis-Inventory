@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { ArrowLeftRight } from 'lucide-react';
 import { Button, Select, PageHeader, DataList, DataCard, StatusBadge, SkeletonList, ViewToggle, useViewMode, toast } from '@/components/ui';
+import { EmployeeName } from '@/components/hr/employee-name';
 
 interface StoreOpt {
   id: string;
@@ -13,7 +14,9 @@ interface StoreOpt {
 interface Swap {
   id: string;
   requester_name: string;
+  requester_nickname: string | null;
   counterpart_name: string;
+  counterpart_nickname: string | null;
   requester_date: string;
   counterpart_date: string;
   requester_assignment: string | null;
@@ -197,9 +200,9 @@ export default function HrSwapsPage() {
               accent={STATUS_TONE[s.status]}
               title={
                 <>
-                  {s.requester_name} ({s.requester_date}){' '}
+                  <EmployeeName name={s.requester_name} nickname={s.requester_nickname} /> ({s.requester_date}){' '}
                   <ArrowLeftRight className="inline h-3.5 w-3.5 align-middle text-gray-400" />{' '}
-                  {s.counterpart_name} ({s.counterpart_date})
+                  <EmployeeName name={s.counterpart_name} nickname={s.counterpart_nickname} /> ({s.counterpart_date})
                 </>
               }
               status={<StatusBadge tone={STATUS_TONE[s.status]} label={statusLabel(s.status)} />}

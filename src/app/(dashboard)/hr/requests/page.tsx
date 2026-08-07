@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { Inbox } from 'lucide-react';
 import { Button, Select, Tabs, PageHeader, DataList, DataCard, StatusBadge, SkeletonList, ViewToggle, useViewMode, toast } from '@/components/ui';
 import { formatThaiDate, formatThaiDateTime } from '@/lib/utils/format';
+import { EmployeeName } from '@/components/hr/employee-name';
 
 interface StoreOpt {
   id: string;
@@ -17,6 +18,7 @@ type Kind = 'missing_in' | 'missing_out' | 'wrong_time' | 'other';
 interface OtRow {
   id: string;
   requester_name: string | null;
+  requester_nickname: string | null;
   work_date: string;
   requested_ot_min: number;
   decided_ot_min: number | null;
@@ -26,6 +28,7 @@ interface OtRow {
 interface AttRow {
   id: string;
   requester_name: string | null;
+  requester_nickname: string | null;
   business_date: string;
   kind: Kind;
   proposed_type: string | null;
@@ -251,7 +254,12 @@ export default function HrRequestsPage() {
               <DataCard
                 key={r.id}
                 accent={STATUS_TONE[r.status]}
-                title={`${r.requester_name} · ${formatThaiDate(r.work_date)}`}
+                title={
+                  <>
+                    <EmployeeName name={r.requester_name} nickname={r.requester_nickname} />
+                    {` · ${formatThaiDate(r.work_date)}`}
+                  </>
+                }
                 status={<StatusBadge tone={STATUS_TONE[r.status]} label={statusLabel(r.status)} />}
                 actions={renderDecideBar(r.id, r.status)}
               >
@@ -274,7 +282,12 @@ export default function HrRequestsPage() {
             <DataCard
               key={r.id}
               accent={STATUS_TONE[r.status]}
-              title={`${r.requester_name} · ${formatThaiDate(r.business_date)} · ${kindLabel(r.kind)}`}
+              title={
+                <>
+                  <EmployeeName name={r.requester_name} nickname={r.requester_nickname} />
+                  {` · ${formatThaiDate(r.business_date)} · ${kindLabel(r.kind)}`}
+                </>
+              }
               status={
                 <>
                   <StatusBadge tone={STATUS_TONE[r.status]} label={statusLabel(r.status)} />

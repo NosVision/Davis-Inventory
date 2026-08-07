@@ -14,6 +14,7 @@ import {
   type StatusTone,
   toast,
 } from '@/components/ui';
+import { EmployeeName } from '@/components/hr/employee-name';
 
 // HR queue for the stock fines HQ has forwarded (owner ask 2026-07-09). Each row is one store + month
 // with fines awaiting HR (penalties.status = 'sent_hr'). HR either deducts them from that month's
@@ -22,6 +23,7 @@ import {
 interface Person {
   staff_id: string;
   name: string;
+  nickname: string | null;
   baht: number;
   count: number;
 }
@@ -230,7 +232,7 @@ export default function HrStockDeductionsPage() {
                       key={p.staff_id}
                       className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-600 dark:bg-gray-700/60 dark:text-gray-300"
                     >
-                      {p.name}
+                      <EmployeeName name={p.name} nickname={p.nickname} />
                       <span className="font-medium text-gray-800 dark:text-gray-100">{fmtBaht(p.baht)}</span>
                     </span>
                   ))}

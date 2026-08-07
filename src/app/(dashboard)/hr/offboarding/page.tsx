@@ -34,6 +34,7 @@ import {
   type SignaturePadHandle,
 } from '@/components/ui/signature-pad';
 import { todayBangkok } from '@/lib/utils/date';
+import { employeeNameLabel } from '@/lib/hr/employee-name';
 
 // ── Types (per P3.4b API contract) ──────────────────────────────────────────
 type Kind = 'resignation' | 'termination';
@@ -42,6 +43,8 @@ type Resolution = 'pending' | 'returned' | 'lost' | 'damaged';
 
 interface Person {
   id: string;
+  /** hr_employees.full_name — the ชื่อจริง this document is signed under. */
+  full_name: string | null;
   display_name: string | null;
   username: string | null;
 }
@@ -74,6 +77,8 @@ interface Offboarding {
   assets?: AssetItem[];
 }
 interface Employee {
+  /** hr_employees.full_name lives on the employee row, not inside the nested profile. */
+  full_name?: string | null;
   profile: Person;
   status?: string | null;
   company_id?: string | null;
@@ -142,7 +147,7 @@ function formatDateTime(value: string | null): string {
   return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString('th-TH');
 }
 function personName(p: Person | null): string {
-  return p?.display_name ?? p?.username ?? '—';
+  return employeeNameLabel(p);
 }
 
 // Local editable copy of an asset row while in draft.
@@ -845,7 +850,7 @@ export default function HrOffboardingPage() {
               <option value="">{t('selectEmployee')}</option>
               {initEmployees.map((emp) => (
                 <option key={emp.profile.id} value={emp.profile.id}>
-                  {personName(emp.profile)}
+                  {personName({ ...emp.profile, full_name: emp.full_name ?? null })}
                   {!initCompany && emp.company?.name ? ` — ${emp.company.name}` : ''}
                 </option>
               ))}

@@ -9,17 +9,18 @@ import { Button, EmptyState, PageHeader, SectionHeading, StatusBadge, type Statu
 import { cn } from '@/lib/utils/cn';
 import AssignWizard from './AssignWizard';
 import CriteriaEditor from './CriteriaEditor';
+import { employeeNameLabel } from '@/lib/hr/employee-name';
 
 // §G evaluation — period detail: manage evaluator↔employee assignments, compute results after
 // scoring, and review per-employee scores. Self-contained locale strings.
-interface Profile { id: string; display_name: string | null; username: string | null }
+interface Profile { id: string; full_name?: string | null; display_name: string | null; username: string | null }
 interface Assignment { id: string; evaluator_id: string; employee_id: string; status: string; evaluator: Profile | null; employee: Profile | null }
 interface Period { id: string; title: string; period_month: string; status: string; max_score: number }
 interface Result { id: string; employee_id: string; evaluator_count: number; score_pct: number | null; name?: string }
 interface Payout { id: string; amount_satang: number; status: string; input_pct_score: number | null; result: { employee_id: string; score_pct: number | null } | null }
 interface EmployeeOpt { id: string; name: string }
 
-const nameOf = (p: Profile | null) => p?.display_name || p?.username || '—';
+const nameOf = (p: Profile | null) => employeeNameLabel(p);
 
 export default function EvalPeriodDetailPage() {
   const params = useParams();

@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManagerForRowStore } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import { isCalendarDate } from '@/lib/hr/leaves';
+import { buildFullNameMap } from '@/lib/hr/employee-name-map';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 const TABLE = 'hr_offboarding';
@@ -39,7 +40,21 @@ async function loadDetail(service: SupabaseClient, id: string) {
     .eq('offboarding_id', id)
     .order('created_at', { ascending: true });
 
-  return { offboarding, assets: assets ?? [] };
+  // The embed carries only the ชื่อเล่น; this document is signed off on, so it has to name the
+  // person the way payroll does. Attached here rather than at each caller so PATCH agrees with GET.
+  const row = offboarding as Record<string, unknown>;
+  const fullNames = await buildFullNameMap(service, [row.user_id as string]);
+  const employee = row.employee as Record<string, unknown> | null;
+
+  return {
+    offboarding: {
+      ...row,
+      employee: employee
+        ? { ...employee, full_name: fullNames.get(row.user_id as string) ?? null }
+        : null,
+    },
+    assets: assets ?? [],
+  };
 }
 
 // GET /api/hr/offboarding/[id] — full detail: the offboarding, the departing employee,

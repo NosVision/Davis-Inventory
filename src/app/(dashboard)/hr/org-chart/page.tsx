@@ -4,10 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocale } from 'next-intl';
 import { Loader2, ChevronDown, ChevronRight, Search, Users, Network, UserX } from 'lucide-react';
 import { PageHeader, KpiRow, StatTile, toast } from '@/components/ui';
+import { EmployeeName } from '@/components/hr/employee-name';
 
 // Org chart (P1.5): reporting tree built from hr_employees.supervisor_id (→ profiles.id).
 // Roots = employees with no supervisor inside the visible set. Search filters and auto-expands.
 interface Node {
+  nickname?: string | null;
   id: string;
   supervisor_id: string | null;
   name: string;
@@ -78,6 +80,7 @@ export default function HrOrgChartPage() {
       for (const n of nodes) {
         const hit =
           n.name.toLowerCase().includes(needle) ||
+          (n.nickname ?? '').toLowerCase().includes(needle) ||
           (n.username ?? '').toLowerCase().includes(needle) ||
           (n.position ?? '').toLowerCase().includes(needle) ||
           (n.department ?? '').toLowerCase().includes(needle);
@@ -124,7 +127,7 @@ export default function HrOrgChartPage() {
           <Avatar node={n} />
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold text-gray-900 dark:text-white">
-              {n.name}
+              <EmployeeName name={n.name} nickname={n.nickname} />
               {n.status === 'probation' && (
                 <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-400">{L.probation}</span>
               )}

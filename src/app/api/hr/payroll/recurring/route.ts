@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManagerForStore } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import { RECURRING_CODES, MAX_ITEM_AMOUNT_SATANG, parsePeriodInput } from '@/lib/hr/recurring';
+import { resolveEmployeeName } from '@/lib/hr/employee-name';
 
 const TABLE = 'hr_employee_recurring';
 const ITEM_COLS = 'id, employee_id, kind, code, label, amount_satang, active, note, start_period, end_period';
@@ -26,7 +27,7 @@ export async function GET(request: NextRequest) {
   const { data: empRows, error: empErr } = await service
     .from('hr_employees')
     .select(
-      'id, profile_id, status, ' +
+      'id, profile_id, status, full_name, ' +
         'profile:profiles!hr_employees_profile_id_fkey(display_name, username), ' +
         'position:hr_positions(name)'
     )
@@ -39,13 +40,19 @@ export async function GET(request: NextRequest) {
     id: string;
     profile_id: string;
     status: string;
+    full_name: string | null;
     profile: { display_name: string | null; username: string | null } | null;
     position: { name: string | null } | null;
   }
   const employees = ((empRows ?? []) as unknown as EmpRow[]).map((e) => ({
     id: e.id,
     profile_id: e.profile_id,
-    name: e.profile?.display_name || e.profile?.username || '—',
+    // ชื่อจริง (ชื่อเล่น) — these rows drive payroll adjustments, so they must match the payslip.
+    ...resolveEmployeeName({
+      full_name: e.full_name,
+      display_name: e.profile?.display_name,
+      username: e.profile?.username,
+    }),
     position: e.position?.name ?? null,
     status: e.status,
   }));

@@ -4,6 +4,7 @@ import { requireHrManager, resolveHrScope } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import { bahtToSatang } from '@/lib/pos/money';
 import { isForeignKeyViolation, isUniqueViolation } from '@/lib/hr/db-errors';
+import { buildFullNameMap } from '@/lib/hr/employee-name-map';
 
 const TABLE = 'hr_assets';
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';
@@ -59,7 +60,21 @@ export async function GET(request: NextRequest) {
 
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ data: data ?? [] });
+
+  // The holder embed only knows the ชื่อเล่น; an asset register is signed off during offboarding,
+  // so it names the holder the way payroll does.
+  const rows = (data ?? []) as unknown as { holder_id: string | null; holder: Record<string, unknown> | null }[];
+  const fullNames = await buildFullNameMap(
+    service,
+    rows.map((r) => r.holder_id).filter((id): id is string => !!id)
+  );
+
+  return NextResponse.json({
+    data: rows.map((r) => ({
+      ...r,
+      holder: r.holder ? { ...r.holder, full_name: (r.holder_id && fullNames.get(r.holder_id)) || null } : null,
+    })),
+  });
 }
 
 // POST /api/hr/assets — create an asset.

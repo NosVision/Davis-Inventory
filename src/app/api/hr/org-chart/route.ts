@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { resolveHrScope } from '@/lib/hr/route-auth';
+import { resolveEmployeeName } from '@/lib/hr/employee-name';
 
 // GET /api/hr/org-chart — flat reporting list for the org chart (P1.5): every active/probation
 // employee with name/avatar/position/department + supervisor_id (→ profiles.id). The client
@@ -9,6 +10,7 @@ interface Row {
   profile_id: string;
   supervisor_id: string | null;
   status: string;
+  full_name: string | null;
   profile: { display_name: string | null; username: string | null; avatar_url: string | null; active: boolean | null } | null;
   position: { name: string | null } | null;
   department: { name: string | null } | null;
@@ -39,7 +41,7 @@ export async function GET(request: NextRequest) {
   let q = service
     .from('hr_employees')
     .select(
-      'profile_id, supervisor_id, status, ' +
+      'profile_id, supervisor_id, status, full_name, ' +
         'profile:profiles!hr_employees_profile_id_fkey(display_name, username, avatar_url, active), ' +
         'position:hr_positions(name), department:hr_departments(name)'
     )
@@ -53,7 +55,12 @@ export async function GET(request: NextRequest) {
     .map((e) => ({
       id: e.profile_id,
       supervisor_id: e.supervisor_id,
-      name: e.profile?.display_name || e.profile?.username || '—',
+      // ชื่อจริง leads, ชื่อเล่น trails — same rule as /hr/payroll.
+      ...resolveEmployeeName({
+        full_name: e.full_name,
+        display_name: e.profile?.display_name,
+        username: e.profile?.username,
+      }),
       username: e.profile?.username ?? null,
       avatar_url: e.profile?.avatar_url ?? null,
       position: e.position?.name ?? null,
