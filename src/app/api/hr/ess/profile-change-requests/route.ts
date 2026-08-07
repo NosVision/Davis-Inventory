@@ -4,7 +4,11 @@ import { logHrAudit } from '@/lib/hr/audit';
 import { isUniqueViolation } from '@/lib/hr/db-errors';
 
 const TABLE = 'hr_profile_change_requests';
-const FIELD_KEYS = ['bank_account', 'emergency_contact'];
+const FIELD_KEYS = ['bank_account', 'emergency_contact', 'full_name'];
+
+// The legal ชื่อ-นามสกุล is what lands on ภ.ง.ด.1 / สปส. / ใบ 50 ทวิ and the bank-transfer file,
+// so it is never self-editable — it takes the same request→approve→apply path as bank details.
+const MAX_FULL_NAME = 120;
 
 const COLS =
   'id, user_id, field_key, current_value, new_value, reason, status, approver_id, ' +
@@ -52,6 +56,15 @@ function validateNewValue(
     };
   }
 
+  if (fieldKey === 'full_name') {
+    if (!nonEmptyString(v.full_name)) return { ok: false, error: 'full_name is required' };
+    const name = v.full_name.trim().replace(/\s+/g, ' ');
+    if (name.length > MAX_FULL_NAME) {
+      return { ok: false, error: `full_name must be ${MAX_FULL_NAME} characters or fewer` };
+    }
+    return { ok: true, value: { full_name: name } };
+  }
+
   // emergency_contact
   if (!nonEmptyString(v.name) || !nonEmptyString(v.phone)) {
     return { ok: false, error: 'name and phone are required' };
@@ -75,7 +88,7 @@ export async function POST(request: NextRequest) {
   const reason = typeof body.reason === 'string' ? body.reason.trim().slice(0, 500) : null;
 
   if (!FIELD_KEYS.includes(fieldKey)) {
-    return NextResponse.json({ error: 'field_key must be bank_account or emergency_contact' }, { status: 400 });
+    return NextResponse.json({ error: `field_key must be one of ${FIELD_KEYS.join(', ')}` }, { status: 400 });
   }
 
   const validated = validateNewValue(fieldKey, body.new_value);
@@ -86,7 +99,7 @@ export async function POST(request: NextRequest) {
   // The caller must be a registered employee — the current value snapshot comes from it.
   const { data: emp, error: empErr } = await service
     .from('hr_employees')
-    .select('bank_name, bank_account_no, bank_account_name, emergency_contact')
+    .select('bank_name, bank_account_no, bank_account_name, emergency_contact, full_name')
     .eq('profile_id', user.id)
     .maybeSingle();
   if (empErr) return NextResponse.json({ error: 'Failed to load employee' }, { status: 500 });
@@ -100,7 +113,9 @@ export async function POST(request: NextRequest) {
           bank_account_no: maskAccountNo(emp.bank_account_no as string | null),
           bank_account_name: (emp.bank_account_name as string | null) ?? null,
         }
-      : (emp.emergency_contact ?? null);
+      : fieldKey === 'full_name'
+        ? { full_name: (emp.full_name as string | null) ?? null }
+        : (emp.emergency_contact ?? null);
 
   const { data, error } = await service
     .from(TABLE)

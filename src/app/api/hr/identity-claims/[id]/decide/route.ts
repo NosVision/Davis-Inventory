@@ -2,9 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
-import { computeProbationEnd } from '@/lib/hr/employees';
-import { getHrPolicies } from '@/lib/hr/policy';
-import { applyPendingLeaveBalances } from '@/lib/hr/leave-balance-link';
+import { linkPendingIdentity } from '@/lib/hr/identity-link';
 import { notifyUser } from '@/lib/notifications/service';
 
 // POST /api/hr/identity-claims/[id]/decide { decision: approve|reject, note? } — HR verifies an
@@ -82,122 +80,30 @@ export async function POST(
     return NextResponse.json({ data: { id, status: 'unclaimed' } });
   }
 
+
   // ── APPROVE ──────────────────────────────────────────────────────────────────
-  // The claimant must still be unlinked (a parallel onboard/link may have happened).
-  const { data: dupEmp } = await service.from('hr_employees').select('id').eq('profile_id', claimant).maybeSingle();
-  if (dupEmp) {
-    // release the name back rather than leaving a stuck claim
-    await service
-      .from('hr_pending_identities')
-      .update({ status: 'unclaimed', claimed_by: null, claimed_at: null, review_note: 'claimant already linked elsewhere' })
-      .eq('id', id)
-      .eq('status', 'claimed');
-    return NextResponse.json({ error: 'This user already has an employee record' }, { status: 409 });
-  }
-
-  // Position: match the sheet's title against hr_positions (case-insensitive exact) when possible.
-  let positionId: string | null = null;
-  if (ident.position_text) {
-    const { data: pos } = await service
-      .from('hr_positions')
-      .select('id')
-      .ilike('name', String(ident.position_text).trim())
-      .maybeSingle();
-    positionId = (pos?.id as string) ?? null;
-  }
-
-  const { data: emp, error: empErr } = await service
-    .from('hr_employees')
-    .insert({
-      profile_id: claimant,
-      company_id: ident.company_id,
-      full_name: ident.full_name_th, // formal payroll name (slips/accountant review print this)
-      employee_code: ident.employee_code ?? null,
-      bank_name: ident.bank_name ?? null,
-      bank_account_no: ident.bank_account_no ?? null,
-      position_id: positionId,
-      rate_satang: ident.rate_satang ?? 0,
-      pay_type: ident.pay_type ?? 'full_monthly',
-      start_date: ident.start_date,
-      probation_end: computeProbationEnd(ident.start_date as string | null, (await getHrPolicies(service)).probation_days),
-      sso_enrolled: ident.sso_enrolled ?? true,
-      tax_mode: ident.tax_mode ?? 'progressive',
-      status: 'active',
-      notes: `นำเข้าจากชีท ${ident.sheet_ref ?? ''}${positionId ? '' : ident.position_text ? ` · ตำแหน่งในชีท: ${ident.position_text}` : ''}`.trim(),
-      created_by: auth.userId,
-    })
-    .select('*')
-    .single();
-  if (empErr) {
-    if ((empErr as { code?: string }).code === '23505') {
-      return NextResponse.json({ error: 'This user already has an employee record' }, { status: 409 });
-    }
-    return NextResponse.json({ error: empErr.message }, { status: 500 });
-  }
-
-  // Back-link the legacy imported payslips (hr_imported_payslips) that were matched
-  // to this pending identity, so the person's historical pay follows them into their
-  // employee record. Non-fatal: a failure here must not block onboarding.
-  const warnings: string[] = [];
-  const { error: histErr } = await service
-    .from('hr_imported_payslips')
-    .update({ employee_id: emp.id })
-    .eq('pending_identity_id', id);
-  if (histErr) warnings.push('Historical payslips were not back-linked — link them manually');
-
-  // Venue membership (only when missing).
-  if (ident.store_id) {
-    const { data: have } = await service
-      .from('user_stores')
-      .select('store_id')
-      .eq('user_id', claimant)
-      .eq('store_id', ident.store_id as string)
-      .maybeSingle();
-    if (!have) {
-      const { error: usErr } = await service.from('user_stores').insert({ user_id: claimant, store_id: ident.store_id });
-      if (usErr) warnings.push('Store assignment failed — assign the venue manually');
-    }
-  }
-
-  const { data: flipped } = await service
-    .from('hr_pending_identities')
-    .update({
-      status: 'linked',
-      reviewed_by: auth.userId,
-      reviewed_at: new Date().toISOString(),
-      review_note: note,
-      linked_employee_id: emp.id,
-    })
-    .eq('id', id)
-    .eq('status', 'claimed')
-    .select('id');
-  if (!flipped?.length) {
-    // lost the race after inserting the employee — roll the employee back to stay consistent
-    await service.from('hr_employees').delete().eq('id', emp.id);
-    return NextResponse.json({ error: 'Claim was already decided' }, { status: 409 });
-  }
-
-  // Materialize staged sheet-imported leave balances for this identity (00166) — best-effort,
-  // a failure here must never block onboarding.
-  try {
-    await applyPendingLeaveBalances(service, {
-      pendingIdentityId: id,
-      employeeId: emp.id as string,
-      companyId: (ident.company_id as string | null) ?? null,
-    });
-  } catch (e) {
-    console.error('[identity-claims/decide] staged leave balances failed:', e);
-  }
-
-  await logHrAudit(service, {
+  // Shared with the HR-initiated link route so both paths onboard identically.
+  const result = await linkPendingIdentity(service, {
+    identity: ident as Record<string, unknown>,
+    profileId: claimant,
     actorId: auth.userId,
-    action: 'create',
-    table: 'hr_employees',
-    recordId: emp.id,
-    before: null,
-    after: emp,
+    fromStatuses: ['claimed'],
+    note,
     reason: `Identity claim approved — linked "${ident.full_name_th}" (${ident.sheet_ref ?? 'sheet'}) to existing account`,
   });
+
+  if (!result.ok) {
+    // A claimant who already has an employee record can never be onboarded again — release the
+    // name back to the pool rather than leaving a claim stuck in review.
+    if (result.status === 409) {
+      await service
+        .from('hr_pending_identities')
+        .update({ status: 'unclaimed', claimed_by: null, claimed_at: null, review_note: result.error })
+        .eq('id', id)
+        .eq('status', 'claimed');
+    }
+    return NextResponse.json({ error: result.error }, { status: result.status });
+  }
 
   try {
     await notifyUser({
@@ -212,5 +118,7 @@ export async function POST(
     console.error('[identity-claims/decide] notify failed:', e);
   }
 
-  return NextResponse.json({ data: { id, status: 'linked', employee_id: emp.id, warnings } });
+  return NextResponse.json({
+    data: { id, status: 'linked', employee_id: result.employeeId, warnings: result.warnings },
+  });
 }

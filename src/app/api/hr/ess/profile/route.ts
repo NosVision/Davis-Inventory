@@ -5,7 +5,9 @@ import { createClient, createServiceClient } from '@/lib/supabase/server';
 // tax_id, sso_no, notes, or end_reason — the ESS profile must not surface those (P0 gate).
 const EMPLOYEE_SELECT =
   'start_date, status, work_hours_per_day, bank_name, bank_account_no, bank_account_name, ' +
-  'emergency_contact, ' +
+  // full_name = the caller's own legal ชื่อ-นามสกุล; read-only here (corrections go through a
+  // change request), and it is their own name, so no P0 concern.
+  'emergency_contact, full_name, employee_code, ' +
   'position:hr_positions(name), department:hr_departments(name), company:hr_companies(name)';
 
 // Mask a bank account number down to its last 4 digits (e.g. ••••1234), or null.
@@ -49,6 +51,11 @@ export async function GET() {
   return NextResponse.json({
     data: {
       display_name: (profile?.display_name as string | null) ?? null,
+      // The legal ชื่อ-นามสกุล. null when the caller has no employee record yet — the page uses
+      // that to explain why the name is blank instead of showing a bare dash.
+      full_name: (e?.full_name as string | null) ?? null,
+      employee_code: (e?.employee_code as string | null) ?? null,
+      has_employee_record: !!e,
       username: (profile?.username as string | null) ?? null,
       avatar_url: (profile?.avatar_url as string | null) ?? null,
       phone: (profile?.phone as string | null) ?? null,

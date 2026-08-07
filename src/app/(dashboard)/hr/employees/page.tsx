@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Plus, ArrowLeftRight, History, Printer, IdCard, Archive, UserRound, Link2, Users, Shield, UserCog, Banknote, Clock } from 'lucide-react';
+import { Plus, ArrowLeftRight, History, Printer, IdCard, Archive, UserRound, Link2, Users, Shield, UserCog, UserSearch, Banknote, Clock } from 'lucide-react';
 import { Button, Select, Badge, PageHeader, StatusBadge, Modal, ModalFooter, type StatusTone, toast } from '@/components/ui';
 import { DataTable, type Column } from '@/components/data/data-table';
 import { createClient } from '@/lib/supabase/client';
@@ -15,6 +15,7 @@ import { EmployeePayHistoryModal } from './_components/employee-pay-history-moda
 import { EmployeeDetailModal } from './_components/employee-detail-modal';
 import { UsersManager } from './_components/users-manager';
 import { InviteLinksManager } from './_components/invite-links-manager';
+import { UnclaimedIdentitiesManager } from './_components/unclaimed-identities-manager';
 
 interface Ref {
   id: string;
@@ -78,7 +79,9 @@ function employeeName(e: EmployeeRow): string {
 // The merged "people" surface: HR employee registry + user accounts (formerly /users) +
 // onboarding links (ลิงก์สมัคร/ลิงก์เชิญ, formerly a modal + /users/invitations) as three
 // tabs, so one person is managed in one place. Deep-linkable: ?tab=accounts[&q=<search>], ?tab=links.
-type PeopleTab = 'employees' | 'accounts' | 'links';
+// 'unclaimed' added 2026-08-07: the imported sheet names nobody has claimed yet. They are not
+// employees and not accounts, so neither existing tab showed them — and they silently miss payroll.
+type PeopleTab = 'employees' | 'accounts' | 'unclaimed' | 'links';
 
 export default function EmployeesPage() {
   const t = useTranslations('hr.employees');
@@ -94,7 +97,7 @@ export default function EmployeesPage() {
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
     const tp = p.get('tab');
-    if (tp === 'accounts' || tp === 'links') {
+    if (tp === 'accounts' || tp === 'links' || tp === 'unclaimed') {
       if (tp === 'accounts') {
         setAccountsSeed(p.get('q') ?? '');
         setAccountsClaims(p.get('view') === 'claims');
@@ -109,6 +112,7 @@ export default function EmployeesPage() {
     const qs =
       next === 'accounts' ? `?tab=accounts${seed ? `&q=${encodeURIComponent(seed)}` : ''}`
       : next === 'links' ? '?tab=links'
+      : next === 'unclaimed' ? '?tab=unclaimed'
       : '';
     window.history.replaceState(null, '', `/hr/employees${qs}`);
   };
@@ -518,6 +522,7 @@ export default function EmployeesPage() {
         subtitle={
           tab === 'employees' ? `${t('subtitle')} · ${t('count', { count })}`
           : tab === 'accounts' ? t('tabAccountsSubtitle')
+          : tab === 'unclaimed' ? 'รายชื่อจากไฟล์เงินเดือนที่ยังไม่ได้ผูกกับบัญชีผู้ใช้ — ยังไม่เข้างวดเงินเดือน'
           : t('tabLinksSubtitle')
         }
         actions={
@@ -547,6 +552,7 @@ export default function EmployeesPage() {
           [
             { key: 'employees', icon: Users, label: t('tabEmployees') },
             { key: 'accounts', icon: UserCog, label: t('tabAccounts') },
+            { key: 'unclaimed', icon: UserSearch, label: 'รอยืนยันตัวตน' },
             { key: 'links', icon: Link2, label: t('tabLinks') },
           ] as const
         ).map(({ key, icon: Icon, label }) => (
@@ -574,6 +580,8 @@ export default function EmployeesPage() {
           initialShowClaims={accountsClaims}
         />
       )}
+
+      {tab === 'unclaimed' && <UnclaimedIdentitiesManager />}
 
       {tab === 'links' && <InviteLinksManager />}
 

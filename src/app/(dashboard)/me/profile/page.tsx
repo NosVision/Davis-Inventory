@@ -6,12 +6,19 @@ import Link from 'next/link';
 import { Loader2, UserCircle, Landmark, Phone, Send, Inbox, Wallet, CalendarClock } from 'lucide-react';
 import { Button, Modal, ModalFooter, PageHeader, ViewToggle, useViewMode, DataList, DataCard, StatusBadge, useConfirm, toast } from '@/components/ui';
 import { TileNotices } from '../_components/tile-notices';
+import { AccountSettings } from './_components/account-settings';
+import { EmployeeName } from '@/components/hr/employee-name';
 
 type Status = 'pending' | 'approved' | 'rejected' | 'cancelled';
-type FieldKey = 'bank_account' | 'emergency_contact';
+// full_name added 2026-08-07: the legal ชื่อ-นามสกุล drives ภ.ง.ด.1 / สปส. / ใบ 50 ทวิ and the
+// bank-transfer file, so a correction is requested and HR approves it — never a direct self-edit.
+type FieldKey = 'bank_account' | 'emergency_contact' | 'full_name';
 
 interface Profile {
   display_name: string | null;
+  full_name: string | null;
+  employee_code: string | null;
+  has_employee_record: boolean;
   username: string | null;
   avatar_url: string | null;
   phone: string | null;
@@ -60,6 +67,14 @@ export default function MyProfilePage() {
   const t = useTranslations('hr.profile');
   const { confirm, dialog } = useConfirm();
 
+  // ?tab=settings deep-links straight to the merged account settings — the avatar menu's
+  // "ตั้งค่าการแจ้งเตือน" item uses it. Read off window.location so no Suspense boundary is needed
+  // (same pattern as /hr/employees).
+  const [tab, setTab] = useState<'info' | 'settings'>('info');
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('tab') === 'settings') setTab('settings');
+  }, []);
+
   const [view, setView] = useViewMode('me-profile');
   const [profile, setProfile] = useState<Profile | null>(null);
   const [rows, setRows] = useState<ChangeRequest[]>([]);
@@ -77,6 +92,8 @@ export default function MyProfilePage() {
   const [ecName, setEcName] = useState('');
   const [ecPhone, setEcPhone] = useState('');
   const [ecRelation, setEcRelation] = useState('');
+  // legal-name correction
+  const [fullNameDraft, setFullNameDraft] = useState('');
 
   const statusLabel = useCallback(
     (s: Status) =>
@@ -91,7 +108,12 @@ export default function MyProfilePage() {
   );
 
   const fieldLabel = useCallback(
-    (f: FieldKey) => (f === 'bank_account' ? t('fieldBankAccount') : t('fieldEmergencyContact')),
+    (f: FieldKey) =>
+      f === 'bank_account'
+        ? t('fieldBankAccount')
+        : f === 'full_name'
+          ? 'ชื่อ-นามสกุล'
+          : t('fieldEmergencyContact'),
     [t]
   );
 
@@ -210,7 +232,14 @@ export default function MyProfilePage() {
     setEcName('');
     setEcPhone('');
     setEcRelation('');
+    setFullNameDraft('');
   }, []);
+
+  const openFullName = useCallback(() => {
+    setFullNameDraft(profile?.full_name ?? '');
+    setReason('');
+    setOpenField('full_name');
+  }, [profile]);
 
   const openBank = useCallback(() => {
     setBankName(profile?.bank_name ?? '');
@@ -231,8 +260,12 @@ export default function MyProfilePage() {
   const bankValid =
     Boolean(bankName.trim()) && Boolean(bankAccountNo.trim()) && Boolean(bankAccountName.trim());
   const emergencyValid = Boolean(ecName.trim()) && Boolean(ecPhone.trim());
+  // A name "correction" that changes nothing is not a request worth queuing for HR.
+  const fullNameValid =
+    Boolean(fullNameDraft.trim()) && fullNameDraft.trim() !== (profile?.full_name ?? '').trim();
   const canSubmit =
-    !submitting && (openField === 'bank_account' ? bankValid : emergencyValid);
+    !submitting &&
+    (openField === 'bank_account' ? bankValid : openField === 'full_name' ? fullNameValid : emergencyValid);
 
   const submit = useCallback(async () => {
     if (!openField || !canSubmit) return;
@@ -243,7 +276,9 @@ export default function MyProfilePage() {
             bank_account_no: bankAccountNo.trim(),
             bank_account_name: bankAccountName.trim(),
           }
-        : {
+        : openField === 'full_name'
+          ? { full_name: fullNameDraft.trim() }
+          : {
             name: ecName.trim(),
             phone: ecPhone.trim(),
             relation: ecRelation.trim() || undefined,
@@ -282,6 +317,7 @@ export default function MyProfilePage() {
     ecName,
     ecPhone,
     ecRelation,
+    fullNameDraft,
     reason,
     t,
     closeModal,
@@ -309,8 +345,41 @@ export default function MyProfilePage() {
 
   return (
     <div className="mx-auto max-w-lg space-y-4 p-4">
-      <PageHeader title={t('title')} subtitle={t('subtitle')} actions={<ViewToggle value={view} onChange={setView} />} />
+      <PageHeader
+        title={t('title')}
+        subtitle={t('subtitle')}
+        actions={tab === 'info' ? <ViewToggle value={view} onChange={setView} /> : undefined}
+      />
 
+      {/* The app used to have two profile screens — /profile (account settings, from the avatar
+          menu) and /me/profile (employee data, from the /me hub). They are one page with two
+          tabs now; /profile redirects here. */}
+      <div className="flex gap-1 rounded-xl bg-gray-100 p-1 dark:bg-gray-800">
+        {(
+          [
+            { key: 'info', label: 'ข้อมูลส่วนตัว' },
+            { key: 'settings', label: 'การตั้งค่าบัญชี' },
+          ] as const
+        ).map((tb) => (
+          <button
+            key={tb.key}
+            type="button"
+            onClick={() => setTab(tb.key)}
+            className={`flex-1 cursor-pointer rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+              tab === tb.key
+                ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-700 dark:text-indigo-300'
+                : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+            }`}
+          >
+            {tb.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'settings' ? (
+        <AccountSettings />
+      ) : (
+        <>
       <TileNotices tile="profile" />
 
       {loading ? (
@@ -337,8 +406,9 @@ export default function MyProfilePage() {
               )}
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
+                  {/* ชื่อจริง leads, ชื่อเล่น trails — the project-wide rule (lib/hr/employee-name) */}
                   <h2 className="truncate text-sm font-semibold text-gray-900 dark:text-white">
-                    {profile.display_name ?? profile.username ?? '—'}
+                    <EmployeeName source={profile} />
                   </h2>
                   {profile.status && <StatusBadge tone="info" label={profile.status} />}
                 </div>
@@ -368,6 +438,31 @@ export default function MyProfilePage() {
                 {!identity.claim && (
                   <Button size="sm" onClick={openIdentityClaim}>{t('identityLinkNow')}</Button>
                 )}
+              </div>
+            )}
+
+            {/* ชื่อ-นามสกุล — read-only. This is the legal name on ภ.ง.ด.1 / สปส. / ใบ 50 ทวิ and the
+                bank-transfer file, so a correction goes to HR for approval instead of applying
+                straight away (owner decision 2026-08-07). */}
+            {profile.has_employee_record && (
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2 text-xs">
+                  <UserCircle className="h-4 w-4 shrink-0 text-gray-400" />
+                  <span className="text-gray-500 dark:text-gray-400">ชื่อ-นามสกุล:</span>
+                  <span className="truncate font-medium text-gray-800 dark:text-gray-100">
+                    {profile.full_name || '—'}
+                  </span>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={openFullName}
+                  disabled={rows.some((r) => r.field_key === 'full_name' && r.status === 'pending')}
+                >
+                  {rows.some((r) => r.field_key === 'full_name' && r.status === 'pending')
+                    ? 'รออนุมัติ'
+                    : 'ขอแก้ไข'}
+                </Button>
               </div>
             )}
 
@@ -507,6 +602,8 @@ export default function MyProfilePage() {
           </div>
         </>
       )}
+        </>
+      )}
 
       {/* Bank change modal */}
       <Modal
@@ -559,6 +656,50 @@ export default function MyProfilePage() {
             disabled={!canSubmit}
             icon={<Send className="h-4 w-4" />}
           >
+            {t('submitRequest')}
+          </Button>
+        </ModalFooter>
+      </Modal>
+
+      {/* Legal-name correction — request only, HR applies it after approving */}
+      <Modal
+        isOpen={openField === 'full_name'}
+        onClose={closeModal}
+        title="ขอแก้ไขชื่อ-นามสกุล"
+        description="ชื่อนี้ใช้ยื่น ภ.ง.ด.1 / สปส. / ใบ 50 ทวิ และไฟล์โอนเงินธนาคาร จึงต้องให้ HR ตรวจสอบก่อน"
+        size="md"
+      >
+        <div className="space-y-3">
+          <div className="rounded-lg bg-gray-50 px-3 py-2 text-xs dark:bg-gray-800/60">
+            <span className="text-gray-500 dark:text-gray-400">ชื่อปัจจุบัน: </span>
+            <span className="font-medium text-gray-800 dark:text-gray-100">{profile?.full_name || '—'}</span>
+          </div>
+          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">
+            ชื่อ-นามสกุลที่ถูกต้อง
+            <input
+              value={fullNameDraft}
+              onChange={(e) => setFullNameDraft(e.target.value)}
+              placeholder="เช่น นางสาวไอนิชา อินต๊ะ"
+              className="control mt-1 w-full"
+            />
+          </label>
+          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">
+            {t('reasonOptional')}
+            <textarea
+              rows={2}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="เช่น สะกดผิดตอนนำเข้าจากชีท / เปลี่ยนชื่อตามทะเบียนราษฎร์"
+              className="control mt-1 w-full"
+            />
+          </label>
+        </div>
+        <ModalFooter>
+          <Button variant="ghost" size="sm" onClick={closeModal}>
+            {t('cancel')}
+          </Button>
+          <Button size="sm" onClick={submit} disabled={!canSubmit}>
+            {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
             {t('submitRequest')}
           </Button>
         </ModalFooter>

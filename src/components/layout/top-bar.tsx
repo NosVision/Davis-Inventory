@@ -178,7 +178,9 @@ export function TopBar({
                   type="button"
                   onClick={() => {
                     setUserMenuOpen(false);
-                    router.push('/profile');
+                    // The merged profile page — this menu used to open /profile while the /me
+                    // hub opened /me/profile, so the same person had two different screens.
+                    router.push('/me/profile');
                   }}
                   className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
                 >
@@ -189,7 +191,7 @@ export function TopBar({
                   type="button"
                   onClick={() => {
                     setUserMenuOpen(false);
-                    router.push('/profile');
+                    router.push('/me/profile?tab=settings');
                   }}
                   className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
                 >

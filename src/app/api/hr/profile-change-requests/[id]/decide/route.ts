@@ -7,7 +7,7 @@ const TABLE = 'hr_profile_change_requests';
 // The hr_employees columns touched by an apply — snapshotted before/after for the §B audit.
 // `id` is included so the audit entry is keyed to the EMPLOYEE row (not the request), keeping
 // per-employee audit-history lookups working.
-const EMPLOYEE_APPLY_COLS = 'id, bank_name, bank_account_no, bank_account_name, emergency_contact';
+const EMPLOYEE_APPLY_COLS = 'id, bank_name, bank_account_no, bank_account_name, emergency_contact, full_name';
 
 // POST /api/hr/profile-change-requests/[id]/decide — HR approves or rejects a pending
 // profile-change request (§J6). These carry bank data, so HR-only (requireHrManager) — not
@@ -146,6 +146,14 @@ export async function POST(
     };
   } else if (fieldKey === 'emergency_contact') {
     patch = { emergency_contact: newValue };
+  } else if (fieldKey === 'full_name') {
+    // The legal ชื่อ-นามสกุล — this is what the next ภ.ง.ด.1 / สปส. / ใบ 50 ทวิ and bank-transfer
+    // file will carry, which is exactly why it needs an HR approval rather than a self-edit.
+    const name = typeof newValue.full_name === 'string' ? newValue.full_name.trim() : '';
+    if (!name) {
+      return warn('Change approved, but the requested name was empty — apply skipped. Manual follow-up required.');
+    }
+    patch = { full_name: name };
   } else {
     return warn('Change approved, but the field type is not recognized — apply skipped. Manual follow-up required.');
   }
