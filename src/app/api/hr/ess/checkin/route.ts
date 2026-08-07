@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { haversineMeters, isValidLat, isValidLng } from '@/lib/hr/geo';
 import { assessIp } from '@/lib/hr/ip-geo';
 import { getClientIp } from '@/lib/hr/request-ip';
+import { findUnclosedDays, flagUnclosedDays } from '@/lib/hr/open-attendance';
 import { openBusinessDateBangkok } from '@/lib/utils/date';
 import { notifyHrManagers } from '@/lib/hr/notify';
 import { notifyUser } from '@/lib/notifications/service';
@@ -344,8 +345,42 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Clocking in for a NEW day while an earlier day is still open is the moment the forgotten
+  // check-out becomes undeniable — before this, the punch just sat there unflagged and the next
+  // day's check-in was accepted as if nothing were wrong. The punch is still recorded (losing
+  // today's time would be worse), but every open day is flagged for HR and returned so the app can
+  // tell the employee to file the missing check-out. Best-effort: never fail the punch over it.
+  let openDays: Awaited<ReturnType<typeof findUnclosedDays>> = [];
+  if (type === 'in') {
+    try {
+      openDays = await findUnclosedDays(service, user.id, businessDate);
+      const flagged = await flagUnclosedDays(service, openDays);
+      if (flagged > 0) {
+        await notifyUser({
+          userId: user.id,
+          storeId,
+          type: 'hr_attendance_result',
+          title: 'มีวันที่ยังไม่ได้เช็คเอาท์',
+          body: `คุณมี ${openDays.length} วันที่เช็คอินแล้วแต่ไม่ได้เช็คเอาท์ — กรุณาส่งคำขอแก้ไขเวลาให้ HR อนุมัติ`,
+          data: { url: '/me/attendance-requests' },
+        }).catch(() => {});
+      }
+    } catch (e) {
+      console.error('[ess/checkin] unclosed-day check failed:', e);
+    }
+  }
+
   return NextResponse.json(
-    { ok: true, in_geofence: inGeofence, distance_m: distanceM, store_id: storeId, review_status: reviewStatus, ts },
+    {
+      ok: true,
+      in_geofence: inGeofence,
+      distance_m: distanceM,
+      store_id: storeId,
+      review_status: reviewStatus,
+      ts,
+      // Days still awaiting a check-out. The app raises a blocking banner on these.
+      open_days: openDays.map((d) => ({ business_date: d.business_date, in_ts: d.in_ts })),
+    },
     { status: 201 }
   );
 }

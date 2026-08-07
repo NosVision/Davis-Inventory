@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Loader2, CalendarClock, Send } from 'lucide-react';
+import { Loader2, CalendarClock, Send, AlertTriangle } from 'lucide-react';
 import { formatThaiDate, formatThaiDateTime } from '@/lib/utils/format';
 import {
   Button,
@@ -17,6 +17,15 @@ import {
 
 type Kind = 'missing_in' | 'missing_out' | 'wrong_time' | 'other';
 type PunchType = 'in' | 'out' | 'break_start' | 'break_end';
+
+interface OpenDay {
+  business_date: string;
+  in_ts: string;
+  /** Scheduled shift end — the closest thing the system knows to "when you actually left". */
+  suggested_out_ts: string | null;
+  shift_label: string | null;
+  existing_request: { id: string; status: string } | null;
+}
 
 interface AttReq {
   id: string;
@@ -61,6 +70,13 @@ export default function MyAttendanceRequestsPage() {
   const [targetId, setTargetId] = useState('');
   const [reason, setReason] = useState('');
   const [punches, setPunches] = useState<Punch[]>([]);
+
+  /**
+   * Days the server can already see are broken: clocked in, never clocked out. Filing used to
+   * mean knowing which day was wrong, choosing the right kind, and typing a full timestamp — all
+   * of which the server can describe exactly. One tap fills the form instead.
+   */
+  const [openDays, setOpenDays] = useState<OpenDay[]>([]);
   const [view, setView] = useViewMode('me-attendance-requests');
 
   const statusLabel = useCallback(
@@ -111,9 +127,39 @@ export default function MyAttendanceRequestsPage() {
     }
   }, []);
 
+  const fetchOpenDays = useCallback(async () => {
+    try {
+      const res = await fetch('/api/hr/ess/attendance/open-days');
+      const json = await res.json().catch(() => ({}));
+      if (res.ok) setOpenDays((json.data ?? []) as OpenDay[]);
+    } catch {
+      /* the prompt just stays hidden */
+    }
+  }, []);
+
   useEffect(() => {
     fetchRows();
-  }, [fetchRows]);
+    fetchOpenDays();
+  }, [fetchRows, fetchOpenDays]);
+
+  /** One tap: fill the whole form for a day the server already knows is missing its check-out. */
+  const fileForOpenDay = useCallback((d: OpenDay) => {
+    setBusinessDate(d.business_date);
+    setKind('missing_out');
+    setProposedType('out');
+    // datetime-local wants local wall-clock without the zone suffix.
+    if (d.suggested_out_ts) {
+      const dt = new Date(d.suggested_out_ts);
+      const pad = (n: number) => String(n).padStart(2, '0');
+      setProposedTs(
+        `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`
+      );
+    } else {
+      setProposedTs('');
+    }
+    setReason('');
+    document.getElementById('att-req-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
 
   // Load the caller's own punches for the chosen date (for the wrong_time selector).
   useEffect(() => {
@@ -161,13 +207,13 @@ export default function MyAttendanceRequestsPage() {
       setProposedTs('');
       setTargetId('');
       setReason('');
-      await fetchRows();
+      await Promise.all([fetchRows(), fetchOpenDays()]);
     } catch (e) {
       toast({ type: 'error', title: e instanceof Error ? e.message : t('fileFailed') });
     } finally {
       setSubmitting(false);
     }
-  }, [businessDate, kind, proposedType, proposedTs, targetId, reason, t, fetchRows]);
+  }, [businessDate, kind, proposedType, proposedTs, targetId, reason, t, fetchRows, fetchOpenDays]);
 
   const cancel = useCallback(
     async (id: string) => {
@@ -175,7 +221,7 @@ export default function MyAttendanceRequestsPage() {
         const res = await fetch(`/api/hr/ess/attendance-requests/${id}/cancel`, { method: 'POST' });
         if (!res.ok) throw new Error();
         toast({ type: 'success', title: t('cancelled') });
-        await fetchRows();
+        await Promise.all([fetchRows(), fetchOpenDays()]);
       } catch {
         toast({ type: 'error', title: t('actionFailed') });
       }
@@ -199,8 +245,49 @@ export default function MyAttendanceRequestsPage() {
         actions={<ViewToggle value={view} onChange={setView} />}
       />
 
+      {/* Days the server already knows are missing a check-out. Shown first because this is the
+          only reason most people open this page, and it used to be entirely on them to work out
+          which day was wrong and what to type. */}
+      {openDays.length > 0 && (
+        <div className="space-y-2 rounded-xl border border-amber-300 bg-amber-50/70 p-3 dark:border-amber-800/60 dark:bg-amber-900/15">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+            <p className="text-xs text-amber-800 dark:text-amber-300">
+              <span className="font-semibold">คุณมี {openDays.length} วันที่ยังไม่ได้เช็คเอาท์</span>{' '}
+              — วันเหล่านี้ยังคิดชั่วโมงทำงานไม่ได้ ต้องส่งคำขอให้ HR อนุมัติก่อน
+            </p>
+          </div>
+          {openDays.map((d) => (
+            <div
+              key={d.business_date}
+              className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white/80 px-3 py-2 dark:bg-gray-800/60"
+            >
+              <div className="min-w-0 text-xs">
+                <p className="font-medium text-gray-900 dark:text-white">
+                  {formatThaiDate(d.business_date)}
+                  {d.shift_label && <span className="ml-1 text-gray-400">· {d.shift_label}</span>}
+                </p>
+                <p className="text-gray-500 dark:text-gray-400">
+                  เช็คอิน {formatThaiDateTime(d.in_ts)} · ไม่มีเช็คเอาท์
+                </p>
+              </div>
+              {d.existing_request ? (
+                <StatusBadge
+                  tone={d.existing_request.status === 'approved' ? 'good' : 'warn'}
+                  label={d.existing_request.status === 'approved' ? 'อนุมัติแล้ว' : 'ส่งแล้ว รออนุมัติ'}
+                />
+              ) : (
+                <Button size="sm" onClick={() => fileForOpenDay(d)}>
+                  แจ้งลืมเช็คเอาท์
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* File form */}
-      <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+      <div id="att-req-form" className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
         <h2 className="text-sm font-semibold text-gray-900 dark:text-white">{t('fileHeading')}</h2>
 
         <div className="grid grid-cols-2 gap-3">
