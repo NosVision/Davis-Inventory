@@ -77,6 +77,8 @@ interface PayrunDetail {
   };
   review: ReviewInfo | null;
   pools?: { month: string; sc: PoolSummary; tip: PoolSummary };
+  /** Employees withheld because their pay is confidential to this viewer. > 0 → totals are partial. */
+  hidden_count?: number;
 }
 
 // Print isolation: window.print() otherwise prints the whole dashboard (sidebar/header from the
@@ -837,6 +839,22 @@ export default function HrPayrollPage() {
                   </div>
                 ) : (
                   <div className="space-y-3">
+                  {/* Some slips are withheld from this viewer, so every figure below covers only
+                      what they can see. Saying so is not optional — an unlabelled partial total
+                      reads as the payrun's real total. */}
+                  {(detail.hidden_count ?? 0) > 0 && (
+                    <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50/70 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-800/60 dark:bg-amber-900/15 dark:text-amber-300">
+                      <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+                      <p>
+                        <span className="font-semibold">
+                          แสดง {detail.payslips.length} จาก {detail.payslips.length + (detail.hidden_count ?? 0)} คน
+                        </span>{' '}
+                        — อีก {detail.hidden_count} คนถูกปิดข้อมูลเงินเดือนไว้ ยอดรวมด้านล่างจึงเป็นยอดเฉพาะที่แสดง
+                        ไม่ใช่ยอดรวมทั้งงวด
+                      </p>
+                    </div>
+                  )}
+
                   {/* Key figures — lead with NET as the hero; gross/deductions are secondary */}
                   <KpiRow cols={4}>
                     <StatTile label={t('colEmployee')} value={detail.payslips.length} icon={Users} />

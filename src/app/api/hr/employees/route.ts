@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { randomBytes } from 'node:crypto';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManager, resolveHrScope } from '@/lib/hr/route-auth';
+import { callerCanViewConfidentialPay, redactEmployeePay } from '@/lib/hr/pay-visibility';
 import { logHrAudit } from '@/lib/hr/audit';
 import {
   pickEmployeeFields,
@@ -84,7 +85,7 @@ const SEARCH_CAP = 500;
 const LIST_SELECT =
   'id, profile_id, employee_code, full_name, rate_satang, pay_type, work_hours_per_day, break_hours, ot_eligible, ' +
   'ot_hour_divisor, standard_days_off, tax_mode, sso_enrolled, status, start_date, probation_end, ' +
-  'bank_name, bank_account_no, ' + // for the printable register (HR-gated route)
+  'bank_name, bank_account_no, pay_confidential, ' + // for the printable register (HR-gated route)
   'company_id, position_id, department_id, created_at, ' +
   'profile:profiles!hr_employees_profile_id_fkey(id, username, display_name, active, avatar_url, role), ' + // role → สิทธิ์ระบบ column
 
@@ -189,7 +190,14 @@ export async function GET(request: NextRequest) {
   }
   const enriched = rows.map((e) => ({ ...e, stores: venueMap[e.profile_id as string] ?? [] }));
 
-  return NextResponse.json({ data: enriched, count: count ?? 0 });
+  // Blank the pay of employees this caller may not see it for. The rows stay — the person is
+  // still managed for leave/schedule/attendance — only their numbers go.
+  const visible = redactEmployeePay(
+    enriched as unknown as Record<string, unknown>[],
+    await callerCanViewConfidentialPay(service, scope.userId)
+  );
+
+  return NextResponse.json({ data: visible, count: count ?? 0 });
 }
 
 // POST /api/hr/employees — onboard a new person: auth account + profile + hr_employees.

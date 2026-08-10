@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManagerForStore } from '@/lib/hr/route-auth';
+import { refuseIfConfidentialInScope } from '@/lib/hr/pay-visibility';
 import { logHrAudit } from '@/lib/hr/audit';
 import { newReviewToken, hashReviewToken, REVIEW_LINK_TTL_DAYS, normalizePasscode, newReviewPasscode } from '@/lib/hr/review-link';
 
@@ -20,6 +21,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { payrun, auth } = await authForPayrun(service, id);
   if (!payrun) return NextResponse.json({ error: 'Payrun not found' }, { status: 404 });
   if (!auth || !auth.ok) return NextResponse.json({ error: auth?.error ?? 'Forbidden' }, { status: auth?.status ?? 403 });
+  // The link exposes the ENTIRE payrun to whoever holds it — and its passcode is handed back to
+  // whoever creates it, so an HR user without the confidential grant could mint one and read the
+  // very figures this feature hides. Closed here; the accounting office still sees everything,
+  // which is the point of the link.
+  {
+    const { data: slipUsers } = await service.from('hr_payslips').select('user_id').eq('payrun_id', id);
+    const refusal = await refuseIfConfidentialInScope(
+      service,
+      auth.userId,
+      (slipUsers ?? []).map((s) => s.user_id as string)
+    );
+    if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
+  }
 
   await service
     .from('hr_payrun_review_links')
@@ -68,6 +82,19 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   const { payrun, auth } = await authForPayrun(service, id);
   if (!payrun) return NextResponse.json({ error: 'Payrun not found' }, { status: 404 });
   if (!auth || !auth.ok) return NextResponse.json({ error: auth?.error ?? 'Forbidden' }, { status: auth?.status ?? 403 });
+  // The link exposes the ENTIRE payrun to whoever holds it — and its passcode is handed back to
+  // whoever creates it, so an HR user without the confidential grant could mint one and read the
+  // very figures this feature hides. Closed here; the accounting office still sees everything,
+  // which is the point of the link.
+  {
+    const { data: slipUsers } = await service.from('hr_payslips').select('user_id').eq('payrun_id', id);
+    const refusal = await refuseIfConfidentialInScope(
+      service,
+      auth.userId,
+      (slipUsers ?? []).map((s) => s.user_id as string)
+    );
+    if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
+  }
 
   const { data: link } = await service
     .from('hr_payrun_review_links')
@@ -87,6 +114,19 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
   const { payrun, auth } = await authForPayrun(service, id);
   if (!payrun) return NextResponse.json({ error: 'Payrun not found' }, { status: 404 });
   if (!auth || !auth.ok) return NextResponse.json({ error: auth?.error ?? 'Forbidden' }, { status: auth?.status ?? 403 });
+  // The link exposes the ENTIRE payrun to whoever holds it — and its passcode is handed back to
+  // whoever creates it, so an HR user without the confidential grant could mint one and read the
+  // very figures this feature hides. Closed here; the accounting office still sees everything,
+  // which is the point of the link.
+  {
+    const { data: slipUsers } = await service.from('hr_payslips').select('user_id').eq('payrun_id', id);
+    const refusal = await refuseIfConfidentialInScope(
+      service,
+      auth.userId,
+      (slipUsers ?? []).map((s) => s.user_id as string)
+    );
+    if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
+  }
 
   const { error } = await service
     .from('hr_payrun_review_links')

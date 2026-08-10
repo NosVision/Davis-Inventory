@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
+import { callerCanViewConfidentialPay, redactEmployeePay } from '@/lib/hr/pay-visibility';
 import { requireHrManagerForEmployeeId } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import {
@@ -44,7 +45,12 @@ export async function GET(
     .single();
 
   if (error || !data) return NextResponse.json({ error: 'Employee not found' }, { status: 404 });
-  return NextResponse.json({ data });
+
+  const [redacted] = redactEmployeePay(
+    [data as unknown as Record<string, unknown>],
+    await callerCanViewConfidentialPay(service, auth.userId)
+  );
+  return NextResponse.json({ data: redacted });
 }
 
 // PUT /api/hr/employees/[id]  — partial update of writable fields + optional profile display_name.
@@ -72,6 +78,16 @@ export async function PUT(
   if (!picked.ok) return NextResponse.json({ error: 'Validation failed', fields: picked.errors }, { status: 400 });
 
   const fields: Record<string, unknown> = { ...picked.fields };
+
+  // The flag is the lock itself: an HR user who cannot see confidential pay must not be able to
+  // switch it off and then look. Silently dropping the field would be worse — they would think it
+  // saved — so refuse the write outright.
+  if ('pay_confidential' in fields && !(await callerCanViewConfidentialPay(service, auth.userId))) {
+    return NextResponse.json(
+      { error: 'คุณไม่มีสิทธิ์เปลี่ยนการปิดข้อมูลเงินเดือน' },
+      { status: 403 }
+    );
+  }
 
   // Company changes MUST go through the dedicated transfer endpoint (mandatory reason + effective_date + audit, §A).
   if ('company_id' in fields) {

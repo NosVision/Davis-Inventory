@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
+import { callerCanViewConfidentialPay, confidentialProfileIds } from '@/lib/hr/pay-visibility';
 import { requireHrManagerForStore } from '@/lib/hr/route-auth';
 import { buildPayrunReviewRows } from '@/lib/hr/review-link';
 
@@ -114,7 +115,16 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
-  const totals = payslips.reduce(
+
+  // Drop the slips this caller may not see the pay of. Totals are computed from what remains, NOT
+  // from the full run — a complete total beside a partial list is a subtraction away from the
+  // figures being hidden. The response says how many are missing so the page can label itself.
+  const canSeeAll = await callerCanViewConfidentialPay(service, auth.userId);
+  const confidential = canSeeAll ? new Set<string>() : await confidentialProfileIds(service);
+  const hiddenCount = canSeeAll ? 0 : payslips.filter((s) => confidential.has(s.user_id)).length;
+  const visibleSlips = canSeeAll ? payslips : payslips.filter((s) => !confidential.has(s.user_id));
+
+  const totals = visibleSlips.reduce(
     (acc, s) => ({
       gross: acc.gross + s.gross_satang,
       net: acc.net + s.net_satang,
@@ -153,5 +163,16 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     tip: summarizePools(tipPoolsRes.data as { status: string; store_id: string | null }[] | null),
   };
 
-  return NextResponse.json({ data: { payrun, payslips, totals, review, pools } });
+  return NextResponse.json({
+    data: {
+      payrun,
+      payslips: visibleSlips,
+      totals,
+      review,
+      pools,
+      // > 0 → the page must say the figures are partial, or the reader will take the total as the
+      // payrun's real total.
+      hidden_count: hiddenCount,
+    },
+  });
 }

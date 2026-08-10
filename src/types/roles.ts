@@ -32,6 +32,8 @@ export type Permission =
   | 'can_request_repair'
   | 'can_manage_repair'
   | 'can_manage_hr'
+  // Lifts the veil on hr_employees.pay_confidential — see lib/hr/pay-visibility.ts
+  | 'can_view_confidential_pay'
   | 'can_manage_stock_sop';
 
 export const ROLE_PERMISSIONS: Record<UserRole, Permission[] | ['*']> = {

@@ -11,6 +11,7 @@ import {
   type PayslipLineInput,
 } from '@/lib/hr/tax-reports';
 import { buildEmployeeNameMap } from '@/lib/hr/employee-name-map';
+import { refuseIfConfidentialInScope } from '@/lib/hr/pay-visibility';
 
 // The tax-report input plus the two register-only figures (net + total deduction), so a single
 // assembly pass feeds every report. The extra fields are ignored by buildPnd1/buildSso/buildCert50Twi.
@@ -97,7 +98,7 @@ export async function GET(request: NextRequest) {
   const runIds = (runs ?? []).map((r) => r.id as string);
 
   // Assemble the enriched payslip lines for those payruns.
-  const lines = await assembleLines(service, runIds, ceiling);
+  const lines = await assembleLines(service, runIds, ceiling, auth.userId);
 
   switch (type) {
     case 'pnd1': {
@@ -147,6 +148,7 @@ async function assembleLines(
   service: ReturnType<typeof createServiceClient>,
   runIds: string[],
   ceiling: number,
+  callerId: string,
 ): Promise<EnrichedSlip[]> {
   if (runIds.length === 0) return [];
 
@@ -180,6 +182,11 @@ async function assembleLines(
   // ภ.ง.ด.1 / สปส. / ใบ 50 ทวิ / ทะเบียนค่าจ้าง are filed with the revenue department, so they carry
   // the legal ชื่อจริง and nothing else — these rows used to go out under profiles.display_name,
   // i.e. the person's ชื่อเล่น. Deliberately NOT the "ชื่อจริง (ชื่อเล่น)" form used on screen.
+  // These are statutory filings — they must list EVERY employee, so there is no partial version
+  // to hand someone who may not see part of the payroll. Refuse rather than emit a short filing.
+  const refusal = await refuseIfConfidentialInScope(service, callerId, userIds);
+  if (refusal) throw new Error(refusal);
+
   const nameEntries = await buildEmployeeNameMap(service, userIds);
   const nameByUser = new Map<string, string>([...nameEntries].map(([id, n]) => [id, n.name]));
 

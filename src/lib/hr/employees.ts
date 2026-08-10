@@ -57,6 +57,8 @@ export interface EmployeeWritable {
   probation_end: string | null;
   birth_date: string | null;
   status: EmployeeStatus;
+  /** Gate on the pay figures — only can_view_confidential_pay holders may change it. */
+  pay_confidential: boolean;
   end_date: string | null;
   end_reason: string | null;
   notes: string | null;
@@ -216,6 +218,7 @@ export function pickEmployeeFields(
   setNum('break_hours', 0);
   setBool('ot_eligible');
   setBool('sso_enrolled');
+  setBool('pay_confidential');
   setBool('pvd_enrolled');
   setRange('pvd_employee_rate', 0, 0.15); // Thai PVD 2–15% (fraction); DB CHECK also enforces
   setRange('pvd_employer_rate', 0, 0.15);

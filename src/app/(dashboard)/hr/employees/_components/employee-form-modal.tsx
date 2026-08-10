@@ -48,6 +48,7 @@ interface ImportRow {
   pay_type: string | null;
   start_date: string | null;
   sso_enrolled: boolean | null;
+  pay_confidential?: boolean | null;
   tax_mode: string | null;
   bank_name: string | null;
   bank_account_no: string | null;
@@ -82,6 +83,7 @@ interface FormState {
   // tax & sso
   tax_mode: string;
   sso_enrolled: boolean;
+  pay_confidential: boolean;
   sso_no: string;
   tax_id: string;
   // provident fund (PVD) — full-time only; rate held as a whole-number percent string (e.g. "3")
@@ -146,6 +148,7 @@ function defaultForm(): FormState {
     standard_days_off: '8',
     tax_mode: 'progressive',
     sso_enrolled: true,
+    pay_confidential: false,
     sso_no: '',
     tax_id: '',
     pvd_enrolled: false,
@@ -403,6 +406,7 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
         standard_days_off: String((d.standard_days_off as number) ?? 8),
         tax_mode: (d.tax_mode as string) ?? 'progressive',
         sso_enrolled: Boolean(d.sso_enrolled),
+        pay_confidential: Boolean(d.pay_confidential),
         sso_no: (d.sso_no as string) ?? '',
         tax_id: (d.tax_id as string) ?? '',
         pvd_enrolled: Boolean(d.pvd_enrolled),
@@ -563,6 +567,7 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
       standard_days_off: Number(form.standard_days_off),
       tax_mode: effTaxMode,
       sso_enrolled: effSso,
+      pay_confidential: form.pay_confidential,
       pvd_enrolled: effPvdEnrolled,
       pvd_employee_rate: effPvdRate,
       pvd_employer_rate: effPvdEnrolled ? (Number(form.pvd_employer_rate) || 0) / 100 : 0,
@@ -1106,6 +1111,25 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
                 className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-60 dark:border-gray-600"
               />
               {t('ssoEnrolled')}
+            </label>
+          </div>
+          {/* Pay confidentiality (owner ask 2026-08-08). Hides the NUMBERS from HR users without
+              can_view_confidential_pay — the person stays fully manageable for leave/schedule. */}
+          <div className="col-span-2 rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2.5 dark:border-amber-800/60 dark:bg-amber-900/15">
+            <label className="flex cursor-pointer items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={form.pay_confidential}
+                onChange={(e) => update('pay_confidential', e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500 dark:border-gray-600"
+              />
+              <span>
+                <span className="font-medium text-amber-900 dark:text-amber-200">ปิดข้อมูลเงินเดือน (ลับ)</span>
+                <span className="block text-xs text-amber-700 dark:text-amber-300/80">
+                  ผู้ใช้ HR ที่ไม่มีสิทธิ์ &quot;ดูเงินเดือนลับ&quot; จะไม่เห็นค่าจ้าง/บัญชีธนาคาร/สลิปของคนนี้ —
+                  แต่ยังจัดตาราง อนุมัติลา และดูเวลาทำงานได้ตามปกติ
+                </span>
+              </span>
             </label>
           </div>
           <Input label={t('ssoNo')} value={form.sso_no} onChange={(e) => update('sso_no', e.target.value)} />
