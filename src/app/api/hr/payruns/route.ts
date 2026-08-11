@@ -11,6 +11,7 @@ import {
 } from '@/lib/hr/time-engine';
 import { classifyLeaveEffect, countLeaveDays, enumerateDates } from '@/lib/hr/leaves';
 import { computePayslip, type PayrollInput, type PayslipLine, type PayType, type TaxMode } from '@/lib/hr/payroll';
+import { refuseIfConfidentialInScope } from '@/lib/hr/pay-visibility';
 import { getHrPolicies } from '@/lib/hr/policy';
 import { isUniqueViolation } from '@/lib/hr/db-errors';
 import { businessDateBangkok } from '@/lib/utils/date';
@@ -50,6 +51,7 @@ function dateRange(from: string, to: string): string[] {
 }
 
 interface EmployeeFull {
+  payroll_group_id?: string | null;
   id: string;
   profile_id: string;
   rate_satang: number;
@@ -104,6 +106,10 @@ export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const companyId = typeof body.company_id === 'string' ? body.company_id : '';
   const storeId = typeof body.store_id === 'string' && body.store_id ? body.store_id : null;
+  // Which slice of the company's payroll this run covers. null = the default slice (employees with
+  // no group), which is what every existing run is — so omitting it keeps today's behaviour.
+  const payrollGroupId =
+    typeof body.payroll_group_id === 'string' && body.payroll_group_id ? body.payroll_group_id : null;
   const year = Number(body.period_year);
   const month = Number(body.period_month);
 
@@ -142,7 +148,7 @@ export async function POST(request: NextRequest) {
   const { data: empRows, error: empErr } = await service
     .from('hr_employees')
     .select(
-      'id, profile_id, rate_satang, pay_type, work_hours_per_day, ot_eligible, ot_hour_divisor, tax_mode, sso_enrolled, pvd_enrolled, pvd_employee_rate, status, start_date, end_date'
+      'id, profile_id, rate_satang, pay_type, work_hours_per_day, ot_eligible, ot_hour_divisor, tax_mode, sso_enrolled, pvd_enrolled, pvd_employee_rate, status, start_date, end_date, payroll_group_id'
     )
     .eq('company_id', companyId)
     // Active/probation staff, PLUS anyone who left on/after the cycle start so a mid-period
@@ -153,6 +159,28 @@ export async function POST(request: NextRequest) {
   let employees = ((empRows ?? []) as EmployeeFull[]).filter(
     (e) => (!e.start_date || e.start_date <= end) && (!e.end_date || e.end_date >= start)
   );
+
+  // Keep only this slice. Two runs for one company must not overlap, or someone is paid twice —
+  // so a named group takes exactly its members, and the default run takes exactly the ungrouped.
+  employees = employees.filter((e) =>
+    payrollGroupId ? e.payroll_group_id === payrollGroupId : !e.payroll_group_id
+  );
+
+  // A slice containing confidential pay belongs to whoever may see it. Refusing to BUILD the run
+  // (rather than building it and blanking the figures) is what makes the split worth having: the
+  // restricted HR user never holds a run whose numbers they cannot read, and the run they do hold
+  // is complete in itself — no partial totals, nothing to work out by subtraction.
+  const groupRefusal = await refuseIfConfidentialInScope(
+    service,
+    auth.userId,
+    employees.map((e) => e.profile_id)
+  );
+  if (groupRefusal) {
+    return NextResponse.json(
+      { error: 'งวดนี้มีพนักงานที่ปิดข้อมูลเงินเดือน — ต้องให้ผู้ที่มีสิทธิ์ดูข้อมูลเงินเดือนลับเป็นผู้ทำ' },
+      { status: 403 }
+    );
+  }
 
   if (storeId) {
     const { data: members, error: memErr } = await service
@@ -181,12 +209,13 @@ export async function POST(request: NextRequest) {
   // company-wide bucket is the store_id IS NULL row; a store-scoped run matches store_id.
   // Fresh each call (PostgREST builders are single-shot) so we can re-read after a race.
   const findExisting = () => {
-    const q = service
+    let q = service
       .from('hr_payruns')
       .select('id, status')
       .eq('company_id', companyId)
       .eq('period_year', year)
       .eq('period_month', month);
+    q = payrollGroupId ? q.eq('payroll_group_id', payrollGroupId) : q.is('payroll_group_id', null);
     return storeId ? q.eq('store_id', storeId) : q.is('store_id', null);
   };
   const finalizedResponse = () =>
@@ -201,6 +230,7 @@ export async function POST(request: NextRequest) {
       .insert({
         company_id: companyId,
         store_id: storeId,
+        payroll_group_id: payrollGroupId,
         period_year: year,
         period_month: month,
         cycle_start: start,
