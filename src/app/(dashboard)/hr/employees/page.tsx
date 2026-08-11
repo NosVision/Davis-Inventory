@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Plus, ArrowLeftRight, History, Printer, IdCard, Archive, UserRound, Link2, Users, Shield, UserCog, UserSearch, ShieldCheck, Banknote, Clock } from 'lucide-react';
+import { Plus, ArrowLeftRight, History, Printer, IdCard, Archive, UserRound, Link2, Users, Shield, UserCog, UserSearch, ShieldCheck, Banknote, Clock, Lock } from 'lucide-react';
 import { Button, Select, Badge, PageHeader, StatusBadge, Modal, ModalFooter, type StatusTone, toast } from '@/components/ui';
 import { DataTable, type Column } from '@/components/data/data-table';
 import { createClient } from '@/lib/supabase/client';
@@ -34,6 +34,10 @@ interface EmployeeRow extends Record<string, unknown> {
   break_hours: number | null;
   bank_name: string | null;
   bank_account_no: string | null;
+  /** Pay is confidential — figures hidden from HR users without can_view_confidential_pay. */
+  pay_confidential?: boolean | null;
+  /** Set by the API when THIS caller may not see the figures (they come back blanked). */
+  pay_hidden?: boolean | null;
   profile: { display_name?: string | null; username?: string | null; role?: string | null; active?: boolean | null } | null;
   position: { name?: string | null } | null;
   department: { name?: string | null } | null;
@@ -135,6 +139,7 @@ export default function EmployeesPage() {
   const [departmentId, setDepartmentId] = useState('');
   const [payType, setPayType] = useState('');
   const [status, setStatus] = useState('');
+  const [confidentialFilter, setConfidentialFilter] = useState<'all' | 'yes' | 'no'>('all');
 
   // filter option data
   const [stores, setStores] = useState<Ref[]>([]);
@@ -332,6 +337,15 @@ export default function EmployeesPage() {
     setStatus('');
   };
 
+  const confidentialCount = useMemo(() => rows.filter((e) => e.pay_confidential).length, [rows]);
+  const visibleRows = useMemo(
+    () =>
+      confidentialFilter === 'all'
+        ? rows
+        : rows.filter((e) => (confidentialFilter === 'yes' ? !!e.pay_confidential : !e.pay_confidential)),
+    [rows, confidentialFilter]
+  );
+
   const columns = useMemo<Column<EmployeeRow>[]>(
     () => [
       {
@@ -341,8 +355,22 @@ export default function EmployeesPage() {
         sortValue: (e) => employeeName(e),
         render: (e) => (
           <div className="min-w-0">
-            <div className="truncate font-medium text-gray-900 dark:text-white">
-              {employeeName(e)}
+            <div className="flex items-center gap-1.5">
+              <span className="truncate font-medium text-gray-900 dark:text-white">
+                {employeeName(e)}
+              </span>
+              {e.pay_confidential && (
+                <span
+                  title={
+                    e.pay_hidden
+                      ? 'ปิดข้อมูลเงินเดือน — คุณไม่มีสิทธิ์ดูตัวเลขของคนนี้'
+                      : 'ปิดข้อมูลเงินเดือน — ผู้ที่ไม่มีสิทธิ์จะไม่เห็นตัวเลขของคนนี้'
+                  }
+                  className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                >
+                  <Lock className="h-2.5 w-2.5" /> ลับ
+                </span>
+              )}
             </div>
             <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-gray-400">
               {e.employee_code && <span>{e.employee_code}</span>}
@@ -379,7 +407,14 @@ export default function EmployeesPage() {
         className: 'text-right',
         sortable: true,
         sortValue: (e) => e.rate_satang,
-        render: (e) => <span className="tabular-nums">{bahtFromSatang(e.rate_satang)}</span>,
+        render: (e) =>
+          e.pay_hidden ? (
+            <span className="text-gray-300 dark:text-gray-600" title="ปิดข้อมูลเงินเดือน">
+              ●●●●
+            </span>
+          ) : (
+            <span className="tabular-nums">{bahtFromSatang(e.rate_satang)}</span>
+          ),
       },
       {
         key: 'status',
@@ -524,7 +559,8 @@ export default function EmployeesPage() {
       <PageHeader
         title={t('title')}
         subtitle={
-          tab === 'employees' ? `${t('subtitle')} · ${t('count', { count })}`
+          tab === 'employees'
+            ? `${t('subtitle')} · ${t('count', { count })}${confidentialCount > 0 ? ` · ปิดข้อมูลเงินเดือน ${confidentialCount} คน` : ''}`
           : tab === 'accounts' ? t('tabAccountsSubtitle')
           : tab === 'unclaimed' ? 'รายชื่อจากไฟล์เงินเดือนที่ยังไม่ได้ผูกกับบัญชีผู้ใช้ — ยังไม่เข้างวดเงินเดือน'
           : tab === 'managers' ? 'ใครดูแลสาขาไหน — หัวหน้าสาขาอนุมัติใบลาและจัดตารางของสาขาตัวเองได้'
@@ -610,6 +646,17 @@ export default function EmployeesPage() {
         <Select value={payType} onChange={(e) => setPayType(e.target.value)} placeholder={t('filter.payType')} options={[{ value: '', label: t('filter.all') }, ...PAY_TYPES.map((p) => ({ value: p, label: t(`payType.${p}`) }))]} />
         {/* สถานะ sits beside ประเภทการจ่าย in the same grid row on wide screens (owner ask 2026-07-27) */}
         <Select value={status} onChange={(e) => setStatus(e.target.value)} placeholder={t('filter.status')} options={[{ value: '', label: t('filter.all') }, ...STATUSES.map((s) => ({ value: s, label: t(`status.${s}`) }))]} />
+        {/* HR could set the confidential flag but had no way to see who carried it without opening
+            each record. Filtered client-side: the flag rides on every row already. */}
+        <Select
+          value={confidentialFilter}
+          onChange={(e) => setConfidentialFilter(e.target.value as 'all' | 'yes' | 'no')}
+          options={[
+            { value: 'all', label: 'ข้อมูลเงินเดือน: ทั้งหมด' },
+            { value: 'yes', label: `ปิดเป็นความลับ (${confidentialCount})` },
+            { value: 'no', label: 'เปิดปกติ' },
+          ]}
+        />
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="ghost" size="sm" onClick={clearFilters}>
@@ -619,7 +666,7 @@ export default function EmployeesPage() {
 
       <DataTable
         columns={columns}
-        data={rows}
+        data={visibleRows}
         keyExtractor={(e) => e.id}
         emptyMessage={t('empty')}
         isLoading={loading}
