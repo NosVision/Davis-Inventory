@@ -156,6 +156,19 @@ export async function GET(request: NextRequest) {
     }
     userIds = [userFilter];
   }
+  // Drop system accounts. The store branch above takes every user_stores member, and a print
+  // server IS a store member (that is how it authenticates) — so printers were appearing as rows
+  // in the attendance file, with no punches and nothing to explain (owner ask 2026-08-11).
+  if (userIds.length > 0) {
+    const { data: systemProfiles } = await service
+      .from('profiles')
+      .select('id')
+      .eq('is_system', true)
+      .in('id', userIds);
+    const systemIds = new Set((systemProfiles ?? []).map((r) => r.id as string));
+    if (systemIds.size) userIds = userIds.filter((id) => !systemIds.has(id));
+  }
+
   if (userIds.length === 0) return NextResponse.json({ employees: [], from, to });
 
   const [profilesRes, employeesRes, scheduleRes, attendanceRes, overridesRes, leavesRes] = await Promise.all([

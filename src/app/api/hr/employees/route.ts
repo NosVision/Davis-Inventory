@@ -153,12 +153,14 @@ export async function GET(request: NextRequest) {
       }, null)
     : null;
 
-  // Printer system accounts (printer-{store_code}) must never show as employees, even if one
-  // was accidentally linked to an hr_employees row (owner ask 2026-07-27).
+  // System accounts (print servers, test fixtures) are not people and must never show as
+  // employees, even if one was accidentally linked to an hr_employees row. Keyed on
+  // profiles.is_system rather than a username prefix, which only ever caught printers and only
+  // where someone remembered to write the filter (2026-08-11).
   const { data: printerProfiles } = await service
     .from('profiles')
     .select('id')
-    .ilike('username', 'printer-%');
+    .eq('is_system', true);
   const printerIds = (printerProfiles ?? []).map((r) => r.id as string);
 
   let query = service.from('hr_employees').select(LIST_SELECT, { count: 'exact' });

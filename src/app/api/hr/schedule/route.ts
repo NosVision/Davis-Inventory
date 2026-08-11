@@ -17,6 +17,7 @@ interface ProfileRow {
   id: string;
   username: string | null;
   display_name: string | null;
+  is_system: boolean | null;
 }
 interface EmployeeRow {
   profile_id: string;
@@ -153,7 +154,7 @@ export async function GET(request: NextRequest) {
 
   const [profilesRes, templatesRes, entriesRes, companiesRes] = await Promise.all([
     userIds.length
-      ? service.from('profiles').select('id, username, display_name').in('id', userIds)
+      ? service.from('profiles').select('id, username, display_name, is_system').in('id', userIds)
       : Promise.resolve({ data: [], error: null }),
     tplQuery,
     entryQuery,
@@ -175,9 +176,10 @@ export async function GET(request: NextRequest) {
   // start), mirroring the payroll leaver-window, then drops off in later months. This
   // keeps a just-offboarded person's final-month roster viewable (client ask 2026-07-22).
   const staff = profiles
-    // Printer system accounts (printer-{store_code}) are store members for the print server,
-    // never people — keep them off the roster (owner ask 2026-07-27).
-    .filter((p) => !(p.username ?? '').startsWith('printer-'))
+    // System accounts (print servers, test fixtures) are store members so the print server can
+    // authenticate — they are not people, so they stay off the roster. profiles.is_system now,
+    // rather than sniffing the username (2026-08-11).
+    .filter((p) => !p.is_system)
     .filter((p) => {
       const e = empByProfile.get(p.id);
       if (!e) return scope.kind === 'store'; // company scope is employee-driven — no record, no row
