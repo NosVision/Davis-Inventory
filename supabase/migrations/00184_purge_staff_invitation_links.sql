@@ -1,0 +1,17 @@
+-- 00184_purge_staff_invitation_links.sql
+-- Applied to production 2026-08-11.
+--
+-- Owner ask: delete every pre-assigned-role invite link.
+--
+-- 13 links, all still active, 215 registrations between them — that is largely how the 101
+-- accounts swept in 00183 came to exist. Anyone holding the URL self-registered straight into a
+-- role, with no HR step and nothing tying the new account to a payroll record. Removing them
+-- closes that door; HR issues a fresh link from /hr/employees?tab=links when one is needed.
+--
+-- Nothing references staff_invitations (no inbound foreign keys), and the rows record only a
+-- used_count — never WHO used them — so deleting loses no attribution that existed.
+--
+-- NOTE: this is the "ลิงก์เชิญ (กำหนดสิทธิ์ล่วงหน้า)" table only. hr_registration_links — the
+-- self-registration link that routes new people through HR identity-claim review instead of
+-- granting a role outright — is deliberately left alone.
+delete from public.staff_invitations;

@@ -16,6 +16,7 @@ import {
   ModalFooter,
   Select,
   EmptyState,
+  useConfirm,
   toast,
 } from '@/components/ui';
 import { ROLE_LABELS } from '@/types/roles';
@@ -98,6 +99,7 @@ export function UsersManager({
   initialShowClaims?: boolean;
 }) {
   const { user: currentUser } = useAuthStore();
+  const { confirm, dialog } = useConfirm();
   const t = useTranslations('users');
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [stores, setStores] = useState<StoreOption[]>([]);
@@ -119,6 +121,8 @@ export function UsersManager({
   // employees tab showed the real ชื่อ-นามสกุล, and 114 of 124 linked accounts differed.
   // Both now lead with full_name; display_name drops to the secondary line.
   const [fullNameByProfile, setFullNameByProfile] = useState<Map<string, string>>(new Map());
+  // profile_id → still an active employee (so still on the payroll) — see toggleUserActive.
+  const [stillEmployed, setStillEmployed] = useState<Set<string>>(new Set());
   const [editEmployeeId, setEditEmployeeId] = useState<string | null>(null);
   // คิว "คำขอยืนยันตัวตน" (hr_pending_identities status=claimed). The 4th summary card
   // switches this tab into the identity-claims workflow (merged from /hr/identity-claims,
@@ -153,13 +157,22 @@ export function UsersManager({
       // page's audience) through hr_employees RLS. Drives the "ยืนยันตัวตนแล้ว" indicator +
       // filter (same wording as the ยืนยันตัวตนพนักงาน / identity-claims flow that creates
       // most of these links).
-      supabase.from('hr_employees').select('id, profile_id, full_name'),
+      supabase.from('hr_employees').select('id, profile_id, full_name, status, end_date'),
     ]);
 
     if (data) setUsers(data as unknown as UserProfile[]);
-    const empRows = (emps ?? []) as { id: string; profile_id: string; full_name: string | null }[];
+    const empRows = (emps ?? []) as { id: string; profile_id: string; full_name: string | null; status: string | null; end_date: string | null }[];
     setLinkedIds(new Set(empRows.map((e) => e.profile_id)));
     setEmployeeIdByProfile(new Map(empRows.map((e) => [e.profile_id, e.id])));
+    // Still employed = payroll will still pay them, whatever the login says. Drives the warning
+    // when HR switches an account off (owner ask 2026-08-11).
+    setStillEmployed(
+      new Set(
+        empRows
+          .filter((e) => (e.status === 'active' || e.status === 'probation') && !e.end_date)
+          .map((e) => e.profile_id)
+      )
+    );
     setFullNameByProfile(
       new Map(
         empRows
@@ -252,6 +265,22 @@ export function UsersManager({
   };
 
   const toggleUserActive = async (userId: string, currentActive: boolean) => {
+    // Turning the login off does NOT take someone off the payroll: profiles.active answers "can
+    // they open the app", hr_employees.status answers "are they still employed". They have to stay
+    // separate — someone who resigns mid-month is still owed that month — but HR read one as the
+    // other and was surprised to find a deactivated account still in the payrun. Say so here,
+    // while they are making the decision.
+    if (currentActive && stillEmployed.has(userId)) {
+      const ok = await confirm({
+        title: 'ปิดบัญชีนี้ — แต่ยังต้องจ่ายเงินเดือนอยู่',
+        message:
+          'คนนี้ยังมีสถานะเป็นพนักงาน (ทำงานอยู่/ทดลองงาน) จึงยังอยู่ในงวดเงินเดือนต่อไป — ปิดบัญชีแค่ทำให้เข้าแอปไม่ได้เท่านั้น ' +
+          'ถ้าเขาลาออกหรือถูกเลิกจ้างแล้ว ให้ไปตั้งสถานะและ “วันสิ้นสุดการจ้าง” ที่แท็บพนักงาน หรือใช้เมนูพ้นสภาพ (offboarding) จึงจะหลุดจากงวดเงินเดือน',
+        confirmLabel: 'ปิดบัญชีต่อไป',
+        tone: 'danger',
+      });
+      if (!ok) return;
+    }
     try {
       const res = await fetch(`/api/users/${userId}`, {
         method: 'PATCH',
@@ -972,6 +1001,7 @@ export function UsersManager({
           </div>
         )}
       </Modal>
+      {dialog}
     </div>
   );
 }
