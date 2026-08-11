@@ -33,6 +33,8 @@ export interface EmployeeWritable {
   position_id: string | null;
   department_id: string | null;
   supervisor_id: string | null;
+  /** Which payroll run this person belongs to; null = the default (ungrouped) run. */
+  payroll_group_id: string | null;
   employee_code: string | null;
   rate_satang: number;
   pay_type: PayType;
@@ -222,7 +224,7 @@ export function pickEmployeeFields(
   setBool('pvd_enrolled');
   setRange('pvd_employee_rate', 0, 0.15); // Thai PVD 2–15% (fraction); DB CHECK also enforces
   setRange('pvd_employer_rate', 0, 0.15);
-  ['company_id', 'position_id', 'department_id', 'supervisor_id'].forEach(setStrOrNull);
+  ['company_id', 'position_id', 'department_id', 'supervisor_id', 'payroll_group_id'].forEach(setStrOrNull);
   ['start_date', 'probation_end', 'end_date', 'birth_date'].forEach(setDate);
   ['employee_code', 'bank_name', 'bank_account_no', 'bank_account_name', 'sso_no', 'tax_id',
     'end_reason', 'notes'].forEach(setStrOrNull);

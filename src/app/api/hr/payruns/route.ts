@@ -693,7 +693,7 @@ export async function GET(request: NextRequest) {
   const service = createServiceClient();
   let q = service
     .from('hr_payruns')
-    .select('id, company_id, store_id, period_year, period_month, cycle_start, cycle_end, pay_date, status, finalized_at, created_at')
+    .select('id, company_id, store_id, payroll_group_id, period_year, period_month, cycle_start, cycle_end, pay_date, status, finalized_at, created_at, payroll_group:hr_payroll_groups(id, name)')
     .order('period_year', { ascending: false })
     .order('period_month', { ascending: false });
   if (companyId) q = q.eq('company_id', companyId);

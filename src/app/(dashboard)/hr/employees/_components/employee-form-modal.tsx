@@ -32,6 +32,8 @@ interface EmployeeFormModalProps {
 interface RefOpt {
   id: string;
   name: string;
+  /** Set for payroll groups, which are per-company and must not cross entities. */
+  companyId?: string | null;
 }
 
 // A matched row from the imported roster (hr_pending_identities) used to prefill onboarding.
@@ -65,6 +67,7 @@ interface FormState {
   company_id: string;
   position_id: string;
   department_id: string;
+  payroll_group_id: string;
   supervisor_id: string;
   employee_code: string;
   start_date: string;
@@ -132,6 +135,7 @@ function defaultForm(): FormState {
     company_id: '',
     position_id: '',
     department_id: '',
+    payroll_group_id: '',
     supervisor_id: '',
     employee_code: '',
     start_date: '',
@@ -224,6 +228,8 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
   const [companies, setCompanies] = useState<RefOpt[]>([]);
   const [positions, setPositions] = useState<RefOpt[]>([]);
   const [departments, setDepartments] = useState<RefOpt[]>([]);
+  // Payroll slices for the selected company — which run this person's salary lands in.
+  const [payrollGroups, setPayrollGroups] = useState<RefOpt[]>([]);
   const [stores, setStores] = useState<RefOpt[]>([]);
   const [supervisors, setSupervisors] = useState<RefOpt[]>([]);
 
@@ -234,16 +240,24 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
   useEffect(() => {
     const supabase = createClient();
     (async () => {
-      const [co, pos, dep, st, sup] = await Promise.all([
+      const [co, pos, dep, pg, st, sup] = await Promise.all([
         supabase.from('hr_companies').select('id,name').eq('active', true),
         supabase.from('hr_positions').select('id,name').eq('active', true).order('sort_order'),
         supabase.from('hr_departments').select('id,name').eq('active', true),
+        supabase.from('hr_payroll_groups').select('id,name,company_id'),
         supabase.from('stores').select('id,store_name').eq('active', true),
         supabase.from('profiles').select('id,display_name,username').eq('active', true),
       ]);
       setCompanies((co.data ?? []).map((r) => ({ id: r.id as string, name: r.name as string })));
       setPositions((pos.data ?? []).map((r) => ({ id: r.id as string, name: r.name as string })));
       setDepartments((dep.data ?? []).map((r) => ({ id: r.id as string, name: r.name as string })));
+      setPayrollGroups(
+        (pg.data ?? []).map((r) => ({
+          id: r.id as string,
+          name: r.name as string,
+          companyId: (r.company_id as string) ?? null,
+        }))
+      );
       setStores((st.data ?? []).map((r) => ({ id: r.id as string, name: r.store_name as string })));
       setSupervisors(
         (sup.data ?? []).map((r) => ({
@@ -391,6 +405,7 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
         company_id: (d.company_id as string) ?? '',
         position_id: (d.position_id as string) ?? '',
         department_id: (d.department_id as string) ?? '',
+        payroll_group_id: (d.payroll_group_id as string) ?? '',
         supervisor_id: (d.supervisor_id as string) ?? '',
         employee_code: (d.employee_code as string) ?? '',
         start_date: (d.start_date as string) ?? '',
@@ -558,6 +573,7 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
       display_name: form.display_name.trim() || null,
       position_id: form.position_id || null,
       department_id: form.department_id || null,
+      payroll_group_id: form.payroll_group_id || null,
       supervisor_id: form.supervisor_id || null,
       employee_code: form.employee_code.trim() || null,
       pay_type: form.pay_type,
@@ -1002,6 +1018,20 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
             value={form.department_id}
             onChange={(e) => update('department_id', e.target.value)}
             options={refOptions(departments)}
+          />
+          {/* Which payroll RUN this person belongs to — a different question from whether their
+              pay is confidential. Scoped to the chosen company so a group from another entity
+              can never be picked. */}
+          <Select
+            label="กลุ่มเงินเดือน"
+            value={form.payroll_group_id}
+            onChange={(e) => update('payroll_group_id', e.target.value)}
+            options={[
+              { value: '', label: 'ยังไม่จัดกลุ่ม (งวดปกติ)' },
+              ...payrollGroups
+                .filter((g) => !form.company_id || g.companyId === form.company_id)
+                .map((g) => ({ value: g.id, label: g.name })),
+            ]}
           />
           <Select
             label={t('supervisor')}
