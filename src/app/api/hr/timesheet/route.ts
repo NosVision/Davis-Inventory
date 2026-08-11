@@ -126,29 +126,39 @@ export async function GET(request: NextRequest) {
   // Staff of the store (optionally a single employee) — or, for the no-store bucket, every active
   // employee with no user_stores row anywhere (plus leavers whose last working day falls in or
   // after this window, so a just-offboarded person's final period stays viewable).
+  // Who counts as staff for this window, in BOTH buckets: someone currently employed, or a leaver
+  // whose last working day falls in or after it (so a just-offboarded person's final period stays
+  // viewable). Matches the payroll rule — including probation, which the no-store bucket used to
+  // miss — so the timesheet and the payrun show the same people.
+  //
+  // The store bucket used to take every user_stores row with no filter at all, which is why the
+  // 101 logins deactivated on 2026-08-11 still appeared here after they had vanished from payroll:
+  // deactivating a profile does not remove its store membership, and most of them never had an
+  // employee record to begin with (owner report).
+  const { data: eligibleEmps, error: eligErr } = await service
+    .from('hr_employees')
+    .select('profile_id')
+    .or(`status.in.(active,probation),end_date.gte.${from}`);
+  if (eligErr) return NextResponse.json({ error: 'Failed to load staff' }, { status: 500 });
+  const eligible = new Set(
+    (eligibleEmps ?? []).map((r) => r.profile_id as string | null).filter((id): id is string => !!id)
+  );
+
   let userIds: string[];
   if (noStore) {
-    const [empRes, linkRes] = await Promise.all([
-      service
-        .from('hr_employees')
-        .select('profile_id')
-        .or(`status.eq.active,end_date.gte.${from}`),
-      service.from('user_stores').select('user_id'),
-    ]);
-    if (empRes.error || linkRes.error) {
-      return NextResponse.json({ error: 'Failed to load staff' }, { status: 500 });
-    }
-    const attached = new Set((linkRes.data ?? []).map((r) => r.user_id as string));
-    userIds = (empRes.data ?? [])
-      .map((r) => r.profile_id as string | null)
-      .filter((id): id is string => !!id && !attached.has(id));
+    const { data: links, error: linkErr } = await service.from('user_stores').select('user_id');
+    if (linkErr) return NextResponse.json({ error: 'Failed to load staff' }, { status: 500 });
+    const attached = new Set((links ?? []).map((r) => r.user_id as string));
+    userIds = [...eligible].filter((id) => !attached.has(id));
   } else {
     const { data: members, error: membersErr } = await service
       .from('user_stores')
       .select('user_id')
       .eq('store_id', storeId);
     if (membersErr) return NextResponse.json({ error: 'Failed to load staff' }, { status: 500 });
-    userIds = (members ?? []).map((r: { user_id: string }) => r.user_id);
+    userIds = (members ?? [])
+      .map((r: { user_id: string }) => r.user_id)
+      .filter((id) => eligible.has(id));
   }
   if (userFilter) {
     if (!userIds.includes(userFilter)) {

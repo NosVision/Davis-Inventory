@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { Search, Loader2 } from 'lucide-react';
-import { Modal, Input, Select, Button, Textarea, toast } from '@/components/ui';
+import { Modal, Input, Select, Button, Textarea, useConfirm, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { createClient } from '@/lib/supabase/client';
 import { ROLE_LABELS } from '@/types/roles';
@@ -177,6 +177,7 @@ function capitalize(s: string): string {
 }
 
 export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: EmployeeFormModalProps) {
+  const { confirm, dialog } = useConfirm();
   const t = useTranslations('hr.employees.form');
   const tp = useTranslations('hr.employees');
   const tc = useTranslations('common');
@@ -646,12 +647,36 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
 
     setSubmitting(true);
     try {
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const json = await res.json().catch(() => ({}));
+      const send = (allowDuplicate = false) =>
+        fetch(allowDuplicate ? `${url}${url.includes('?') ? '&' : '?'}allow_duplicate=1` : url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+
+      let res = await send();
+      let json = await res.json().catch(() => ({}));
+
+      // The register already holds someone with this name or bank account. Not blocked — two
+      // people really can share a name — but HR has to look at it, because a repeated bank account
+      // means the same account gets paid twice.
+      if (res.status === 409 && json?.duplicate) {
+        const ok = await confirm({
+          title: 'พบพนักงานที่ซ้ำกัน',
+          message: `${typeof json.message === 'string' ? json.message : ''}
+
+ถ้าเป็นคนเดียวกัน ให้ยกเลิกแล้วไปแก้ที่ทะเบียนเดิมแทน — สร้างซ้ำจะได้สลิปและรายการโอนเงินคนละใบ`,
+          confirmLabel: 'ยืนยัน คนละคนกัน',
+          tone: 'danger',
+        });
+        if (!ok) {
+          setSubmitting(false);
+          return;
+        }
+        res = await send(true);
+        json = await res.json().catch(() => ({}));
+      }
+
       if (!res.ok) {
         toast({ type: 'error', title: t('saveFailed'), message: typeof json.error === 'string' ? json.error : undefined });
         setSubmitting(false);
@@ -1298,6 +1323,7 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
           </div>
         </div>
       )}
+      {dialog}
     </Modal>
   );
 }

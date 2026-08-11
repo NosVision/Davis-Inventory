@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManager, resolveHrScope } from '@/lib/hr/route-auth';
 import { callerCanViewConfidentialPay, redactEmployeePay } from '@/lib/hr/pay-visibility';
+import { findDuplicateEmployees, describeDuplicates } from '@/lib/hr/employee-duplicates';
 import { logHrAudit } from '@/lib/hr/audit';
 import {
   pickEmployeeFields,
@@ -211,6 +212,7 @@ export async function POST(request: NextRequest) {
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  const allowDuplicate = request.nextUrl.searchParams.get('allow_duplicate') === '1';
 
   // ── Link-existing mode ──────────────────────────────────────────────────────
   const linkProfileId = typeof body.link_profile_id === 'string' ? body.link_profile_id : '';
@@ -246,6 +248,22 @@ export async function POST(request: NextRequest) {
       .eq('profile_id', linkProfileId)
       .maybeSingle();
     if (dup) return NextResponse.json({ error: 'This user already has an employee record' }, { status: 409 });
+
+    // Someone with this name or bank account may already be in the register. Reported, not
+    // blocked — HR judges whether it is a genuine namesake or a second record for one person.
+    // `?allow_duplicate=1` is the deliberate override.
+    if (!allowDuplicate) {
+      const dupes = await findDuplicateEmployees(service, {
+        full_name: fields0.full_name as string | null,
+        bank_account_no: fields0.bank_account_no as string | null,
+      });
+      if (dupes.length) {
+        return NextResponse.json(
+          { error: 'พบพนักงานที่ซ้ำกัน', duplicate: true, matches: dupes, message: describeDuplicates(dupes) },
+          { status: 409 }
+        );
+      }
+    }
 
     const { data: emp, error: empErr } = await service
       .from('hr_employees')
@@ -357,7 +375,24 @@ export async function POST(request: NextRequest) {
   const docErr = validatePartTimeDocs(fields.pay_type as string, docs);
   if (docErr) return NextResponse.json({ error: docErr }, { status: 400 });
 
+
   const service = createServiceClient();
+  // Checked BEFORE the auth user is created — a duplicate rejected after that point would leave an
+  // orphaned login behind. Reported, not blocked: HR judges whether it is a genuine namesake or a
+  // second record for one person. `?allow_duplicate=1` is the deliberate override.
+  if (!allowDuplicate) {
+    const dupes = await findDuplicateEmployees(service, {
+      full_name: fields.full_name as string | null,
+      bank_account_no: fields.bank_account_no as string | null,
+    });
+    if (dupes.length) {
+      return NextResponse.json(
+        { error: 'พบพนักงานที่ซ้ำกัน', duplicate: true, matches: dupes, message: describeDuplicates(dupes) },
+        { status: 409 }
+      );
+    }
+  }
+
   const email = `${username}@stockmanager.app`;
   // HR may supply the initial password (e.g. a simple default to hand over); otherwise a random
   // one is minted. Either way must_change_password forces a reset on first login.
