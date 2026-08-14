@@ -424,6 +424,7 @@
       "expired": "หมดอายุแล้ว",
       "expiresTomorrow": "หมดอายุพรุ่งนี้",
       "expiresInDays": "อีก {days} วัน",
+      "lastCall": "วันสุดท้าย — เบิกได้ถึงร้านปิด",
       "store": "ร้าน",
       "depositDate": "วันที่ฝาก",
       "pendingWithdrawal": "กำลังรอเบิก",

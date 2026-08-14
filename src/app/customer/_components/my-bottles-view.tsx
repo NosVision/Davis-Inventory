@@ -6,6 +6,7 @@ import { useTranslations, useLocale } from 'next-intl';
 import { useCustomerAuth } from './customer-provider';
 import { createClient } from '@/lib/supabase/client';
 import { formatNumber, daysUntil } from '@/lib/utils/format';
+import { depositExpiryDisplay } from '@/lib/deposit/expiry-display';
 import {
   Search,
   Wine,
@@ -616,9 +617,14 @@ export function MyBottlesView() {
             const isExpired = deposit.status === 'expired';
             const canWithdraw =
               deposit.status === 'in_store' && !isRequesting;
-            const days = deposit.expiryDate
-              ? daysUntil(deposit.expiryDate)
-              : null;
+            // `status` is the authority on whether the bottle is dead — the same source the
+            // withdraw button uses. The raw date only drives the countdown, so the two can't
+            // disagree the way they used to on the final night. See lib/deposit/expiry-display.
+            const expiry = depositExpiryDisplay({
+              expiry_date: deposit.expiryDate,
+              status: deposit.status,
+            });
+            const days = expiry.days;
             const daysColor = getDaysLeftColor(deposit.expiryDate);
 
             return (
@@ -724,13 +730,17 @@ export function MyBottlesView() {
                       className="text-[10px] font-bold"
                       style={{ color: daysColor }}
                     >
-                      {days === null
-                        ? t('noExpiry')
-                        : days <= 0
-                          ? t('expired')
-                          : days === 1
-                            ? t('expiresTomorrow')
-                            : t('expiresInDays', { days })}
+                      {/* 'expired' is checked first: a bottle the cron has retired reads as
+                          expired even if it somehow carries no expiry date. */}
+                      {expiry.state === 'expired'
+                        ? t('expired')
+                        : expiry.state === 'none' || days === null
+                          ? t('noExpiry')
+                          : expiry.state === 'last_call'
+                            ? t('lastCall')
+                            : days === 1
+                              ? t('expiresTomorrow')
+                              : t('expiresInDays', { days })}
                     </span>
                   </div>
                 </div>

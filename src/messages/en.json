@@ -424,6 +424,7 @@
       "expired": "Expired",
       "expiresTomorrow": "Expires tomorrow",
       "expiresInDays": "{days} days left",
+      "lastCall": "Last call — until closing time",
       "store": "Store",
       "depositDate": "Deposit date",
       "pendingWithdrawal": "Withdrawal pending",
