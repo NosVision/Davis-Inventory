@@ -37,7 +37,9 @@ function assignmentOf(cell: CellRow | undefined): string | null {
 export async function GET(request: NextRequest) {
   const sp = request.nextUrl.searchParams;
   const storeId = sp.get('store_id') ?? '';
-  const auth = await requireStoreManager(storeId);
+  // A day-off swap is a roster change, so it belongs to whoever builds the roster — the captain
+  // as much as the manager (client request 2026-08-14).
+  const auth = await requireStoreManager(storeId, 'schedule');
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const status = sp.get('status');

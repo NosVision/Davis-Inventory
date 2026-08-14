@@ -71,7 +71,7 @@ export default function HrSwapsPage() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch('/api/hr/manageable-stores');
+        const res = await fetch('/api/hr/manageable-stores?capability=schedule');
         const json = await res.json();
         const list = (json.data ?? []) as StoreOpt[];
         setStores(list);

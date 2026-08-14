@@ -33,10 +33,14 @@ export default async function ApprovalsPage() {
   // Service client: hr_manager_scopes is readable by the owner of the row under RLS, but the
   // store join is not — and HR needs the whole list.
   const service = createServiceClient();
+  // can_approve only: a scope row is two grants now, and a captain holds the roster half without
+  // a say over leave (client request 2026-08-14). Listing their store here would offer them a
+  // leave queue whose every button 403s.
   const { data: scopes } = await service
     .from('hr_manager_scopes')
     .select('store_id, store:stores(id, store_name)')
-    .eq('user_id', user.id);
+    .eq('user_id', user.id)
+    .eq('can_approve', true);
 
   const stores = (scopes ?? [])
     .map((s) => (Array.isArray(s.store) ? s.store[0] : s.store) as { id: string; store_name: string } | null)

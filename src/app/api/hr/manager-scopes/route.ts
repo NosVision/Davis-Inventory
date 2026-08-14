@@ -25,7 +25,7 @@ export async function GET() {
   const service = createServiceClient();
   const [storesRes, scopesRes, candidatesRes] = await Promise.all([
     service.from('stores').select('id, store_code, store_name').eq('active', true).order('store_name'),
-    service.from(TABLE).select('id, user_id, store_id, created_at'),
+    service.from(TABLE).select('id, user_id, store_id, can_schedule, can_approve, created_at'),
     // Anyone who could plausibly run a venue. Deliberately not restricted to role='manager' —
     // venues are also run by head_bar/hq in this business, and HR should not have to change
     // someone's system role just to let them approve their own team's leave.
@@ -41,7 +41,13 @@ export async function GET() {
     return NextResponse.json({ error: 'Failed to load manager scopes' }, { status: 500 });
   }
 
-  const scopes = (scopesRes.data ?? []) as { id: string; user_id: string; store_id: string }[];
+  const scopes = (scopesRes.data ?? []) as {
+    id: string;
+    user_id: string;
+    store_id: string;
+    can_schedule: boolean;
+    can_approve: boolean;
+  }[];
   const candidates = (candidatesRes.data ?? []) as {
     id: string;
     username: string;
@@ -69,6 +75,8 @@ export async function GET() {
       user_id: s.user_id,
       username: c?.username ?? null,
       role: c?.role ?? null,
+      can_schedule: s.can_schedule,
+      can_approve: s.can_approve,
       ...decorate(s.user_id, { username: c?.username ?? '—', display_name: c?.display_name ?? null }),
     });
     byStore.set(s.store_id, list);
@@ -102,6 +110,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'user_id and store_id are required' }, { status: 400 });
   }
 
+  // Which half of the venue authority this grant carries. Omitting both keeps the original
+  // behaviour — a full manager — so anything calling this before the split still works.
+  const canSchedule = body.can_schedule === undefined ? true : Boolean(body.can_schedule);
+  const canApprove = body.can_approve === undefined ? true : Boolean(body.can_approve);
+  if (!canSchedule && !canApprove) {
+    return NextResponse.json(
+      { error: 'ต้องเลือกอย่างน้อย 1 อย่าง — จัดตารางงาน หรือ อนุมัติ' },
+      { status: 400 }
+    );
+  }
+
   const service = createServiceClient();
   const { data: target } = await service
     .from('profiles')
@@ -116,7 +135,13 @@ export async function POST(request: NextRequest) {
 
   const { data, error } = await service
     .from(TABLE)
-    .insert({ user_id: userId, store_id: storeId, created_by: auth.userId })
+    .insert({
+      user_id: userId,
+      store_id: storeId,
+      can_schedule: canSchedule,
+      can_approve: canApprove,
+      created_by: auth.userId,
+    })
     .select('id')
     .single();
   if (error) {
@@ -132,8 +157,10 @@ export async function POST(request: NextRequest) {
     table: TABLE,
     recordId: data.id,
     before: null,
-    after: { user_id: userId, store_id: storeId },
-    reason: `Granted venue management (schedule + leave approval) over store ${storeId} to @${target.username}`,
+    after: { user_id: userId, store_id: storeId, can_schedule: canSchedule, can_approve: canApprove },
+    reason:
+      `Granted venue authority over store ${storeId} to @${target.username} — ` +
+      `${canSchedule ? 'schedule' : ''}${canSchedule && canApprove ? ' + ' : ''}${canApprove ? 'approvals' : ''}`,
   });
 
   return NextResponse.json({ data }, { status: 201 });

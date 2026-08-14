@@ -27,7 +27,8 @@ export async function POST(
   if (loadErr) return NextResponse.json({ error: 'Failed to load swap' }, { status: 500 });
   if (!swap) return NextResponse.json({ error: 'Swap not found' }, { status: 404 });
 
-  const auth = await requireStoreManager(swap.store_id as string);
+  // Deciding a swap rewrites two roster days — roster authority, not approval authority.
+  const auth = await requireStoreManager(swap.store_id as string, 'schedule');
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   if ((swap.status as string) !== 'pending') {

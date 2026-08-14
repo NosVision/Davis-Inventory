@@ -23,6 +23,10 @@ interface Manager {
   role: string | null;
   name: string;
   nickname: string | null;
+  /** The roster half: shifts, days off, day-off swaps. */
+  can_schedule: boolean;
+  /** The approval half: leave, OT, attendance corrections, claims, geofence. */
+  can_approve: boolean;
 }
 interface StoreRow {
   id: string;
@@ -46,6 +50,9 @@ export function ManagerScopesManager() {
   const [addFor, setAddFor] = useState<StoreRow | null>(null);
   const [search, setSearch] = useState('');
   const [saving, setSaving] = useState(false);
+  // Which authority the next grant carries. Two named kinds rather than raw checkboxes, because
+  // HR is picking a job, not composing permissions (client request 2026-08-14).
+  const [grantKind, setGrantKind] = useState<'manager' | 'captain'>('manager');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -82,11 +89,19 @@ export function ManagerScopesManager() {
       const res = await fetch('/api/hr/manager-scopes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: userId, store_id: addFor.id }),
+        body: JSON.stringify({
+          user_id: userId,
+          store_id: addFor.id,
+          can_schedule: true,
+          can_approve: grantKind === 'manager',
+        }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || 'เพิ่มไม่สำเร็จ');
-      toast({ type: 'success', title: `ตั้งเป็นหัวหน้าสาขา ${addFor.store_name} แล้ว` });
+      toast({
+        type: 'success',
+        title: `ตั้งเป็น${grantKind === 'manager' ? 'หัวหน้าสาขา' : 'กัปตัน'} ${addFor.store_name} แล้ว`,
+      });
       setAddFor(null);
       await load();
     } catch (e) {
@@ -122,7 +137,10 @@ export function ManagerScopesManager() {
     );
   }
 
-  const storesWithout = stores.filter((s) => s.managers.length === 0);
+  // "Has someone" is not the question — "has someone who can approve" is. A store with a captain
+  // and no manager still sends every leave request to HR, and a warning that counted heads would
+  // call that store covered.
+  const storesWithout = stores.filter((s) => !s.managers.some((m) => m.can_approve));
 
   return (
     <div className="space-y-4">
@@ -139,8 +157,8 @@ export function ManagerScopesManager() {
         <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50/70 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-800/60 dark:bg-amber-900/15 dark:text-amber-300">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <p>
-            <span className="font-semibold">{storesWithout.length} สาขายังไม่มีหัวหน้า</span> —
-            ใบลาและตารางของสาขาเหล่านี้จะตกมาที่ HR ทั้งหมด: {storesWithout.map((s) => s.store_name).join(' · ')}
+            <span className="font-semibold">{storesWithout.length} สาขายังไม่มีคนอนุมัติ</span> —
+            ใบลา/OT/เบิกเงินของสาขาเหล่านี้จะตกมาที่ HR ทั้งหมด: {storesWithout.map((s) => s.store_name).join(' · ')}
           </p>
         </div>
       )}
@@ -155,9 +173,13 @@ export function ManagerScopesManager() {
               <div className="flex min-w-0 items-center gap-2">
                 <Store className="h-4 w-4 shrink-0 text-gray-400" />
                 <p className="truncate font-medium text-gray-900 dark:text-white">{s.store_name}</p>
-                {s.managers.length === 0 && <StatusBadge tone="warn" label="ยังไม่มีหัวหน้า" />}
+                {s.managers.length === 0 ? (
+                  <StatusBadge tone="warn" label="ยังไม่มีผู้ดูแล" />
+                ) : !s.managers.some((m) => m.can_approve) ? (
+                  <StatusBadge tone="warn" label="มีแต่กัปตัน — ไม่มีคนอนุมัติ" />
+                ) : null}
               </div>
-              <Button size="sm" variant="outline" onClick={() => { setAddFor(s); setSearch(''); }}>
+              <Button size="sm" variant="outline" onClick={() => { setAddFor(s); setSearch(''); setGrantKind('manager'); }}>
                 <UserPlus className="h-3.5 w-3.5" />
                 เพิ่ม
               </Button>
@@ -171,8 +193,10 @@ export function ManagerScopesManager() {
                     className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-2.5 py-1 text-xs text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300"
                   >
                     <EmployeeName name={m.name} nickname={m.nickname} />
+                    {/* What they may actually do here, which no longer follows from their job
+                        title: a captain runs the roster and approves nothing. */}
                     <span className="text-indigo-400">
-                      {m.role ? ROLE_LABELS[m.role as keyof typeof ROLE_LABELS] || m.role : ''}
+                      {m.can_approve ? 'หัวหน้าสาขา' : 'กัปตัน — ตารางงาน'}
                     </span>
                     <button
                       type="button"
@@ -193,11 +217,34 @@ export function ManagerScopesManager() {
       <Modal
         isOpen={!!addFor}
         onClose={() => setAddFor(null)}
-        title="เพิ่มหัวหน้าสาขา"
+        title="เพิ่มผู้ดูแลสาขา"
         description={addFor?.store_name ?? undefined}
         size="md"
       >
         <div className="space-y-3">
+          {/* Pick the job before the person: the same account can be either, and the difference
+              is whether leave lands on their desk. */}
+          <div className="grid grid-cols-2 gap-2">
+            {([
+              { k: 'manager', label: 'หัวหน้าสาขา', hint: 'จัดตารางงาน + อนุมัติใบลา/OT/เบิกเงิน' },
+              { k: 'captain', label: 'กัปตัน', hint: 'จัดตารางงาน + สลับวันหยุด เท่านั้น' },
+            ] as const).map((o) => (
+              <button
+                key={o.k}
+                type="button"
+                onClick={() => setGrantKind(o.k)}
+                className={`rounded-xl border p-2.5 text-left transition-colors ${
+                  grantKind === o.k
+                    ? 'border-indigo-400 bg-indigo-50 dark:border-indigo-500 dark:bg-indigo-900/25'
+                    : 'border-gray-200 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800'
+                }`}
+              >
+                <p className="text-sm font-semibold text-gray-900 dark:text-white">{o.label}</p>
+                <p className="mt-0.5 text-[11px] leading-snug text-gray-500 dark:text-gray-400">{o.hint}</p>
+              </button>
+            ))}
+          </div>
+
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <input

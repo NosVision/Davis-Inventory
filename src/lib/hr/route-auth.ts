@@ -57,7 +57,16 @@ export async function requireHrManager(): Promise<HrAuthResult> {
  * store (`hr_manager_scopes`). Mirrors the SQL `can_manage_store()` used by RLS so the
  * app and the database agree. A manager must never manage a store outside their scope.
  */
-export async function requireStoreManager(storeId: string): Promise<HrAuthResult> {
+export type StoreCapability = 'schedule' | 'approve';
+
+export async function requireStoreManager(
+  storeId: string,
+  // Which half of the venue authority the caller needs. Defaults to 'approve' so a route that
+  // does not name a capability gets the stricter of the two: a captain (roster only) is refused
+  // rather than quietly let through — the failure mode of forgetting to pass this is a needless
+  // 403, not someone approving leave they should not see.
+  capability: StoreCapability = 'approve'
+): Promise<HrAuthResult> {
   if (!storeId) return { ok: false, error: 'store_id is required', status: 400 };
 
   const supabase = await createClient();
@@ -88,7 +97,7 @@ export async function requireStoreManager(storeId: string): Promise<HrAuthResult
   const service = createServiceClient();
   const { data: scope, error: scopeErr } = await service
     .from('hr_manager_scopes')
-    .select('id')
+    .select('id, can_schedule, can_approve')
     .eq('user_id', user.id)
     .eq('store_id', storeId)
     .maybeSingle();
@@ -98,6 +107,19 @@ export async function requireStoreManager(storeId: string): Promise<HrAuthResult
   }
   if (!scope) {
     return { ok: false, error: 'Forbidden — not a manager of this store', status: 403 };
+  }
+  // A scope row is no longer a blanket grant: a captain holds the roster half only. Say which
+  // half is missing, because "not a manager of this store" would be a lie to someone who is.
+  const granted = capability === 'schedule' ? scope.can_schedule : scope.can_approve;
+  if (!granted) {
+    return {
+      ok: false,
+      error:
+        capability === 'schedule'
+          ? 'คุณไม่มีสิทธิ์จัดตารางงานของสาขานี้'
+          : 'คุณไม่มีสิทธิ์อนุมัติของสาขานี้ — ดูแลเฉพาะตารางงาน',
+      status: 403,
+    };
   }
   return { ok: true, userId: user.id, role, fullHr: false };
 }
@@ -116,9 +138,10 @@ export async function requireStoreManager(storeId: string): Promise<HrAuthResult
 export async function requireSchedulerForScope(storeId: string | null): Promise<HrAuthResult> {
   const base = await requireScheduler();
   if (base.ok) return base;
-  // Not HQ/HR — a store roster is still reachable by that store's own manager.
+  // Not HQ/HR — a store roster is still reachable by that store's own manager, and by a captain
+  // holding the roster half of the grant.
   if (!storeId) return base;
-  return requireStoreManager(storeId);
+  return requireStoreManager(storeId, 'schedule');
 }
 
 /**
