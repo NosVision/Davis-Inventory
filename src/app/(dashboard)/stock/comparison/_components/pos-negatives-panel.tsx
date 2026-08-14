@@ -13,8 +13,8 @@
  * that are months old and, for excluded products, were never theirs to count.
  */
 
-import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, ChevronRight, Loader2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, ChevronRight, History, Loader2 } from 'lucide-react';
 import { Modal, Badge } from '@/components/ui';
 import { formatThaiDate, formatQty } from '@/lib/utils/format';
 
@@ -46,78 +46,94 @@ const REASON_TONE: Record<Row['hidden_reason'], 'danger' | 'warning' | 'default'
 
 interface Props {
   storeId: string;
-  /** Empty string means "every date this store has uploaded". */
+  /** The day the page has open. Rows are split against it, not fetched by it. */
   date: string;
   /** Only HQ-level roles see this at all. */
   canView: boolean;
 }
 
 export function PosNegativesPanel({ storeId, date, canView }: Props) {
+  // Fetched once for the whole store, then split by date locally.
+  //
+  // Fetching per-day was the obvious shape and the wrong one: the negatives HQ is hunting are
+  // almost never on the day they happen to have open — the only ones on record are a single
+  // upload from three months ago — so a day-scoped fetch would render nothing, and the escape
+  // hatch to look wider would be inside the panel that just decided not to draw itself. The whole
+  // history is 30 rows.
   const [rows, setRows] = useState<Row[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [open, setOpen] = useState(false);
-  // Tracks whether the current view is the selected day or the whole store history, so the
-  // "ดูทั้งหมด" escape hatch can tell the user which one they are looking at.
-  const [scope, setScope] = useState<'date' | 'all'>('date');
+  const [loading, setLoading] = useState(true);
+  const [open, setOpen] = useState<null | 'date' | 'all'>(null);
 
-  const load = useCallback(
-    async (wanted: 'date' | 'all') => {
-      if (!storeId || !canView) return;
-      setLoading(true);
-      try {
-        const qs = new URLSearchParams({ store_id: storeId });
-        if (wanted === 'date' && date) qs.set('date', date);
-        const res = await fetch(`/api/stock/pos-negatives?${qs}`);
-        const json = await res.json().catch(() => ({}));
-        setRows(res.ok ? ((json.data?.rows ?? []) as Row[]) : []);
-        setScope(wanted);
-      } catch {
-        setRows([]);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [storeId, date, canView]
-  );
+  const load = useCallback(async () => {
+    if (!storeId || !canView) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/stock/pos-negatives?store_id=${storeId}`);
+      const json = await res.json().catch(() => ({}));
+      setRows(res.ok ? ((json.data?.rows ?? []) as Row[]) : []);
+    } catch {
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [storeId, canView]);
 
   useEffect(() => {
-    load('date');
+    load();
   }, [load]);
 
-  if (!canView) return null;
+  const forDate = useMemo(() => rows.filter((r) => r.date === date), [rows, date]);
+  const shown = open === 'date' ? forDate : rows;
 
-  // Nothing negative for this day is the normal case, and a green "all clear" banner on every
-  // single day would train people to ignore the strip entirely. Stay silent instead — but never
-  // while the modal is open, or switching to "ทุกวัน" and finding nothing would unmount the very
-  // dialog showing that answer.
-  if (!loading && rows.length === 0 && !open) return null;
+  if (!canView || loading || rows.length === 0) return null;
 
-  const worst = rows.length ? Math.min(...rows.map((r) => r.qty_ocr)) : 0;
+  const worst = forDate.length ? Math.min(...forDate.map((r) => r.qty_ocr)) : 0;
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="flex w-full items-center gap-2 rounded-xl border border-red-300 bg-red-50 p-3 text-left transition-colors hover:bg-red-100 dark:border-red-800/60 dark:bg-red-900/20 dark:hover:bg-red-900/30"
-      >
-        <AlertTriangle className="h-5 w-5 shrink-0 text-red-600 dark:text-red-400" />
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-red-900 dark:text-red-200">
-            POS ติดลบ {rows.length} รายการ
-            {scope === 'all' && ' (ทุกวัน)'}
+      {forDate.length > 0 ? (
+        <button
+          type="button"
+          onClick={() => setOpen('date')}
+          className="flex w-full items-center gap-2 rounded-xl border border-red-300 bg-red-50 p-3 text-left transition-colors hover:bg-red-100 dark:border-red-800/60 dark:bg-red-900/20 dark:hover:bg-red-900/30"
+        >
+          <AlertTriangle className="h-5 w-5 shrink-0 text-red-600 dark:text-red-400" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-red-900 dark:text-red-200">
+              POS ติดลบ {forDate.length} รายการ
+            </p>
+            <p className="mt-0.5 text-xs text-red-700 dark:text-red-300">
+              POS ขายทะลุศูนย์ — ต่ำสุด {formatQty(worst)} · รายการเหล่านี้ไม่ขึ้นในตารางเปรียบเทียบ
+            </p>
+          </div>
+          <ChevronRight className="h-4 w-4 shrink-0 text-red-500" />
+        </button>
+      ) : (
+        /* The selected day is clean but the store is not. Kept quiet — this is a pointer to
+           history, not an alarm about today — yet always present, because otherwise the only way
+           to reach months-old negatives would be to already know which day to open. */
+        <button
+          type="button"
+          onClick={() => setOpen('all')}
+          className="flex w-full items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-left transition-colors hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800/60 dark:hover:bg-gray-800"
+        >
+          <History className="h-4 w-4 shrink-0 text-gray-400" />
+          <p className="min-w-0 flex-1 text-xs text-gray-600 dark:text-gray-300">
+            วันนี้ไม่มี POS ติดลบ — แต่สาขานี้เคยมี{' '}
+            <span className="font-semibold">{rows.length} รายการ</span> ในวันอื่น
           </p>
-          <p className="mt-0.5 text-xs text-red-700 dark:text-red-300">
-            POS ขายทะลุศูนย์ — ต่ำสุด {formatQty(worst)} · รายการเหล่านี้ไม่ขึ้นในตารางเปรียบเทียบ
-          </p>
-        </div>
-        <ChevronRight className="h-4 w-4 shrink-0 text-red-500" />
-      </button>
+          <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" />
+        </button>
+      )}
 
       <Modal
-        isOpen={open}
-        onClose={() => setOpen(false)}
-        title={`สินค้าติดลบใน POS${scope === 'date' && date ? ` — ${formatThaiDate(date)}` : ' — ทุกวัน'}`}
+        isOpen={open !== null}
+        onClose={() => setOpen(null)}
+        title={
+          open === 'date' && date
+            ? `สินค้าติดลบใน POS — ${formatThaiDate(date)}`
+            : 'สินค้าติดลบใน POS — ทุกวันของสาขานี้'
+        }
         size="lg"
       >
         <div className="space-y-3">
@@ -126,11 +142,7 @@ export function PosNegativesPanel({ storeId, date, canView }: Props) {
             ช่องขวาบอกว่าทำไมรายการนี้ถึงไม่เคยขึ้นในตารางเปรียบเทียบ
           </p>
 
-          {loading ? (
-            <div className="flex justify-center py-10">
-              <Loader2 className="h-7 w-7 animate-spin text-gray-400" />
-            </div>
-          ) : rows.length === 0 ? (
+          {shown.length === 0 ? (
             <p className="py-8 text-center text-sm text-gray-500">ไม่พบรายการติดลบ</p>
           ) : (
             <div className="max-h-[60vh] overflow-auto rounded-lg border border-gray-200 dark:border-gray-700">
@@ -144,7 +156,7 @@ export function PosNegativesPanel({ storeId, date, canView }: Props) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700/60">
-                  {rows.map((r) => (
+                  {shown.map((r) => (
                     <tr key={`${r.date}-${r.product_code}`}>
                       <td className="whitespace-nowrap px-3 py-2 text-gray-500">
                         {formatThaiDate(r.date)}
@@ -170,15 +182,13 @@ export function PosNegativesPanel({ storeId, date, canView }: Props) {
             </div>
           )}
 
-          {/* A negative that HQ is hunting for is often not on the day they happen to have open —
-              the only negatives on record right now are from a single upload months back. */}
-          {scope === 'date' && (
+          {open === 'date' && rows.length > forDate.length && (
             <button
               type="button"
-              onClick={() => load('all')}
+              onClick={() => setOpen('all')}
               className="cursor-pointer text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
             >
-              ดูทุกวันของสาขานี้ →
+              ดูทุกวันของสาขานี้ ({rows.length} รายการ) →
             </button>
           )}
         </div>
