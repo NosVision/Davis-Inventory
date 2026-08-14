@@ -236,8 +236,18 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
 
-  // Load dropdown data once on mount (component stays mounted with the page).
+  // Reloaded every time the modal opens, not once on mount.
+  //
+  // The component stays mounted with the page, so "once" meant these lists were frozen at first
+  // paint — and every one of them is edited in a sibling tab of this very page. HR created a
+  // payroll group, came straight here to assign someone to it, and the group was not in the
+  // dropdown: it had not existed when the list was fetched. The save then went through with the
+  // field empty, so it read as "saving the group does not work" rather than "the list is stale",
+  // and the group got created and deleted four times over (owner report 2026-08-14).
+  //
+  // Six small reads on open, only when it opens.
   useEffect(() => {
+    if (!isOpen) return;
     const supabase = createClient();
     (async () => {
       const [co, pos, dep, pg, st, sup] = await Promise.all([
@@ -266,7 +276,7 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
         }))
       );
     })();
-  }, []);
+  }, [isOpen]);
 
   // Linkable accounts (create mode): users without an employee record yet (incl. disabled ones,
   // which get labelled — linking re-activates them server-side).

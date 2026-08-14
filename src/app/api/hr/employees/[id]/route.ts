@@ -80,13 +80,24 @@ export async function PUT(
   const fields: Record<string, unknown> = { ...picked.fields };
 
   // The flag is the lock itself: an HR user who cannot see confidential pay must not be able to
-  // switch it off and then look. Silently dropping the field would be worse — they would think it
-  // saved — so refuse the write outright.
-  if ('pay_confidential' in fields && !(await callerCanViewConfidentialPay(service, auth.userId))) {
-    return NextResponse.json(
-      { error: 'คุณไม่มีสิทธิ์เปลี่ยนการปิดข้อมูลเงินเดือน' },
-      { status: 403 }
-    );
+  // switch it off and then look. Silently dropping a real attempt would be worse — they would
+  // think it saved — so that still refuses the write outright.
+  //
+  // But the guard used to fire on the field being PRESENT, and the employee form posts the whole
+  // record on every save, flag included and usually unchanged. So an HR user without the grant
+  // could not save any edit to anyone: changing a payroll group or a phone number came back as
+  // "คุณไม่มีสิทธิ์เปลี่ยนการปิดข้อมูลเงินเดือน", about a field they never touched
+  // (owner report 2026-08-14). Only an actual change is an attempt to change anything.
+  if ('pay_confidential' in fields) {
+    const changing = Boolean(fields.pay_confidential) !== Boolean(current.pay_confidential);
+    if (!changing) {
+      delete fields.pay_confidential;
+    } else if (!(await callerCanViewConfidentialPay(service, auth.userId))) {
+      return NextResponse.json(
+        { error: 'คุณไม่มีสิทธิ์เปลี่ยนการปิดข้อมูลเงินเดือน' },
+        { status: 403 }
+      );
+    }
   }
 
   // Company changes MUST go through the dedicated transfer endpoint (mandatory reason + effective_date + audit, §A).
