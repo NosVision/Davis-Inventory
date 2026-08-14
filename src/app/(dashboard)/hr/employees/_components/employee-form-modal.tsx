@@ -1180,7 +1180,11 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
           </div>
           {/* Pay confidentiality (owner ask 2026-08-08). Hides the NUMBERS from HR users without
               can_view_confidential_pay — the person stays fully manageable for leave/schedule. */}
-          <div className="col-span-2 rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2.5 dark:border-amber-800/60 dark:bg-amber-900/15">
+          {/* sm: matters. This grid is one column on a phone, and a bare col-span-2 spans a
+              second column that is not supposed to exist — which conjures it, as an implicit
+              track, and drags all 47 fields into a two-column layout 400px wide. Every other
+              full-width block here is sm:col-span-2 for that reason. */}
+          <div className="rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2.5 sm:col-span-2 dark:border-amber-800/60 dark:bg-amber-900/15">
             <label className="flex cursor-pointer items-start gap-2 text-sm">
               <input
                 type="checkbox"
