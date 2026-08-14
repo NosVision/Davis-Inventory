@@ -18,7 +18,6 @@ interface ProfileRow {
   username: string | null;
   display_name: string | null;
   is_system: boolean | null;
-  active: boolean | null;
 }
 interface EmployeeRow {
   profile_id: string;
@@ -155,7 +154,7 @@ export async function GET(request: NextRequest) {
 
   const [profilesRes, templatesRes, entriesRes, companiesRes] = await Promise.all([
     userIds.length
-      ? service.from('profiles').select('id, username, display_name, is_system, active').in('id', userIds)
+      ? service.from('profiles').select('id, username, display_name, is_system').in('id', userIds)
       : Promise.resolve({ data: [], error: null }),
     tplQuery,
     entryQuery,
@@ -183,17 +182,19 @@ export async function GET(request: NextRequest) {
     .filter((p) => !p.is_system)
     .filter((p) => {
       const e = empByProfile.get(p.id);
-      if (!e) {
-        // A store member with no HR record is still shown — someone can be working before their
-        // employee record is filled in. But only while their login works. The account sweep
-        // (00183) switched off every login with no payroll name behind it and left user_stores
-        // alone, so without this the roster listed 48 dead accounts at Upper House alone, under
-        // their usernames because there is no full_name to show (owner report 2026-08-14).
-        //
-        // No employment window to honour here: there is no record, so there is no final month to
-        // keep visible. That case is the branch below.
-        return scope.kind === 'store' && p.active !== false;
-      }
+      // No HR record, no row — in either scope.
+      //
+      // Store scope used to list every store member regardless, on the theory that someone can be
+      // working before their employee record is filled in. In practice it listed dead accounts:
+      // the sweep (00183) switched off every login with no payroll name behind it and left
+      // user_stores untouched, so 99 swept accounts stayed on the rosters, under their usernames
+      // because there is no full name to show.
+      //
+      // Rostering someone the payroll cannot name is not useful anyway — you cannot pay a shift
+      // you cannot attach to a person (owner decision 2026-08-14). Requiring the record makes HR
+      // link them first, which is the step that was being skipped. Nobody real is lost: the only
+      // active store member without a record today is the owner's own account.
+      if (!e) return false;
       if (e.status !== 'resigned' && e.status !== 'terminated') return true;
       return !!e.end_date && e.end_date >= first;
     })
