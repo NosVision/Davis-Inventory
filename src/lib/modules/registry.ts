@@ -16,7 +16,7 @@ export interface ModuleConfig {
    * listing 'manager' there would show the module to every manager including those who run
    * nothing, and would still miss a head_bar who does run a venue.
    */
-  managerScoped?: boolean;
+  managerScoped?: 'schedule' | 'approve';
   badge?: 'pending_count' | 'my_tasks_count' | 'hr_pending_count';
   groupKey: string;
 }
@@ -239,8 +239,9 @@ export const modules: ModuleConfig[] = [
     color: 'indigo',
     href: '/schedule',
     roles: ['owner', 'hr', 'hq'],
-    // A venue manager builds their own store's roster (2026-08-07).
-    managerScoped: true,
+    // A venue manager builds their own store's roster (2026-08-07); so does a captain, who has
+    // the roster half of the grant and nothing else.
+    managerScoped: 'schedule',
     groupKey: 'moduleGroups.hr',
   },
 
@@ -254,7 +255,7 @@ export const modules: ModuleConfig[] = [
     color: 'emerald',
     href: '/approvals',
     roles: [],
-    managerScoped: true,
+    managerScoped: 'approve',
     groupKey: 'moduleGroups.hr',
   },
 
@@ -406,14 +407,19 @@ export function getModulesForRole(role: UserRole): ModuleConfig[] {
  * Owner (role มี '*' wildcard) เห็นทุกโมดูลอยู่แล้วผ่าน role check
  */
 export function getAccessibleModules(user: AuthUser): ModuleConfig[] {
-  const runsAVenue = (user.managedStoreIds ?? []).length > 0;
+  // Which half of the venue grant this user holds anywhere. A single "runs a venue" boolean used
+  // to unlock both modules, so a captain — roster only — was shown "อนุมัติของสาขา" and bounced
+  // straight back out of it. A menu entry that cannot be opened is worse than no entry.
+  const canSchedule = (user.managedScheduleStoreIds ?? user.managedStoreIds ?? []).length > 0;
+  const canApprove = (user.managedApproveStoreIds ?? user.managedStoreIds ?? []).length > 0;
   return modules.filter((m) => {
     // 1) role-based access
     if (m.roles.includes(user.role)) return true;
     // 2) individual permission unlock — ต้องประกาศ permission ไว้
     if (m.permission && user.permissions.includes(m.permission)) return true;
-    // 3) venue managers (hr_manager_scopes) — scheduling + approvals for the venues they run
-    if (m.managerScoped && runsAVenue) return true;
+    // 3) venue leads (hr_manager_scopes), each module against the half it needs
+    if (m.managerScoped === 'schedule' && canSchedule) return true;
+    if (m.managerScoped === 'approve' && canApprove) return true;
     return false;
   });
 }

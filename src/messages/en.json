@@ -202,7 +202,7 @@
     },
     "schedule": {
       "name": "Schedule",
-      "description": "Monthly shift rosters per branch (HQ)"
+      "description": "Monthly shift rosters for the venues you run"
     },
     "hr": {
       "name": "HR",

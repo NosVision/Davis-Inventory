@@ -26,7 +26,7 @@ export function useAuth() {
         supabase.from('user_permissions').select('permission').eq('user_id', authUser.id),
         supabase.from('user_stores').select('store_id').eq('user_id', authUser.id),
         // Venues this person RUNS. RLS lets a user read their own scope rows, so no service call.
-        supabase.from('hr_manager_scopes').select('store_id').eq('user_id', authUser.id),
+        supabase.from('hr_manager_scopes').select('store_id, can_schedule, can_approve').eq('user_id', authUser.id),
       ]);
 
       if (!profileRes.data) {
@@ -41,6 +41,12 @@ export function useAuth() {
         permissions: (permissionsRes.data || []).map((p) => p.permission as Permission),
         storeIds: (storesRes.data || []).map((s) => s.store_id),
         managedStoreIds: (scopesRes.data || []).map((s) => s.store_id as string),
+        managedScheduleStoreIds: (scopesRes.data || [])
+          .filter((s) => (s as { can_schedule?: boolean }).can_schedule !== false)
+          .map((s) => s.store_id as string),
+        managedApproveStoreIds: (scopesRes.data || [])
+          .filter((s) => (s as { can_approve?: boolean }).can_approve !== false)
+          .map((s) => s.store_id as string),
         lineUserId: profileRes.data.line_user_id,
         displayName: profileRes.data.display_name,
         avatarUrl: profileRes.data.avatar_url,

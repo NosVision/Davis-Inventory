@@ -13,6 +13,13 @@ export interface AuthUser {
    * grant rather than a role, so nav gating has to consult it explicitly.
    */
   managedStoreIds: string[];
+  /**
+   * The same grant split in two (00187): a captain runs the roster and approves nothing, so the
+   * nav has to ask which half before showing a module. Optional so anything still reading only
+   * `managedStoreIds` keeps working.
+   */
+  managedScheduleStoreIds?: string[];
+  managedApproveStoreIds?: string[];
   lineUserId?: string | null;
   displayName?: string | null;
   avatarUrl?: string | null;

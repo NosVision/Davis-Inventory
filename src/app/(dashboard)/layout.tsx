@@ -49,9 +49,15 @@ export default async function DashboardLayout({
   // read their own scope rows.
   const { data: managedScopes } = await supabase
     .from('hr_manager_scopes')
-    .select('store_id')
+    .select('store_id, can_schedule, can_approve')
     .eq('user_id', authUser.id);
-  const managedStoreIds = (managedScopes ?? []).map((s: { store_id: string }) => s.store_id);
+  type ScopeRow = { store_id: string; can_schedule: boolean; can_approve: boolean };
+  const scopeRows = (managedScopes ?? []) as ScopeRow[];
+  const managedStoreIds = scopeRows.map((s) => s.store_id);
+  // Split, so the nav can ask which half a module needs (00187). A captain holds the roster only,
+  // and used to be shown an approvals entry that bounced them straight back out.
+  const managedScheduleStoreIds = scopeRows.filter((s) => s.can_schedule).map((s) => s.store_id);
+  const managedApproveStoreIds = scopeRows.filter((s) => s.can_approve).map((s) => s.store_id);
 
   // ดึงข้อมูลร้านค้า
   let stores: Store[] = [];
@@ -91,6 +97,8 @@ export default async function DashboardLayout({
     permissions,
     storeIds,
     managedStoreIds,
+    managedScheduleStoreIds,
+    managedApproveStoreIds,
     lineUserId: profile.line_user_id,
     displayName: profile.display_name,
     avatarUrl: profile.avatar_url,
