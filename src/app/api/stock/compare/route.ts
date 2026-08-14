@@ -168,6 +168,13 @@ export async function POST(request: NextRequest) {
         ? posMap.get(productCode)!
         : null;
 
+      // A negative POS balance is not a variance to be counted against — it is POS telling us its
+      // own ledger went below zero. The arithmetic here would be nonsense on it: the difference
+      // reads as a surplus (manual − (−5) = manual + 5) and the percentage is taken against a
+      // negative base. Left out of the variance table and reported on its own terms by
+      // /api/stock/pos-negatives, which reads the POS file directly.
+      if (posQty !== null && posQty < 0) continue;
+
       const productName = productNameMap.get(productCode) || null;
 
       // Track manual-only and pos-only

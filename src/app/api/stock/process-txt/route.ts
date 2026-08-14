@@ -290,8 +290,16 @@ export async function POST(request: NextRequest) {
     // ── Step 6: Save to ocr_logs + ocr_items ──
     // Determine which items to save (excluded-category items already
     // filtered out of workItems above, so they never become count rows).
+    // `quantity > 0` used to be the whole test, which silently threw away every negative line in
+    // the file. A negative balance means POS sold more of that product than it ever had — the one
+    // number HQ most wants to see (owner report 2026-08-14, Grey Goose) — and discarding it at
+    // upload put it beyond the reach of every screen downstream, because nothing that never got
+    // stored can be displayed later.
+    //
+    // Zero still obeys include_zero_qty: a zero is "we have none", which is ordinary and would
+    // bury the file in noise. A negative is not ordinary, so it is never optional.
     const itemsToSave = workItems.filter(
-      (item) => item.quantity > 0 || include_zero_qty
+      (item) => item.quantity !== 0 || include_zero_qty
     );
 
     // ── Step 6a: Overwrite — remove any previous POS-TXT upload for this
