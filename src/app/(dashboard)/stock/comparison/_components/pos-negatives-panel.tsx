@@ -87,7 +87,13 @@ export function PosNegativesPanel({ storeId, date, canView }: Props) {
 
   if (!canView || loading || rows.length === 0) return null;
 
-  const worst = forDate.length ? Math.min(...forDate.map((r) => r.qty_ocr)) : 0;
+  // Headline the worst COUNTABLE shortfall, not the worst number. Products marked "ไม่ต้องนับ" are
+  // soft drinks and the like, whose POS figures are not stock counts at all — quoting Coke at
+  // -217,865 would make the banner read as a catastrophe every single day and teach everyone to
+  // scroll past it, hiding the -46.80 bottle it exists to surface.
+  const countable = forDate.filter((r) => r.count_status !== 'excluded');
+  const headline = countable.length ? countable : forDate;
+  const worst = headline.length ? Math.min(...headline.map((r) => r.qty_ocr)) : 0;
 
   return (
     <>
@@ -101,6 +107,9 @@ export function PosNegativesPanel({ storeId, date, canView }: Props) {
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-red-900 dark:text-red-200">
               POS ติดลบ {forDate.length} รายการ
+              {countable.length > 0 && countable.length < forDate.length && (
+                <span className="font-normal"> (สินค้าที่ต้องนับ {countable.length})</span>
+              )}
             </p>
             <p className="mt-0.5 text-xs text-red-700 dark:text-red-300">
               POS ขายทะลุศูนย์ — ต่ำสุด {formatQty(worst)} · รายการเหล่านี้ไม่ขึ้นในตารางเปรียบเทียบ

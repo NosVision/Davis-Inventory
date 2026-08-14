@@ -142,8 +142,18 @@ export async function GET(request: NextRequest) {
     };
   });
 
-  // Worst shortfall first — the number HQ is looking for is the big one, not the newest.
-  rows.sort((a, b) => a.qty_ocr - b.qty_ocr);
+  // Countable stock first, then worst shortfall.
+  //
+  // Sorting on quantity alone buries the finding. Baccarat's 2026-08-14 file carries 44 negative
+  // lines, and the largest are soft drinks counted in a different unit entirely — Schweppes at
+  // -271,470 and Coke at -217,865, against Grey Goose Vodka at -46.80. Those products are marked
+  // "ไม่ต้องนับ" precisely because their POS numbers are not stock figures, so letting them head
+  // the list would put six-figure noise above the bottle HQ is actually asking about.
+  const countable = (r: { count_status: string | null }) => r.count_status !== 'excluded';
+  rows.sort((a, b) => {
+    if (countable(a) !== countable(b)) return countable(a) ? -1 : 1;
+    return a.qty_ocr - b.qty_ocr;
+  });
 
   return NextResponse.json({
     data: {
