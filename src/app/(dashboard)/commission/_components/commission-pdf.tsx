@@ -164,6 +164,20 @@ const styles = StyleSheet.create({
   cCashier: { flex: 1.1, paddingHorizontal: 2, textAlign: 'center' },
   cManager: { flex: 1.1, paddingHorizontal: 2, textAlign: 'center' },
 
+  // สรุปรายวัน — its own narrower grid. Deliberately not sharing the bill table's columns: it has
+  // no receipt, table or signature, and stretching four numbers across nine slots reads as a bill
+  // table with holes in it rather than a summary.
+  dLabel: {
+    fontSize: 8.5,
+    fontWeight: 700,
+    color: '#0f766e',
+    marginBottom: 2,
+  },
+  dDate: { width: 70 },
+  dBills: { width: 50, textAlign: 'right' },
+  dMoney: { flex: 1, textAlign: 'right' },
+  dNet: { flex: 1, textAlign: 'right', color: '#047857' },
+
   signatureSlot: {
     borderBottomWidth: 0.5,
     borderColor: '#9ca3af',
@@ -290,6 +304,34 @@ function fmtShortDate(iso: string): string {
   return `${day}/${month}/${String(yy).padStart(2, '0')}`;
 }
 
+/**
+ * Per-day totals for one AE, in date order.
+ *
+ * The app has had a สรุปรายวัน tab since 2026-07-08, but the PDF never carried it — so a per-AE
+ * export was a cover sheet plus a flat list of bills, and answering "how much on the 9th" meant
+ * adding the rows up by hand. That is the question the AE and the accountant actually settle on
+ * (owner ask 2026-08-14).
+ *
+ * Derived from the same rows the bill table prints, so the two can never disagree.
+ */
+function dailyTotals(rows: CommissionPdfRow[]) {
+  const byDay = new Map<
+    string,
+    { date: string; bill_count: number; subtotal: number; commission: number; net: number }
+  >();
+  for (const r of rows) {
+    const cur =
+      byDay.get(r.bill_date) ??
+      { date: r.bill_date, bill_count: 0, subtotal: 0, commission: 0, net: 0 };
+    cur.bill_count += 1;
+    cur.subtotal += r.subtotal;
+    cur.commission += r.commission_amount;
+    cur.net += r.net_amount;
+    byDay.set(r.bill_date, cur);
+  }
+  return Array.from(byDay.values()).sort((a, b) => a.date.localeCompare(b.date));
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Document
 // ────────────────────────────────────────────────────────────────────────────
@@ -387,6 +429,44 @@ function ReportDocument({ data }: { data: CommissionReportData }) {
                 {g.wht_label ? `  •  ${g.wht_label}` : ''}
               </Text>
             </View>
+
+            {/* สรุปรายวัน — ahead of the bill list, because "how much on the 9th" is the
+                question that gets asked first and the bills below are the backup for it. */}
+            {g.rows.length > 0 && (
+              <View style={styles.aeBlock} wrap={false}>
+                <Text style={styles.dLabel}>แจกแจงรายวัน</Text>
+                <View style={styles.tableHead}>
+                  <Text style={styles.dDate}>วันที่</Text>
+                  <Text style={styles.dBills}>บิล</Text>
+                  <Text style={styles.dMoney}>ก่อน SV/VAT</Text>
+                  <Text style={styles.dMoney}>ค่าคอม 10%</Text>
+                  <Text style={styles.dNet}>หัก 3% สุทธิ</Text>
+                </View>
+                {dailyTotals(g.rows).map((d, idx) => (
+                  <View
+                    key={`${g.ae_name}-day-${d.date}`}
+                    style={[styles.row, idx % 2 === 1 ? styles.rowAlt : {}]}
+                  >
+                    <Text style={styles.dDate}>{fmtShortDate(d.date)}</Text>
+                    <Text style={styles.dBills}>{d.bill_count}</Text>
+                    <Text style={styles.dMoney}>{fmtMoney(d.subtotal)}</Text>
+                    <Text style={styles.dMoney}>{fmtMoney(d.commission)}</Text>
+                    <Text style={styles.dNet}>{fmtMoney(d.net)}</Text>
+                  </View>
+                ))}
+                <View style={styles.totalRow}>
+                  <Text style={styles.dDate}>รวม</Text>
+                  <Text style={styles.dBills}>{g.totals.bill_count}</Text>
+                  <Text style={styles.dMoney}>{fmtMoney(g.totals.subtotal)}</Text>
+                  <Text style={styles.dMoney}>{fmtMoney(g.totals.commission)}</Text>
+                  <Text style={styles.dNet}>{fmtMoney(g.totals.net)}</Text>
+                </View>
+              </View>
+            )}
+
+            {/* Named now that a second table sits above it — without a label the bill rows read
+                as a continuation of the daily summary. */}
+            {g.rows.length > 0 && <Text style={styles.dLabel}>รายละเอียดบิล</Text>}
 
             {/* Column heads — render once per AE block. `fixed` only
                 behaves well as a direct child of <Page>, so we don't
