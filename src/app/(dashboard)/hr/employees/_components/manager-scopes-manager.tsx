@@ -146,11 +146,21 @@ export function ManagerScopesManager() {
     <div className="space-y-4">
       <div className="flex items-start gap-2 rounded-xl border border-indigo-200 bg-indigo-50/70 px-3 py-2.5 text-xs text-indigo-800 dark:border-indigo-800/60 dark:bg-indigo-900/15 dark:text-indigo-300">
         <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
-        <p>
-          หัวหน้าสาขาจะ <span className="font-semibold">อนุมัติใบลาของพนักงานในสาขานั้น</span> และ{' '}
-          <span className="font-semibold">จัดตารางงานของสาขานั้น</span> ได้ —
-          ส่วนพนักงานที่ยังไม่มีสังกัดหรือเป็นพนักงานระดับบริษัท จะยังส่งตรงมาที่ HR เหมือนเดิม
-        </p>
+        {/* Two kinds now, and the difference that matters is who leave lands on. */}
+        <div className="space-y-1">
+          <p>
+            <span className="font-semibold">หัวหน้าสาขา</span> — จัดตารางงานของสาขานั้น และ{' '}
+            <span className="font-semibold">อนุมัติใบลา / OT / คำขอแก้เวลา / เบิกค่าใช้จ่าย</span> ของพนักงานในสาขานั้นได้
+          </p>
+          <p>
+            <span className="font-semibold">กัปตัน</span> — <span className="font-semibold">จัดตารางงานและสลับวันหยุด</span>{' '}
+            ของสาขานั้นได้อย่างเดียว ใบลายังไปที่หัวหน้าสาขา
+          </p>
+          <p className="pt-0.5">
+            ทั้งสองตำแหน่งมีได้หลายคนต่อสาขา และเห็นข้อมูลชุดเดียวกัน — ส่วนพนักงานที่ยังไม่มีสังกัดหรือเป็นพนักงานระดับบริษัท
+            จะยังส่งตรงมาที่ HR เหมือนเดิม
+          </p>
+        </div>
       </div>
 
       {storesWithout.length > 0 && (

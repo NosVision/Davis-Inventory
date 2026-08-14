@@ -566,7 +566,7 @@ export default function EmployeesPage() {
             ? `${t('subtitle')} · ${t('count', { count })}${confidentialCount > 0 ? ` · ปิดข้อมูลเงินเดือน ${confidentialCount} คน` : ''}`
           : tab === 'accounts' ? t('tabAccountsSubtitle')
           : tab === 'unclaimed' ? 'รายชื่อจากไฟล์เงินเดือนที่ยังไม่ได้ผูกกับบัญชีผู้ใช้ — ยังไม่เข้างวดเงินเดือน'
-          : tab === 'managers' ? 'ใครดูแลสาขาไหน — หัวหน้าสาขาอนุมัติใบลาและจัดตารางของสาขาตัวเองได้'
+          : tab === 'managers' ? 'ใครดูแลสาขาไหน — หัวหน้าสาขาอนุมัติใบลาและจัดตาราง ส่วนกัปตันจัดตารางอย่างเดียว'
           : tab === 'paygroups' ? 'แบ่งเงินเดือนของบริษัทเป็นหลายงวดที่ทำแยกกัน'
           : t('tabLinksSubtitle')
         }
