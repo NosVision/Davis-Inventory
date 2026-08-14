@@ -12,6 +12,7 @@ import { nowBangkok } from '@/lib/utils/date';
 import { formatThaiDate, formatPercent, formatQty, formatSignedQty } from '@/lib/utils/format';
 import { isWithinToleranceFor } from '@/lib/stock/variance';
 import type { Comparison, ComparisonStatus } from '@/types/database';
+import { PosNegativesPanel } from './_components/pos-negatives-panel';
 import {
   ArrowLeft,
   Search,
@@ -39,6 +40,11 @@ import {
 // staff/bar count via /stock/daily-check; only manager+ may correct
 // after the fact (request from owner: "ทุก role ยกเว้น staff/bar").
 const READ_ONLY_ROLES = new Set(['staff', 'bar', 'head_bar']);
+
+// Who sees the "POS ติดลบ" strip. HQ asked for it; it is a stock-integrity signal about the POS
+// file itself, not something the counting staff can act on, so it stays at management level.
+// Kept in step with VIEW_ROLES in /api/stock/pos-negatives, which enforces it server-side.
+const POS_NEGATIVE_ROLES = new Set(['owner', 'accountant', 'hq', 'manager']);
 
 // Default tolerance used when store_settings hasn't been read yet —
 // matches the constants below so the first paint doesn't show a row in
@@ -164,13 +170,36 @@ type VarianceRow = {
   diff_percent: number | null;
   manual_quantity: number | null;
   pos_quantity: number | null;
+  // Present on real rows; absent on the throwaway objects built during an inline edit, which is
+  // exactly when the live rule should decide. See isWithinTolerance.
+  status?: ComparisonStatus;
+  explanation?: string | null;
 };
+
+/**
+ * A row that the server already auto-approved: it was judged within tolerance at compare time and
+ * nobody was ever asked to explain it.
+ *
+ * This matters because the tolerance rule changed on 2026-08-13 — a whole unit missing now has to
+ * be explained even when the percentage looks small. Statuses are decided once, at compare time,
+ * and stored; days compared before the change keep the old verdict. But this page recomputes the
+ * chip live, so those days started reporting "เกินเกณฑ์ 13" beside a green tick and an empty
+ * explain queue — a count of work that does not exist (owner report 2026-08-14).
+ *
+ * 237 such rows exist across 24 BLVD, House of Savoy and Upper House. They were deliberately left
+ * settled rather than reopened, so the honest label is the verdict they actually got.
+ */
+const wasAutoApproved = (row: VarianceRow) =>
+  row.status === 'approved' && !row.explanation;
 
 // Must be given the STORE's tolerances, not the helper defaults: this drives the "level" chip and
 // the summary counts, and a store with a non-default diff_tolerance was seeing chips that
 // disagreed with the server's own auto-approve decision on the very same row.
 const isWithinTolerance = (row: VarianceRow, tolerance: { percent: number; unit: number }) => {
   if (row.difference === null) return false;
+  // A settled auto-approval keeps its own verdict — re-judging closed days under a rule written
+  // after they closed only produces a number nobody can act on.
+  if (wasAutoApproved(row)) return true;
   return isWithinToleranceFor({
     manual: row.manual_quantity,
     pos: row.pos_quantity,
@@ -1034,6 +1063,16 @@ export default function ComparisonPage() {
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
       />
+
+      {/* POS lines that ran below zero. Sits above the needs-count banner because it is the one
+          class of row no other screen can reach — see the panel for why. */}
+      {currentStoreId && (
+        <PosNegativesPanel
+          storeId={currentStoreId}
+          date={selectedDate}
+          canView={!!user && POS_NEGATIVE_ROLES.has(user.role)}
+        />
+      )}
 
       {/* Needs-count banner — only when the selected date has POS-only
           rows. Staff should finish counting before owner reviews
