@@ -35,7 +35,13 @@ export interface PosNegativeRow {
   active: boolean | null;
   count_status: string | null;
   /** Why the comparison never surfaced it — what HQ actually wants to know. */
-  hidden_reason: 'excluded' | 'inactive' | 'not_in_products' | 'no_comparison' | 'visible';
+  hidden_reason:
+    | 'excluded'
+    | 'inactive'
+    | 'not_in_products'
+    | 'negative_skipped'
+    | 'no_comparison'
+    | 'visible';
 }
 
 // GET /api/stock/pos-negatives?store_id=&date=YYYY-MM-DD
@@ -119,6 +125,19 @@ export async function GET(request: NextRequest) {
     (seen ?? []).map((c) => `${c.comp_date}|${c.product_code}`)
   );
 
+  // Which dates were compared at all. Without this the reason for a missing row collapses into
+  // "ยังไม่ได้กดเปรียบเทียบวันนี้", which was flatly wrong: /api/stock/compare deliberately skips
+  // negative POS rows, so on a date that HAS been compared they are absent BY DESIGN. Baccarat's
+  // 13 ส.ค. carried 95 comparison rows while this panel told HQ nobody had pressed the button
+  // (owner report 2026-08-14). Counting rows for the code list is not enough — a date can be
+  // compared and still match none of these codes — so this asks the date question separately.
+  const { data: comparedRows } = await service
+    .from('comparisons')
+    .select('comp_date')
+    .eq('store_id', storeId)
+    .in('comp_date', affectedDates);
+  const comparedDates = new Set((comparedRows ?? []).map((c) => c.comp_date as string));
+
   const rows = items.map((i) => {
     const code = i.product_code as string;
     const d = logDate.get(i.ocr_log_id as string)!;
@@ -129,6 +148,7 @@ export async function GET(request: NextRequest) {
     else if (!p) hidden = 'not_in_products';
     else if (p.count_status === 'excluded') hidden = 'excluded';
     else if (p.active === false) hidden = 'inactive';
+    else if (comparedDates.has(d)) hidden = 'negative_skipped';
     else hidden = 'no_comparison';
 
     return {

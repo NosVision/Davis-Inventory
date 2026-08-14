@@ -25,13 +25,22 @@ interface Row {
   qty_ocr: number;
   active: boolean | null;
   count_status: string | null;
-  hidden_reason: 'excluded' | 'inactive' | 'not_in_products' | 'no_comparison' | 'visible';
+  hidden_reason:
+    | 'excluded'
+    | 'inactive'
+    | 'not_in_products'
+    | 'negative_skipped'
+    | 'no_comparison'
+    | 'visible';
 }
 
 const REASON_LABEL: Record<Row['hidden_reason'], string> = {
   excluded: 'ตั้งเป็น "ไม่ต้องนับ"',
   inactive: 'สินค้าปิดใช้งาน',
   not_in_products: 'ไม่มีรหัสนี้ในระบบสินค้า',
+  // Not a fault to fix — the comparison ran and left this row out on purpose, because a variance
+  // against a negative baseline is meaningless. This panel is where it gets reported instead.
+  negative_skipped: 'ระบบไม่นำไปเทียบ เพราะยอดติดลบ',
   no_comparison: 'ยังไม่ได้กดเปรียบเทียบวันนี้',
   visible: 'อยู่ในตารางเปรียบเทียบแล้ว',
 };
@@ -40,6 +49,7 @@ const REASON_TONE: Record<Row['hidden_reason'], 'danger' | 'warning' | 'default'
   excluded: 'warning',
   inactive: 'warning',
   not_in_products: 'danger',
+  negative_skipped: 'warning',
   no_comparison: 'danger',
   visible: 'default',
 };
