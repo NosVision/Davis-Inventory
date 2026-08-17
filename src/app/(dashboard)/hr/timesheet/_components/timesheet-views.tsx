@@ -89,12 +89,12 @@ function weekdayIndex(dateStr: string): number {
 export function TimesheetBlockGrid({
   employees,
   onPick,
-  showCompany = false,
+  homeCompany = null,
 }: {
   employees: TimesheetEmployee[];
   onPick: (emp: TimesheetEmployee, day: DaySummary) => void;
-  /** This venue mixes companies → name each row's payrun owner. See PayrollScopeChips. */
-  showCompany?: boolean;
+  /** The venue's own company — only OTHER companies get named on a row. See PayrollScopeChips. */
+  homeCompany?: string | null;
 }) {
   const isTh = useLocale() === 'th';
   const wd = isTh ? WD_TH : WD_EN;
@@ -119,8 +119,11 @@ export function TimesheetBlockGrid({
   // The name column carries chips only when there is something to explain — widen it just then,
   // rather than permanently spending horizontal space the day blocks need.
   const hasScopeChips = useMemo(
-    () => showCompany || employees.some((e) => e.payroll_group_name),
-    [showCompany, employees]
+    () =>
+      employees.some(
+        (e) => e.payroll_group_name || (e.company_name && e.company_name !== homeCompany)
+      ),
+    [homeCompany, employees]
   );
   const nameColWidth = hasScopeChips ? 'min-w-[13rem] max-w-[13rem]' : 'min-w-[9rem] max-w-[9rem]';
 
@@ -182,7 +185,7 @@ export function TimesheetBlockGrid({
                     <span className="flex items-center">
                       <span className="truncate">{emp.name}</span>
                       {emp.end_date && <DepartedChip endDate={emp.end_date} isTh={isTh} />}
-                      <PayrollScopeChips emp={emp} showCompany={showCompany} isTh={isTh} />
+                      <PayrollScopeChips emp={emp} homeCompany={homeCompany} isTh={isTh} />
                     </span>
                   </td>
                   {dates.map((date) => {
@@ -237,12 +240,12 @@ export function TimesheetBlockGrid({
 export function TimesheetSummaryTable({
   employees,
   onPick,
-  showCompany = false,
+  homeCompany = null,
 }: {
   employees: TimesheetEmployee[];
   onPick?: (emp: TimesheetEmployee) => void;
-  /** This venue mixes companies → name each row's payrun owner. See PayrollScopeChips. */
-  showCompany?: boolean;
+  /** The venue's own company — only OTHER companies get named on a row. See PayrollScopeChips. */
+  homeCompany?: string | null;
 }) {
   const isTh = useLocale() === 'th';
   const H = isTh
@@ -275,7 +278,7 @@ export function TimesheetSummaryTable({
               <td className="px-3 py-2 font-medium text-gray-800 dark:text-gray-200">
                 {emp.name}
                 {emp.end_date && <DepartedChip endDate={emp.end_date} isTh={isTh} />}
-                <PayrollScopeChips emp={emp} showCompany={showCompany} isTh={isTh} />
+                <PayrollScopeChips emp={emp} homeCompany={homeCompany} isTh={isTh} />
               </td>
               <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{emp.totals.work_days}</td>
               <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{toH(emp.totals.worked_min)}</td>

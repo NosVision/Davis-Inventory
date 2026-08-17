@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { Loader2, Plus, Pencil, Save, Undo2, AlertTriangle } from 'lucide-react';
 import { Button, Modal, ModalFooter, PageHeader, StatusBadge, type StatusTone, toast } from '@/components/ui';
-import { PayrollScopeChips, spansMultipleCompanies, type PayrollScopeInfo } from '@/components/hr/payroll-scope-chips';
+import { PayrollScopeChips, dominantCompany, type PayrollScopeInfo } from '@/components/hr/payroll-scope-chips';
 import { todayBangkok } from '@/lib/utils/date';
 import ScheduleFillTools, { type PatternSlot } from './ScheduleFillTools';
 import ShiftModal, { labelTimeMismatch, to12h } from './ShiftModal';
@@ -211,8 +211,10 @@ export default function SchedulePage({
   // A store roster lists that venue's members; a payrun is generated per company + payroll group.
   // Where those disagree, say so on the row — HR was reading the difference as missing data
   // (owner report 2026-08-17). Company scope is single-company by definition, so no company chip.
-  const mixedCompanies = useMemo(() => spansMultipleCompanies(employees), [employees]);
-  const hasScopeChips = mixedCompanies || employees.some((e) => e.payroll_group_name);
+  const homeCompany = useMemo(() => dominantCompany(employees), [employees]);
+  const hasScopeChips = employees.some(
+    (e) => e.payroll_group_name || (e.company_name && e.company_name !== homeCompany),
+  );
 
   const days = useMemo(() => daysOfMonth(month), [month]);
   const tplById = useMemo(() => new Map(templates.map((x) => [x.id, x])), [templates]);
@@ -681,7 +683,7 @@ export default function SchedulePage({
                       <input type="checkbox" checked={selectedEmps.has(emp.user_id)} onChange={() => toggleEmp(emp.user_id)}
                         className="h-3.5 w-3.5 rounded border-gray-300 text-indigo-600" />
                       {empName(emp)}
-                      <PayrollScopeChips emp={emp} showCompany={mixedCompanies} isTh={isTh} />
+                      <PayrollScopeChips emp={emp} homeCompany={homeCompany} isTh={isTh} />
                       {/* Company scope is sorted by position — show it so the grouping reads */}
                       {scopeKind === 'company' && (
                         <span className={`text-[10px] ${emp.position_name ? 'text-gray-400' : 'text-amber-500'}`}>
@@ -763,7 +765,7 @@ export default function SchedulePage({
                     <tr key={emp.user_id} className="border-t border-gray-100 dark:border-gray-700/50">
                       <td className="px-3 py-1.5 font-medium text-gray-800 dark:text-gray-200">
                         {empName(emp)}
-                        <PayrollScopeChips emp={emp} showCompany={mixedCompanies} isTh={isTh} />
+                        <PayrollScopeChips emp={emp} homeCompany={homeCompany} isTh={isTh} />
                       </td>
                       <td className="px-3 py-1.5 tabular-nums text-gray-600 dark:text-gray-400">{b?.work_days ?? 0}</td>
                       <td className={`px-3 py-1.5 tabular-nums ${offBad ? 'font-semibold text-red-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-400'}`}>

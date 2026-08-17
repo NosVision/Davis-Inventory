@@ -15,7 +15,7 @@ import {
 } from './_components/timesheet-views';
 import { TimesheetEditModal, type EditTarget, type LeaveTypeOption } from './_components/timesheet-edit-modal';
 import { AttendanceScoreCard } from '@/components/hr/attendance-score-card';
-import { PayrollScopeChips, spansMultipleCompanies } from '@/components/hr/payroll-scope-chips';
+import { PayrollScopeChips, dominantCompany } from '@/components/hr/payroll-scope-chips';
 import type { ScoreConfig } from '@/lib/hr/attendance-score';
 
 interface StoreOpt {
@@ -143,7 +143,11 @@ export default function HrTimesheetPage() {
   // A venue's timesheet lists its store members; a payrun is generated per company + payroll
   // group. Where those disagree, say so on the rows — HR was reading the difference as missing
   // data (owner report 2026-08-17). Derived from the WHOLE list, so searching can't change it.
-  const mixedCompanies = useMemo(() => spansMultipleCompanies(employees), [employees]);
+  const homeCompany = useMemo(() => dominantCompany(employees), [employees]);
+  const visitingCount = useMemo(
+    () => employees.filter((e) => e.company_name && e.company_name !== homeCompany).length,
+    [employees, homeCompany]
+  );
   const groupedNames = useMemo(
     () => [...new Set(employees.map((e) => e.payroll_group_name).filter(Boolean))] as string[],
     [employees]
@@ -241,7 +245,7 @@ export default function HrTimesheetPage() {
       </div>
 
       {/* Why this list and the payrun's list differ — stated once, then chipped per row. */}
-      {!loading && (mixedCompanies || groupedNames.length > 0) && (
+      {!loading && (visitingCount > 0 || groupedNames.length > 0) && (
         <p className="rounded-xl border border-gray-200 bg-gray-50/70 px-3 py-2 text-xs text-gray-600 dark:border-gray-700 dark:bg-gray-800/40 dark:text-gray-400">
           {isTh
             ? 'รายชื่อหน้านี้ยึดตามสาขาที่พนักงานสังกัด ส่วนเงินเดือนออกเป็นราย “บริษัท” และแยกตาม “กลุ่มเงินเดือน” — คนที่มีป้ายกำกับท้ายชื่อจะไปอยู่ใน payrun คนละใบกับสาขานี้'
@@ -268,13 +272,13 @@ export default function HrTimesheetPage() {
       ) : view === 'blocks' ? (
         <TimesheetBlockGrid
           employees={filtered}
-          showCompany={mixedCompanies}
+          homeCompany={homeCompany}
           onPick={(emp, day) => setEditTarget({ userId: emp.user_id, name: emp.name, companyId: emp.company_id, otEligible: emp.ot_eligible, day })}
         />
       ) : view === 'summary' ? (
         <TimesheetSummaryTable
           employees={filtered}
-          showCompany={mixedCompanies}
+          homeCompany={homeCompany}
           onPick={(emp) => {
             setSearch(emp.name);
             setView('full');
@@ -288,7 +292,7 @@ export default function HrTimesheetPage() {
               <section key={emp.user_id} className="space-y-2">
                 <div className="flex flex-wrap items-center">
                   <SectionHeading title={emp.end_date ? `${emp.name} · ${t('departed')}` : emp.name} />
-                  <PayrollScopeChips emp={emp} showCompany={mixedCompanies} isTh={isTh} />
+                  <PayrollScopeChips emp={emp} homeCompany={homeCompany} isTh={isTh} />
                 </div>
                 <AttendanceScoreCard days={emp.days} today={openBusinessDateBangkok()} compact config={scoreConfig} />
                 <SummaryChips totals={emp.totals} />

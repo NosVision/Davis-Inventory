@@ -33,33 +33,50 @@ export function shortCompany(name: string): string {
   return trimmed || name;
 }
 
-/** True when the listed people span more than one company — i.e. this venue mixes payrolls. */
-export function spansMultipleCompanies(list: readonly PayrollScopeInfo[]): boolean {
-  const seen = new Set<string>();
+/**
+ * The company this list is really "about" — the one most of its people belong to.
+ *
+ * Chipping every row of a mixed venue was the first attempt and it was wrong: at Baccarat it put a
+ * long "บัคคารัต บางกอก บาร์ และ เรสเทอรเริน" on all 21 of that company's own staff to flag 4
+ * visitors, and the employee names were squeezed to "นาง…" (owner report 2026-08-17). The signal is
+ * the exception, so only the exceptions are marked.
+ *
+ * `stores` carries no company, so the venue's own company has to be inferred from who works there.
+ * A tie returns null and everyone is chipped — with two payrolls equally represented there is no
+ * "visiting" company, and saying so is better than picking one arbitrarily.
+ */
+export function dominantCompany(list: readonly PayrollScopeInfo[]): string | null {
+  const count = new Map<string, number>();
   for (const e of list) {
-    if (e.company_name) seen.add(e.company_name);
-    if (seen.size > 1) return true;
+    if (!e.company_name) continue;
+    count.set(e.company_name, (count.get(e.company_name) ?? 0) + 1);
   }
-  return false;
+  if (count.size < 2) return [...count.keys()][0] ?? null;
+  const ranked = [...count.entries()].sort((a, b) => b[1] - a[1]);
+  return ranked[0][1] === ranked[1][1] ? null : ranked[0][0];
 }
 
 interface PayrollScopeChipsProps {
   emp: PayrollScopeInfo;
-  /** Pass `spansMultipleCompanies(employees)` — a single-company list needs no company chip. */
-  showCompany: boolean;
+  /**
+   * The venue's own company, from {@link dominantCompany}. Anyone else's company is named on their
+   * row; the venue's own staff carry no chip, which is what keeps the column readable.
+   */
+  homeCompany: string | null;
   isTh: boolean;
 }
 
-export function PayrollScopeChips({ emp, showCompany, isTh }: PayrollScopeChipsProps) {
-  const company = showCompany && emp.company_name ? emp.company_name : null;
+export function PayrollScopeChips({ emp, homeCompany, isTh }: PayrollScopeChipsProps) {
+  const company = emp.company_name && emp.company_name !== homeCompany ? emp.company_name : null;
   const group = emp.payroll_group_name ?? null;
   if (!company && !group) return null;
 
   return (
     <>
       {company && (
+        // Capped: a full legal name must never be allowed to push the person's own name out of view.
         <span
-          className="ml-1 inline-flex shrink-0 items-center rounded-full bg-amber-50 px-1.5 py-0.5 text-[9px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+          className="ml-1 inline-flex max-w-[7rem] shrink-0 items-center truncate rounded-full bg-amber-50 px-1.5 py-0.5 text-[9px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
           title={
             isTh
               ? `สังกัด ${company} — เงินเดือนอยู่ใน payrun ของบริษัทนี้ ไม่ใช่ของสาขา`
