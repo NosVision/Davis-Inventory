@@ -990,9 +990,12 @@ export default function HrPayrollPage() {
                       isTh={isTh}
                     />
                   ) : (
-                  <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
+                  // Capped height so the column headers pin: the register is 13 money columns wide
+                  // and one row per employee deep, and scrolling past the header leaves a wall of
+                  // unlabelled figures (owner ask 2026-08-17).
+                  <div className="max-h-[70vh] overflow-auto rounded-xl border border-gray-200 dark:border-gray-700">
                     <table className="w-full min-w-[64rem] text-sm">
-                      <thead className="bg-gray-50 text-left text-xs font-medium text-gray-500 dark:bg-gray-800/50 dark:text-gray-400">
+                      <thead className="sticky top-0 z-10 bg-gray-50 text-left text-xs font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
                         <tr>
                           <th className="w-8 px-2 py-2" />
                           <th className="px-3 py-2">{t('colEmployee')}</th>

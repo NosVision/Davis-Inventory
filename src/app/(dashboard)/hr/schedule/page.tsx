@@ -679,11 +679,17 @@ export default function SchedulePage({
       ) : employees.length === 0 ? (
         <p className="rounded-xl border border-dashed border-gray-300 px-4 py-10 text-center text-sm text-gray-400 dark:border-gray-700">{t('noEmployees')}</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
+        // The date row has to survive scrolling: a month is 31 columns wide and a venue is dozens of
+        // rows deep, so once you scroll to the middle of either you are looking at cells with no
+        // idea which day or which person they belong to (owner ask 2026-08-17). Capping the height
+        // is what makes `sticky` work at all — the header pins to this box, and a box that grows to
+        // fit its content never scrolls, so nothing would ever pin.
+        <div className="max-h-[70vh] overflow-auto rounded-xl border border-gray-200 dark:border-gray-700">
           <table className="min-w-full border-collapse text-xs">
             <thead>
               <tr className="bg-gray-50 dark:bg-gray-800">
-                <th className="sticky left-0 z-10 bg-gray-50 px-2 py-2 text-left font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                {/* Frozen in BOTH directions, so it outranks the row headers and the date headers. */}
+                <th className="sticky left-0 top-0 z-30 bg-gray-50 px-2 py-2 text-left font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-300">
                   <label className="flex items-center gap-1.5">
                     <input type="checkbox" checked={allSelected}
                       onChange={(e) => setSelectedEmps(e.target.checked ? new Set(employees.map((x) => x.user_id)) : new Set())}
@@ -694,7 +700,9 @@ export default function SchedulePage({
                 {days.map((d) => {
                   const holiday = holidayByDate.get(d);
                   return (
-                    <th key={d} className={`min-w-[38px] px-1 py-2 text-center font-medium ${holiday ? 'text-rose-500 dark:text-rose-400' : 'text-gray-500 dark:text-gray-400'}`} title={holiday || undefined}>
+                    // Background named on the cell, not inherited from the row: a sticky cell paints
+                    // over the rows sliding beneath it only if it has a background of its own.
+                    <th key={d} className={`sticky top-0 z-20 min-w-[38px] bg-gray-50 px-1 py-2 text-center font-medium dark:bg-gray-800 ${holiday ? 'text-rose-500 dark:text-rose-400' : 'text-gray-500 dark:text-gray-400'}`} title={holiday || undefined}>
                       <div className="text-[10px] uppercase">{WEEKDAYS[getDay(d)]}</div>
                       <div className="tabular-nums">{Number(d.split('-')[2])}</div>
                       {holiday && <div className="mx-auto mt-0.5 h-1 w-1 rounded-full bg-rose-500" />}

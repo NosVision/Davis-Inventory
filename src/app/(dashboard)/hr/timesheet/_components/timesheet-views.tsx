@@ -253,16 +253,20 @@ export function TimesheetSummaryTable({
     : { name: 'Employee', workDays: 'Work days', hours: 'Hours', ot: 'OT (h)', late: 'Late (min)', absent: 'Absent' };
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
+    // Capped height so the column headers can pin: a venue runs to dozens of rows, and scrolling
+    // past the header leaves five unlabelled number columns.
+    <div className="max-h-[70vh] overflow-auto rounded-xl border border-gray-200 dark:border-gray-700">
       <table className="min-w-full text-sm">
         <thead>
-          <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
-            <th className="px-3 py-2 font-medium">{H.name}</th>
-            <th className="px-3 py-2 text-right font-medium">{H.workDays}</th>
-            <th className="px-3 py-2 text-right font-medium">{H.hours}</th>
-            <th className="px-3 py-2 text-right font-medium">{H.ot}</th>
-            <th className="px-3 py-2 text-right font-medium">{H.late}</th>
-            <th className="px-3 py-2 text-right font-medium">{H.absent}</th>
+          {/* Backgrounds sit on the cells, not the row — a sticky cell needs its own to paint over
+              the rows passing beneath it. */}
+          <tr className="text-left text-xs text-gray-500 dark:text-gray-400">
+            <th className="sticky top-0 z-10 border-b border-gray-100 bg-gray-50 px-3 py-2 font-medium dark:border-gray-700 dark:bg-gray-800">{H.name}</th>
+            <th className="sticky top-0 z-10 border-b border-gray-100 bg-gray-50 px-3 py-2 text-right font-medium dark:border-gray-700 dark:bg-gray-800">{H.workDays}</th>
+            <th className="sticky top-0 z-10 border-b border-gray-100 bg-gray-50 px-3 py-2 text-right font-medium dark:border-gray-700 dark:bg-gray-800">{H.hours}</th>
+            <th className="sticky top-0 z-10 border-b border-gray-100 bg-gray-50 px-3 py-2 text-right font-medium dark:border-gray-700 dark:bg-gray-800">{H.ot}</th>
+            <th className="sticky top-0 z-10 border-b border-gray-100 bg-gray-50 px-3 py-2 text-right font-medium dark:border-gray-700 dark:bg-gray-800">{H.late}</th>
+            <th className="sticky top-0 z-10 border-b border-gray-100 bg-gray-50 px-3 py-2 text-right font-medium dark:border-gray-700 dark:bg-gray-800">{H.absent}</th>
           </tr>
         </thead>
         <tbody>
