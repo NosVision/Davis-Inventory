@@ -4,13 +4,14 @@ import { useMemo } from 'react';
 import { useLocale } from 'next-intl';
 import { cn } from '@/lib/utils/cn';
 import { isEmptyDay, type DaySummary, type TimesheetTotals } from '@/components/hr/timesheet-parts';
+import { PayrollScopeChips, type PayrollScopeInfo } from '@/components/hr/payroll-scope-chips';
 import { openBusinessDateBangkok } from '@/lib/utils/date';
 
 // Extra timesheet presentations for /hr/timesheet (owner ask 2026-07-08): a colour-block grid
 // (employees × days, same visual language as the bulk-backfill grid) and a compact one-row-per
 // -employee summary table. The existing full per-day tables remain the third ("full") view.
 
-export type TimesheetEmployee = {
+export type TimesheetEmployee = PayrollScopeInfo & {
   user_id: string;
   name: string;
   company_id: string | null;
@@ -88,9 +89,12 @@ function weekdayIndex(dateStr: string): number {
 export function TimesheetBlockGrid({
   employees,
   onPick,
+  showCompany = false,
 }: {
   employees: TimesheetEmployee[];
   onPick: (emp: TimesheetEmployee, day: DaySummary) => void;
+  /** This venue mixes companies → name each row's payrun owner. See PayrollScopeChips. */
+  showCompany?: boolean;
 }) {
   const isTh = useLocale() === 'th';
   const wd = isTh ? WD_TH : WD_EN;
@@ -112,6 +116,14 @@ export function TimesheetBlockGrid({
 
   const dates = useMemo(() => employees[0]?.days.map((d) => d.business_date) ?? [], [employees]);
 
+  // The name column carries chips only when there is something to explain — widen it just then,
+  // rather than permanently spending horizontal space the day blocks need.
+  const hasScopeChips = useMemo(
+    () => showCompany || employees.some((e) => e.payroll_group_name),
+    [showCompany, employees]
+  );
+  const nameColWidth = hasScopeChips ? 'min-w-[13rem] max-w-[13rem]' : 'min-w-[9rem] max-w-[9rem]';
+
   return (
     <div className="space-y-2">
       {/* Legend */}
@@ -130,7 +142,12 @@ export function TimesheetBlockGrid({
         <table className="border-separate border-spacing-0 text-xs">
           <thead className="sticky top-0 z-10">
             <tr>
-              <th className="sticky left-0 z-20 min-w-[9rem] border-b border-r border-gray-200 bg-gray-50 px-2 py-1.5 text-left font-semibold text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
+              <th
+                className={cn(
+                  'sticky left-0 z-20 border-b border-r border-gray-200 bg-gray-50 px-2 py-1.5 text-left font-semibold text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300',
+                  nameColWidth
+                )}
+              >
                 {isTh ? 'พนักงาน' : 'Employee'}
               </th>
               {dates.map((d) => {
@@ -156,9 +173,17 @@ export function TimesheetBlockGrid({
               const byDate = new Map(emp.days.map((d) => [d.business_date, d]));
               return (
                 <tr key={emp.user_id}>
-                  <td className="sticky left-0 z-[5] min-w-[9rem] max-w-[9rem] truncate border-b border-r border-gray-200 bg-white px-2 py-1 font-medium text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
-                    {emp.name}
-                    {emp.end_date && <DepartedChip endDate={emp.end_date} isTh={isTh} />}
+                  <td
+                    className={cn(
+                      'sticky left-0 z-[5] border-b border-r border-gray-200 bg-white px-2 py-1 font-medium text-gray-800 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200',
+                      nameColWidth
+                    )}
+                  >
+                    <span className="flex items-center">
+                      <span className="truncate">{emp.name}</span>
+                      {emp.end_date && <DepartedChip endDate={emp.end_date} isTh={isTh} />}
+                      <PayrollScopeChips emp={emp} showCompany={showCompany} isTh={isTh} />
+                    </span>
                   </td>
                   {dates.map((date) => {
                     const day = byDate.get(date);
@@ -212,9 +237,12 @@ export function TimesheetBlockGrid({
 export function TimesheetSummaryTable({
   employees,
   onPick,
+  showCompany = false,
 }: {
   employees: TimesheetEmployee[];
   onPick?: (emp: TimesheetEmployee) => void;
+  /** This venue mixes companies → name each row's payrun owner. See PayrollScopeChips. */
+  showCompany?: boolean;
 }) {
   const isTh = useLocale() === 'th';
   const H = isTh
@@ -247,6 +275,7 @@ export function TimesheetSummaryTable({
               <td className="px-3 py-2 font-medium text-gray-800 dark:text-gray-200">
                 {emp.name}
                 {emp.end_date && <DepartedChip endDate={emp.end_date} isTh={isTh} />}
+                <PayrollScopeChips emp={emp} showCompany={showCompany} isTh={isTh} />
               </td>
               <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{emp.totals.work_days}</td>
               <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{toH(emp.totals.worked_min)}</td>

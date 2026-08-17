@@ -15,6 +15,7 @@ import {
 } from './_components/timesheet-views';
 import { TimesheetEditModal, type EditTarget, type LeaveTypeOption } from './_components/timesheet-edit-modal';
 import { AttendanceScoreCard } from '@/components/hr/attendance-score-card';
+import { PayrollScopeChips, spansMultipleCompanies } from '@/components/hr/payroll-scope-chips';
 import type { ScoreConfig } from '@/lib/hr/attendance-score';
 
 interface StoreOpt {
@@ -139,6 +140,15 @@ export default function HrTimesheetPage() {
     return employees.filter((e) => e.name.toLowerCase().includes(q));
   }, [employees, search]);
 
+  // A venue's timesheet lists its store members; a payrun is generated per company + payroll
+  // group. Where those disagree, say so on the rows — HR was reading the difference as missing
+  // data (owner report 2026-08-17). Derived from the WHOLE list, so searching can't change it.
+  const mixedCompanies = useMemo(() => spansMultipleCompanies(employees), [employees]);
+  const groupedNames = useMemo(
+    () => [...new Set(employees.map((e) => e.payroll_group_name).filter(Boolean))] as string[],
+    [employees]
+  );
+
   const views: { key: ViewMode; label: string; icon: typeof LayoutGrid }[] = [
     { key: 'blocks', label: L.blocks, icon: LayoutGrid },
     { key: 'full', label: L.full, icon: List },
@@ -230,6 +240,15 @@ export default function HrTimesheetPage() {
         </div>
       </div>
 
+      {/* Why this list and the payrun's list differ — stated once, then chipped per row. */}
+      {!loading && (mixedCompanies || groupedNames.length > 0) && (
+        <p className="rounded-xl border border-gray-200 bg-gray-50/70 px-3 py-2 text-xs text-gray-600 dark:border-gray-700 dark:bg-gray-800/40 dark:text-gray-400">
+          {isTh
+            ? 'รายชื่อหน้านี้ยึดตามสาขาที่พนักงานสังกัด ส่วนเงินเดือนออกเป็นราย “บริษัท” และแยกตาม “กลุ่มเงินเดือน” — คนที่มีป้ายกำกับท้ายชื่อจะไปอยู่ใน payrun คนละใบกับสาขานี้'
+            : 'This list is keyed on venue membership; a payrun is generated per company and split by payroll group — the chipped rows are paid on a different payrun than this venue’s.'}
+        </p>
+      )}
+
       {loading ? (
         <div className="flex items-center justify-center py-10 text-gray-400">
           <Loader2 className="h-5 w-5 animate-spin" />
@@ -249,11 +268,13 @@ export default function HrTimesheetPage() {
       ) : view === 'blocks' ? (
         <TimesheetBlockGrid
           employees={filtered}
+          showCompany={mixedCompanies}
           onPick={(emp, day) => setEditTarget({ userId: emp.user_id, name: emp.name, companyId: emp.company_id, otEligible: emp.ot_eligible, day })}
         />
       ) : view === 'summary' ? (
         <TimesheetSummaryTable
           employees={filtered}
+          showCompany={mixedCompanies}
           onPick={(emp) => {
             setSearch(emp.name);
             setView('full');
@@ -265,7 +286,10 @@ export default function HrTimesheetPage() {
             const hasData = emp.days.some((d) => !isEmptyDay(d));
             return (
               <section key={emp.user_id} className="space-y-2">
-                <SectionHeading title={emp.end_date ? `${emp.name} · ${t('departed')}` : emp.name} />
+                <div className="flex flex-wrap items-center">
+                  <SectionHeading title={emp.end_date ? `${emp.name} · ${t('departed')}` : emp.name} />
+                  <PayrollScopeChips emp={emp} showCompany={mixedCompanies} isTh={isTh} />
+                </div>
                 <AttendanceScoreCard days={emp.days} today={openBusinessDateBangkok()} compact config={scoreConfig} />
                 <SummaryChips totals={emp.totals} />
                 {hasData ? (

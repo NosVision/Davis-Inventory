@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { Loader2, Plus, Pencil, Save, Undo2, AlertTriangle } from 'lucide-react';
 import { Button, Modal, ModalFooter, PageHeader, StatusBadge, type StatusTone, toast } from '@/components/ui';
+import { PayrollScopeChips, spansMultipleCompanies, type PayrollScopeInfo } from '@/components/hr/payroll-scope-chips';
 import { todayBangkok } from '@/lib/utils/date';
 import ScheduleFillTools, { type PatternSlot } from './ScheduleFillTools';
 import ShiftModal, { labelTimeMismatch, to12h } from './ShiftModal';
@@ -13,7 +14,7 @@ interface StoreOpt {
   store_code: string;
   store_name: string;
 }
-interface Employee {
+interface Employee extends PayrollScopeInfo {
   user_id: string;
   name: string;
   /** Real full name from the HR record — for the nickname ↔ full-name display toggle. */
@@ -114,21 +115,25 @@ export default function SchedulePage({
   const [unscheduled, setUnscheduled] = useState<{ user_id: string; name: string; position_name: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Roster name display: nickname (display_name) ↔ real full name (hr_employees.full_name),
-  // login username as the last resort either way (owner ask 2026-07-27). Sticky per browser.
-  const [nameMode, setNameMode] = useState<'nick' | 'full'>('nick');
+  // Roster name display: real full name (hr_employees.full_name) ↔ nickname (display_name), login
+  // username as the last resort either way (owner ask 2026-07-27). Sticky per browser.
+  //
+  // Defaults to the FULL name (owner ask 2026-08-17): the timesheet and payroll both lead with
+  // ชื่อ-นามสกุล, and the roster defaulting to ชื่อเล่น was the one screen naming people
+  // differently — which is exactly what made cross-checking the three HR screens hard.
+  const [nameMode, setNameMode] = useState<'nick' | 'full'>('full');
   useEffect(() => {
-    if (localStorage.getItem('hr-schedule-name-mode') === 'full') setNameMode('full');
+    if (localStorage.getItem('hr-schedule-name-mode') === 'nick') setNameMode('nick');
   }, []);
   const switchNameMode = (mode: 'nick' | 'full') => {
     setNameMode(mode);
     localStorage.setItem('hr-schedule-name-mode', mode);
   };
+  // Fallback follows the project-wide name rule: real name → nickname → the login account. `name`
+  // already collapses to display_name||username server-side, so full mode degrades to the nickname
+  // (not a raw login) for the few staff with no ชื่อ-นามสกุล on their HR record yet.
   const empName = useCallback(
-    (emp: Employee) =>
-      nameMode === 'full'
-        ? emp.full_name || emp.username || emp.name || '—'
-        : emp.name || emp.username || '—',
+    (emp: Employee) => (nameMode === 'full' ? emp.full_name || emp.name : emp.name) || emp.username || '—',
     [nameMode],
   );
 
@@ -202,6 +207,12 @@ export default function SchedulePage({
     });
   }, [templates]);
 
+
+  // A store roster lists that venue's members; a payrun is generated per company + payroll group.
+  // Where those disagree, say so on the row — HR was reading the difference as missing data
+  // (owner report 2026-08-17). Company scope is single-company by definition, so no company chip.
+  const mixedCompanies = useMemo(() => spansMultipleCompanies(employees), [employees]);
+  const hasScopeChips = mixedCompanies || employees.some((e) => e.payroll_group_name);
 
   const days = useMemo(() => daysOfMonth(month), [month]);
   const tplById = useMemo(() => new Map(templates.map((x) => [x.id, x])), [templates]);
@@ -505,6 +516,16 @@ export default function SchedulePage({
         </div>
       )}
 
+      {/* Why this roster and the payrun list different people — stated once, then chipped per row. */}
+      {!loading && hasScopeChips && (
+        <p className="rounded-xl border border-gray-200 bg-gray-50/70 px-3 py-2 text-xs text-gray-600 dark:border-gray-700 dark:bg-gray-800/40 dark:text-gray-400">
+          {tt(
+            'ตารางนี้ยึดตามสาขาที่พนักงานสังกัด ส่วนเงินเดือนออกเป็นราย “บริษัท” และแยกตาม “กลุ่มเงินเดือน” — คนที่มีป้ายกำกับท้ายชื่อจะไปอยู่ใน payrun คนละใบกับสาขานี้',
+            'This roster is keyed on venue membership; a payrun is generated per company and split by payroll group — the chipped rows are paid on a different payrun than this venue’s.'
+          )}
+        </p>
+      )}
+
       {/* shift templates strip + brush picker */}
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs font-medium text-gray-500 dark:text-gray-400">{t('shifts')}:</span>
@@ -660,6 +681,7 @@ export default function SchedulePage({
                       <input type="checkbox" checked={selectedEmps.has(emp.user_id)} onChange={() => toggleEmp(emp.user_id)}
                         className="h-3.5 w-3.5 rounded border-gray-300 text-indigo-600" />
                       {empName(emp)}
+                      <PayrollScopeChips emp={emp} showCompany={mixedCompanies} isTh={isTh} />
                       {/* Company scope is sorted by position — show it so the grouping reads */}
                       {scopeKind === 'company' && (
                         <span className={`text-[10px] ${emp.position_name ? 'text-gray-400' : 'text-amber-500'}`}>
@@ -739,7 +761,10 @@ export default function SchedulePage({
                   const std = b ? (b.standard_minutes / 60).toFixed(1) : '0.0';
                   return (
                     <tr key={emp.user_id} className="border-t border-gray-100 dark:border-gray-700/50">
-                      <td className="px-3 py-1.5 font-medium text-gray-800 dark:text-gray-200">{empName(emp)}</td>
+                      <td className="px-3 py-1.5 font-medium text-gray-800 dark:text-gray-200">
+                        {empName(emp)}
+                        <PayrollScopeChips emp={emp} showCompany={mixedCompanies} isTh={isTh} />
+                      </td>
                       <td className="px-3 py-1.5 tabular-nums text-gray-600 dark:text-gray-400">{b?.work_days ?? 0}</td>
                       <td className={`px-3 py-1.5 tabular-nums ${offBad ? 'font-semibold text-red-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-400'}`}>
                         {b?.day_off_days ?? 0} / {b?.off_target ?? 0}

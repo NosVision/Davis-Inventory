@@ -46,6 +46,13 @@ interface AttendanceRow {
   business_date: string;
   review_status: string | null;
 }
+/** A PostgREST to-one embed arrives as an object, but the generated types widen it to an array. */
+type NamedRef = { name: string | null } | { name: string | null }[] | null;
+function refName(r: NamedRef | undefined): string | null {
+  if (!r) return null;
+  return (Array.isArray(r) ? r[0]?.name : r.name) ?? null;
+}
+
 interface EmployeeRow {
   profile_id: string;
   company_id: string | null;
@@ -54,6 +61,10 @@ interface EmployeeRow {
   ot_eligible: boolean | null;
   status: string | null;
   end_date: string | null;
+  // Why a venue's timesheet and its payrun list different people: the timesheet is keyed on store
+  // membership, a payrun on company + payroll group. Sent along so the row can say so itself.
+  company?: NamedRef;
+  payroll_group?: NamedRef;
 }
 interface ProfileRow {
   id: string;
@@ -185,7 +196,10 @@ export async function GET(request: NextRequest) {
     service.from('profiles').select('id, username, display_name').in('id', userIds),
     service
       .from('hr_employees')
-      .select('profile_id, company_id, full_name, work_hours_per_day, ot_eligible, status, end_date')
+      .select(
+        'profile_id, company_id, full_name, work_hours_per_day, ot_eligible, status, end_date, ' +
+          'company:hr_companies(name), payroll_group:hr_payroll_groups(name)'
+      )
       .in('profile_id', userIds),
     // No-store bucket: key on user_id alone. These employees belong to no venue, so there is no
     // other store's data to leak in — and hr_schedule.store_id is NOT NULL, so any roster row they
@@ -243,7 +257,7 @@ export async function GET(request: NextRequest) {
   }
 
   const profiles = (profilesRes.data ?? []) as ProfileRow[];
-  const employees = (employeesRes.data ?? []) as EmployeeRow[];
+  const employees = (employeesRes.data ?? []) as unknown as EmployeeRow[];
   const schedule = (scheduleRes.data ?? []) as unknown as ScheduleCell[];
   const attendance = (attendanceRes.data ?? []) as AttendanceRow[];
   const overrides = (overridesRes.data ?? []) as OverrideRow[];
@@ -345,6 +359,9 @@ export async function GET(request: NextRequest) {
         // nickname/username only when it's unset (e.g. an unlinked account).
         name: e?.full_name?.trim() || p?.display_name || p?.username || '—',
         company_id: e?.company_id ?? null,
+        // Payrun scope, for the chips that explain a store-vs-company list difference.
+        company_name: e ? refName(e.company) : null,
+        payroll_group_name: e ? refName(e.payroll_group) : null,
         work_hours_per_day: workHours,
         ot_eligible: otEligible,
         // Set only for leavers — lets the timesheet UI flag the row as departed.

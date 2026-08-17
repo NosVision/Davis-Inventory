@@ -19,6 +19,13 @@ interface ProfileRow {
   display_name: string | null;
   is_system: boolean | null;
 }
+/** A PostgREST to-one embed arrives as an object, but the generated types widen it to an array. */
+type NamedRef = { name: string | null } | { name: string | null }[] | null;
+function refName(r: NamedRef | undefined): string | null {
+  if (!r) return null;
+  return (Array.isArray(r) ? r[0]?.name : r.name) ?? null;
+}
+
 interface EmployeeRow {
   profile_id: string;
   full_name: string | null;
@@ -28,6 +35,10 @@ interface EmployeeRow {
   end_date: string | null;
   company_id: string | null;
   position?: { name: string | null; sort_order: number | null } | { name: string | null; sort_order: number | null }[] | null;
+  // Why a store roster and that store's payrun list different people: the roster is keyed on store
+  // membership, a payrun on company + payroll group. Sent along so the row can say so itself.
+  company?: NamedRef;
+  payroll_group?: NamedRef;
 }
 
 // Roster scope (owner ask 2026-07-27): a month is scheduled per STORE (user_stores members,
@@ -105,7 +116,7 @@ export async function GET(request: NextRequest) {
 
   const EMP_SELECT =
     'profile_id, full_name, work_hours_per_day, standard_days_off, status, end_date, company_id, ' +
-    'position:hr_positions(name, sort_order)';
+    'position:hr_positions(name, sort_order), company:hr_companies(name), payroll_group:hr_payroll_groups(name)';
 
   let userIds: string[] = [];
   let employees: EmployeeRow[] = [];
@@ -212,6 +223,9 @@ export async function GET(request: NextRequest) {
         // Company scope sorts/labels by job position ("ไม่มี" group for the unassigned).
         position_name: pos?.name ?? null,
         position_sort: pos?.sort_order ?? null,
+        // Payrun scope, for the chips that explain a store-vs-company list difference.
+        company_name: refName(e?.company),
+        payroll_group_name: refName(e?.payroll_group),
         work_hours_per_day: e?.work_hours_per_day ?? DEFAULT_WORK_HOURS,
         standard_days_off: e?.standard_days_off ?? DEFAULT_DAYS_OFF,
         // Signals the roster UI that this person has left (their end_date caps assignments).
