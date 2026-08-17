@@ -104,6 +104,24 @@ const HREF_BY_KEY: Record<string, string | undefined> = {
   identityClaims: '/hr/employees?tab=accounts&view=claims',
 };
 
+/**
+ * Where a "needs action" count must LAND, when that is not simply the section's front page.
+ *
+ * A badge counts a QUEUE, and a queue is not always what the page opens on: the attendance badge
+ * counts punches awaiting geofence review across every date, while /hr/attendance opens on today
+ * and pending punches are almost never today's. Following the badge therefore led to an empty
+ * list, which reads as "the notification was wrong" (owner report 2026-08-17).
+ *
+ * Only used when the count is non-zero — with nothing pending, a tile still opens its normal page.
+ */
+const QUEUE_HREF_BY_KEY: Record<string, string> = {
+  attendance: '/hr/attendance?review=pending',
+};
+
+function actionHref(key: string): string | undefined {
+  return QUEUE_HREF_BY_KEY[key] ?? HREF_BY_KEY[key];
+}
+
 export default function HrDashboardPage() {
   const t = useTranslations('hr');
   const isTh = useLocale() === 'th';
@@ -245,7 +263,8 @@ export default function HrDashboardPage() {
           </div>
           <div className="flex flex-wrap gap-2">
             {pending.map((p) => {
-              const href = HREF_BY_KEY[p.key];
+              // Every chip here has a non-zero count by construction, so it always wants the queue.
+              const href = actionHref(p.key);
               const chip = (
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-white px-3 py-1 text-sm font-medium text-gray-800 shadow-sm transition-colors hover:border-amber-400 dark:border-amber-900/50 dark:bg-gray-800 dark:text-gray-100">
                   {t(`nav.${p.key}`)}
@@ -272,9 +291,11 @@ export default function HrDashboardPage() {
       )}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        {orderedTiles.map(({ key, icon: Icon, href }) => {
+        {orderedTiles.map(({ key, icon: Icon, href: navHref }) => {
           const count = tileBadges[key] ?? 0;
           const flagged = count > 0;
+          // A flagged tile goes where its badge points; an unflagged one opens the section normally.
+          const href = flagged ? actionHref(key) ?? navHref : navHref;
           const pinIdx = pinned.indexOf(key);
           const isPinned = pinIdx >= 0;
           const inner = (
