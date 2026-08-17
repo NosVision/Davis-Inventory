@@ -14,6 +14,8 @@ import { openBusinessDateBangkok } from '@/lib/utils/date';
 export type TimesheetEmployee = PayrollScopeInfo & {
   user_id: string;
   name: string;
+  /** profiles.display_name — offered on hover only; it is not always a person's name. */
+  nickname?: string | null;
   company_id: string | null;
   work_hours_per_day: number;
   ot_eligible: boolean;
@@ -34,6 +36,13 @@ export function DepartedChip({ endDate, isTh }: { endDate: string; isTh: boolean
       {isTh ? 'พ้นสภาพ' : 'departed'}
     </span>
   );
+}
+
+/** Tooltip naming the venue's nickname for someone, when it differs from the name on the row. */
+export function nickTitle(emp: TimesheetEmployee, isTh: boolean): string | undefined {
+  const nick = emp.nickname?.trim();
+  if (!nick || nick === emp.name) return undefined;
+  return `${isTh ? 'ชื่อเล่น' : 'Nickname'}: ${nick}`;
 }
 
 export type DayStatus =
@@ -183,7 +192,7 @@ export function TimesheetBlockGrid({
                     )}
                   >
                     <span className="flex items-center">
-                      <span className="truncate">{emp.name}</span>
+                      <span className="truncate" title={nickTitle(emp, isTh)}>{emp.name}</span>
                       {emp.end_date && <DepartedChip endDate={emp.end_date} isTh={isTh} />}
                       <PayrollScopeChips emp={emp} homeCompany={homeCompany} isTh={isTh} />
                     </span>
@@ -280,7 +289,7 @@ export function TimesheetSummaryTable({
               )}
             >
               <td className="px-3 py-2 font-medium text-gray-800 dark:text-gray-200">
-                {emp.name}
+                <span title={nickTitle(emp, isTh)}>{emp.name}</span>
                 {emp.end_date && <DepartedChip endDate={emp.end_date} isTh={isTh} />}
                 <PayrollScopeChips emp={emp} homeCompany={homeCompany} isTh={isTh} />
               </td>

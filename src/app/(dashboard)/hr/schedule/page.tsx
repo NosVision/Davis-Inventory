@@ -119,26 +119,33 @@ export default function SchedulePage({
   const [includeInactive, setIncludeInactive] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Roster name display: real full name (hr_employees.full_name) ↔ nickname (display_name), login
-  // username as the last resort either way (owner ask 2026-07-27). Sticky per browser.
+  // The roster names people by their ชื่อ-นามสกุล, full stop (owner ask 2026-08-17). It used to
+  // offer a nickname ↔ full-name toggle, defaulting to the nickname, and that default was the whole
+  // problem: `profiles.display_name` is not always a person's name. Several accounting logins are
+  // named after a department — "ACC Baccarat", "ACC Upper House" — so a roster in nickname mode
+  // could not tell you who had actually been scheduled.
   //
-  // Defaults to the FULL name (owner ask 2026-08-17): the timesheet and payroll both lead with
-  // ชื่อ-นามสกุล, and the roster defaulting to ชื่อเล่น was the one screen naming people
-  // differently — which is exactly what made cross-checking the three HR screens hard.
-  const [nameMode, setNameMode] = useState<'nick' | 'full'>('full');
-  useEffect(() => {
-    if (localStorage.getItem('hr-schedule-name-mode') === 'nick') setNameMode('nick');
-  }, []);
-  const switchNameMode = (mode: 'nick' | 'full') => {
-    setNameMode(mode);
-    localStorage.setItem('hr-schedule-name-mode', mode);
-  };
-  // Fallback follows the project-wide name rule: real name → nickname → the login account. `name`
-  // already collapses to display_name||username server-side, so full mode degrades to the nickname
-  // (not a raw login) for the few staff with no ชื่อ-นามสกุล on their HR record yet.
-  const empName = useCallback(
-    (emp: Employee) => (nameMode === 'full' ? emp.full_name || emp.name : emp.name) || emp.username || '—',
-    [nameMode],
+  // The nickname is still what a venue calls someone, so it is not thrown away: it rides along in
+  // the row's tooltip, where it costs no width and misleads nobody.
+  //
+  // Fallback follows the project-wide name rule — real name → nickname → login. `name` already
+  // collapses to display_name||username server-side, so this degrades to the nickname rather than a
+  // raw login for anyone with no ชื่อ-นามสกุล on their HR record yet.
+  const empName = useCallback((emp: Employee) => emp.full_name || emp.name || emp.username || '—', []);
+  /** The nickname, only when it says something the displayed name does not. */
+  const empNick = useCallback(
+    (emp: Employee) => {
+      const nick = emp.name || emp.username || null;
+      return nick && nick !== empName(emp) ? nick : null;
+    },
+    [empName],
+  );
+  const nickTitle = useCallback(
+    (emp: Employee) => {
+      const nick = empNick(emp);
+      return nick ? `${tt('ชื่อเล่น', 'Nickname')}: ${nick}` : undefined;
+    },
+    [empNick], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // Draft (unsaved) edits + the paint brush + which employees the bulk tools act on.
@@ -589,27 +596,6 @@ export default function SchedulePage({
           className="inline-flex items-center gap-1 rounded-full border border-dashed border-gray-300 px-2.5 py-1 text-xs text-gray-500 hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-600">
           <Plus className="h-3 w-3" /> {t('addShift')}
         </button>
-
-        {/* nickname ↔ full-name display toggle (missing → login username) */}
-        <div className="ml-auto inline-flex rounded-lg bg-gray-100 p-0.5 text-xs dark:bg-gray-700">
-          {([
-            { mode: 'nick', label: tt('ชื่อเล่น', 'Nickname') },
-            { mode: 'full', label: tt('ชื่อ-นามสกุล', 'Full name') },
-          ] as const).map(({ mode, label }) => (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => switchNameMode(mode)}
-              className={`rounded-md px-2 py-1 font-medium transition-colors ${
-                nameMode === mode
-                  ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-800 dark:text-indigo-300'
-                  : 'text-gray-500 dark:text-gray-400'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
       </div>
 
       {showAdd && (
@@ -718,7 +704,9 @@ export default function SchedulePage({
                     <label className="flex items-center gap-1.5">
                       <input type="checkbox" checked={selectedEmps.has(emp.user_id)} onChange={() => toggleEmp(emp.user_id)}
                         className="h-3.5 w-3.5 rounded border-gray-300 text-indigo-600" />
-                      {empName(emp)}
+                      {/* Nickname on hover — the venue's own word for this person, kept without
+                          letting it take the place of the name payroll and the law use. */}
+                      <span title={nickTitle(emp)}>{empName(emp)}</span>
                       <PayrollScopeChips emp={emp} homeCompany={homeCompany} isTh={isTh} />
                       {/* Company scope is sorted by position — show it so the grouping reads */}
                       {scopeKind === 'company' && (
@@ -800,7 +788,7 @@ export default function SchedulePage({
                   return (
                     <tr key={emp.user_id} className="border-t border-gray-100 dark:border-gray-700/50">
                       <td className="px-3 py-1.5 font-medium text-gray-800 dark:text-gray-200">
-                        {empName(emp)}
+                        <span title={nickTitle(emp)}>{empName(emp)}</span>
                         <PayrollScopeChips emp={emp} homeCompany={homeCompany} isTh={isTh} />
                       </td>
                       <td className="px-3 py-1.5 tabular-nums text-gray-600 dark:text-gray-400">{b?.work_days ?? 0}</td>

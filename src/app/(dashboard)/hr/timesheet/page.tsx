@@ -11,6 +11,7 @@ import { DayTable, SummaryChips, isEmptyDay } from '@/components/hr/timesheet-pa
 import {
   TimesheetBlockGrid,
   TimesheetSummaryTable,
+  nickTitle,
   type TimesheetEmployee,
 } from './_components/timesheet-views';
 import { TimesheetEditModal, type EditTarget, type LeaveTypeOption } from './_components/timesheet-edit-modal';
@@ -382,7 +383,7 @@ export default function HrTimesheetPage() {
             const hasData = emp.days.some((d) => !isEmptyDay(d));
             return (
               <section key={emp.user_id} className="space-y-2">
-                <div className="flex flex-wrap items-center">
+                <div className="flex flex-wrap items-center" title={nickTitle(emp, isTh)}>
                   <SectionHeading title={emp.end_date ? `${emp.name} · ${t('departed')}` : emp.name} />
                   <PayrollScopeChips emp={emp} homeCompany={homeCompany} isTh={isTh} />
                 </div>

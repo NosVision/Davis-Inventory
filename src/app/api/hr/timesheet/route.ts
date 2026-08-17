@@ -440,6 +440,10 @@ export async function GET(request: NextRequest) {
         // Prefer the employee's real full name (ชื่อ-นามสกุล); fall back to the profile
         // nickname/username only when it's unset (e.g. an unlinked account).
         name: e?.full_name?.trim() || p?.display_name || p?.username || '—',
+        // The venue's own word for this person. Sent so the row can offer it on hover without
+        // spending width on it — profiles.display_name is not always even a name (several
+        // accounting logins are called after a department), so it must never lead.
+        nickname: p?.display_name ?? null,
         company_id: e?.company_id ?? null,
         // Payrun scope, for the chips that explain a store-vs-company list difference.
         company_name: e ? refName(e.company) : null,
