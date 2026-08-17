@@ -11,7 +11,7 @@ import {
   type TimesheetOverride,
 } from '@/lib/hr/time-engine';
 import { getHrPolicies } from '@/lib/hr/policy';
-import { loadWorkVenues, loadMemberVenues, belongsToVenue } from '@/lib/hr/work-venues';
+import { loadVenueAttachment, loadMemberVenues, belongsToVenue } from '@/lib/hr/work-venues';
 import { businessDateBangkok } from '@/lib/utils/date';
 
 // Last business day that has CLOSED. A rostered day after this is still ahead of us, so it must
@@ -198,7 +198,9 @@ export async function GET(request: NextRequest) {
     // stay — a new hire with nothing on record yet is exactly who HR opens this page to back-fill.
     try {
       const [worked, memberOf] = await Promise.all([
-        loadWorkVenues(service, from, to),
+        // Attachment, not this window's activity: a fresh pay cycle starts empty, and that must not
+        // detach a multi-venue employee from the venue they work every cycle.
+        loadVenueAttachment(service, from, to),
         loadMemberVenues(service, userIds),
       ]);
       const listed: string[] = [];

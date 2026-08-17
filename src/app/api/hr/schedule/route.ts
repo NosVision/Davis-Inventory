@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireSchedulerForScope } from '@/lib/hr/route-auth';
 import { isDateInFinalizedPeriod, employeeStoreIds, FINALIZED_PERIOD_ERROR } from '@/lib/hr/period-lock';
-import { loadWorkVenues, loadMemberVenues, belongsToVenue } from '@/lib/hr/work-venues';
+import { loadVenueAttachment, loadMemberVenues, belongsToVenue } from '@/lib/hr/work-venues';
 
 const MONTH_RE = /^\d{4}-\d{2}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -142,7 +142,9 @@ export async function GET(request: NextRequest) {
     if (userIds.length) {
       try {
         const [worked, memberOf] = await Promise.all([
-          loadWorkVenues(service, first, last),
+          // Attachment, not this month's activity — otherwise building a fresh month is circular:
+          // the page you would schedule someone on is the page that hid them for being unscheduled.
+          loadVenueAttachment(service, first, last),
           loadMemberVenues(service, userIds),
         ]);
         const listed: string[] = [];

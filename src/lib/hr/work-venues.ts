@@ -23,6 +23,30 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 /** profile id → the store ids they have a roster row or kept punch at, within the window. */
 export type WorkVenueMap = Map<string, Set<string>>;
 
+/**
+ * How far back the LISTING question looks, beyond the window on screen.
+ *
+ * There are two different questions here and the first version of this conflated them, to the point
+ * of hiding someone who plainly belonged (owner report 2026-08-17):
+ *
+ *   • "whose pay came from this venue in this cycle" — a fact about the cycle. Exact window.
+ *   • "which venue does this person work at" — a fact about the person, which changes once or twice
+ *     a year. Measuring it inside the month on screen made it behave like the first: an accountant
+ *     rostered at venue 24 every month vanished from venue 24 the moment a fresh month opened with
+ *     nothing in it yet. On the ROSTER that is circular — the page you would use to schedule her is
+ *     the page that hid her for not being scheduled.
+ *
+ * So listing looks back three months. Someone who works a venue regularly stays attached to it
+ * through an empty month; someone who left it more than a quarter ago falls away on their own.
+ */
+export const VENUE_ATTACHMENT_LOOKBACK_DAYS = 90;
+
+/** YYYY-MM-DD shifted by whole days, in UTC (these are calendar dates, never instants). */
+function shiftDays(date: string, days: number): string {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
 export async function loadWorkVenues(
   service: SupabaseClient,
   from: string,
@@ -41,6 +65,20 @@ export async function loadWorkVenues(
     map.set(row.user_id, set);
   }
   return map;
+}
+
+/**
+ * Venue ATTACHMENT — for deciding who a venue's timesheet and roster should LIST. Widens the window
+ * back by {@link VENUE_ATTACHMENT_LOOKBACK_DAYS} so an empty month cannot detach someone from the
+ * venue they work every month. Payroll's venue breakdown deliberately does NOT use this: attributing
+ * a cycle's money needs that cycle's evidence, not last quarter's.
+ */
+export async function loadVenueAttachment(
+  service: SupabaseClient,
+  from: string,
+  to: string
+): Promise<WorkVenueMap> {
+  return loadWorkVenues(service, shiftDays(from, -VENUE_ATTACHMENT_LOOKBACK_DAYS), to);
 }
 
 /**

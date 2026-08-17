@@ -319,8 +319,8 @@ export default function HrTimesheetPage() {
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-gray-200 bg-gray-50/70 px-3 py-2 text-xs text-gray-600 dark:border-gray-700 dark:bg-gray-800/40 dark:text-gray-400">
           <span className="font-medium">
             {isTh
-              ? `อีก ${inactiveHere.length} คนเป็นสมาชิกสาขานี้ แต่ไม่มีตารางกะและไม่มีการลงเวลาที่นี่ในช่วงนี้`
-              : `${inactiveHere.length} more are attached to this venue but have no roster row and no punch here in this window`}
+              ? `อีก ${inactiveHere.length} คนถูกผูกกับสาขานี้ แต่ไม่มีตารางกะและไม่มีการลงเวลาที่นี่เลยใน 3 เดือนที่ผ่านมา`
+              : `${inactiveHere.length} more are attached to this venue but have had no roster row and no punch here in the past 3 months`}
           </span>
           <span className="opacity-80">{inactiveHere.map((p) => p.name).join(' · ')}</span>
           <button
