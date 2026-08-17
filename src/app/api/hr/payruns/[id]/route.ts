@@ -42,7 +42,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   // accountant review link's status (powers the status stepper + the finalize gate).
   // reviewRows adds the money split (salary/OT/allowance/other-deduction) the register renders —
   // the same aggregation the accountant portal shows, finally visible to HR (redesign 2026-07-14).
-  const [profsRes, empsRes, scRes, linkRes, scPoolsRes, tipPoolsRes, reviewRows, remarksRes] = await Promise.all([
+  const [profsRes, empsRes, scRes, linkRes, scPoolsRes, tipPoolsRes, reviewRows, remarksRes, storeLinksRes] = await Promise.all([
     service.from('profiles').select('id, username, display_name').in('id', userIds),
     service.from('hr_employees').select('profile_id, full_name, start_date, end_date, position:hr_positions(name)').in('profile_id', userIds),
     service
@@ -63,6 +63,10 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     service.from('hr_tip_pools').select('status, store_id').eq('period_month', periodMonth),
     buildPayrunReviewRows(service, id),
     service.from('hr_payrun_remarks').select('profile_id, remark').eq('payrun_id', id),
+    // Venue membership, for the register's per-store breakdown. A payrun is company-scoped while
+    // the timesheet is store-scoped, so HR had no way to read a run venue by venue (owner ask
+    // 2026-08-17). Someone who works two venues has two rows here and appears under both.
+    service.from('user_stores').select('user_id, store:stores(store_code, store_name)').in('user_id', userIds),
   ]);
 
   const nameById = new Map<string, string>();
@@ -77,6 +81,18 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     if (e.start_date) startDateById.set(e.profile_id, e.start_date);
     if (e.end_date) endDateById.set(e.profile_id, e.end_date);
   }
+  // profile → the venues they work. Multi-venue staff carry several; the breakdown lists them
+  // under each and says so, because their pay belongs to the person, not to one venue.
+  const storesByUser = new Map<string, { code: string; name: string }[]>();
+  for (const l of (storeLinksRes.data ?? []) as unknown as {
+    user_id: string;
+    store: { store_code: string | null; store_name: string | null } | null;
+  }[]) {
+    if (!l.store?.store_code) continue;
+    const entry = { code: l.store.store_code, name: l.store.store_name || l.store.store_code };
+    storesByUser.set(l.user_id, [...(storesByUser.get(l.user_id) ?? []), entry]);
+  }
+
   const reviewBySlip = new Map((reviewRows ?? []).map((r) => [r.payslip_id, r]));
   const remarkByUser = new Map<string, string>(
     ((remarksRes.data ?? []) as { profile_id: string; remark: string }[]).map((r) => [r.profile_id, r.remark])
@@ -112,6 +128,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
         other_ded_satang: rr?.deduction_satang ?? 0,
         has_tax_override: rr?.has_override ?? false,
         remark: remarkByUser.get(s.user_id) ?? null,
+        stores: storesByUser.get(s.user_id) ?? [],
       };
     })
     .sort((a, b) => a.name.localeCompare(b.name));

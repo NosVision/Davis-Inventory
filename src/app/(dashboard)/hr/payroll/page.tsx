@@ -12,6 +12,8 @@ import { PayslipFormPrint } from '@/components/hr/payslip-form-print';
 import { RecurringModal } from './_components/recurring-modal';
 import { TaxAllowanceModal } from './_components/tax-allowance-modal';
 import { AdjustmentsPanel, type AdjustmentRow, type AdjustmentsPrevious } from './_components/adjustments-panel';
+import { PayrunByStore, type StoreRef } from './_components/payrun-by-store';
+import { PeriodCoverage } from './_components/period-coverage';
 import { RecurringGrid } from './recurring/_components/recurring-grid';
 
 interface CompanyOpt {
@@ -59,6 +61,8 @@ interface PayslipSummary {
   other_ded_satang?: number;
   has_tax_override?: boolean;
   remark?: string | null;
+  /** Venues this person is a member of — drives the per-store reading of the register. */
+  stores?: StoreRef[];
 }
 interface ReviewInfo {
   created_at: string;
@@ -130,6 +134,7 @@ function dmy(d?: string | null): string {
 
 export default function HrPayrollPage() {
   const t = useTranslations('hr.payroll');
+  const isTh = useLocale() === 'th';
   // in-app replacements for window.confirm / window.prompt (finalize, reopen, announce-resend)
   const { confirm, dialog: confirmDialog } = useConfirm();
   const { prompt, dialog: promptDialog } = usePromptDialog();
@@ -160,6 +165,12 @@ export default function HrPayrollPage() {
   // draft payrun, recompute silently on close so ค่าเดินทาง ฯลฯ shows up without a hidden button.
   const [recurringDirty, setRecurringDirty] = useState(false);
   const [taxAllowFor, setTaxAllowFor] = useState<{ employeeId: string; name: string } | null>(null);
+
+  // How to read the register: by person (the original) or grouped by venue. Purely a presentation
+  // switch over slips already loaded — no refetch, no effect on the run.
+  const [registerView, setRegisterView] = useState<'list' | 'store'>('list');
+  // Bumped after any action that changes who has a payslip, so the coverage panel re-reads.
+  const [coverageKey, setCoverageKey] = useState(0);
 
   // Expandable register rows: full itemized slip inline (lazy-loaded, cached per payslip id;
   // ids change on recompute so stale cache entries are simply never hit again).
@@ -356,6 +367,7 @@ export default function HrPayrollPage() {
         return;
       }
       toast({ type: 'success', title: t('generated', { n: json?.data?.payslips ?? 0 }) });
+      setCoverageKey((k) => k + 1);
       await loadPayruns();
       if (json?.data?.id) await openPayrun(json.data.id);
     } catch {
@@ -385,6 +397,7 @@ export default function HrPayrollPage() {
         toast({ type: 'error', title: t('generateFailed'), message: j?.error });
         return;
       }
+      setCoverageKey((k) => k + 1);
       await loadPayruns();
       await openPayrun(detail.payrun.id);
       if (!silent) toast({ type: 'success', title: t('recomputed') });
@@ -743,6 +756,15 @@ export default function HrPayrollPage() {
           </div>
         </PageHeader>
 
+        {/* Period completeness across EVERY company — a payrun is generated one slice at a time, so
+            "did we pay everyone this month" was previously answerable only by opening each run. */}
+        <PeriodCoverage
+          year={Number(month.split('-')[0])}
+          month={Number(month.split('-')[1])}
+          isTh={isTh}
+          refreshKey={coverageKey}
+        />
+
         {/* payrun history + detail — vertical sidebar on xl+, horizontal chip strip below */}
         <div className="grid gap-4 xl:grid-cols-[16rem_1fr] 2xl:grid-cols-[18rem_1fr]">
           {/* history — vertical sidebar (xl+ only) */}
@@ -937,6 +959,37 @@ export default function HrPayrollPage() {
                     <StatTile label={t('colNet')} value={<MoneyValue satang={detail.totals.net} emphasis="hero" tone="good" />} icon={Coins} tone="good" />
                   </KpiRow>
 
+                  {/* Read the same slips by person or by venue. Presentation only — the run,
+                      its totals and every action are untouched by this switch. */}
+                  <div className="inline-flex items-center gap-0.5 rounded-lg bg-gray-100 p-0.5 dark:bg-gray-800">
+                    {([
+                      { key: 'list' as const, label: isTh ? 'รายชื่อ' : 'By person' },
+                      { key: 'store' as const, label: isTh ? 'รายสาขา' : 'By venue' },
+                    ]).map(({ key, label }) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setRegisterView(key)}
+                        aria-pressed={registerView === key}
+                        className={cn(
+                          'rounded-md px-2.5 py-1 text-xs font-semibold transition-colors',
+                          registerView === key
+                            ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-700 dark:text-indigo-300'
+                            : 'text-gray-500 dark:text-gray-400'
+                        )}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {registerView === 'store' ? (
+                    <PayrunByStore
+                      payslips={detail.payslips}
+                      totals={{ gross: detail.totals.gross, net: detail.totals.net }}
+                      isTh={isTh}
+                    />
+                  ) : (
                   <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
                     <table className="w-full min-w-[64rem] text-sm">
                       <thead className="bg-gray-50 text-left text-xs font-medium text-gray-500 dark:bg-gray-800/50 dark:text-gray-400">
@@ -1084,6 +1137,7 @@ export default function HrPayrollPage() {
                       </tfoot>
                     </table>
                   </div>
+                  )}
 
                   {/* ④ paper print queue: standing prefs + per-slip requests — collapsed by default */}
                   {printQueue.length > 0 && (

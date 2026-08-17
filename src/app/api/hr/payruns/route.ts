@@ -14,6 +14,7 @@ import { computePayslip, type PayrollInput, type PayslipLine, type PayType, type
 import { refuseIfConfidentialInScope } from '@/lib/hr/pay-visibility';
 import { getHrPolicies } from '@/lib/hr/policy';
 import { isUniqueViolation } from '@/lib/hr/db-errors';
+import { cycleDates } from '@/lib/hr/pay-cycle';
 import { businessDateBangkok } from '@/lib/utils/date';
 
 // Last business day that has CLOSED. A rostered day after this is still ahead of us, so it must
@@ -22,20 +23,9 @@ const CLOSED_THROUGH = () => businessDateBangkok();
 
 const DEFAULT_WORK_HOURS = 9;
 
-// ── cycle date math: pay period is the 26th of the prev month → 25th of the period month;
-// pay date is the last day of the period month (§E). All UTC-date arithmetic (dates only).
+// Cycle date math lives in lib/hr/pay-cycle so the coverage panel measures the same boundaries.
 function pad(n: number): string {
   return String(n).padStart(2, '0');
-}
-function cycleDates(year: number, month: number): { start: string; end: string; payDate: string } {
-  // month is 1..12; cycle_start = (month-1)/26, cycle_end = month/25.
-  const startMonth = month === 1 ? 12 : month - 1;
-  const startYear = month === 1 ? year - 1 : year;
-  const start = `${startYear}-${pad(startMonth)}-26`;
-  const end = `${year}-${pad(month)}-25`;
-  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate(); // day 0 of next month
-  const payDate = `${year}-${pad(month)}-${pad(lastDay)}`;
-  return { start, end, payDate };
 }
 function dateRange(from: string, to: string): string[] {
   const out: string[] = [];
