@@ -11,6 +11,7 @@ import {
   type TimesheetOverride,
 } from '@/lib/hr/time-engine';
 import { getHrPolicies } from '@/lib/hr/policy';
+import { loadWorkVenues, loadMemberVenues, belongsToVenue } from '@/lib/hr/work-venues';
 import { businessDateBangkok } from '@/lib/utils/date';
 
 // Last business day that has CLOSED. A rostered day after this is still ahead of us, so it must
@@ -116,8 +117,18 @@ export async function GET(request: NextRequest) {
   // had no way to back-fill their hours at all. Company-wide HR only — there is no store manager
   // who owns them. A blank store_id still 400s, as before.
   const noStore = storeParam === NO_STORE;
-  const storeId = noStore ? '' : storeParam;
-  const auth = await requireHrManagerForStore(noStore ? null : storeId);
+  // Company scope (owner ask 2026-08-17), mirroring the roster's existing store ↔ company switch.
+  // Payroll is generated per company, so this is the axis on which the timesheet and the payrun list
+  // the same people — which is what HR was trying to reconcile by hand. 'none' = no company yet.
+  const companyParam = sp.get('company_id') ?? '';
+  const companyScope = companyParam ? { companyId: companyParam === 'none' ? null : companyParam } : null;
+  // A member listed at a venue with no roster row and no punch there is being shown on the strength
+  // of a user_stores row that may only mean "can see this venue". Off by default; HR can ask for
+  // them back per view.
+  const includeInactive = sp.get('include_inactive') === 'true';
+  const storeId = noStore || companyScope ? '' : storeParam;
+  // A company-wide list is company-wide HR's; a venue's list stays reachable by its own manager.
+  const auth = await requireHrManagerForStore(noStore || companyScope ? null : storeId);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const today = openBusinessDateBangkok();
@@ -146,17 +157,29 @@ export async function GET(request: NextRequest) {
   // 101 logins deactivated on 2026-08-11 still appeared here after they had vanished from payroll:
   // deactivating a profile does not remove its store membership, and most of them never had an
   // employee record to begin with (owner report).
-  const { data: eligibleEmps, error: eligErr } = await service
+  let eligQuery = service
     .from('hr_employees')
-    .select('profile_id')
+    .select('profile_id, company_id')
     .or(`status.in.(active,probation),end_date.gte.${from}`);
+  // Company scope narrows the eligible set itself — every employee of that company, venue or not.
+  if (companyScope) {
+    eligQuery = companyScope.companyId
+      ? eligQuery.eq('company_id', companyScope.companyId)
+      : eligQuery.is('company_id', null);
+  }
+  const { data: eligibleEmps, error: eligErr } = await eligQuery;
   if (eligErr) return NextResponse.json({ error: 'Failed to load staff' }, { status: 500 });
   const eligible = new Set(
     (eligibleEmps ?? []).map((r) => r.profile_id as string | null).filter((id): id is string => !!id)
   );
 
+  // Members of this venue who are only listed here because a user_stores row says so — no roster
+  // row and no punch at this venue in the window. Reported separately so nobody vanishes silently.
+  let inactiveHere: string[] = [];
   let userIds: string[];
-  if (noStore) {
+  if (companyScope) {
+    userIds = [...eligible];
+  } else if (noStore) {
     const { data: links, error: linkErr } = await service.from('user_stores').select('user_id');
     if (linkErr) return NextResponse.json({ error: 'Failed to load staff' }, { status: 500 });
     const attached = new Set((links ?? []).map((r) => r.user_id as string));
@@ -170,12 +193,40 @@ export async function GET(request: NextRequest) {
     userIds = (members ?? [])
       .map((r: { user_id: string }) => r.user_id)
       .filter((id) => eligible.has(id));
+
+    // Split the venue's members on evidence of actually working here. Single-venue members always
+    // stay — a new hire with nothing on record yet is exactly who HR opens this page to back-fill.
+    try {
+      const [worked, memberOf] = await Promise.all([
+        loadWorkVenues(service, from, to),
+        loadMemberVenues(service, userIds),
+      ]);
+      const listed: string[] = [];
+      for (const uid of userIds) {
+        const keep = belongsToVenue({
+          storeId,
+          memberStoreIds: memberOf.get(uid) ?? [storeId],
+          workedStoreIds: worked.get(uid),
+        });
+        if (keep) listed.push(uid);
+        else inactiveHere.push(uid);
+      }
+      if (!includeInactive) userIds = listed;
+    } catch {
+      // Evidence unavailable → fall back to listing every member, the pre-2026-08-17 behaviour.
+      // Showing too many is recoverable; hiding someone's hours silently is not.
+      inactiveHere = [];
+    }
   }
   if (userFilter) {
-    if (!userIds.includes(userFilter)) {
+    // Checked against members INCLUDING the ones filtered out of the grid: a deep link to one
+    // person (the payslip's "fix this person's OT" link) must still resolve for a venue member
+    // whose evidence happens to sit at another venue.
+    if (!userIds.includes(userFilter) && !inactiveHere.includes(userFilter)) {
       return NextResponse.json({ error: 'Employee is not in this store' }, { status: 400 });
     }
     userIds = [userFilter];
+    inactiveHere = [];
   }
   // Drop system accounts. The store branch above takes every user_stores member, and a print
   // server IS a store member (that is how it authenticates) — so printers were appearing as rows
@@ -190,7 +241,37 @@ export async function GET(request: NextRequest) {
     if (systemIds.size) userIds = userIds.filter((id) => !systemIds.has(id));
   }
 
-  if (userIds.length === 0) return NextResponse.json({ employees: [], from, to });
+  // Names for the people held out of the grid, plus the company list the scope picker needs. Both
+  // are small, both are needed even when the grid itself is empty.
+  const loadAside = async () => {
+    const [companiesRes, inactiveRes] = await Promise.all([
+      service.from('hr_companies').select('id, name').order('name'),
+      inactiveHere.length > 0
+        ? service
+            .from('hr_employees')
+            .select('profile_id, full_name, profile:profiles!hr_employees_profile_id_fkey(display_name, username)')
+            .in('profile_id', inactiveHere)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+    const rows = (inactiveRes.data ?? []) as unknown as {
+      profile_id: string;
+      full_name: string | null;
+      profile: { display_name: string | null; username: string | null } | null;
+    }[];
+    return {
+      companies: companiesRes.data ?? [],
+      inactive_here: rows
+        .map((r) => ({
+          user_id: r.profile_id,
+          name: r.full_name?.trim() || r.profile?.display_name || r.profile?.username || '—',
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'th')),
+    };
+  };
+
+  if (userIds.length === 0) {
+    return NextResponse.json({ employees: [], from, to, ...(await loadAside()) });
+  }
 
   const [profilesRes, employeesRes, scheduleRes, attendanceRes, overridesRes, leavesRes] = await Promise.all([
     service.from('profiles').select('id, username, display_name').in('id', userIds),
@@ -201,10 +282,11 @@ export async function GET(request: NextRequest) {
           'company:hr_companies(name), payroll_group:hr_payroll_groups(name)'
       )
       .in('profile_id', userIds),
-    // No-store bucket: key on user_id alone. These employees belong to no venue, so there is no
-    // other store's data to leak in — and hr_schedule.store_id is NOT NULL, so any roster row they
-    // do have would be filtered away by a store match that can never be satisfied.
-    (noStore
+    // No-store and company scopes key on user_id alone. The no-store bucket belongs to no venue, so
+    // there is no other store's data to leak in; the company scope deliberately wants every venue's
+    // hours for its people, since the company is what payroll pays. Only a VENUE view scopes by
+    // store — there a multi-venue employee's hours elsewhere must not inflate this venue's sheet.
+    (noStore || companyScope
       ? service
           .from('hr_schedule')
           .select('user_id, work_date, is_day_off, shift:hr_shift_templates(start_time, end_time)')
@@ -216,7 +298,7 @@ export async function GET(request: NextRequest) {
     )
       .gte('work_date', from)
       .lte('work_date', to),
-    (noStore
+    (noStore || companyScope
       ? service
           .from('hr_attendance')
           .select('user_id, type, ts, business_date, review_status')
@@ -383,5 +465,12 @@ export async function GET(request: NextRequest) {
   const leaveTypes = leaveTypesData ?? [];
 
   const scoreConfig = (await getHrPolicies(service)).work_index;
-  return NextResponse.json({ employees: staff, from, to, score_config: scoreConfig, leave_types: leaveTypes });
+  return NextResponse.json({
+    employees: staff,
+    from,
+    to,
+    score_config: scoreConfig,
+    leave_types: leaveTypes,
+    ...(await loadAside()),
+  });
 }

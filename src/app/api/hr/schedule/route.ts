@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireSchedulerForScope } from '@/lib/hr/route-auth';
 import { isDateInFinalizedPeriod, employeeStoreIds, FINALIZED_PERIOD_ERROR } from '@/lib/hr/period-lock';
+import { loadWorkVenues, loadMemberVenues, belongsToVenue } from '@/lib/hr/work-venues';
 
 const MONTH_RE = /^\d{4}-\d{2}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -118,6 +119,13 @@ export async function GET(request: NextRequest) {
     'profile_id, full_name, work_hours_per_day, standard_days_off, status, end_date, company_id, ' +
     'position:hr_positions(name, sort_order), company:hr_companies(name), payroll_group:hr_payroll_groups(name)';
 
+  // Members listed here only on the strength of a user_stores row — no roster row and no punch at
+  // this venue this month. `user_stores` came from the deposit module and can mean "oversees this
+  // venue" rather than "works here", so an HR/accounting user overseeing five venues was appearing
+  // on five rosters (owner report 2026-08-17). Reported separately; nobody vanishes silently.
+  const includeInactive = sp.get('include_inactive') === 'true';
+  let inactiveHere: string[] = [];
+
   let userIds: string[] = [];
   let employees: EmployeeRow[] = [];
   if (scope.kind === 'store') {
@@ -128,6 +136,33 @@ export async function GET(request: NextRequest) {
       .eq('store_id', scope.storeId);
     if (membersErr) return NextResponse.json({ error: 'Failed to load staff' }, { status: 500 });
     userIds = (membersData as StoreMember[] | null)?.map((r) => r.user_id) ?? [];
+
+    // Split on evidence of working here. A single-venue member always stays: with nothing rostered
+    // yet they are precisely who this page exists to schedule.
+    if (userIds.length) {
+      try {
+        const [worked, memberOf] = await Promise.all([
+          loadWorkVenues(service, first, last),
+          loadMemberVenues(service, userIds),
+        ]);
+        const listed: string[] = [];
+        for (const uid of userIds) {
+          const keep = belongsToVenue({
+            storeId: scope.storeId,
+            memberStoreIds: memberOf.get(uid) ?? [scope.storeId],
+            workedStoreIds: worked.get(uid),
+          });
+          if (keep) listed.push(uid);
+          else inactiveHere.push(uid);
+        }
+        if (!includeInactive) userIds = listed;
+      } catch {
+        // Evidence unavailable → list every member, the pre-2026-08-17 behaviour. Showing too many
+        // is recoverable; dropping someone off a roster they are meant to be on is not.
+        inactiveHere = [];
+      }
+    }
+
     if (userIds.length) {
       const { data, error } = await service.from('hr_employees').select(EMP_SELECT).in('profile_id', userIds);
       if (error) return NextResponse.json({ error: 'Failed to load staff' }, { status: 500 });
@@ -299,6 +334,26 @@ export async function GET(request: NextRequest) {
     .filter((s) => !scheduledUserIds.has(s.user_id))
     .map((s) => ({ user_id: s.user_id, name: s.full_name || s.name, position_name: s.position_name ?? null }));
 
+  // Names of the members held out of the grid, so the page can offer them back rather than just
+  // quietly showing fewer people than last month.
+  let inactive_here: { user_id: string; name: string }[] = [];
+  if (inactiveHere.length > 0) {
+    const { data: inactiveRows } = await service
+      .from('hr_employees')
+      .select('profile_id, full_name, profile:profiles!hr_employees_profile_id_fkey(display_name, username)')
+      .in('profile_id', inactiveHere);
+    inactive_here = ((inactiveRows ?? []) as unknown as {
+      profile_id: string;
+      full_name: string | null;
+      profile: { display_name: string | null; username: string | null } | null;
+    }[])
+      .map((r) => ({
+        user_id: r.profile_id,
+        name: r.full_name?.trim() || r.profile?.display_name || r.profile?.username || '—',
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'th'));
+  }
+
   return NextResponse.json({
     employees: staff,
     templates,
@@ -307,6 +362,7 @@ export async function GET(request: NextRequest) {
     monthStatus,
     holidays,
     unscheduled,
+    inactive_here,
     companies: companiesRes.data ?? [],
   });
 }

@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { callerCanViewConfidentialPay, confidentialProfileIds } from '@/lib/hr/pay-visibility';
 import { requireHrManagerForStore } from '@/lib/hr/route-auth';
 import { buildPayrunReviewRows } from '@/lib/hr/review-link';
+import { loadWorkVenues } from '@/lib/hr/work-venues';
 
 interface ProfileRow {
   id: string;
@@ -63,9 +64,10 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     service.from('hr_tip_pools').select('status, store_id').eq('period_month', periodMonth),
     buildPayrunReviewRows(service, id),
     service.from('hr_payrun_remarks').select('profile_id, remark').eq('payrun_id', id),
-    // Venue membership, for the register's per-store breakdown. A payrun is company-scoped while
-    // the timesheet is store-scoped, so HR had no way to read a run venue by venue (owner ask
-    // 2026-08-17). Someone who works two venues has two rows here and appears under both.
+    // Venue lookup for the register's per-store breakdown. A payrun is company-scoped while the
+    // timesheet is store-scoped, so HR had no way to read a run venue by venue (owner ask
+    // 2026-08-17). NOTE the breakdown attributes people by where they actually WORKED in the cycle,
+    // not by this membership list — see the storesByUser build below.
     service.from('user_stores').select('user_id, store:stores(store_code, store_name)').in('user_id', userIds),
   ]);
 
@@ -81,16 +83,56 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     if (e.start_date) startDateById.set(e.profile_id, e.start_date);
     if (e.end_date) endDateById.set(e.profile_id, e.end_date);
   }
-  // profile → the venues they work. Multi-venue staff carry several; the breakdown lists them
-  // under each and says so, because their pay belongs to the person, not to one venue.
-  const storesByUser = new Map<string, { code: string; name: string }[]>();
+  // profile → the venues this payslip is attributed to.
+  //
+  // Membership alone was wrong: `user_stores` can mean "oversees this venue" (its meaning in the
+  // deposit module it came from), so the accounting team — members of five venues, rostered at one —
+  // was counted into five venues' subtotals (owner report 2026-08-17). Attribution therefore follows
+  // evidence of work inside THIS cycle: a roster row or a kept punch at that venue. A member with no
+  // evidence anywhere in the cycle is attributed to no venue and lands in the breakdown's
+  // no-venue bucket, which is the honest answer — their pay cannot be pinned to a place.
+  //
+  // Multi-venue staff who genuinely worked two venues still appear under both, and the panel says so.
+  const nameByStoreId = new Map<string, { code: string; name: string }>();
+  const membershipByUser = new Map<string, string[]>();
   for (const l of (storeLinksRes.data ?? []) as unknown as {
     user_id: string;
+    store_id?: string;
     store: { store_code: string | null; store_name: string | null } | null;
   }[]) {
     if (!l.store?.store_code) continue;
-    const entry = { code: l.store.store_code, name: l.store.store_name || l.store.store_code };
-    storesByUser.set(l.user_id, [...(storesByUser.get(l.user_id) ?? []), entry]);
+    membershipByUser.set(l.user_id, [...(membershipByUser.get(l.user_id) ?? []), l.store.store_code]);
+    nameByStoreId.set(l.store.store_code, {
+      code: l.store.store_code,
+      name: l.store.store_name || l.store.store_code,
+    });
+  }
+
+  const cycle = payrun as { cycle_start: string; cycle_end: string };
+  const storesByUser = new Map<string, { code: string; name: string }[]>();
+  try {
+    const worked = await loadWorkVenues(service, cycle.cycle_start, cycle.cycle_end);
+    // hr_work_venues returns store IDs; map them to the codes the breakdown labels with.
+    const { data: storeRows } = await service.from('stores').select('id, store_code, store_name');
+    const byId = new Map(
+      ((storeRows ?? []) as { id: string; store_code: string; store_name: string | null }[]).map((s) => [
+        s.id,
+        { code: s.store_code, name: s.store_name || s.store_code },
+      ])
+    );
+    for (const uid of userIds) {
+      const ids = worked.get(uid);
+      if (!ids || ids.size === 0) continue; // → no-venue bucket
+      const list = [...ids].map((id) => byId.get(id)).filter((s): s is { code: string; name: string } => !!s);
+      if (list.length) storesByUser.set(uid, list);
+    }
+  } catch {
+    // Evidence unavailable → fall back to membership, which is what this panel shipped with. Its
+    // double-count warning already explains an over-count; showing nothing would explain nothing.
+    for (const [uid, codes] of membershipByUser) {
+      const list = codes.map((c) => nameByStoreId.get(c)).filter((s): s is { code: string; name: string } => !!s);
+      if (list.length) storesByUser.set(uid, list);
+    }
   }
 
   const reviewBySlip = new Map((reviewRows ?? []).map((r) => [r.payslip_id, r]));

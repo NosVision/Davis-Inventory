@@ -12,10 +12,13 @@ import { formatBaht } from '@/lib/pos/money';
  * hand (owner ask 2026-08-17). This is that view, and nothing else: it re-groups slips that are
  * already on screen, computes no pay, and offers no action.
  *
- * Multi-venue staff are the reason this needs care. Someone who works two venues has ONE payslip
- * but belongs to both, so they are listed under each — which makes the venue subtotals add up to
- * more than the run. Rather than silently pick a venue for them, the panel shows the subtotals,
- * shows the true run total separately, and names the double-counted people.
+ * Attribution follows evidence of work inside the cycle — a roster row or a kept punch at that
+ * venue — not `user_stores` membership, which in this codebase can equally mean "oversees this
+ * venue" (see lib/hr/work-venues.ts). Anyone the cycle cannot place lands in the no-venue bucket.
+ *
+ * Someone who genuinely worked two venues still has ONE payslip and appears under both, so the
+ * venue subtotals can exceed the run. Rather than silently pick a venue for them, the panel shows
+ * the subtotals, shows the true run total separately, and names the double-counted people.
  */
 
 export interface StoreRef {
@@ -31,7 +34,8 @@ export interface PayrunByStoreSlip {
   stores?: StoreRef[];
 }
 
-/** Bucket key for staff with no venue at all (office: HR, accounting, graphic). */
+/** Bucket key for pay the cycle cannot pin to a venue (office staff, and venue members with no
+ *  roster row or punch anywhere in the cycle). */
 const NO_STORE = '__none__';
 
 interface Bucket {
@@ -65,7 +69,7 @@ export function PayrunByStore({
     };
     for (const s of payslips) {
       const stores = s.stores ?? [];
-      if (stores.length === 0) add(NO_STORE, tt('ไม่สังกัดสาขา', 'No venue'), s);
+      if (stores.length === 0) add(NO_STORE, tt('ไม่ระบุสาขาในงวดนี้', 'No venue this cycle'), s);
       else for (const st of stores) add(st.code, st.name || st.code, s);
     }
     const ordered = [...map.values()].sort((a, b) => {

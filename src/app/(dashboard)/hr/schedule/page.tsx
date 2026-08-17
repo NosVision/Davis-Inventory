@@ -113,6 +113,10 @@ export default function SchedulePage({
   // Employees with NO roster row at all this month — "nobody thought about them", which an empty
   // grid line hides (HR ask 2026-08-07).
   const [unscheduled, setUnscheduled] = useState<{ user_id: string; name: string; position_name: string | null }[]>([]);
+  // Venue members held out of the grid: no roster row and no punch here this month. user_stores
+  // cannot distinguish "works here" from "oversees this venue", so they are offered, not shown.
+  const [inactiveHere, setInactiveHere] = useState<{ user_id: string; name: string }[]>([]);
+  const [includeInactive, setIncludeInactive] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // Roster name display: real full name (hr_employees.full_name) ↔ nickname (display_name), login
@@ -170,9 +174,12 @@ export default function SchedulePage({
     }
     setLoading(true);
     try {
-      const res = await fetch(`/api/hr/schedule?${scopeQS}&month=${month}`);
+      const res = await fetch(
+        `/api/hr/schedule?${scopeQS}&month=${month}${includeInactive ? '&include_inactive=true' : ''}`,
+      );
       if (!res.ok) throw new Error('load failed');
       const j = await res.json();
+      setInactiveHere((j.inactive_here ?? []) as { user_id: string; name: string }[]);
       setEmployees((j.employees ?? []) as Employee[]);
       setTemplates((j.templates ?? []) as Template[]);
       setEntries((j.entries ?? []) as Entry[]);
@@ -185,8 +192,8 @@ export default function SchedulePage({
     } finally {
       setLoading(false);
     }
-     
-  }, [scopeReady, scopeQS, month, t]);
+
+  }, [scopeReady, scopeQS, month, includeInactive, t]);
 
   useEffect(() => {
     load();
@@ -515,6 +522,27 @@ export default function SchedulePage({
                 .join(' · ')}
             </p>
           </div>
+        </div>
+      )}
+
+      {/* Members attached to this venue with nothing rostered or punched here this month — almost
+          always people who oversee the venue rather than work it. Offered rather than shown. */}
+      {!loading && inactiveHere.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-gray-200 bg-gray-50/70 px-3 py-2 text-xs text-gray-600 dark:border-gray-700 dark:bg-gray-800/40 dark:text-gray-400">
+          <span className="font-medium">
+            {tt(
+              `อีก ${inactiveHere.length} คนเป็นสมาชิกสาขานี้ แต่ไม่มีตารางกะและไม่มีการลงเวลาที่นี่ในเดือนนี้`,
+              `${inactiveHere.length} more are attached to this venue but have no roster row and no punch here this month`,
+            )}
+          </span>
+          <span className="opacity-80">{inactiveHere.map((p) => p.name).join(' · ')}</span>
+          <button
+            type="button"
+            onClick={() => setIncludeInactive((v) => !v)}
+            className="ml-auto shrink-0 font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+          >
+            {includeInactive ? tt('ซ่อนอีกครั้ง', 'Hide again') : tt('แสดงด้วย', 'Show them too')}
+          </button>
         </div>
       )}
 

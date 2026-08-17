@@ -51,13 +51,31 @@ export default function HrTimesheetPage() {
   const t = useTranslations('hr.timesheet');
   const isTh = useLocale() === 'th';
   const L = isTh
-    ? { blocks: 'บล็อก', full: 'แบบเต็ม', summary: 'สรุป', search: 'ค้นหาชื่อ/พนักงาน', noMatch: 'ไม่พบพนักงานที่ค้นหา' }
-    : { blocks: 'Blocks', full: 'Full', summary: 'Summary', search: 'Search name', noMatch: 'No matching employee' };
+    ? {
+        blocks: 'บล็อก', full: 'แบบเต็ม', summary: 'สรุป', search: 'ค้นหาชื่อ/พนักงาน',
+        noMatch: 'ไม่พบพนักงานที่ค้นหา', byStore: 'สาขา', byCompany: 'บริษัท',
+        noCompany: '— ไม่ระบุบริษัท —', showAlso: 'แสดงด้วย', hideAgain: 'ซ่อนอีกครั้ง',
+      }
+    : {
+        blocks: 'Blocks', full: 'Full', summary: 'Summary', search: 'Search name',
+        noMatch: 'No matching employee', byStore: 'Venue', byCompany: 'Company',
+        noCompany: '— No company —', showAlso: 'Show them too', hideAgain: 'Hide again',
+      };
 
   const initialRange = useMemo(() => payCycleRange(openBusinessDateBangkok()), []);
 
   const [stores, setStores] = useState<StoreOpt[]>([]);
   const [storeId, setStoreId] = useState('');
+  // Read the sheet by venue (the original) or by COMPANY. Payroll is generated per company, so the
+  // company axis is the one on which this page and the payrun list the same people — which is what
+  // HR had been reconciling by hand (owner ask 2026-08-17).
+  const [scopeKind, setScopeKind] = useState<'store' | 'company'>('store');
+  const [companyId, setCompanyId] = useState('');
+  const [companies, setCompanies] = useState<{ id: string; name: string }[]>([]);
+  // Venue members with no roster row and no punch here this window — held out of the grid by the
+  // API, listed here so they are offered back rather than silently missing.
+  const [inactiveHere, setInactiveHere] = useState<{ user_id: string; name: string }[]>([]);
+  const [includeInactive, setIncludeInactive] = useState(false);
   const [from, setFrom] = useState<string>(initialRange.from);
   const [to, setTo] = useState<string>(initialRange.to);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -100,13 +118,21 @@ export default function HrTimesheetPage() {
   }, []);
 
   // NO_STORE is a filter sentinel, not a real store id — never let it reach an API that expects a
-  // uuid (the override write, the bulk grid). Those fall back to "no explicit store".
+  // uuid (the override write, the bulk grid). Those fall back to "no explicit store", as does
+  // company scope, where the rows on screen span venues and no single store id is meaningful.
   const noStore = storeId === NO_STORE;
-  const realStoreId = noStore ? '' : storeId;
+  const realStoreId = noStore || scopeKind === 'company' ? '' : storeId;
+
+  const scopeQS =
+    scopeKind === 'company'
+      ? `company_id=${encodeURIComponent(companyId)}`
+      : `store_id=${encodeURIComponent(storeId)}`;
+  const scopeReady = scopeKind === 'company' ? !!companyId : !!storeId;
 
   const load = useCallback(async () => {
-    if (!storeId) {
+    if (!scopeReady) {
       setEmployees([]);
+      setInactiveHere([]);
       setLoading(false);
       return;
     }
@@ -116,19 +142,24 @@ export default function HrTimesheetPage() {
     }
     setLoading(true);
     try {
-      const res = await fetch(`/api/hr/timesheet?store_id=${storeId}&from=${from}&to=${to}`);
+      const res = await fetch(
+        `/api/hr/timesheet?${scopeQS}&from=${from}&to=${to}${includeInactive ? '&include_inactive=true' : ''}`
+      );
       if (!res.ok) throw new Error('load failed');
       const j = await res.json();
       setEmployees((j.employees ?? []) as Employee[]);
       setLeaveTypes((j.leave_types ?? []) as LeaveTypeOption[]);
+      setInactiveHere((j.inactive_here ?? []) as { user_id: string; name: string }[]);
+      setCompanies((j.companies ?? []) as { id: string; name: string }[]);
       if (j.score_config) setScoreConfig(j.score_config as ScoreConfig);
     } catch {
       toast({ type: 'error', title: t('loadFailed') });
       setEmployees([]);
+      setInactiveHere([]);
     } finally {
       setLoading(false);
     }
-  }, [storeId, from, to, t]);
+  }, [scopeReady, scopeQS, from, to, includeInactive, t]);
 
   useEffect(() => {
     load();
@@ -167,18 +198,50 @@ export default function HrTimesheetPage() {
         actions={
           <>
             <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
-              {t('filterStore')}
-              <select value={storeId} onChange={(e) => setStoreId(e.target.value)} className="control mt-1">
-                {stores.length === 0 && <option value="">{t('noStores')}</option>}
-                {stores.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.store_name}
-                  </option>
+              {/* Venue ↔ company, matching the roster's switch. The company axis is payroll's axis. */}
+              <span className="inline-flex rounded-md bg-gray-100 p-0.5 dark:bg-gray-700">
+                {([
+                  { kind: 'store', label: L.byStore },
+                  { kind: 'company', label: L.byCompany },
+                ] as const).map(({ kind, label }) => (
+                  <button
+                    key={kind}
+                    type="button"
+                    onClick={() => {
+                      setScopeKind(kind);
+                      if (kind === 'company' && !companyId) setCompanyId(companies[0]?.id ?? 'none');
+                    }}
+                    className={cn(
+                      'rounded px-2 py-0.5 text-[11px] font-medium transition-colors',
+                      scopeKind === kind
+                        ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-800 dark:text-indigo-300'
+                        : 'text-gray-500 dark:text-gray-400'
+                    )}
+                  >
+                    {label}
+                  </button>
                 ))}
-                {/* Office staff (HR, accounting, graphic) belong to a company but no venue, so a
-                    store-keyed roster never listed them and their hours could not be back-filled. */}
-                <option value={NO_STORE}>{isTh ? '— ไม่สังกัดสาขา —' : '— No venue —'}</option>
-              </select>
+              </span>
+              {scopeKind === 'store' ? (
+                <select value={storeId} onChange={(e) => setStoreId(e.target.value)} className="control mt-1">
+                  {stores.length === 0 && <option value="">{t('noStores')}</option>}
+                  {stores.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.store_name}
+                    </option>
+                  ))}
+                  {/* Office staff (HR, accounting, graphic) belong to a company but no venue, so a
+                      store-keyed roster never listed them and their hours could not be back-filled. */}
+                  <option value={NO_STORE}>{isTh ? '— ไม่สังกัดสาขา —' : '— No venue —'}</option>
+                </select>
+              ) : (
+                <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} className="control mt-1">
+                  {companies.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                  <option value="none">{L.noCompany}</option>
+                </select>
+              )}
             </label>
             <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
               {t('filterFrom')}
@@ -201,8 +264,12 @@ export default function HrTimesheetPage() {
               />
             </label>
             <div className="flex items-end">
-              {/* Bulk backfill seeds its grid from a store roster — meaningless without a venue. */}
-              <Button variant="outline" onClick={() => setBulkOpen(true)} disabled={!storeId || noStore}>
+              {/* Bulk backfill seeds its grid from a store roster — meaningless without one venue. */}
+              <Button
+                variant="outline"
+                onClick={() => setBulkOpen(true)}
+                disabled={!storeId || noStore || scopeKind === 'company'}
+              >
                 <CalendarPlus className="h-4 w-4" />
                 {t('bulkBackfill')}
               </Button>
@@ -244,12 +311,37 @@ export default function HrTimesheetPage() {
         </div>
       </div>
 
+      {/* Members held out of the grid: attached to this venue but with no roster row and no punch
+          here this window. They are almost always people who OVERSEE the venue rather than work it —
+          user_stores cannot tell the two apart — so they are offered rather than shown. */}
+      {!loading && inactiveHere.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-gray-200 bg-gray-50/70 px-3 py-2 text-xs text-gray-600 dark:border-gray-700 dark:bg-gray-800/40 dark:text-gray-400">
+          <span className="font-medium">
+            {isTh
+              ? `อีก ${inactiveHere.length} คนเป็นสมาชิกสาขานี้ แต่ไม่มีตารางกะและไม่มีการลงเวลาที่นี่ในช่วงนี้`
+              : `${inactiveHere.length} more are attached to this venue but have no roster row and no punch here in this window`}
+          </span>
+          <span className="opacity-80">{inactiveHere.map((p) => p.name).join(' · ')}</span>
+          <button
+            type="button"
+            onClick={() => setIncludeInactive((v) => !v)}
+            className="ml-auto shrink-0 font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+          >
+            {includeInactive ? L.hideAgain : L.showAlso}
+          </button>
+        </div>
+      )}
+
       {/* Why this list and the payrun's list differ — stated once, then chipped per row. */}
       {!loading && (visitingCount > 0 || groupedNames.length > 0) && (
         <p className="rounded-xl border border-gray-200 bg-gray-50/70 px-3 py-2 text-xs text-gray-600 dark:border-gray-700 dark:bg-gray-800/40 dark:text-gray-400">
-          {isTh
-            ? 'รายชื่อหน้านี้ยึดตามสาขาที่พนักงานสังกัด ส่วนเงินเดือนออกเป็นราย “บริษัท” และแยกตาม “กลุ่มเงินเดือน” — คนที่มีป้ายกำกับท้ายชื่อจะไปอยู่ใน payrun คนละใบกับสาขานี้'
-            : 'This list is keyed on venue membership; a payrun is generated per company and split by payroll group — the chipped rows are paid on a different payrun than this venue’s.'}
+          {scopeKind === 'company'
+            ? isTh
+              ? 'มุมมองนี้ยึดตามบริษัท ตรงกับแกนที่เงินเดือนใช้ออก payrun — แต่ยังแยกตาม “กลุ่มเงินเดือน” อีกชั้น คนที่มีป้ายกลุ่มจะอยู่ใน payrun คนละใบ'
+              : 'This view is keyed on company, the same axis payroll generates on — but a company is still split by payroll group, so chipped rows sit on a separate payrun.'
+            : isTh
+              ? 'มุมมองนี้ยึดตามสาขา ส่วนเงินเดือนออกเป็นราย “บริษัท” และแยกตาม “กลุ่มเงินเดือน” — คนที่มีป้ายกำกับท้ายชื่อจะไปอยู่ใน payrun คนละใบกับสาขานี้ (กดปุ่ม “บริษัท” ด้านบนเพื่อดูบนแกนเดียวกับเงินเดือน)'
+              : 'This view is keyed on venue; a payrun is generated per company and split by payroll group — the chipped rows are paid on a different payrun than this venue’s. Switch to “Company” above to read it on payroll’s axis.'}
         </p>
       )}
 
