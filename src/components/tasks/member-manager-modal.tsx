@@ -50,7 +50,7 @@ export function MemberManagerModal({ roomId, existingIds, onClose, onUpdated }: 
     const supabase = createClient();
     Promise.all([
       supabase.from('profiles').select('id, display_name, username, role').eq('active', true).neq('role', 'customer'),
-      supabase.from('stores').select('id, store_name').eq('active', true),
+      supabase.from('stores').select('id, store_name').eq('active', true).eq('hr_only', false),
     ]).then(([p, s]) => {
       setProfiles((p.data as ProfileRow[]) ?? []);
       setStores((s.data as StoreRow[]) ?? []);

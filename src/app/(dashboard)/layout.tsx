@@ -60,6 +60,13 @@ export default async function DashboardLayout({
   const managedApproveStoreIds = scopeRows.filter((s) => s.can_approve).map((s) => s.store_id);
 
   // ดึงข้อมูลร้านค้า
+  //
+  // `hr_only` venues are excluded here on purpose. The OFFICE venue exists so office staff can be
+  // rostered and clock in; it trades nothing, so offering it in the venue switcher — and through it
+  // to stock, POS and every venue-scoped page — invites counts and orders against a place that
+  // cannot have them. Someone whose only venue is the office therefore sees what a user with no
+  // venue sees, which is the behaviour asked for. HR's own pages query stores directly and still
+  // list it (owner ask 2026-08-18).
   let stores: Store[] = [];
   if (profile.role === 'owner' || profile.role === 'accountant' || profile.role === 'hq' || profile.role === 'hr') {
     // เจ้าของ / บัญชี / คลังกลาง / ฝ่ายบุคคล เห็นทุกสาขา (hr เป็น role ข้ามสาขา ไม่ผูกกับ user_stores)
@@ -67,6 +74,7 @@ export default async function DashboardLayout({
       .from('stores')
       .select('*')
       .eq('active', true)
+      .eq('hr_only', false)
       .order('store_name');
     stores = data ?? [];
   } else if (storeIds.length > 0) {
@@ -75,6 +83,7 @@ export default async function DashboardLayout({
       .select('*')
       .in('id', storeIds)
       .eq('active', true)
+      .eq('hr_only', false)
       .order('store_name');
     stores = data ?? [];
   }

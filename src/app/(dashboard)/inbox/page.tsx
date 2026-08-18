@@ -134,7 +134,7 @@ export default function InboxPage() {
       const { data: stores } = await supabase
         .from('stores')
         .select('id, store_name, store_code, active')
-        .eq('active', true)
+        .eq('active', true).eq('hr_only', false)
         .order('store_name');
       const storeMap = new Map((stores || []).map((s) => [s.id, s.store_name as string]));
 
@@ -341,7 +341,7 @@ export default function InboxPage() {
     // Pull rows (with store_id) instead of just counts so we can both
     // total across stores and break down per store in one round trip.
     const [storesRes, newDepositsRes, withdrawalsRes, activeDepositsRes, expiringSoonRes, newBorrowsRes, pendingExplanationsRes, commissionRes] = await Promise.all([
-      supabase.from('stores').select('id, store_name').eq('active', true),
+      supabase.from('stores').select('id, store_name').eq('active', true).eq('hr_only', false),
       supabase.from('deposits').select('id, store_id').gte('created_at', startUTC).lte('created_at', endUTC),
       supabase.from('withdrawals').select('id, store_id').eq('status', 'completed').gte('created_at', startUTC).lte('created_at', endUTC),
       supabase.from('deposits').select('id, store_id').eq('status', 'in_store'),

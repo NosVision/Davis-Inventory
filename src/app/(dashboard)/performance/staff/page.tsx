@@ -187,7 +187,7 @@ export default function StaffPerformancePage() {
       if (!isOwner) return;
       try {
         const supabase = createClient();
-        const { data } = await supabase.from('stores').select('id, store_name').eq('active', true).order('store_name');
+        const { data } = await supabase.from('stores').select('id, store_name').eq('active', true).eq('hr_only', false).order('store_name');
         if (data && data.length > 0) {
           const mapped = data.map((s) => ({ id: s.id, name: s.store_name }));
           setStores(mapped);

@@ -55,7 +55,7 @@ export default function MaintenanceSchedulesPage() {
       const supabase = createClient();
       const [schedRes, storeRes] = await Promise.all([
         supabase.from('maintenance_schedules').select('*').order('created_at', { ascending: false }),
-        supabase.from('stores').select('id, store_name').eq('active', true).order('store_name'),
+        supabase.from('stores').select('id, store_name').eq('active', true).eq('hr_only', false).order('store_name'),
       ]);
       setSchedules((schedRes.data as MaintenanceSchedule[]) ?? []);
       setStores((storeRes.data as Pick<Store, 'id' | 'store_name'>[]) ?? []);

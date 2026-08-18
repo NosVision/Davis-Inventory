@@ -724,7 +724,7 @@ export default function OverviewPage() {
 
       // -------- Build all queries (no awaits) --------
       // Global headline counts
-      const storesQuery = supabase.from('stores').select('*', { count: 'exact', head: true }).eq('active', true);
+      const storesQuery = supabase.from('stores').select('*', { count: 'exact', head: true }).eq('active', true).eq('hr_only', false);
 
       const depositsInStoreQuery = supabase.from('deposits').select('*', { count: 'exact', head: true }).eq('status', 'in_store');
       if (storeFilter) depositsInStoreQuery.eq('store_id', storeFilter);
@@ -788,7 +788,7 @@ export default function OverviewPage() {
       // Strategy: 1 query per metric returning store_id (or sums), grouped client-side.
       // Replaces the previous N+1 (14 queries × N stores).
       const ownerStoresQuery = isOwner
-        ? supabase.from('stores').select('id, store_name, store_code, is_central').eq('active', true).order('store_name')
+        ? supabase.from('stores').select('id, store_name, store_code, is_central').eq('active', true).eq('hr_only', false).order('store_name')
         : null;
 
       // Owner-only grouped metrics. We fetch only the columns needed for grouping.
