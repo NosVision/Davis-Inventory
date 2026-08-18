@@ -86,7 +86,11 @@ export function applyOverride(
     worked_min: override.worked_min !== null ? override.worked_min : day.worked_min,
     late_min: override.late_min !== null ? override.late_min : day.late_min,
     ot_min: override.ot_min !== null ? override.ot_min : day.ot_min,
-    absent: override.absent !== null ? override.absent : day.absent,
+    // An override may CLEAR an absence but never invent one on a day nobody was rostered to
+    // work. The roster is the record of what was owed (2026-08-18), so "absent" on a rostered day
+    // off is a contradiction — and one the bulk-backfill tool used to write when a range was
+    // stamped straight across a week, which then docked salary, travel and Service Charge.
+    absent: override.absent === null ? day.absent : override.absent && day.scheduled,
     overridden: true,
     override_reason: override.reason ?? null,
   };

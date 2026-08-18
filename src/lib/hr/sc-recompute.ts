@@ -204,9 +204,14 @@ export async function recomputePoolDeductions(
     const closedThrough = businessDateBangkok();
     const absentDays = enumerateDates(periodStart, periodEnd).filter((d) => {
       if (leaveCovered.has(d)) return false;
+      // The roster decides whether the day was owed at all, and it is checked FIRST. It used to be
+      // checked last, so an override saying "absent" counted even on a rostered day off — which is
+      // exactly what the bulk-backfill tool wrote when a range was stamped across a week, docking
+      // Service Charge for days nobody was due to work.
+      if (!rosteredSet.has(d)) return false;
       const forced = absentOverride.get(d);
       if (forced !== undefined) return forced;
-      return rosteredSet.has(d) && !punchedSet.has(d) && d <= closedThrough;
+      return !punchedSet.has(d) && d <= closedThrough;
     }).length;
 
     if (absentDays > 0) {
