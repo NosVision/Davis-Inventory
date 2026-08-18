@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { getHrPolicies } from '@/lib/hr/policy';
 import { haversineMeters, isValidLat, isValidLng } from '@/lib/hr/geo';
 import { assessIp } from '@/lib/hr/ip-geo';
 import { getClientIp } from '@/lib/hr/request-ip';
@@ -52,6 +53,11 @@ export async function POST(request: NextRequest) {
   // --- GPS (optional) --- Valid coords run the normal geofence flow; a punch with NO resolvable
   // location is still accepted but HELD FOR HR REVIEW (owner ask 2026-07-08) so an employee can log
   // time when GPS fails and then explain it to HR (never a silent geofence bypass).
+  // Venue the person says they are at. Only consulted when they belong to more than one and the
+  // geofence cannot decide — someone who oversees five venues and taps in with GPS off used to
+  // produce a punch attributed to no venue at all, invisible on every venue timesheet while payroll
+  // still charged it (owner report 2026-08-17).
+  const pickedStoreId = typeof body.store_id === 'string' && body.store_id ? body.store_id : null;
   const hasGps = isValidLat(body.gps_lat) && isValidLng(body.gps_lng);
   const gpsLat = hasGps ? (body.gps_lat as number) : null;
   const gpsLng = hasGps ? (body.gps_lng as number) : null;
@@ -164,6 +170,12 @@ export async function POST(request: NextRequest) {
     // else: multiple stores, none with a geofence → store_id stays null (ambiguous).
   }
 
+  // Nothing geolocated it: fall back to the venue the person picked, then to a sole assignment.
+  // The pick is validated against their own memberships, so it can only ever name a venue they
+  // already belong to.
+  if (storeId === null && pickedStoreId && storeIds.includes(pickedStoreId)) {
+    storeId = pickedStoreId;
+  }
   // No-GPS punch: nothing to geolocate, but a single assignment is unambiguous — attribute the
   // store so HR knows where it belongs (location stays null → this punch is held for review).
   if (!hasGps && storeId === null && storeIds.length === 1) {
@@ -272,6 +284,34 @@ export async function POST(request: NextRequest) {
         if (adopt) businessDate = prev;
       }
     }
+  }
+
+  // --- Roster gate (owner decision 2026-08-18) ---
+  // The roster is now the sole record of whether a day was a working day, so it also decides
+  // whether a punch is allowed at all. A day the roster marks OFF is refused outright: coming in
+  // anyway has to go through HR, who swap the day or change the shift, which is what keeps the
+  // roster true. Nothing about pay is decided here — this only stops the punch existing.
+  //
+  // A day with NO roster row is the riskier half, so it sits behind a policy switch: with rosters
+  // still being filled in, refusing every unrostered day would lock out nearly everyone. HR turns
+  // it on per group once coverage is there.
+  const { data: rosterCell } = await service
+    .from('hr_schedule')
+    .select('is_day_off')
+    .eq('user_id', user.id)
+    .eq('work_date', businessDate)
+    .maybeSingle();
+  if (rosterCell?.is_day_off === true) {
+    return NextResponse.json(
+      { error: 'วันนี้เป็นวันหยุดตามตารางงาน — ต้องให้ฝ่ายบุคคลสลับวันหยุดหรือแก้ตารางก่อนจึงจะลงเวลาได้' },
+      { status: 409 }
+    );
+  }
+  if (!rosterCell && (await getHrPolicies(service)).attendance_requires_roster) {
+    return NextResponse.json(
+      { error: 'ยังไม่มีตารางงานของวันนี้ — ต้องให้ฝ่ายบุคคลจัดตารางก่อนจึงจะลงเวลาได้' },
+      { status: 409 }
+    );
   }
 
   const { data: inserted, error: insertErr } = await service

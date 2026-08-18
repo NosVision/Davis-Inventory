@@ -15,7 +15,7 @@ export async function GET() {
   return NextResponse.json({ data: { effective, defaults: POLICY_DEFAULTS } });
 }
 
-const KNOWN_KEYS = ['late_tiers', 'probation_days', 'sc_leave_divisor', 'warning_carry', 'work_index', 'payslip_announce', 'prorate_basis'] as const;
+const KNOWN_KEYS = ['late_tiers', 'probation_days', 'sc_leave_divisor', 'warning_carry', 'work_index', 'payslip_announce', 'prorate_basis', 'attendance_requires_roster'] as const;
 
 // PUT /api/hr/policy-settings { key, value, reason } — upsert one policy knob. Every one of
 // these changes money or discipline outcomes, so a reason is ALWAYS required and the change is

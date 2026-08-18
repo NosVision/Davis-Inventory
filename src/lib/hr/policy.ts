@@ -35,6 +35,15 @@ export interface HrPolicies {
   work_index: WorkIndexPolicy;
   /** ⑤ payslip-ready push: 'manual' = HR presses ประกาศ; 'immediate' = fire on finalize */
   payslip_announce_mode: 'manual' | 'immediate';
+  /**
+   * Refuse a punch on a day with no roster row at all.
+   *
+   * The roster became the sole record of a working day on 2026-08-18, which makes an unrostered
+   * day genuinely undecidable — so refusing it is correct. It ships OFF because rosters were still
+   * being filled when the rule landed, and enforcing it before coverage exists locks out everyone
+   * it is meant to govern. HR turns it on once the rosters are there.
+   */
+  attendance_requires_roster: boolean;
   /** Mid-period hire/leave proration basis for full_monthly staff:
    *  'calendar' = employed calendar days ÷30; 'scheduled' = scheduled work days in the window. */
   prorate_basis: 'calendar' | 'scheduled';
@@ -67,6 +76,7 @@ export const POLICY_DEFAULTS: HrPolicies = {
   },
   payslip_announce_mode: 'manual', // เมย์คุมจังหวะเองช่วงเปลี่ยนผ่าน (owner-agreed default)
   prorate_basis: 'calendar', // owner-chosen 2026-07-07: employed calendar days ÷30
+  attendance_requires_roster: false, // off until every venue's roster is filled (see the doc above)
 };
 
 const num = (v: unknown, fallback: number, min: number, max: number): number => {
@@ -100,6 +110,8 @@ export function mergePolicies(rows: { key: string; value: unknown }[]): HrPolici
       scalar('payslip_announce')?.mode === 'immediate' ? 'immediate' : d.payslip_announce_mode,
     prorate_basis:
       scalar('prorate_basis')?.mode === 'scheduled' ? 'scheduled' : d.prorate_basis,
+    attendance_requires_roster:
+      (scalar('attendance_requires_roster')?.enabled ?? d.attendance_requires_roster) === true,
     work_index: {
       w_punctuality: num(wi.w_punctuality, d.work_index.w_punctuality, 0, 100),
       w_attendance: num(wi.w_attendance, d.work_index.w_attendance, 0, 100),

@@ -56,10 +56,23 @@ export interface PayslipDetailData {
 // fallback when it doesn't). Keeps the register's "หัก Sv" lines readable.
 const SV_SOURCE_TH: Record<string, string> = {
   stock_penalty: 'ปรับสต๊อก',
-  carry: 'ยกยอดหักเดือนก่อน',
+  warning: 'ใบเตือน',
+  eval: 'ผลประเมิน',
+  leave: 'ลา',
+  absent: 'ขาดงาน',
   adhoc: 'หักเพิ่มเติม',
   manual: 'หักด้วยมือ',
+  // A deduction too large for one month's SV is taken across months. These are the lines that
+  // arrive FROM the previous month — the recompute writes them with an English label, which read
+  // as machine text on a Thai payslip and never said which direction the carry ran (client ask
+  // 2026-08-18). The label here wins, so the direction is stated.
+  warning_carry: 'ยกยอดจากเดือนก่อน · ใบเตือน',
+  eval_carry: 'ยกยอดจากเดือนก่อน · ผลประเมิน',
+  stock_penalty_carry: 'ยกยอดจากเดือนก่อน · ปรับสต๊อก',
 };
+
+/** Carried-in lines take the Thai label above even though the row carries its own English one. */
+const CARRY_IN_SOURCES = new Set(['warning_carry', 'eval_carry', 'stock_penalty_carry']);
 
 // Localized line-type labels; a standard type (salary/ot/sso/tax/…) is translated, while a
 // free-form label (an allowance name, a leave code) falls through to the stored text.
@@ -286,7 +299,7 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
             {data.service_charge.deductions.map((d, i) => (
               <li key={i} className="flex items-start justify-between gap-2 py-1">
                 <span className="min-w-0">
-                  {scLineLabel(d) || SV_SOURCE_TH[d.source_type] || d.source_type}
+                  {(CARRY_IN_SOURCES.has(d.source_type) ? SV_SOURCE_TH[d.source_type] : scLineLabel(d)) || SV_SOURCE_TH[d.source_type] || d.source_type}
                   {d.note ? <span className="text-gray-400"> · {d.note}</span> : null}
                   {d.carry_satang > 0 ? (
                     <span className="text-amber-600 dark:text-amber-400"> · {t('sc.carry', { amount: formatBaht(d.carry_satang) })}</span>

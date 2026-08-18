@@ -2,19 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Plus, Pencil, Trash2, CalendarDays, ListChecks } from 'lucide-react';
+import { Plus, Pencil, ListChecks } from 'lucide-react';
 import {
   Button,
   Input,
   Select,
   Modal,
   ModalFooter,
-  Badge,
-  Tabs,
+  Badge,
   EmptyState,
   PageHeader,
-  StatusBadge,
-  useConfirm,
+  StatusBadge,
   toast,
 } from '@/components/ui';
 
@@ -49,16 +47,6 @@ interface LeaveTypeRow {
   cert_threshold_days: number | null;
 }
 
-interface HolidayRow {
-  id: string;
-  company_id: string | null;
-  holiday_date: string;
-  name_th: string;
-  name_en: string;
-  is_public_holiday: boolean;
-  active: boolean;
-}
-
 // ---------------------------------------------------------------------------
 // Shared helpers
 // ---------------------------------------------------------------------------
@@ -71,7 +59,6 @@ function numOrNull(v: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-const CURRENT_YEAR = new Date().getFullYear();
 
 // ===========================================================================
 // Leave-type modal (create + edit)
@@ -515,315 +502,6 @@ function LeaveTypesTab({ companyId }: { companyId: string }) {
 }
 
 // ===========================================================================
-// Holiday modal (create + edit)
-// ===========================================================================
-
-interface HolidayFormState {
-  holiday_date: string;
-  name_th: string;
-  name_en: string;
-  is_public_holiday: boolean;
-}
-
-const EMPTY_HOLIDAY_FORM: HolidayFormState = {
-  holiday_date: '',
-  name_th: '',
-  name_en: '',
-  is_public_holiday: true,
-};
-
-interface HolidayModalProps {
-  open: boolean;
-  editing: HolidayRow | null;
-  companyId: string;
-  year: number;
-  onClose: () => void;
-  onSaved: () => void;
-}
-
-function HolidayModal({ open, editing, companyId, year, onClose, onSaved }: HolidayModalProps) {
-  const t = useTranslations('hr.leaveTypes');
-  const [form, setForm] = useState<HolidayFormState>(EMPTY_HOLIDAY_FORM);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    if (editing) {
-      setForm({
-        holiday_date: editing.holiday_date,
-        name_th: editing.name_th,
-        name_en: editing.name_en,
-        is_public_holiday: editing.is_public_holiday,
-      });
-    } else {
-      setForm({ ...EMPTY_HOLIDAY_FORM, holiday_date: `${year}-01-01` });
-    }
-  }, [open, editing, year]);
-
-  const set = <K extends keyof HolidayFormState>(key: K, value: HolidayFormState[K]) =>
-    setForm((f) => ({ ...f, [key]: value }));
-
-  const save = async () => {
-    if (!form.holiday_date) {
-      toast({ type: 'error', title: t('requiredDate') });
-      return;
-    }
-    if (!form.name_th.trim() || !form.name_en.trim()) {
-      toast({ type: 'error', title: t('requiredFields') });
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const payload: Record<string, unknown> = {
-        holiday_date: form.holiday_date,
-        name_th: form.name_th.trim(),
-        name_en: form.name_en.trim(),
-        is_public_holiday: form.is_public_holiday,
-      };
-      if (!editing) payload.company_id = companyId || null;
-
-      const url = editing ? `/api/hr/holidays/${editing.id}` : '/api/hr/holidays';
-      const res = await fetch(url, {
-        method: editing ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        toast({ type: 'error', title: t('saveFailed'), message: json.error });
-        return;
-      }
-      toast({ type: 'success', title: editing ? t('savedOk') : t('createdOk') });
-      onSaved();
-      onClose();
-    } catch (err) {
-      toast({
-        type: 'error',
-        title: t('saveFailed'),
-        message: err instanceof Error ? err.message : undefined,
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Modal
-      isOpen={open}
-      onClose={onClose}
-      title={editing ? t('editHoliday') : t('addHoliday')}
-      size="md"
-    >
-      <div className="space-y-4">
-        <Input
-          label={t('date')}
-          type="date"
-          value={form.holiday_date}
-          onChange={(e) => set('holiday_date', e.target.value)}
-        />
-        <Input
-          label={t('nameTh')}
-          value={form.name_th}
-          onChange={(e) => set('name_th', e.target.value)}
-        />
-        <Input
-          label={t('nameEn')}
-          value={form.name_en}
-          onChange={(e) => set('name_en', e.target.value)}
-        />
-        <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-          <input
-            type="checkbox"
-            checked={form.is_public_holiday}
-            onChange={(e) => set('is_public_holiday', e.target.checked)}
-          />
-          {t('publicHoliday')}
-        </label>
-      </div>
-
-      <ModalFooter>
-        <Button variant="ghost" onClick={onClose} disabled={saving}>
-          {t('cancel')}
-        </Button>
-        <Button onClick={save} isLoading={saving}>
-          {t('save')}
-        </Button>
-      </ModalFooter>
-    </Modal>
-  );
-}
-
-// ===========================================================================
-// Holidays tab
-// ===========================================================================
-
-function HolidaysTab({ companyId }: { companyId: string }) {
-  const t = useTranslations('hr.leaveTypes');
-  const { confirm, dialog } = useConfirm();
-  const [year, setYear] = useState<number>(CURRENT_YEAR);
-  const [rows, setRows] = useState<HolidayRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editing, setEditing] = useState<HolidayRow | null>(null);
-
-  const yearOptions = useMemo(
-    () =>
-      Array.from({ length: 7 }, (_, i) => {
-        const y = CURRENT_YEAR - 2 + i;
-        return { value: String(y), label: String(y) };
-      }),
-    [],
-  );
-
-  const fetchRows = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({ year: String(year) });
-      if (companyId) params.set('company_id', companyId);
-      const res = await fetch(`/api/hr/holidays?${params.toString()}`);
-      if (res.ok) {
-        const json = await res.json();
-        setRows((json.data ?? []) as HolidayRow[]);
-      } else {
-        const json = await res.json().catch(() => ({}));
-        toast({ type: 'error', title: t('saveFailed'), message: json.error });
-      }
-    } catch (err) {
-      toast({
-        type: 'error',
-        title: t('saveFailed'),
-        message: err instanceof Error ? err.message : undefined,
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, [companyId, year, t]);
-
-  useEffect(() => {
-    fetchRows();
-  }, [fetchRows]);
-
-  const removeHoliday = async (row: HolidayRow) => {
-    if (!(await confirm({ title: t('confirmDeleteHoliday', { name: row.name_th }), tone: 'danger', confirmLabel: t('delete'), cancelLabel: t('cancel') }))) return;
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/hr/holidays/${row.id}`, { method: 'DELETE' });
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        toast({ type: 'error', title: t('saveFailed'), message: json.error });
-        return;
-      }
-      toast({ type: 'success', title: t('deletedOk') });
-      await fetchRows();
-    } catch (err) {
-      toast({
-        type: 'error',
-        title: t('saveFailed'),
-        message: err instanceof Error ? err.message : undefined,
-      });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const openAdd = () => {
-    setEditing(null);
-    setModalOpen(true);
-  };
-  const openEdit = (row: HolidayRow) => {
-    setEditing(row);
-    setModalOpen(true);
-  };
-
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="w-32">
-          <Select
-            aria-label={t('year')}
-            value={String(year)}
-            onChange={(e) => setYear(Number(e.target.value))}
-            options={yearOptions}
-          />
-        </div>
-        <Button size="sm" onClick={openAdd}>
-          <Plus className="h-4 w-4" />
-          {t('addHoliday')}
-        </Button>
-      </div>
-
-      {loading ? (
-        <div className="py-10 text-center text-sm text-gray-400">…</div>
-      ) : rows.length === 0 ? (
-        <EmptyState
-          icon={CalendarDays}
-          title={t('noHolidays')}
-          description={t('noHolidaysDesc')}
-          action={
-            <Button size="sm" onClick={openAdd}>
-              <Plus className="h-4 w-4" />
-              {t('addHoliday')}
-            </Button>
-          }
-        />
-      ) : (
-        <ul className="divide-y divide-gray-100 overflow-hidden rounded-xl border border-gray-200 dark:divide-gray-800 dark:border-gray-700">
-          {rows.map((row) => (
-            <li
-              key={row.id}
-              className="flex flex-wrap items-center gap-x-3 gap-y-1 bg-white px-3 py-2.5 dark:bg-gray-900"
-            >
-              <span className="w-24 shrink-0 text-sm tabular-nums text-gray-500 dark:text-gray-400">
-                {row.holiday_date}
-              </span>
-              <div className="min-w-0 flex-1">
-                <span className="font-medium text-gray-900 dark:text-white">{row.name_th}</span>
-                <span className="ml-2 text-xs text-gray-400">{row.name_en}</span>
-              </div>
-              {row.is_public_holiday && (
-                <Badge variant="info" size="sm">
-                  {t('publicHolidayBadge')}
-                </Badge>
-              )}
-              <button
-                type="button"
-                onClick={() => openEdit(row)}
-                disabled={busy}
-                title={t('edit')}
-                aria-label={t('edit')}
-                className="shrink-0 rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-400"
-              >
-                <Pencil className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => removeHoliday(row)}
-                disabled={busy}
-                title={t('delete')}
-                aria-label={t('delete')}
-                className="shrink-0 rounded-md p-1.5 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <HolidayModal
-        open={modalOpen}
-        editing={editing}
-        companyId={companyId}
-        year={year}
-        onClose={() => setModalOpen(false)}
-        onSaved={fetchRows}
-      />
-      {dialog}
-    </div>
-  );
-}
 
 // ===========================================================================
 // Page
@@ -831,7 +509,6 @@ function HolidaysTab({ companyId }: { companyId: string }) {
 
 export default function LeaveTypesPage() {
   const t = useTranslations('hr.leaveTypes');
-  const [tab, setTab] = useState<'leaveTypes' | 'holidays'>('leaveTypes');
   const [companies, setCompanies] = useState<CompanyOpt[]>([]);
   const [companyId, setCompanyId] = useState('');
   const [companiesLoading, setCompaniesLoading] = useState(true);
@@ -880,20 +557,10 @@ export default function LeaveTypesPage() {
         />
       </div>
 
-      <Tabs
-        tabs={[
-          { id: 'leaveTypes', label: t('tabLeaveTypes') },
-          { id: 'holidays', label: t('tabHolidays') },
-        ]}
-        activeTab={tab}
-        onChange={(id) => setTab(id as 'leaveTypes' | 'holidays')}
-      />
-
-      {tab === 'leaveTypes' ? (
-        <LeaveTypesTab key={`lt-${companyId}`} companyId={companyId} />
-      ) : (
-        <HolidaysTab key={`hol-${companyId}`} companyId={companyId} />
-      )}
+      {/* The public-holiday calendar was retired on 2026-08-18 — the roster is the only record of a
+          working day now, so this page has one subject again. Its tab is gone rather than left
+          disabled: a form that still accepts entries nothing reads is worse than no form. */}
+      <LeaveTypesTab key={`lt-${companyId}`} companyId={companyId} />
     </div>
   );
 }
