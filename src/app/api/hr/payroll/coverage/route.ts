@@ -193,6 +193,27 @@ export async function GET(request: NextRequest) {
     })
     .sort((a, b) => (a.company_name ?? '').localeCompare(b.company_name ?? '', 'th'));
 
+  // A run whose slice has no eligible employee left produces no bucket above — and the payroll page
+  // now reaches every run THROUGH these buckets, so without this such a run would be unreachable
+  // (its slips still exist and still need reading). Appended with expected 0 rather than hidden.
+  for (const run of payruns) {
+    const known = data.some(
+      (b) => b.company_id === run.company_id && b.payroll_group_id === (run.payroll_group_id ?? null)
+    );
+    if (known) continue;
+    data.push({
+      company_id: run.company_id,
+      company_name: companyName.get(run.company_id) ?? null,
+      payroll_group_id: run.payroll_group_id ?? null,
+      payroll_group_name: run.payroll_group_id ? groupName.get(run.payroll_group_id) ?? null : null,
+      expected: 0,
+      with_slip: 0,
+      state: 'ok',
+      payrun: { id: run.id, status: run.status },
+      missing: [],
+    });
+  }
+
   const totals = data.reduce(
     (acc, b) => ({
       expected: acc.expected + b.expected,
