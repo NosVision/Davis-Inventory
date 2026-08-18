@@ -109,7 +109,6 @@ export default function SchedulePage({
   const [templates, setTemplates] = useState<Template[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [monthStatus, setMonthStatus] = useState<MonthStatus>('empty');
-  const [holidays, setHolidays] = useState<{ holiday_date: string; name_th: string; name_en: string }[]>([]);
   // Employees with NO roster row at all this month — "nobody thought about them", which an empty
   // grid line hides (HR ask 2026-08-07).
   const [unscheduled, setUnscheduled] = useState<{ user_id: string; name: string; position_name: string | null }[]>([]);
@@ -191,7 +190,6 @@ export default function SchedulePage({
       setTemplates((j.templates ?? []) as Template[]);
       setEntries((j.entries ?? []) as Entry[]);
       setMonthStatus((j.monthStatus ?? 'empty') as MonthStatus);
-      setHolidays((j.holidays ?? []) as { holiday_date: string; name_th: string; name_en: string }[]);
       setUnscheduled((j.unscheduled ?? []) as { user_id: string; name: string; position_name: string | null }[]);
       setCompanies((j.companies ?? []) as CompanyOpt[]);
     } catch {
@@ -232,11 +230,6 @@ export default function SchedulePage({
 
   const days = useMemo(() => daysOfMonth(month), [month]);
   const tplById = useMemo(() => new Map(templates.map((x) => [x.id, x])), [templates]);
-  // Configured public holidays → the roster auto-shows them as day-off (no manual entry).
-  const holidayByDate = useMemo(
-    () => new Map(holidays.map((h) => [h.holiday_date, isTh ? h.name_th : h.name_en])),
-    [holidays, isTh]
-  );
   const entryByCell = useMemo(() => {
     const m = new Map<string, Entry>();
     for (const e of entries) m.set(key(e.user_id, e.work_date), e);
@@ -683,18 +676,17 @@ export default function SchedulePage({
                     {t('employee')}
                   </label>
                 </th>
-                {days.map((d) => {
-                  const holiday = holidayByDate.get(d);
-                  return (
-                    // Background named on the cell, not inherited from the row: a sticky cell paints
-                    // over the rows sliding beneath it only if it has a background of its own.
-                    <th key={d} className={`sticky top-0 z-20 min-w-[38px] bg-gray-50 px-1 py-2 text-center font-medium dark:bg-gray-800 ${holiday ? 'text-rose-500 dark:text-rose-400' : 'text-gray-500 dark:text-gray-400'}`} title={holiday || undefined}>
-                      <div className="text-[10px] uppercase">{WEEKDAYS[getDay(d)]}</div>
-                      <div className="tabular-nums">{Number(d.split('-')[2])}</div>
-                      {holiday && <div className="mx-auto mt-0.5 h-1 w-1 rounded-full bg-rose-500" />}
-                    </th>
-                  );
-                })}
+                {days.map((d) => (
+                  // Background named on the cell, not inherited from the row: a sticky cell paints
+                  // over the rows sliding beneath it only if it has a background of its own.
+                  <th
+                    key={d}
+                    className="sticky top-0 z-20 min-w-[38px] bg-gray-50 px-1 py-2 text-center font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400"
+                  >
+                    <div className="text-[10px] uppercase">{WEEKDAYS[getDay(d)]}</div>
+                    <div className="tabular-nums">{Number(d.split('-')[2])}</div>
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -728,29 +720,21 @@ export default function SchedulePage({
                     const c = effectiveCell(emp.user_id, d);
                     const tpl = c?.shift_template_id ? tplById.get(c.shift_template_id) : null;
                     const isDirty = draft.has(key(emp.user_id, d));
-                    const holiday = holidayByDate.get(d);
-                    // A holiday with no explicit assignment shows an auto day-off (rose "หยุด")
-                    // — a manual shift/day-off still wins, so HR can override for anyone who works it.
-                    const autoHoliday = !c && holiday;
                     return (
                       <td key={d} className="p-0.5 text-center">
                         <button type="button" onClick={() => paintCell(emp.user_id, d)}
                           className={`flex h-8 w-full items-center justify-center rounded ${isDirty ? 'ring-2 ring-amber-400' : ''} ${
                             c
                               ? (c.is_day_off ? 'bg-gray-100 text-gray-400 dark:bg-gray-700/50' : 'text-white')
-                              : autoHoliday
-                                ? 'bg-rose-50 text-rose-400 dark:bg-rose-900/20 dark:text-rose-300'
-                                : 'bg-transparent hover:bg-gray-100 dark:hover:bg-gray-700/50'
+                                  : 'bg-transparent hover:bg-gray-100 dark:hover:bg-gray-700/50'
                           }`}
                           style={!c || c.is_day_off ? undefined : { backgroundColor: tpl?.color || '#6366f1' }}
                           /* Include the real start–end on the roster cell: the label alone hid a
                              shift named "10:00" that actually started 22:00, so nothing looked wrong
                              until late detection silently read 0 minutes. */
-                          title={autoHoliday ? holiday : c?.is_day_off ? t('dayOff') : tpl ? `${tpl.label} · ${hhmm(tpl.start_time)}–${hhmm(tpl.end_time)}` : undefined}>
+                          title={c?.is_day_off ? t('dayOff') : tpl ? `${tpl.label} · ${hhmm(tpl.start_time)}–${hhmm(tpl.end_time)}` : undefined}>
                           {c
                             ? (c.is_day_off ? <span className="text-[10px]">OFF</span> : <span className="hidden truncate px-0.5 text-[10px] font-medium sm:inline">{tpl?.label?.slice(0, 3)}</span>)
-                            : autoHoliday
-                              ? <span className="text-[9px]">{isTh ? 'หยุด' : 'PH'}</span>
                               : ''}
                         </button>
                       </td>

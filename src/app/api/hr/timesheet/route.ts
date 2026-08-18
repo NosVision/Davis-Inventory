@@ -370,25 +370,6 @@ export async function GET(request: NextRequest) {
   const profById = new Map(profiles.map((p) => [p.id, p]));
   const empById = new Map(employees.map((e) => [e.profile_id, e]));
 
-  // Company public holidays in range → treated as day-off so a holiday never reads as "absent"
-  // (matches payroll). Global holidays (company_id NULL) apply to everyone; company holidays only
-  // to that company's staff.
-  const companyIds = [...new Set(employees.map((e) => e.company_id).filter(Boolean))] as string[];
-  const { data: holidayRows } = await service
-    .from('hr_holidays')
-    .select('holiday_date, company_id')
-    .eq('active', true)
-    .gte('holiday_date', from)
-    .lte('holiday_date', to)
-    .or(`company_id.is.null${companyIds.length ? `,company_id.in.(${companyIds.join(',')})` : ''}`);
-  const globalHolidays = new Set<string>();
-  const holidaysByCompany = new Map<string, Set<string>>();
-  for (const h of (holidayRows ?? []) as { holiday_date: string; company_id: string | null }[]) {
-    if (h.company_id == null) globalHolidays.add(h.holiday_date);
-    else (holidaysByCompany.get(h.company_id) ?? holidaysByCompany.set(h.company_id, new Set()).get(h.company_id)!).add(h.holiday_date);
-  }
-  const isHoliday = (companyId: string | null, date: string) =>
-    globalHolidays.has(date) || (companyId != null && (holidaysByCompany.get(companyId)?.has(date) ?? false));
   const schedByCell = new Map(schedule.map((s) => [`${s.user_id}|${s.work_date}`, s]));
   const punchesByCell = new Map<string, Punch[]>();
   for (const a of attendance) {
@@ -417,13 +398,15 @@ export async function GET(request: NextRequest) {
       const e = empById.get(uid);
       const workHours = e?.work_hours_per_day ?? DEFAULT_WORK_HOURS;
       const otEligible = e?.ot_eligible ?? false;
-      const empCompany = e?.company_id ?? null;
       const days: (DaySummary & { leave: DayLeave | null })[] = dates.map((date) => {
         const cell = schedByCell.get(`${uid}|${date}`);
         const derived = computeDaySummary({
           businessDate: date,
           shift: cell?.shift ?? null,
-          isDayOff: (cell?.is_day_off ?? false) || isHoliday(empCompany, date),
+                    // The roster is the only record of whether a day was a working day — public holidays
+          // were retired as a system concept (owner decision 2026-08-18). A holiday the venue works
+          // is a rostered shift; a holiday it takes off is a rostered day off.
+          isDayOff: cell?.is_day_off ?? false,
           hasSchedule: !!cell,
           punches: punchesByCell.get(`${uid}|${date}`) ?? [],
           workHoursPerDay: workHours,

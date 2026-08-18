@@ -87,13 +87,8 @@ export async function GET() {
   if (empErr) return NextResponse.json({ error: 'Failed to load employee' }, { status: 500 });
   const emp = empRow as { id: string; company_id: string | null; work_hours_per_day: number | null; ot_eligible: boolean | null } | null;
 
-  // Company public holidays in the cycle → day-off (never "absent"), matching payroll.
-  let holidayQuery = service.from('hr_holidays').select('holiday_date').eq('active', true).gte('holiday_date', cycleFrom).lte('holiday_date', today);
-  holidayQuery = emp?.company_id
-    ? holidayQuery.or(`company_id.eq.${emp.company_id},company_id.is.null`)
-    : holidayQuery.is('company_id', null);
 
-  const [scheduleRes, futureRes, attendanceRes, overridesRes, slipRes, penaltiesRes, holidayRes] = await Promise.all([
+  const [scheduleRes, futureRes, attendanceRes, overridesRes, slipRes, penaltiesRes] = await Promise.all([
     // Cycle schedule: NO status filter, same as the ESS timesheet route, so totals match it.
     service
       .from('hr_schedule')
@@ -132,12 +127,10 @@ export async function GET() {
       .select('amount, status, month_year, included_in_quota')
       .eq('staff_id', user.id)
       .eq('month_year', today.slice(0, 7)),
-    holidayQuery,
   ]);
   if (scheduleRes.error || futureRes.error || attendanceRes.error || overridesRes.error || slipRes.error || penaltiesRes.error) {
     return NextResponse.json({ error: 'Failed to load dashboard' }, { status: 500 });
   }
-  const holidaySet = new Set(((holidayRes.data ?? []) as { holiday_date: string }[]).map((h) => h.holiday_date));
 
   // ---- Today + cycle totals (same engine as the ESS timesheet) ----
   const workHours = emp?.work_hours_per_day ?? DEFAULT_WORK_HOURS;
@@ -163,7 +156,7 @@ export async function GET() {
     const derived = computeDaySummary({
       businessDate: date,
       shift: cell?.shift ?? null,
-      isDayOff: (cell?.is_day_off ?? false) || holidaySet.has(date),
+      isDayOff: cell?.is_day_off ?? false,
       hasSchedule: !!cell,
       punches: punchesByDate.get(date) ?? [],
       workHoursPerDay: workHours,

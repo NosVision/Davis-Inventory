@@ -9,7 +9,7 @@ import {
   type DaySummary,
   type TimesheetOverride,
 } from '@/lib/hr/time-engine';
-import { classifyLeaveEffect, countLeaveDays, enumerateDates } from '@/lib/hr/leaves';
+import { classifyLeaveEffect, enumerateDates } from '@/lib/hr/leaves';
 import { computePayslip, type PayrollInput, type PayslipLine, type PayType, type TaxMode } from '@/lib/hr/payroll';
 import { refuseIfConfidentialInScope } from '@/lib/hr/pay-visibility';
 import { getHrPolicies } from '@/lib/hr/policy';
@@ -267,7 +267,7 @@ export async function POST(request: NextRequest) {
   const svMonth = month === 1 ? 12 : month - 1;
   const svYear = month === 1 ? year - 1 : year;
   const svPeriodMonth = `${svYear}-${pad(svMonth)}-01`;
-  const [scheduleRes, attendanceRes, overridesRes, leavesRes, leaveTypesRes, holidaysRes, recurringRes, scRes, claimsRes, taxAllowRes, tipRes, evalBonusRes] =
+  const [scheduleRes, attendanceRes, overridesRes, leavesRes, leaveTypesRes, recurringRes, scRes, claimsRes, taxAllowRes, tipRes, evalBonusRes] =
     await Promise.all([
       service
         .from('hr_schedule')
@@ -298,9 +298,7 @@ export async function POST(request: NextRequest) {
         .eq('status', 'approved')
         .lte('from_date', end)
         .gte('to_date', start),
-      service.from('hr_leave_types').select('id, code, paid, paid_with_cert, deduct_sc, deduct_travel'),
-      service.from('hr_holidays').select('holiday_date').eq('company_id', companyId).eq('active', true),
-      // Recurring items: only THIS run's employees (was an unscoped all-tenant scan), and only rows
+      service.from('hr_leave_types').select('id, code, paid, paid_with_cert, deduct_sc, deduct_travel'),      // Recurring items: only THIS run's employees (was an unscoped all-tenant scan), and only rows
       // whose period window covers this payrun period. Window sides are 'YYYY-MM' text (00162);
       // null start = since forever, null end = perpetual — expiry is enforced here, not by memory.
       service
@@ -343,7 +341,7 @@ export async function POST(request: NextRequest) {
     ]);
   const anyErr =
     scheduleRes.error || attendanceRes.error || overridesRes.error || leavesRes.error ||
-    leaveTypesRes.error || holidaysRes.error || recurringRes.error || scRes.error || claimsRes.error || taxAllowRes.error || tipRes.error || evalBonusRes.error;
+    leaveTypesRes.error || recurringRes.error || scRes.error || claimsRes.error || taxAllowRes.error || tipRes.error || evalBonusRes.error;
   if (anyErr) return NextResponse.json({ error: 'Failed to load payroll inputs' }, { status: 500 });
 
   // Index the bulk data.
@@ -365,9 +363,7 @@ export async function POST(request: NextRequest) {
   );
   const leaveTypeById = new Map(
     ((leaveTypesRes.data ?? []) as { id: string; code: string; paid: boolean; paid_with_cert: boolean; deduct_sc: boolean; deduct_travel: boolean }[]).map((t) => [t.id, t])
-  );
-  const holidaySet = new Set(((holidaysRes.data ?? []) as { holiday_date: string }[]).map((h) => h.holiday_date));
-  const leavesByUser = new Map<string, LeaveRow[]>();
+  );  const leavesByUser = new Map<string, LeaveRow[]>();
   for (const lv of (leavesRes.data ?? []) as LeaveRow[]) {
     const list = leavesByUser.get(lv.user_id) ?? [];
     list.push(lv);
@@ -483,13 +479,13 @@ export async function POST(request: NextRequest) {
     const inWindow = (d: string) => d >= empStart && d <= empEnd;
     // prorate_days: null when employed the whole cycle (→ full base, unchanged). Otherwise the
     // employed-day count by the configured basis. 'scheduled' treats no-schedule days as work
-    // days and only drops explicit day-offs/holidays (matches the leave-docking convention).
+    // days and only drops explicit roster day-offs (matches the leave-docking convention).
     let prorateDays: number | null = null;
     if (isPartialPeriod) {
       prorateDays =
         policies.prorate_basis === 'scheduled'
           ? dates.filter(
-              (d) => inWindow(d) && !holidaySet.has(d) && schedByCell.get(`${uid}|${d}`)?.is_day_off !== true
+              (d) => inWindow(d) && schedByCell.get(`${uid}|${d}`)?.is_day_off !== true
             ).length
           : dateRange(empStart, empEnd).length; // calendar days employed
     }
@@ -517,14 +513,14 @@ export async function POST(request: NextRequest) {
       );
       const from = lv.from_date < start ? start : lv.from_date;
       const to = lv.to_date > end ? end : lv.to_date;
-      for (const d of enumerateDates(from, to)) if (!holidaySet.has(d)) leaveCovered.add(d);
+      for (const d of enumerateDates(from, to)) leaveCovered.add(d);
       // A leave day only docks salary/travel if the employee was rostered to work it: exclude
-      // public holidays AND the employee's scheduled weekly day-offs (is_day_off) — matching the
+      // the employee's scheduled weekly day-offs (is_day_off) — the roster is now the only source of
       // leave-approval timesheet path. Dates with no schedule row yet still count (can't assume a
       // future day off). Previously this counted every calendar day → over-docked a leave that
       // spanned a day off (e.g. 7 days docked instead of 6).
       const daysInCycle = enumerateDates(from, to).filter(
-        (d) => inWindow(d) && !holidaySet.has(d) && schedByCell.get(`${uid}|${d}`)?.is_day_off !== true
+        (d) => inWindow(d) && schedByCell.get(`${uid}|${d}`)?.is_day_off !== true
       ).length;
       return {
         leave_id: lv.id,

@@ -192,14 +192,6 @@ export async function POST(
     hasCert
   );
 
-  // Company holidays (skipped — not scheduled work days for pay purposes).
-  const { data: holidays } = await service
-    .from('hr_holidays')
-    .select('holiday_date')
-    .eq('company_id', row.company_id as string)
-    .eq('active', true);
-  const holidaySet = new Set((holidays ?? []).map((h) => h.holiday_date as string));
-
   // Employee full-day minutes for a paid-leave credit.
   const { data: emp } = await service
     .from('hr_employees')
@@ -210,7 +202,6 @@ export async function POST(
   const fullDayMin = workHours * 60;
 
   for (const d of enumerateDates(row.from_date as string, row.to_date as string)) {
-    if (holidaySet.has(d)) continue;
 
     // Only apply to actual scheduled work days: a row that exists, is not a day-off,
     // and has a shift assigned. A leave filed for a future date with no schedule row,

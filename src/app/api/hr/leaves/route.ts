@@ -121,14 +121,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Leave type not available for this company' }, { status: 400 });
   }
 
-  // Holiday-adjusted working-day count (matches the ESS + payroll path).
-  const { data: holidays } = await service
-    .from('hr_holidays')
-    .select('holiday_date')
-    .eq('company_id', companyId)
-    .eq('active', true);
-  const holidaySet = new Set((holidays ?? []).map((h) => h.holiday_date as string));
-  const days = countLeaveDays(fromDate, toDate, holidaySet);
+  // Raw calendar-day count. Roster day-offs are excluded at approval time (see the decide
+  // route), because a leave filed for future dates has no roster row to check yet.
+  const days = countLeaveDays(fromDate, toDate);
   if (days <= 0) {
     return NextResponse.json({ error: 'Leave range contains no working days' }, { status: 400 });
   }

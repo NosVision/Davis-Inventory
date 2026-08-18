@@ -111,13 +111,14 @@ export function enumerateDates(from: string, to: string): string[] {
 }
 
 /**
- * Count leave days in [from, to] inclusive, excluding company public holidays.
- * (Weekly day-offs are handled at approval time against hr_schedule, since a leave
- * may be filed for future dates that have no schedule row yet.)
+ * Count leave days in [from, to] inclusive, excluding any dates passed in `excluded`.
+ * Roster day-offs are handled at approval time against hr_schedule, since a leave may be filed
+ * for future dates that have no roster row yet. Public holidays were retired as a concept on
+ * 2026-08-18 — the roster is the only record of whether a day was a working day.
  */
-export function countLeaveDays(from: string, to: string, holidayDates: Iterable<string>): number {
-  const holidays = holidayDates instanceof Set ? holidayDates : new Set(holidayDates);
-  return enumerateDates(from, to).filter((d) => !holidays.has(d)).length;
+export function countLeaveDays(from: string, to: string, excluded: Iterable<string> = []): number {
+  const skip = excluded instanceof Set ? excluded : new Set(excluded);
+  return enumerateDates(from, to).filter((d) => !skip.has(d)).length;
 }
 
 /**
