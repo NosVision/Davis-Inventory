@@ -112,6 +112,30 @@ const KNOWN_TYPES = new Set([
   'student_loan', 'advance', 'guarantee', 'loan', 'provident_fund', 'other', 'allowance',
 ]);
 
+/**
+ * The human label for one payslip line, given a translator scoped to `hr.payslip`.
+ *
+ * Exported because the downloadable PDF needs the SAME wording: line labels are stored as machine
+ * keys ('salary', 'sso', 'absent'), and the PDF printed them raw — an employee's Thai payslip
+ * listed "salary / sso / absent" in English and did not match the screen it was downloaded from.
+ * A react-pdf tree cannot call hooks, so the translator is handed in rather than read here.
+ */
+export function payslipLineLabel(l: PayslipLine, t: (key: string) => string): string {
+  // allowance/claim/commission/adjustment carry a human label already; standard types are translated.
+  if (l.type === 'allowance' || l.type === 'claim' || l.type === 'commission' || l.type === 'eval_bonus' || l.type === 'adjustment') {
+    return l.label;
+  }
+  if (KNOWN_TYPES.has(l.type)) {
+    const base = t(`line.${l.type}`);
+    // leave/travel lines carry the leave code as label — append it for clarity.
+    if ((l.type === 'leave_unpaid' || l.type === 'travel_leave') && l.label && l.label !== l.type) {
+      return `${base} (${l.label})`;
+    }
+    return base;
+  }
+  return l.label;
+}
+
 /** Day count from a leave-line ref ("{leave_id}:{N}d") — null when the ref isn't that shape. */
 function leaveDaysFromRef(ref: string | null | undefined): number | null {
   if (!ref) return null;
@@ -131,21 +155,7 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
   const scLineLabel = useScLineLabel();
   const { payslip, payrun, earnings, deductions } = data;
 
-  const lineLabel = (l: PayslipLine): string => {
-    // allowance/claim/commission/adjustment carry a human label already; standard types are translated.
-    if (l.type === 'allowance' || l.type === 'claim' || l.type === 'commission' || l.type === 'eval_bonus' || l.type === 'adjustment') {
-      return l.label;
-    }
-    if (KNOWN_TYPES.has(l.type)) {
-      const base = t(`line.${l.type}`);
-      // leave/travel lines carry the leave code as label — append it for clarity.
-      if ((l.type === 'leave_unpaid' || l.type === 'travel_leave') && l.label && l.label !== l.type) {
-        return `${base} (${l.label})`;
-      }
-      return base;
-    }
-    return l.label;
-  };
+  const lineLabel = (l: PayslipLine): string => payslipLineLabel(l, t);
 
   // The formula behind a computed line, rendered from the stored machine ref — the number's
   // provenance at a glance (HR ask 2026-07-14: "อยากเห็นการแจกแจงทุกตัวเลข"). The engine docks

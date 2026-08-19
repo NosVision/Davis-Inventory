@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { Loader2, Calendar, Download, Wallet, X, FileText } from 'lucide-react';
 import { Button, EmptyState, Modal, ModalFooter, PageHeader, DataList, DataCard, MoneyValue, StatusBadge, ViewToggle, useViewMode, toast } from '@/components/ui';
-import { PayslipView, type PayslipDetailData } from '@/components/hr/payslip-view';
+import { PayslipView, payslipLineLabel, type PayslipDetailData } from '@/components/hr/payslip-view';
 import { ImportedPayslipView, periodLabel, type ImportedSlip } from '@/components/hr/imported-payslip-view';
 import { useEssText } from '@/lib/i18n/ess-locale';
 import { TileNotices } from '../_components/tile-notices';
@@ -139,7 +139,9 @@ export default function MyPayslipsPage() {
     setPdfBusy(true);
     try {
       const { buildPayslipPdf } = await import('@/components/hr/payslip-pdf');
-      const blob = await buildPayslipPdf(slip);
+      // Same label resolver the on-screen slip uses, so the saved file reads in Thai and word for
+      // word matches what the employee just looked at.
+      const blob = await buildPayslipPdf(slip, (line) => payslipLineLabel(line, t));
       const y = slip.payrun?.period_year ?? year;
       const m = String(slip.payrun?.period_month ?? 0).padStart(2, '0');
       const url = URL.createObjectURL(blob);
@@ -153,7 +155,7 @@ export default function MyPayslipsPage() {
     } finally {
       setPdfBusy(false);
     }
-  }, [slip, year]);
+  }, [slip, year, t]);
 
   return (
     <div className="mx-auto max-w-lg space-y-4 p-4">

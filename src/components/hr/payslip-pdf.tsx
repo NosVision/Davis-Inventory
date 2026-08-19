@@ -11,7 +11,10 @@
  */
 
 import { Document, Page, Text, View, StyleSheet, Font, pdf } from '@react-pdf/renderer';
-import type { PayslipDetailData } from './payslip-view';
+import type { PayslipDetailData, PayslipLine } from './payslip-view';
+
+/** Resolves one stored line into the wording the on-screen slip uses. */
+type LabelFor = (line: PayslipLine) => string;
 
 function fontUrl(file: string): string {
   if (typeof window !== 'undefined') return `${window.location.origin}/fonts/${file}`;
@@ -35,32 +38,43 @@ function thaiSafe(s: string | null | undefined): string {
 
 const NAVY = '#1e3a8a';
 
+// The slip reads at arm's length now: every size below is the old one scaled up (10pt body → 13pt),
+// with the page margin pulled in so the wider type keeps its column. Layout is untouched — the ask
+// was a bigger sheet, not a different one.
+//
+// Rows stack in ONE full-width column rather than two side-by-side. Thai has no inter-word spaces
+// and this document registers a no-break hyphenation callback (below), so a label that outgrows its
+// column cannot wrap — it clips. Half-width columns survived 10pt; at 13pt "ค่าเดินทาง (วันขาดงาน)"
+// would not. Full width buys the room the larger type needs.
 const styles = StyleSheet.create({
-  page: { fontFamily: 'Sarabun', fontSize: 10, padding: 40, color: '#111827' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', borderBottomWidth: 2, borderColor: NAVY, paddingBottom: 8 },
-  company: { fontSize: 13, fontWeight: 700, color: NAVY },
-  companyAddr: { fontSize: 9, color: '#6b7280', maxWidth: 280 },
-  title: { fontSize: 15, fontWeight: 700, color: NAVY, textAlign: 'right' },
-  period: { fontSize: 10, color: '#6b7280', textAlign: 'right' },
+  page: { fontFamily: 'Sarabun', fontSize: 13, padding: 34, color: '#111827' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', borderBottomWidth: 2, borderColor: NAVY, paddingBottom: 10 },
+  company: { fontSize: 17, fontWeight: 700, color: NAVY },
+  companyAddr: { fontSize: 11, color: '#6b7280', maxWidth: 300 },
+  title: { fontSize: 20, fontWeight: 700, color: NAVY, textAlign: 'right' },
+  period: { fontSize: 13, color: '#6b7280', textAlign: 'right' },
 
-  meta: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 12, marginBottom: 4 },
-  metaCell: { width: '50%', flexDirection: 'row', marginBottom: 3 },
-  metaLabel: { width: 90, color: '#6b7280' },
+  meta: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 15, marginBottom: 5 },
+  metaCell: { width: '50%', flexDirection: 'row', marginBottom: 4 },
+  metaLabel: { width: 115, color: '#6b7280' },
   metaValue: { flex: 1, fontWeight: 700 },
 
-  cols: { flexDirection: 'row', gap: 14, marginTop: 10 },
-  col: { flex: 1 },
-  colHead: { fontSize: 11, fontWeight: 700, backgroundColor: '#f1f5f9', paddingVertical: 4, paddingHorizontal: 6, borderTopWidth: 1, borderColor: NAVY },
-  row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2.5, paddingHorizontal: 6, borderBottomWidth: 0.4, borderColor: '#e5e7eb' },
-  rowLabel: { flex: 1, paddingRight: 6 },
-  rowAmt: { width: 78, textAlign: 'right' },
-  subtotal: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, paddingHorizontal: 6, borderTopWidth: 1, borderColor: '#94a3b8', fontWeight: 700 },
+  section: { marginTop: 14 },
+  colHead: { fontSize: 14, fontWeight: 700, backgroundColor: '#f1f5f9', paddingVertical: 6, paddingHorizontal: 8, borderTopWidth: 1, borderColor: NAVY },
+  row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, paddingHorizontal: 8, borderBottomWidth: 0.5, borderColor: '#e5e7eb' },
+  rowLabel: { flex: 1, paddingRight: 10 },
+  rowAmt: { width: 105, textAlign: 'right' },
+  subtotal: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, paddingHorizontal: 8, borderTopWidth: 1, borderColor: '#94a3b8', fontWeight: 700 },
 
-  net: { marginTop: 16, backgroundColor: '#f1f5f9', borderLeftWidth: 4, borderColor: NAVY, padding: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  netLabel: { fontSize: 12, fontWeight: 700 },
-  netValue: { fontSize: 17, fontWeight: 700, color: NAVY },
+  net: { marginTop: 18, backgroundColor: '#f1f5f9', borderLeftWidth: 5, borderColor: NAVY, padding: 13, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  netLabel: { fontSize: 15, fontWeight: 700 },
+  netValue: { fontSize: 22, fontWeight: 700, color: NAVY },
 
-  foot: { position: 'absolute', bottom: 28, left: 40, right: 40, fontSize: 8, color: '#9ca3af', textAlign: 'center' },
+  transfers: { marginTop: 8, paddingHorizontal: 8 },
+  transferRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2.5 },
+  transferTotal: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, marginTop: 2, borderTopWidth: 0.5, borderColor: '#cbd5e1', fontWeight: 700 },
+
+  foot: { position: 'absolute', bottom: 24, left: 34, right: 34, fontSize: 10, color: '#9ca3af', textAlign: 'center' },
 });
 
 const money = (satang: number) =>
@@ -80,12 +94,16 @@ function Line({ label, amount }: { label: string; amount: number }) {
   );
 }
 
-function PayslipDocument({ data }: { data: PayslipDetailData }) {
+function PayslipDocument({ data, labelFor }: { data: PayslipDetailData; labelFor: LabelFor }) {
   const { payslip, payrun, earnings, deductions } = data;
   const periodText = payrun
     ? `${TH_MONTHS[(payrun.period_month ?? 1) - 1]} ${payrun.period_year + 543}`
     : '—';
   const earnTotal = earnings.reduce((s, e) => s + (e.amount_satang ?? 0), 0) || payslip.gross_satang;
+  // Earnings that leave the bank mid-month rather than with the salary.
+  const svTipSatang = earnings
+    .filter((e) => e.type === 'service_charge' || e.type === 'tip')
+    .reduce((s, e) => s + (e.amount_satang ?? 0), 0);
 
   return (
     <Document title={`สลิปเงินเดือน ${periodText}`}>
@@ -122,40 +140,62 @@ function PayslipDocument({ data }: { data: PayslipDetailData }) {
           </View>
         </View>
 
-        <View style={styles.cols}>
-          <View style={styles.col}>
-            <Text style={styles.colHead}>รายได้ </Text>
-            {earnings.length === 0 ? (
-              <Line label="เงินเดือน" amount={payslip.gross_satang} />
-            ) : (
-              earnings.map((e, i) => (
-                <Line key={`e-${i}`} label={e.label ?? '—'} amount={e.amount_satang ?? 0} />
-              ))
-            )}
-            <View style={styles.subtotal}>
-              <Text>รวมรายได้ </Text>
-              <Text style={styles.rowAmt}>{money(earnTotal)}</Text>
-            </View>
+        <View style={styles.section}>
+          <Text style={styles.colHead}>รายได้ </Text>
+          {earnings.length === 0 ? (
+            <Line label="เงินเดือน" amount={payslip.gross_satang} />
+          ) : (
+            earnings.map((e, i) => (
+              <Line key={`e-${i}`} label={labelFor(e)} amount={e.amount_satang ?? 0} />
+            ))
+          )}
+          <View style={styles.subtotal}>
+            <Text>รวมรายได้ </Text>
+            <Text style={styles.rowAmt}>{money(earnTotal)}</Text>
           </View>
+        </View>
 
-          <View style={styles.col}>
-            <Text style={styles.colHead}>รายการหัก </Text>
-            {deductions.map((d, i) => (
-              <Line key={`d-${i}`} label={d.label ?? '—'} amount={d.amount_satang ?? 0} />
-            ))}
-            {payslip.sso_satang > 0 && <Line label="ประกันสังคม" amount={payslip.sso_satang} />}
-            {payslip.tax_satang > 0 && <Line label="ภาษีหัก ณ ที่จ่าย" amount={payslip.tax_satang} />}
-            <View style={styles.subtotal}>
-              <Text>รวมรายการหัก </Text>
-              <Text style={styles.rowAmt}>{money(payslip.total_deduction_satang)}</Text>
-            </View>
+        <View style={styles.section}>
+          <Text style={styles.colHead}>รายการหัก </Text>
+          {/* SSO and tax are already rows in `deductions` (payroll.ts pushes them there before
+              persisting). Re-adding them from payslip.sso_satang/tax_satang printed each twice —
+              once as "sso", once as "ประกันสังคม" — so the listed lines out-summed the subtotal
+              beneath them. The array is the whole story; render it and nothing else. */}
+          {deductions.map((d, i) => (
+            <Line key={`d-${i}`} label={labelFor(d)} amount={d.amount_satang ?? 0} />
+          ))}
+          <View style={styles.subtotal}>
+            <Text>รวมรายการหัก </Text>
+            <Text style={styles.rowAmt}>{money(payslip.total_deduction_satang)}</Text>
           </View>
         </View>
 
         <View style={styles.net}>
-          <Text style={styles.netLabel}>เงินได้สุทธิ </Text>
+          <Text style={styles.netLabel}>เงินเดือนโอนสิ้นเดือน </Text>
           <Text style={styles.netValue}>{money(payslip.net_satang)} บาท </Text>
         </View>
+
+        {/* Without this block the sheet does not add up: net_satang is the month-end transfer only,
+            because payroll.ts takes SC/tips out of it — they go on the 15th. Set beside a รวมรายได้
+            that includes them, the reader is left with รายได้ − หัก ≠ สุทธิ and no way to close the
+            gap. Naming both transfers and their sum is what makes the document check out — the same
+            two-transfer statement the on-screen slip carries. */}
+        {svTipSatang > 0 && (
+          <View style={styles.transfers}>
+            <View style={styles.transferRow}>
+              <Text>เซอร์วิสชาร์จ/ทิป — โอนรอบวันที่ 15 </Text>
+              <Text style={styles.rowAmt}>{money(svTipSatang)}</Text>
+            </View>
+            <View style={styles.transferRow}>
+              <Text>เงินเดือน — โอนสิ้นเดือน </Text>
+              <Text style={styles.rowAmt}>{money(payslip.net_satang)}</Text>
+            </View>
+            <View style={styles.transferTotal}>
+              <Text>รวมรับทั้งงวด </Text>
+              <Text style={styles.rowAmt}>{money(payslip.net_satang + svTipSatang)}</Text>
+            </View>
+          </View>
+        )}
 
         <Text style={styles.foot}>
           เอกสารนี้ออกจากระบบ ไม่ต้องลงนาม — โปรดเก็บไว้เป็นหลักฐาน
@@ -165,7 +205,13 @@ function PayslipDocument({ data }: { data: PayslipDetailData }) {
   );
 }
 
-/** Render to a Blob for download. Lazy-import this module so react-pdf stays out of the page chunk. */
-export async function buildPayslipPdf(data: PayslipDetailData): Promise<Blob> {
-  return pdf(<PayslipDocument data={data} />).toBlob();
+/**
+ * Render to a Blob for download. Lazy-import this module so react-pdf stays out of the page chunk.
+ *
+ * `labelFor` comes from the caller because a react-pdf tree cannot use hooks, and the labels are
+ * stored as machine keys. Omit it and the sheet prints those keys — which is what it used to do.
+ */
+export async function buildPayslipPdf(data: PayslipDetailData, labelFor?: LabelFor): Promise<Blob> {
+  const resolve: LabelFor = labelFor ?? ((l) => l.label ?? '—');
+  return pdf(<PayslipDocument data={data} labelFor={resolve} />).toBlob();
 }
