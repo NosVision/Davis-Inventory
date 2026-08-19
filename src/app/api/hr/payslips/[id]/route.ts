@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { requireHrManagerForStore } from '@/lib/hr/route-auth';
+import { svPeriodMonth } from '@/lib/hr/pay-cycle';
 
 // GET /api/hr/payslips/[id] — one payslip with its itemized earning + deduction lines.
 // Readable by the employee it belongs to (own slip), by company-wide HR, or by a manager scoped
@@ -71,22 +72,36 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   const employeeName = emp?.full_name || profRes.data?.display_name || profRes.data?.username || '—';
   const nickname = profRes.data?.display_name && profRes.data.display_name !== employeeName ? profRes.data.display_name : null;
 
-  // Service Charge (SV) for this payrun's calendar month — the gross allocation, every deduction
-  // line (stock penalties, ad-hoc, carry, …), and the resulting net. This is the "หัก Sv" detail
-  // HR keeps in the Remark column of their register (owner ask 2026-07-10). SC pools are per store,
-  // so a multi-store employee's allocations are summed. Absent → null (no SV this month).
+  // Service Charge (SV) riding on this payslip — the gross allocation, every deduction line (stock
+  // penalties, ad-hoc, carry, …), and the resulting net. This is the "หัก Sv" detail HR keeps in the
+  // Remark column of their register (owner ask 2026-07-10). SC pools are per store, so a
+  // multi-store employee's allocations are summed. Absent → null (no SV on this slip).
+  //
+  // The pool is the PREVIOUS month (svPeriodMonth) — the same one the generator paid into the
+  // earnings line. Reading the payrun's OWN month here showed the round that has not been cut yet:
+  // an August slip paid July's 4,666.67 but explained August's 9,000.01 right underneath it, and
+  // the client read the two numbers as double-counting (report 2026-08-19). The panel now carries
+  // its period so the slip says WHICH round it is explaining.
   type SvLine = { source_type: string; label: string | null; amount_satang: number; carry_satang: number; note: string | null; auto: boolean };
-  let serviceCharge: { allocated_satang: number; deducted_satang: number; net_satang: number; deductions: SvLine[] } | null = null;
+  let serviceCharge: {
+    period_month: string;
+    pay_date: string | null;
+    allocated_satang: number;
+    deducted_satang: number;
+    net_satang: number;
+    deductions: SvLine[];
+  } | null = null;
   const pr = payrunRes.data as { period_year?: number; period_month?: number } | null;
   if (pr?.period_year && pr?.period_month) {
-    const periodMonth = `${pr.period_year}-${String(pr.period_month).padStart(2, '0')}-01`;
+    const periodMonth = svPeriodMonth(pr.period_year, pr.period_month);
     const { data: allocs } = await service
       .from('hr_sc_allocations')
-      .select('allocated_satang, pool:hr_sc_pools!inner(period_month), hr_sc_deductions(source_type, label, amount_satang, carry_satang, note, auto)')
+      .select('allocated_satang, pool:hr_sc_pools!inner(period_month, pay_date), hr_sc_deductions(source_type, label, amount_satang, carry_satang, note, auto)')
       .eq('user_id', slip.user_id)
       .eq('pool.period_month', periodMonth);
     const rows = (allocs ?? []) as unknown as {
       allocated_satang: number;
+      pool: { period_month: string; pay_date: string | null };
       hr_sc_deductions: SvLine[];
     }[];
     if (rows.length) {
@@ -107,7 +122,14 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
           });
         }
       }
-      serviceCharge = { allocated_satang: allocated, deducted_satang: deducted, net_satang: Math.max(0, allocated - deducted), deductions: lines };
+      serviceCharge = {
+        period_month: periodMonth,
+        pay_date: rows[0]?.pool?.pay_date ?? null,
+        allocated_satang: allocated,
+        deducted_satang: deducted,
+        net_satang: Math.max(0, allocated - deducted),
+        deductions: lines,
+      };
     }
   }
 

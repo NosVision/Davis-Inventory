@@ -14,7 +14,7 @@ import { computePayslip, type PayrollInput, type PayslipLine, type PayType, type
 import { refuseIfConfidentialInScope } from '@/lib/hr/pay-visibility';
 import { getHrPolicies } from '@/lib/hr/policy';
 import { isUniqueViolation } from '@/lib/hr/db-errors';
-import { cycleDates } from '@/lib/hr/pay-cycle';
+import { cycleDates, svPeriodMonth } from '@/lib/hr/pay-cycle';
 import { businessDateBangkok } from '@/lib/utils/date';
 
 // Last business day that has CLOSED. A rostered day after this is still ahead of us, so it must
@@ -261,12 +261,10 @@ export async function POST(request: NextRequest) {
 
   // Bulk-load everything for the cycle in parallel.
   const dates = dateRange(start, end);
-  // SV / tip / evaluation pools are the PREVIOUS month (N−1): they are totalled + finalized during
-  // days 1–15 of this pay month and carried into this payslip (client model: "the SV on this
-  // salary is last month's"). The salary itself is period N (26 prev → 25 this).
-  const svMonth = month === 1 ? 12 : month - 1;
-  const svYear = month === 1 ? year - 1 : year;
-  const svPeriodMonth = `${svYear}-${pad(svMonth)}-01`;
+  // SV / tip / evaluation pools are the PREVIOUS month (N−1) — see svPeriodMonth(). The salary
+  // itself is period N (26 prev → 25 this). Read paths MUST use the same helper: they used to
+  // re-derive the month and drifted to N, putting two different SV rounds on one slip.
+  const svMonth = svPeriodMonth(year, month);
   const [scheduleRes, attendanceRes, overridesRes, leavesRes, leaveTypesRes, recurringRes, scRes, claimsRes, taxAllowRes, tipRes, evalBonusRes] =
     await Promise.all([
       service
@@ -312,7 +310,7 @@ export async function POST(request: NextRequest) {
       service
         .from('hr_sc_allocations')
         .select('user_id, allocated_satang, pool:hr_sc_pools!inner(period_month), hr_sc_deductions(amount_satang)')
-        .eq('pool.period_month', svPeriodMonth),
+        .eq('pool.period_month', svMonth),
       service
         .from('hr_claims')
         .select('id, user_id, amount_satang, description')
@@ -329,7 +327,7 @@ export async function POST(request: NextRequest) {
       service
         .from('hr_tip_allocations')
         .select('user_id, allocated_satang, pool:hr_tip_pools!inner(period_month), hr_tip_deductions(amount_satang)')
-        .eq('pool.period_month', svPeriodMonth),
+        .eq('pool.period_month', svMonth),
       // POSITIVE eval payouts (bonuses) for the PREVIOUS month's period (N−1) → payslip earning.
       // Negative eval payouts are handled as SC deductions (apply-sc), not here.
       service
@@ -337,7 +335,7 @@ export async function POST(request: NextRequest) {
         .select('id, amount_satang, result:hr_eval_results!inner(employee_id, period:hr_eval_periods!inner(period_month))')
         .eq('status', 'approved')
         .gt('amount_satang', 0)
-        .eq('result.period.period_month', svPeriodMonth),
+        .eq('result.period.period_month', svMonth),
     ]);
   const anyErr =
     scheduleRes.error || attendanceRes.error || overridesRes.error || leavesRes.error ||

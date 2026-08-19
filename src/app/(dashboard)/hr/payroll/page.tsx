@@ -1485,6 +1485,9 @@ function PoolStrip({ detail }: { detail: PayrunDetail }) {
   const isTh = useLocale() === 'th';
   const pools = detail.pools;
   if (!pools) return null;
+  // pools.month is 'YYYY-MM-01' → 'MM/YYYY'
+  const [poolY, poolM] = String(pools.month).slice(0, 10).split('-');
+  const poolMonthLabel = poolY && poolM ? `${poolM}/${poolY}` : String(pools.month);
 
   const chip = (label: string, p: PoolSummary, href: string) => {
     const state = p.total === 0 ? 'none' : p.finalized === p.total ? 'ready' : 'draft';
@@ -1508,7 +1511,11 @@ function PoolStrip({ detail }: { detail: PayrunDetail }) {
   // slim line at the bottom of the status hero (no own card)
   return (
     <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-3 dark:border-gray-700">
-      <span className="text-xs font-medium text-gray-500 dark:text-gray-400">{isTh ? 'จัดสรรเดือนนี้' : 'This month'}:</span>
+      {/* The pools feeding THIS run are the previous month's (paid on the 15th), so the strip names
+          the month instead of saying "this month" — which pointed at the wrong round. */}
+      <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+        {isTh ? 'จัดสรรรอบเดือน' : 'Round of'} {poolMonthLabel}:
+      </span>
       {chip('SC', pools.sc, '/hr/service-charge')}
       {chip(isTh ? 'ทิป' : 'Tip', pools.tip, '/hr/tip-pool')}
     </div>

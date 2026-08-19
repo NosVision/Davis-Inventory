@@ -41,3 +41,24 @@ export function cycleDates(year: number, month: number): PayCycle {
 export function isCycleClosed(cycle: PayCycle, today: string = todayBangkok()): boolean {
   return today > cycle.end;
 }
+
+/**
+ * The SV / tip / evaluation pool month that belongs on a payslip labelled (year, month).
+ *
+ * These pools are the PREVIOUS month (N−1): month N−1's pool is totalled and finalized during
+ * days 1–15 of month N and transferred on the 15th, then rides along on the salary slip issued at
+ * the end of month N. The client states it as "the SV on this salary is last month's" — e.g. the
+ * June pool (paid 15 Jul) sits on the July slip, the July pool (paid 15 Aug) on the August slip.
+ *
+ * Lives here because it was previously re-derived at each call site, and the read paths drifted to
+ * month N while generation stayed on N−1 — so one slip showed the July SV in the money and the
+ * August SV in the breakdown panel (client report 2026-08-19). One definition, no drift.
+ *
+ * @param month 1–12
+ * @returns 'YYYY-MM-01' — matches hr_sc_pools.period_month / hr_tip_pools.period_month
+ */
+export function svPeriodMonth(year: number, month: number): string {
+  const m = month === 1 ? 12 : month - 1;
+  const y = month === 1 ? year - 1 : year;
+  return `${y}-${pad(m)}-01`;
+}

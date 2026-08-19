@@ -3228,9 +3228,12 @@
       "net": "Net pay",
       "sc": {
         "title": "Service Charge (SV)",
+        "round": "round of {month}",
+        "paidOn": "paid {date}",
         "allocated": "SV allocated",
         "net": "SV net",
-        "carry": "carried to next month {amount}"
+        "carry": "carried to next month {amount}",
+        "stale": "This slip paid SV {paid} ฿ (snapshot at generation) but the pool now nets {pool} ฿ — the pool changed after the payrun was generated; regenerate it to match."
       },
       "twoRounds": "Paid in 2 transfers: service charge/tip {sv} ฿ (mid-month, 15th) · salary {salary} ฿ (month end)",
       "metaRate": "Rate",

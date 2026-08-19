@@ -4,6 +4,7 @@ import { callerCanViewConfidentialPay, confidentialProfileIds } from '@/lib/hr/p
 import { requireHrManagerForStore } from '@/lib/hr/route-auth';
 import { buildPayrunReviewRows } from '@/lib/hr/review-link';
 import { loadWorkVenues } from '@/lib/hr/work-venues';
+import { svPeriodMonth } from '@/lib/hr/pay-cycle';
 
 interface ProfileRow {
   id: string;
@@ -37,7 +38,10 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   const slipRows = slips ?? [];
   const userIds = [...new Set(slipRows.map((s) => s.user_id))];
   const pr = payrun as { period_year: number; period_month: number };
-  const periodMonth = `${pr.period_year}-${String(pr.period_month).padStart(2, '0')}-01`;
+  // The SV/tip pool that belongs to this run is the PREVIOUS month (svPeriodMonth) — the one the
+  // generator actually paid into these payslips. This used to read the run's own month, so the
+  // register's SV column and the readiness chips described a round nobody on this run was paid.
+  const periodMonth = svPeriodMonth(pr.period_year, pr.period_month);
 
   // Names (prefer the real full name), Service-Charge net + SV-deductions for the month, and the
   // accountant review link's status (powers the status stepper + the finalize gate).

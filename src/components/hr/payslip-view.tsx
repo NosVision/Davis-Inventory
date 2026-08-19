@@ -41,8 +41,12 @@ export interface PayslipDetailData {
   tax_override?: { tax_satang: number; note: string | null; set_via: string; updated_at: string } | null;
   /** HR one-time bonus for this payrun (null = none) */
   bonus?: { amount_satang: number; label: string | null } | null;
-  /** Service Charge (SV) detail for the month: gross allocation + every deduction line (null = none). */
+  /** Service Charge (SV) detail for the round this slip pays: gross allocation + every deduction
+   *  line (null = none). `period_month` is the pool's own month (N−1), NOT the payrun's — the panel
+   *  labels itself with it so the SV here can never be mistaken for the round still being collected. */
   service_charge?: {
+    period_month: string;
+    pay_date: string | null;
     allocated_satang: number;
     deducted_satang: number;
     net_satang: number;
@@ -73,6 +77,18 @@ const SV_SOURCE_TH: Record<string, string> = {
 
 /** Carried-in lines take the Thai label above even though the row carries its own English one. */
 const CARRY_IN_SOURCES = new Set(['warning_carry', 'eval_carry', 'stock_penalty_carry']);
+
+/** SV pool month 'YYYY-MM-01' → 'MM/YYYY', matching how the slip's own period is written. */
+function svRoundLabel(periodMonth: string): string {
+  const [y, m] = String(periodMonth).slice(0, 10).split('-');
+  return y && m ? `${m}/${y}` : String(periodMonth);
+}
+
+/** 'YYYY-MM-DD' → 'DD/MM/YYYY'. */
+function formatDayMonthYear(date: string): string {
+  const [y, m, d] = String(date).slice(0, 10).split('-');
+  return y && m && d ? `${d}/${m}/${y}` : String(date);
+}
 
 // Localized line-type labels; a standard type (salary/ot/sso/tax/…) is translated, while a
 // free-form label (an allowance name, a leave code) falls through to the stored text.
@@ -163,6 +179,12 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
     }
     return null;
   };
+
+  // SC actually paid on this slip (tip is a separate pool and a separate line — the panel below
+  // explains SC only, so the staleness check must compare like with like).
+  const svEarningSatang = earnings
+    .filter((l) => l.type === 'service_charge')
+    .reduce((s, l) => s + l.amount_satang, 0);
 
   const payTypeLabel = t(`payTypeVal.${payslip.pay_type}`);
   const monthLabel = payrun ? `${String(payrun.period_month).padStart(2, '0')}/${payrun.period_year}` : '—';
@@ -290,7 +312,13 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
           deduction, e.g. stock penalties). Screen only; the printed slip stays clean. */}
       {!print && data.service_charge && (data.service_charge.allocated_satang > 0 || data.service_charge.deductions.length > 0) && (
         <div className="rounded-lg border border-violet-200 bg-violet-50/50 p-3 dark:border-violet-800 dark:bg-violet-900/10">
-          <h3 className="mb-1 text-sm font-semibold text-violet-700 dark:text-violet-300">{t('sc.title')}</h3>
+          <h3 className="mb-1 text-sm font-semibold text-violet-700 dark:text-violet-300">
+            {t('sc.title')}
+            <span className="ml-1.5 font-normal text-violet-600/80 dark:text-violet-400/80">
+              · {t('sc.round', { month: svRoundLabel(data.service_charge.period_month) })}
+              {data.service_charge.pay_date ? ` · ${t('sc.paidOn', { date: formatDayMonthYear(data.service_charge.pay_date) })}` : ''}
+            </span>
+          </h3>
           <ul className="divide-y divide-violet-200/60 dark:divide-violet-800/60">
             <li className="flex items-center justify-between py-1">
               <span>{t('sc.allocated')}</span>
@@ -313,6 +341,15 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
               <span className="tabular-nums text-violet-700 dark:text-violet-300">{formatBaht(data.service_charge.net_satang)}</span>
             </li>
           </ul>
+          {/* The money on a slip is a SNAPSHOT taken when the payrun was generated; this panel reads
+              the pool as it stands now. Edit the pool afterwards and the two drift apart — the same
+              "two SV numbers on one slip" shape that sent the client hunting for a double-count. Say
+              it outright instead of letting the reader arbitrate between two silent figures. */}
+          {data.service_charge.net_satang !== svEarningSatang && (
+            <p className="mt-2 rounded-md bg-amber-100 px-2 py-1.5 text-xs text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+              {t('sc.stale', { paid: formatBaht(svEarningSatang), pool: formatBaht(data.service_charge.net_satang) })}
+            </p>
+          )}
         </div>
       )}
 
