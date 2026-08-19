@@ -68,6 +68,27 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     dedLines = dedLines.map(attach);
   }
 
+  // Leave lines store the leave TYPE CODE as their label ('personal', 'sick'), because the code is
+  // the stable key; the display name lives in hr_leave_types and is per-company and editable. The
+  // slip printed the raw code, so a Thai payslip read "ลาไม่รับเงิน (personal)". Resolve the codes
+  // actually present into both names and let the renderer pick by locale — done here so the screen
+  // and the downloadable PDF cannot drift apart or pay for a second round-trip.
+  const leaveCodes = [...new Set(
+    dedLines.filter((l) => l.type === 'leave_unpaid' || l.type === 'travel_leave').map((l) => l.label).filter(Boolean)
+  )];
+  const leaveTypes: Record<string, { name_th: string; name_en: string }> = {};
+  if (leaveCodes.length > 0) {
+    const companyId = (payrunRes.data as { company_id?: string } | null)?.company_id;
+    let q = service.from('hr_leave_types').select('code, name_th, name_en, company_id').in('code', leaveCodes);
+    // The company's own types win over a global one of the same code — apply company rows last.
+    q = companyId ? q.or(`company_id.eq.${companyId},company_id.is.null`) : q.is('company_id', null);
+    const { data: ltRows } = await q;
+    for (const r of ((ltRows ?? []) as { code: string; name_th: string; name_en: string; company_id: string | null }[])
+      .sort((a, b) => Number(a.company_id !== null) - Number(b.company_id !== null))) {
+      leaveTypes[r.code] = { name_th: r.name_th, name_en: r.name_en };
+    }
+  }
+
   const emp = empRes.data as { employee_code: string | null; full_name: string | null; bank_account_no: string | null } | null;
   const employeeName = emp?.full_name || profRes.data?.display_name || profRes.data?.username || '—';
   const nickname = profRes.data?.display_name && profRes.data.display_name !== employeeName ? profRes.data.display_name : null;
@@ -151,6 +172,8 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       bonus: bonusRes.data ?? null,
       // Service Charge (SV) detail for the month (null = none)
       service_charge: serviceCharge,
+      // leave-type code → display names, for the leave lines on this slip
+      leave_types: leaveTypes,
       // free-form register remark — HR-internal annotation, never shown to the slip's own
       // employee (an HR note like "หัก SV 100%" is register context, not employee-facing text)
       remark: isHrViewer ? ((remarkRes.data?.remark as string | undefined) ?? null) : null,

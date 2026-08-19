@@ -23,7 +23,8 @@ export default function MyPayslipsPage() {
   const t = useTranslations('hr.payslip');
   // periodLabel() takes a Thai/English boolean — my/lo readers get Thai month names
   // (same fallback direction as the partial locales).
-  const isTh = useLocale() !== 'en';
+  const locale = useLocale();
+  const isTh = locale !== 'en';
   const tx = useEssText();
   const [rows, setRows] = useState<MyPayslip[]>([]);
   const [imported, setImported] = useState<ImportedSlip[]>([]);
@@ -141,7 +142,12 @@ export default function MyPayslipsPage() {
       const { buildPayslipPdf } = await import('@/components/hr/payslip-pdf');
       // Same label resolver the on-screen slip uses, so the saved file reads in Thai and word for
       // word matches what the employee just looked at.
-      const blob = await buildPayslipPdf(slip, (line) => payslipLineLabel(line, t));
+      const blob = await buildPayslipPdf(slip, (line) =>
+        payslipLineLabel(line, t, (code) => {
+          const lt = slip.leave_types?.[code];
+          return lt ? (locale === 'en' ? lt.name_en : lt.name_th) : undefined;
+        })
+      );
       const y = slip.payrun?.period_year ?? year;
       const m = String(slip.payrun?.period_month ?? 0).padStart(2, '0');
       const url = URL.createObjectURL(blob);
@@ -155,7 +161,7 @@ export default function MyPayslipsPage() {
     } finally {
       setPdfBusy(false);
     }
-  }, [slip, year, t]);
+  }, [slip, year, t, locale]);
 
   return (
     <div className="mx-auto max-w-lg space-y-4 p-4">

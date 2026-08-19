@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { formatBaht } from '@/lib/pos/money';
 import { useScLineLabel } from '@/components/hr/use-sc-line-label';
 
@@ -54,6 +54,8 @@ export interface PayslipDetailData {
   } | null;
   /** free-form register remark for this person on this payrun (null = none) */
   remark?: string | null;
+  /** leave-type code → display names, for the leave lines on this slip (absent = show the code) */
+  leave_types?: Record<string, { name_th: string; name_en: string }>;
 }
 
 // SV deduction source → Thai label (a deduction usually carries its own `label`; this is the
@@ -120,16 +122,22 @@ const KNOWN_TYPES = new Set([
  * listed "salary / sso / absent" in English and did not match the screen it was downloaded from.
  * A react-pdf tree cannot call hooks, so the translator is handed in rather than read here.
  */
-export function payslipLineLabel(l: PayslipLine, t: (key: string) => string): string {
+export function payslipLineLabel(
+  l: PayslipLine,
+  t: (key: string) => string,
+  leaveName?: (code: string) => string | undefined
+): string {
   // allowance/claim/commission/adjustment carry a human label already; standard types are translated.
   if (l.type === 'allowance' || l.type === 'claim' || l.type === 'commission' || l.type === 'eval_bonus' || l.type === 'adjustment') {
     return l.label;
   }
   if (KNOWN_TYPES.has(l.type)) {
     const base = t(`line.${l.type}`);
-    // leave/travel lines carry the leave code as label — append it for clarity.
+    // Leave/travel lines carry the leave-type CODE as their label. Name it — the code is a database
+    // key, and printing it left "ลาไม่รับเงิน (personal)" on a Thai payslip. Falls back to the code
+    // when the type has since been deleted, which is still better than nothing beside the amount.
     if ((l.type === 'leave_unpaid' || l.type === 'travel_leave') && l.label && l.label !== l.type) {
-      return `${base} (${l.label})`;
+      return `${base} (${leaveName?.(l.label) || l.label})`;
     }
     return base;
   }
@@ -151,11 +159,19 @@ interface PayslipViewProps {
 
 export function PayslipView({ data, print = false }: PayslipViewProps) {
   const t = useTranslations('hr.payslip');
+  const locale = useLocale();
   // SV lines were stored with English labels at recompute time — localize them on the way out.
   const scLineLabel = useScLineLabel();
   const { payslip, payrun, earnings, deductions } = data;
 
-  const lineLabel = (l: PayslipLine): string => payslipLineLabel(l, t);
+  // Leave types carry only Thai and English names, so the partial locales (my/lo) read Thai — the
+  // same direction the rest of this slip family falls back in, and the language these categories
+  // are actually administered in.
+  const leaveName = (code: string): string | undefined => {
+    const lt = data.leave_types?.[code];
+    return lt ? (locale === 'en' ? lt.name_en : lt.name_th) : undefined;
+  };
+  const lineLabel = (l: PayslipLine): string => payslipLineLabel(l, t, leaveName);
 
   // The formula behind a computed line, rendered from the stored machine ref — the number's
   // provenance at a glance (HR ask 2026-07-14: "อยากเห็นการแจกแจงทุกตัวเลข"). The engine docks
