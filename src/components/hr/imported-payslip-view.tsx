@@ -78,6 +78,14 @@ export function ImportedPayslipView({ data }: { data: ImportedSlip }) {
     earnings: tx('รายได้', 'Earnings', 'ဝင်ငွေ', 'ລາຍຮັບ'),
     salary: tx('เงินเดือน', 'Salary', 'လစာ', 'ເງິນເດືອນ'),
     workedDays: tx('วันทำงาน', 'Worked days', 'အလုပ်ရက်', 'ວັນເຮັດວຽກ'),
+    offDays: tx('วันหยุด', 'Days off', 'အားလပ်ရက်', 'ວັນພັກ'),
+    sheetDays: tx('รวมวันในงวด (ตามไฟล์เดิม)', 'Days in period (as filed)', 'ကာလအတွင်းရက် (မူရင်းဖိုင်)', 'ລວມວັນໃນງວດ (ຕາມໄຟລ໌ເດີມ)'),
+    payBase: tx(
+      'ฐานคำนวณเงินเดือนคือ 30 วัน/เดือน คงที่ทุกเดือน — ไม่ได้หารด้วยจำนวนวันทำงานหรือจำนวนวันในปฏิทิน',
+      'Salary is computed on a fixed 30-day month — not divided by worked days or by calendar days.',
+      'လစာကို တစ်လ ၃၀ ရက် အသေဖြင့် တွက်သည် — အလုပ်ရက် သို့မဟုတ် ပြက္ခဒိန်ရက်ဖြင့် စားခြင်းမဟုတ်ပါ။',
+      'ຄິດໄລ່ເງິນເດືອນຈາກຖານ 30 ວັນ/ເດືອນ ຄົງທີ່ — ບໍ່ໄດ້ຫານດ້ວຍວັນເຮັດວຽກ ຫຼື ວັນໃນປະຕິທິນ'
+    ),
     otHours: tx('ชม. OT', 'OT hours', 'OT နာရီ', 'ຊົ່ວໂມງ OT'),
     otPay: tx('ค่า OT', 'OT pay', 'OT ကြေး', 'ຄ່າ OT'),
     holidayPay: tx('ค่าทำงานวันหยุด', 'Holiday pay', 'အားလပ်ရက် အလုပ်ကြေး', 'ຄ່າເຮັດວຽກວັນພັກ'),
@@ -119,9 +127,18 @@ export function ImportedPayslipView({ data }: { data: ImportedSlip }) {
         <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-400">{L.earnings}</h4>
         <div className="divide-y divide-gray-100 dark:divide-gray-800">
           <SlipRow label={L.salary} value={baht(data.rate_satang)} />
-          {data.worked_days != null && (
-            <SlipRow label={L.workedDays} value={`${data.worked_days}${data.period_days != null ? ` / ${data.period_days}` : ''} ${L.days}`} />
-          )}
+          {/* Worked and off days stand as their own rows. They used to render as "23 / 31", which
+              reads on a pay document as a proration base — and it is not one. That denominator is
+              the sheet's own per-person day count (here 23 worked + 8 off = 31, in a 30-day June);
+              across the archive it lands anywhere from 1 to 31 and matches neither the calendar nor
+              the divisor. Pay is a flat 30-day month, so the slip says that instead of implying a
+              fraction nobody computes with (client report 2026-08-19). */}
+          {data.worked_days != null && <SlipRow label={L.workedDays} value={`${data.worked_days} ${L.days}`} />}
+          {data.off_days != null && <SlipRow label={L.offDays} value={`${data.off_days} ${L.days}`} />}
+          {data.period_days != null &&
+            data.period_days !== (data.worked_days ?? 0) + (data.off_days ?? 0) && (
+              <SlipRow label={L.sheetDays} value={`${data.period_days} ${L.days}`} />
+            )}
           {(data.ot_hours ?? 0) > 0 && <SlipRow label={L.otHours} value={`${data.ot_hours} ${L.hours}`} />}
           {(data.ot_pay_satang ?? 0) > 0 && <SlipRow label={L.otPay} value={baht(data.ot_pay_satang)} />}
           {(data.holiday_pay_satang ?? 0) > 0 && <SlipRow label={L.holidayPay} value={baht(data.holiday_pay_satang)} />}
@@ -144,6 +161,12 @@ export function ImportedPayslipView({ data }: { data: ImportedSlip }) {
       <div className="rounded-xl bg-emerald-50 p-3 dark:bg-emerald-900/20">
         <SlipRow label={L.net} value={baht(data.net_satang)} strong tone="good" />
       </div>
+
+      {/* The day counts above are a record of attendance, not the pay base. Saying which base was
+          used is what stops a reader reconstructing the salary from the wrong denominator. */}
+      {(data.worked_days != null || data.off_days != null) && (
+        <p className="text-xs leading-relaxed text-gray-500 dark:text-gray-400">{L.payBase}</p>
+      )}
     </div>
   );
 }
