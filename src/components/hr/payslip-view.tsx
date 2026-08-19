@@ -90,6 +90,20 @@ function formatDayMonthYear(date: string): string {
   return y && m && d ? `${d}/${m}/${y}` : String(date);
 }
 
+/**
+ * When the SV transfer lands, as 'DD/MM/YYYY'. A pool carries its own pay_date once HR finalizes
+ * it; before that the field is null, and the transfer date is the one thing this slip must not go
+ * quiet about — the whole point of the panel is "how much arrives on the 15th". So fall back to the
+ * rule the pool is built on (§H/00103: collected over its month, transferred the 15th of the next),
+ * which is also what the service-charge page shows for an unsaved pool.
+ */
+function svTransferDate(periodMonth: string, payDate: string | null): string {
+  if (payDate) return formatDayMonthYear(payDate);
+  const [y, m] = String(periodMonth).slice(0, 10).split('-').map(Number);
+  if (!y || !m) return '';
+  return `15/${String(m === 12 ? 1 : m + 1).padStart(2, '0')}/${m === 12 ? y + 1 : y}`;
+}
+
 // Localized line-type labels; a standard type (salary/ot/sso/tax/…) is translated, while a
 // free-form label (an allowance name, a leave code) falls through to the stored text.
 const KNOWN_TYPES = new Set([
@@ -312,13 +326,19 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
           deduction, e.g. stock penalties). Screen only; the printed slip stays clean. */}
       {!print && data.service_charge && (data.service_charge.allocated_satang > 0 || data.service_charge.deductions.length > 0) && (
         <div className="rounded-lg border border-violet-200 bg-violet-50/50 p-3 dark:border-violet-800 dark:bg-violet-900/10">
-          <h3 className="mb-1 text-sm font-semibold text-violet-700 dark:text-violet-300">
+          {/* Lead with the transfer, not the accrual. The reader's question is "how much lands on
+              the 15th"; which month's takings funded it explains the deduction lines below, so it
+              stays — one size down, after the number, never in front of it. Leading with the
+              earning period is what made an August slip look like it was reporting July. */}
+          <h3 className="mb-0.5 text-sm font-semibold text-violet-700 dark:text-violet-300">
             {t('sc.title')}
             <span className="ml-1.5 font-normal text-violet-600/80 dark:text-violet-400/80">
-              · {t('sc.round', { month: svRoundLabel(data.service_charge.period_month) })}
-              {data.service_charge.pay_date ? ` · ${t('sc.paidOn', { date: formatDayMonthYear(data.service_charge.pay_date) })}` : ''}
+              · {t('sc.paidOn', { date: svTransferDate(data.service_charge.period_month, data.service_charge.pay_date) })}
             </span>
           </h3>
+          <p className="mb-1 text-xs text-violet-600/70 dark:text-violet-400/70">
+            {t('sc.round', { month: svRoundLabel(data.service_charge.period_month) })}
+          </p>
           <ul className="divide-y divide-violet-200/60 dark:divide-violet-800/60">
             <li className="flex items-center justify-between py-1">
               <span>{t('sc.allocated')}</span>
@@ -353,17 +373,32 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
         </div>
       )}
 
-      {/* money actually lands in TWO transfers: SC/tip mid-month (15th), salary at month end */}
+      {/* Money lands in TWO transfers: SC/tip on the 15th, salary at month end. What the reader
+          needs is the amount per transfer and the month's total — the SV's earning period is a
+          detail of the panel above, not of this line (client 2026-08-19: "โฟกัสแค่ว่ายอดที่จะจ่าย
+          วันที่ 15 กี่บาท แล้วเอาไปรวมกับหลังวันที่ 26 ให้เป็นยอดรวมของเดือน 8").
+
+          net_satang is ALREADY the month-end transfer alone — payroll.ts subtracts SC/tip from it
+          because they leave the bank on a different day. Subtracting them again here understated
+          the salary transfer by exactly the SV, and presented that short figure as the month's
+          total: an August slip promised 17,691.67 for a 22,358.34 transfer. */}
       {(() => {
         const svSatang = earnings
           .filter((l) => l.type === 'service_charge' || l.type === 'tip')
           .reduce((s, l) => s + l.amount_satang, 0);
         if (svSatang <= 0) return null;
+        const svDate = data.service_charge
+          ? svTransferDate(data.service_charge.period_month, data.service_charge.pay_date)
+          : null;
         return (
           <p className={print ? 'text-[9px] text-gray-600' : 'rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700 dark:bg-blue-900/20 dark:text-blue-300'}>
             {t('twoRounds', {
               sv: formatBaht(svSatang),
-              salary: formatBaht(payslip.net_satang - svSatang),
+              svDate: svDate ?? t('twoRoundsMidMonth'),
+              salary: formatBaht(payslip.net_satang),
+              salaryDate: payDateLabel,
+              total: formatBaht(payslip.net_satang + svSatang),
+              month: monthLabel,
             })}
           </p>
         );

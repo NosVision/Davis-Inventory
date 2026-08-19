@@ -430,14 +430,14 @@
       "net": "ເງິນສຸດທິ",
       "sc": {
         "title": "Service Charge (SV)",
-        "round": "ຮອບເດືອນ {month}",
+        "round": "ຄິດໄລ່ຈາກຍອດ SC ເດືອນ {month}",
         "paidOn": "ໂອນ {date}",
         "allocated": "ຍອດຈັດສັນ SV",
         "net": "SV ສຸດທິ",
         "carry": "ຍົກໄປຫັກເດືອນໜ້າ {amount}",
         "stale": "ສະລິບນີ້ຈ່າຍ SV {paid} ฿ (ຍອດຕອນສ້າງງວດ) ແຕ່ຍອດ SV ໃນລະບົບຕອນນີ້ແມ່ນ {pool} ฿ — pool ຖືກແກ້ຫຼັງສ້າງງວດ ຕ້ອງສ້າງງວດໃໝ່ໃຫ້ກົງກັນ"
       },
-      "twoRounds": "ຍອດນີ້ຈ່າຍ 2 ຮອບ: SC/ທິບ {sv} ฿ (ໂອນຮອບວັນທີ 15) · ເງິນເດືອນ {salary} ฿ (ໂອນທ້າຍເດືອນ)",
+      "twoRounds": "ຈ່າຍ 2 ຮອບ: SC/ທິບ {sv} ฿ (ໂອນ {svDate}) · ເງິນເດືອນ {salary} ฿ (ໂອນ {salaryDate}) — ລວມຮັບເດືອນ {month} {total} ฿",
       "metaRate": "ອັດຕາຈ້າງ",
       "metaDailyRate": "ອັດຕາລາຍວັນ (÷{divisor})",
       "metaWorkedDays": "ວັນເຮັດວຽກ",
@@ -478,7 +478,8 @@
         "pt_hourly": "ເຄິ່ງເວລາ (ລາຍຊົ່ວໂມງ)",
         "pt_daily": "ເຄິ່ງເວລາ (ລາຍວັນ)",
         "pt_monthly": "ເຄິ່ງເວລາ (ລາຍເດືອນ)"
-      }
+      },
+      "twoRoundsMidMonth": "ວັນທີ 15"
     },
     "profile": {
       "title": "ໂປຣໄຟລ໌ຂອງຂ້ອຍ",

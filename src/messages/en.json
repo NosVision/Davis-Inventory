@@ -3228,14 +3228,14 @@
       "net": "Net pay",
       "sc": {
         "title": "Service Charge (SV)",
-        "round": "round of {month}",
-        "paidOn": "paid {date}",
+        "round": "from the {month} service-charge takings",
+        "paidOn": "transferred {date}",
         "allocated": "SV allocated",
         "net": "SV net",
         "carry": "carried to next month {amount}",
         "stale": "This slip paid SV {paid} ฿ (snapshot at generation) but the pool now nets {pool} ฿ — the pool changed after the payrun was generated; regenerate it to match."
       },
-      "twoRounds": "Paid in 2 transfers: service charge/tip {sv} ฿ (mid-month, 15th) · salary {salary} ฿ (month end)",
+      "twoRounds": "Paid in 2 transfers: service charge/tip {sv} ฿ ({svDate}) · salary {salary} ฿ ({salaryDate}) — total received for {month}: {total} ฿",
       "metaRate": "Rate",
       "metaDailyRate": "Daily rate (÷{divisor})",
       "metaWorkedDays": "Worked days",
@@ -3278,7 +3278,8 @@
         "pt_hourly": "Part-time (hourly)",
         "pt_daily": "Part-time (daily)",
         "pt_monthly": "Part-time (monthly)"
-      }
+      },
+      "twoRoundsMidMonth": "the 15th"
     },
     "serviceCharge": {
       "title": "Service Charge",
@@ -3372,7 +3373,8 @@
         "training": "Training leave",
         "unpaid": "Unpaid leave",
         "vacation": "Vacation"
-      }
+      },
+      "monthMeaning": "month the SV was collected · transferred to staff {payDate}"
     },
     "offboarding": {
       "title": "Offboarding",

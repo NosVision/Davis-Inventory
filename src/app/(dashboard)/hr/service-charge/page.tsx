@@ -72,6 +72,15 @@ function currentMonth(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
+/** A pool collected in 'YYYY-MM' is transferred on the 15th of the following month (00103, §H). */
+function nextMonthFifteenth(month: string): string {
+  const [y, m] = month.split('-').map(Number);
+  if (!y || !m) return `${month}-15`;
+  const ny = m === 12 ? y + 1 : y;
+  const nm = m === 12 ? 1 : m + 1;
+  return `${ny}-${String(nm).padStart(2, '0')}-15`;
+}
+
 export default function HrServiceChargePage() {
   const t = useTranslations('hr.serviceCharge');
   // auto lines carry an English label written at recompute time — localize on render
@@ -454,7 +463,13 @@ export default function HrServiceChargePage() {
   };
   const sourceLabel = (s: ScSourceType) => t(SOURCE_LABEL_KEY[s] ?? 'srcManual');
 
-  const payDateDisplay = pool?.pay_date ?? `${month}-15`;
+  // A pool is collected over its own month and transferred on the 15th of the NEXT one (00103).
+  // The fallback used `${month}-15` — the 15th of the SAME month — so an unsaved August pool
+  // announced "จ่าย 15/08/2026" on screen. HR read that as "the August pool is the one paid on 15
+  // Aug", concluded the August slip must carry it, and days of argument followed from a date this
+  // page invented. Derive it from the rule instead (client confirmed 2026-08-19: the July pool is
+  // July's 1–31 takings, transferred 15 Aug).
+  const payDateDisplay = pool?.pay_date ?? nextMonthFifteenth(month);
   const busy = savingPool || savingAlloc || recomputing || finalizing;
 
   return (
@@ -484,6 +499,10 @@ export default function HrServiceChargePage() {
                   ))}
                 </select>
               </label>
+              {/* Say which month this picker means. "เดือน" alone reads as the pay month to anyone
+                  looking at a pay screen; it is the COLLECTION month, and the transfer is the 15th
+                  of the one after. Naming the transfer date right under the picker is what stops
+                  the two from being confused again. */}
               <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
                 {t('filterMonth')}
                 <input
@@ -492,6 +511,9 @@ export default function HrServiceChargePage() {
                   onChange={(e) => setMonth(e.target.value)}
                   className="control mt-1"
                 />
+                <span className="mt-1 font-normal text-gray-500 dark:text-gray-400">
+                  {t('monthMeaning', { payDate: payDateDisplay })}
+                </span>
               </label>
             </>
           }
