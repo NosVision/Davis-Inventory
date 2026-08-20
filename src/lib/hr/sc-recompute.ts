@@ -7,7 +7,7 @@ import {
   computeCarryScDeduction,
 } from '@/lib/hr/service-charge';
 import { reconcilePoolDeductions } from '@/lib/hr/sc-reconcile';
-import { businessDateBangkok } from '@/lib/utils/date';
+import { businessDateBangkok, toBangkokISO } from '@/lib/utils/date';
 
 const POOL = 'hr_sc_pools';
 const ALLOC = 'hr_sc_allocations';
@@ -234,4 +234,51 @@ export async function recomputePoolDeductions(
 
   // §H: split applied vs carried against each person's shared balance now that all lines exist.
   await reconcilePoolDeductions(service, poolId);
+}
+
+/**
+ * Re-run the auto SC lines for one person after something that should dock their service charge —
+ * a warning issued, or voided — so the deduction appears without HR going to find the Recompute
+ * button.
+ *
+ * It used not to run at all: issuing a warning inserted the row and stopped there, and the dock only
+ * materialised the next time somebody saved allocations, pressed Recompute, or finalized the pool.
+ * HR issued two warnings on 2026-08-20 and neither reached the payslip (client report), which is
+ * exactly what "ออกใบเตือนหัก SV มันไม่หักให้" describes.
+ *
+ * Every DRAFT pool for that month holding an allocation for this person is rebuilt — a person can
+ * be allocated at more than one store, and a finalized pool is deliberately left alone.
+ *
+ * @param at ISO timestamp of the event; its BANGKOK month decides the pool, matching the window
+ *           recomputePoolDeductions() itself queries warnings over.
+ * @returns what happened, so the caller can tell HR when a dock could not be applied
+ */
+export async function recomputeScForUserAt(
+  service: SupabaseClient,
+  userId: string,
+  at: string | null,
+  actorId: string | null,
+): Promise<'ok' | 'no_pool' | 'failed'> {
+  try {
+    const bkk = toBangkokISO(at ? new Date(at) : undefined);
+    const periodMonth = `${bkk.slice(0, 7)}-01`;
+
+    const { data: allocs, error: allocErr } = await service
+      .from(ALLOC)
+      .select('pool_id, pool:hr_sc_pools!inner(id, period_month, status)')
+      .eq('user_id', userId)
+      .eq('pool.period_month', periodMonth)
+      .eq('pool.status', 'draft');
+    if (allocErr) throw allocErr;
+
+    const poolIds = [...new Set(((allocs ?? []) as unknown as { pool_id: string }[]).map((a) => a.pool_id))];
+    if (poolIds.length === 0) return 'no_pool';
+
+    for (const poolId of poolIds) await recomputePoolDeductions(service, poolId, actorId);
+    return 'ok';
+  } catch {
+    // The warning itself is already saved; failing the whole request would be worse than reporting
+    // that the dock needs a manual Recompute.
+    return 'failed';
+  }
 }

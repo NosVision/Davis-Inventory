@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManagerForRowStore } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
+import { recomputeScForUserAt } from '@/lib/hr/sc-recompute';
 
 const TABLE = 'hr_warnings';
 
@@ -26,7 +27,7 @@ export async function POST(
     .update({ status: 'void', void_reason: reason, updated_by: auth.userId })
     .eq('id', id)
     .neq('status', 'void')
-    .select('id');
+    .select('id, user_id, issued_at');
   if (error) return NextResponse.json({ error: 'Failed to void warning' }, { status: 500 });
   if (!updated || updated.length === 0) {
     return NextResponse.json({ error: 'Warning not found or already voided' }, { status: 409 });
@@ -41,5 +42,11 @@ export async function POST(
     reason,
   });
 
-  return NextResponse.json({ data: { id, status: 'void' } });
+  // A voided warning must stop docking. The recompute rebuilds the pool's auto lines from the
+  // warnings that still count, so the dock disappears the moment the void lands rather than at
+  // whatever later point someone happened to press Recompute.
+  const row = updated[0] as unknown as { user_id: string; issued_at: string | null };
+  const scSync = await recomputeScForUserAt(service, row.user_id, row.issued_at, auth.userId);
+
+  return NextResponse.json({ data: { id, status: 'void' }, sc_sync: scSync });
 }

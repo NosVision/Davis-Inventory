@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManager, requireStoreManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
+import { recomputeScForUserAt } from '@/lib/hr/sc-recompute';
 import { BUCKET, deriveScEffect, isWarningLevel } from '@/lib/hr/warnings';
 
 const TABLE = 'hr_warnings';
@@ -183,7 +184,15 @@ export async function POST(request: NextRequest) {
     reason: `Warning issued: ${level}`,
   });
 
-  return NextResponse.json({ data }, { status: 201 });
+  // A warning that docks service charge has to actually dock it. Nothing here used to touch the SC
+  // pool, so the deduction waited for someone to press Recompute and, until then, the payslip
+  // showed the full allocation (client report 2026-08-20). sc_sync tells the caller what happened:
+  // 'no_pool' means the month has no draft pool to dock yet, 'failed' means a manual Recompute is
+  // needed — both are worth surfacing rather than looking like a silent success.
+  const issued = data as unknown as { user_id: string; issued_at: string | null };
+  const scSync = await recomputeScForUserAt(service, issued.user_id, issued.issued_at, auth.userId);
+
+  return NextResponse.json({ data, sc_sync: scSync }, { status: 201 });
 }
 
 // GET /api/hr/warnings — issue queue / history. Query: store_id?, status? (default
