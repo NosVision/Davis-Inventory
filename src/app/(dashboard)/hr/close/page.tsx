@@ -82,7 +82,7 @@ export default function HrClosePage() {
   }, [ym, lang, now]);
 
   const stages: Stage[] = [
-    { n: 1, icon: Star, th: 'ปิดผลประเมิน', en: 'Evaluation', period: 'N', href: '/hr/evaluation', digestTh: 'ปิดงวดประเมินของเดือนนี้ → ป้อน SV', digestEn: 'Close this month eval → feeds SV' },
+    { n: 1, icon: Star, th: 'ปิดผลประเมิน', en: 'Evaluation', period: 'N-1', href: '/hr/evaluation', digestTh: 'ปิดงวดประเมินเดือนก่อน → หักจาก SV เดือนนี้', digestEn: 'Close last month eval → docks this month SV' },
     { n: 2, icon: Coins, th: 'ยอดกอง SV', en: 'SV pool', period: 'N', href: '/hr/service-charge', digestTh: 'กรอกยอด 7% ต่อร้าน (เดือนนี้)', digestEn: 'Enter each store 7% pool (this month)' },
     { n: 3, icon: AlertTriangle, th: 'หักจาก HQ', en: 'HQ deductions', period: 'N', href: '/hr/stock-deductions', digestTh: 'ค่าปรับสต๊อก + ใบเตือน → หัก SV', digestEn: 'Stock fines + warnings → dock SV' },
     { n: 4, icon: SlidersHorizontal, th: 'จัดสรร + คำนวณ SV', en: 'Allocate + recompute', period: 'N', href: '/hr/service-charge', digestTh: 'หยอดรายคน แล้วคำนวณหักลา ÷30', digestEn: 'Allocate per person, recompute leave dock' },

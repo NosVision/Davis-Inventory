@@ -14,7 +14,7 @@ import { computePayslip, type PayrollInput, type PayslipLine, type PayType, type
 import { refuseIfConfidentialInScope } from '@/lib/hr/pay-visibility';
 import { getHrPolicies } from '@/lib/hr/policy';
 import { isUniqueViolation } from '@/lib/hr/db-errors';
-import { cycleDates, svPeriodMonth } from '@/lib/hr/pay-cycle';
+import { cycleDates, svPeriodMonth, evalPeriodMonth } from '@/lib/hr/pay-cycle';
 import { recomputePoolDeductions } from '@/lib/hr/sc-recompute';
 import { businessDateBangkok } from '@/lib/utils/date';
 
@@ -379,14 +379,15 @@ export async function POST(request: NextRequest) {
         .from('hr_tip_allocations')
         .select('user_id, allocated_satang, pool:hr_tip_pools!inner(period_month), hr_tip_deductions(amount_satang)')
         .eq('pool.period_month', svMonth),
-      // POSITIVE eval payouts (bonuses) for THIS month's period → payslip earning. Negative eval
-      // payouts are handled as SC deductions (apply-sc) against the same month's pool, not here.
+      // POSITIVE eval payouts (bonuses) for the PREVIOUS month's period — the same evaluation whose
+      // negative side docks this month's SC pool (apply-sc / evalScPoolMonth), so both halves of one
+      // evaluation land on one slip. Negative payouts are not read here.
       service
         .from('hr_eval_payouts')
         .select('id, amount_satang, result:hr_eval_results!inner(employee_id, period:hr_eval_periods!inner(period_month))')
         .eq('status', 'approved')
         .gt('amount_satang', 0)
-        .eq('result.period.period_month', svMonth),
+        .eq('result.period.period_month', evalPeriodMonth(year, month)),
     ]);
   const anyErr =
     scheduleRes.error || attendanceRes.error || overridesRes.error || leavesRes.error ||

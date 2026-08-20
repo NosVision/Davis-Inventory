@@ -73,6 +73,15 @@ export interface ScData {
   pool: ScPool;
   allocations: ScAllocation[];
   totals: ScTotals;
+  /** The evaluation that feeds this pool — the PREVIOUS month's, since it closes around the 10th
+   *  and docks the pool transferred on the 15th. 'missing' = none created yet. */
+  evaluation?: {
+    period_month: string;
+    pool_month: string;
+    total: number;
+    closed: number;
+    state: 'missing' | 'open' | 'closed';
+  };
 }
 
 /** One rendered table row: an employee at the store merged with any existing allocation. */

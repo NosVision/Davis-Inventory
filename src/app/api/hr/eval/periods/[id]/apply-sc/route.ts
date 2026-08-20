@@ -8,13 +8,15 @@ const PERIODS = 'hr_eval_periods';
 const RESULTS = 'hr_eval_results';
 const PAYOUTS = 'hr_eval_payouts';
 const SC_POOLS = 'hr_sc_pools';
+import { evalScPoolMonth } from '@/lib/hr/pay-cycle';
 const SC_ALLOCS = 'hr_sc_allocations';
 const SC_DEDUCTIONS = 'hr_sc_deductions';
 
 // POST /api/hr/eval/periods/[id]/apply-sc — apply the period's NEGATIVE eval payouts as SC
 // deductions (§G↔§H: "ผลประเมินเป็นตัวหักจาก SC"). HR only. For each draft/approved payout with
 // amount < 0, we find the employee's SC allocation for the SAME month and store side (matched by
-// hr_sc_pools.period_month = the eval period's month) and insert an hr_sc_deductions row via the
+// hr_sc_pools.period_month = evalScPoolMonth(period) — the pool paid on the 15th AFTER the period,
+// which is the first one an evaluation closed around the 10th can still reach) and insert a row via the
 // PURE computeEvalScDeduction (clamp+carry vs the allocation). Positive payouts are bonuses paid
 // through the payslip (type='eval_bonus') at payrun time — NOT here. Idempotent: prior auto eval
 // deductions for these allocations are cleared first. The SC pool must not be finalized.
@@ -58,7 +60,7 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
   const { data: pools, error: poolErr } = await service
     .from(SC_POOLS)
     .select('id, status')
-    .eq('period_month', period.period_month);
+    .eq('period_month', evalScPoolMonth(period.period_month as string));
   if (poolErr) return NextResponse.json({ error: poolErr.message }, { status: 500 });
   const poolById = new Map((pools ?? []).map((p) => [p.id as string, p.status as string]));
   if (poolById.size === 0) {

@@ -3381,7 +3381,9 @@
         "unpaid": "Unpaid leave",
         "vacation": "Vacation"
       },
-      "monthMeaning": "the month this SV is paid · transferred to staff {payDate}"
+      "monthMeaning": "the month this SV is paid · transferred to staff {payDate}",
+      "evalMissing": "No evaluation period exists for {month} — its result docks this pool, and finalizing first makes that impossible",
+      "evalNotClosed": "The {month} evaluation is not closed — its result docks this pool, so close it first"
     },
     "offboarding": {
       "title": "Offboarding",

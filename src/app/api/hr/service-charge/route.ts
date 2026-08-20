@@ -5,6 +5,7 @@ import { logHrAudit } from '@/lib/hr/audit';
 import { computeNetSc } from '@/lib/hr/service-charge';
 
 const POOLS = 'hr_sc_pools';
+import { evalScPoolMonth } from '@/lib/hr/pay-cycle';
 const ALLOCS = 'hr_sc_allocations';
 const MONTH_RE = /^\d{4}-\d{2}-01$/; // period_month must be the first of a month.
 
@@ -61,11 +62,38 @@ export async function GET(request: NextRequest) {
     return { ...row, deductions, net_satang: netSatang };
   });
 
+  // Which evaluation feeds this pool, and whether it has happened yet.
+  //
+  // An evaluation for month M is closed around the 10th of M+1 and docks the pool transferred on the
+  // 15th of M+1 — so THIS pool's deductions come from the PREVIOUS month's evaluation. Finalize
+  // before that period is closed and its result can never be applied: the pool locks, and the
+  // evaluation silently affects nobody's pay. HR had no way to see that from this page, so it says
+  // so (client ask 2026-08-20: "ต้องมีลอจิกแจ้งด้วยว่าเดือนนี้ยังไม่มีการประเมิน").
+  const evalMonth = ((): string => {
+    const [y, m] = String(periodMonth).slice(0, 7).split('-').map(Number);
+    return m === 1 ? `${y - 1}-12-01` : `${y}-${String(m - 1).padStart(2, '0')}-01`;
+  })();
+  const { data: evalRows } = await service
+    .from('hr_eval_periods')
+    .select('id, title, status')
+    .eq('period_month', evalMonth)
+    .neq('status', 'void');
+  const periods = (evalRows ?? []) as { status: string }[];
+  const evaluation = {
+    period_month: evalMonth,
+    // the pool this evaluation would dock, for the message to name
+    pool_month: evalScPoolMonth(evalMonth),
+    total: periods.length,
+    closed: periods.filter((p) => p.status === 'closed').length,
+    state: periods.length === 0 ? 'missing' : periods.some((p) => p.status === 'closed') ? 'closed' : 'open',
+  };
+
   return NextResponse.json({
     data: {
       pool,
       allocations,
       totals: { allocated, deducted: allocated - net, net },
+      evaluation,
     },
   });
 }

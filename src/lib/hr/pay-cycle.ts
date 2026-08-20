@@ -77,3 +77,35 @@ export function svPeriodMonth(year: number, month: number): string {
 export function svPayDate(periodMonth: string): string {
   return `${periodMonth.slice(0, 7)}-15`;
 }
+
+/**
+ * The SC pool an evaluation period's result belongs to — the month AFTER the period.
+ *
+ * An evaluation for month M is scored through the end of M and closed around the 10th of M+1, then
+ * staff see it before the 15th. The pool it can still reach is therefore the one transferred on the
+ * 15th of M+1 — under svPeriodMonth that is pool month M+1, not M.
+ *
+ * Pointing it at its own month (the arrangement inherited from when a pool paid on the 15th of the
+ * FOLLOWING month) now aims at a pool already transferred a month earlier, so an evaluation could
+ * never dock anything again. Client 2026-08-20: "ประเมินสิ้นเดือนสิงหาก็ต้องเอาไปหัก SV ที่จะจ่าย
+ * วันที่ 15 กันยา".
+ *
+ * @param periodMonth 'YYYY-MM' or any longer ISO date starting with it
+ * @returns 'YYYY-MM-01'
+ */
+export function evalScPoolMonth(periodMonth: string): string {
+  const [y, m] = periodMonth.slice(0, 7).split('-').map(Number);
+  if (!y || !m) return `${periodMonth.slice(0, 7)}-01`;
+  return m === 12 ? `${y + 1}-01-01` : `${y}-${pad(m + 1)}-01`;
+}
+
+/**
+ * The evaluation period whose result rides the payslip for (year, month) — the month before it,
+ * mirroring evalScPoolMonth from the other side.
+ *
+ * @param month 1–12
+ * @returns 'YYYY-MM-01' — matches hr_eval_periods.period_month
+ */
+export function evalPeriodMonth(year: number, month: number): string {
+  return month === 1 ? `${year - 1}-12-01` : `${year}-${pad(month - 1)}-01`;
+}

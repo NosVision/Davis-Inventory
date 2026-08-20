@@ -67,6 +67,12 @@ function dmy(d?: string | null): string {
   return y && m && dd ? `${dd}/${m}/${y}` : String(d);
 }
 
+/** 'YYYY-MM-01' → 'MM/YYYY' for messages that name a period. */
+function monthLabel(periodMonth: string): string {
+  const [y, m] = String(periodMonth).slice(0, 10).split('-');
+  return y && m ? `${m}/${y}` : String(periodMonth);
+}
+
 /** Current calendar month as YYYY-MM (Bangkok clock is close enough for a month picker). */
 function currentMonth(): string {
   const d = new Date();
@@ -582,6 +588,18 @@ export default function HrServiceChargePage() {
                 </div>
               </div>
             </section>
+
+            {/* An evaluation is closed around the 10th and docks the pool transferred on the 15th, so
+                THIS pool is fed by the PREVIOUS month's evaluation. Finalize before that period is
+                closed and its result can never reach anyone's pay — the pool locks and the scoring
+                affects nothing. There was no sign of that on this page (client ask 2026-08-20). */}
+            {data?.evaluation && data.evaluation.state !== 'closed' && !isFinalized && (
+              <p className="mb-3 rounded-lg bg-amber-100 px-3 py-2 text-sm text-amber-900 dark:bg-amber-900/40 dark:text-amber-100">
+                {t(data.evaluation.state === 'missing' ? 'evalMissing' : 'evalNotClosed', {
+                  month: monthLabel(data.evaluation.period_month),
+                })}
+              </p>
+            )}
 
             {/* ── Key totals — lead with NET as the hero ───────────── */}
             {data && (
