@@ -4100,7 +4100,9 @@
       "close": "Close",
       "presentNeedsHours": "Day-rated staff need worked hours — leaving it blank makes the day count as neither worked nor absent, so a day of wage disappears silently.",
       "presentNoHoursHint": "Saved without worked hours — this day will count as neither worked nor absent.",
-      "incompleteDays": "No clock-out (hours/OT count as 0)"
+      "incompleteDays": "No clock-out (hours/OT count as 0)",
+      "missingClockOutNeedsHours": "This day was clocked in but never out — enter the worked hours before saving, or its hours and OT count as 0.",
+      "missingClockOutNotice": "Clocked in {at}, never clocked out — hours cannot be computed. Enter worked hours, or mark the day absent or leave."
     },
     "otRequests": {
       "title": "OT requests",

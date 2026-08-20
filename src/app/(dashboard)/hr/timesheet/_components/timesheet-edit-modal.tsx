@@ -145,12 +145,23 @@ export function TimesheetEditModal({
       toast({ type: 'warning', title: t('selectLeaveTypeRequired') });
       return;
     }
-    // "Present" with the hours box left blank writes absent=false and worked_min=null, which makes
-    // the day count as neither worked nor absent. On a flat monthly salary that is only confusing —
-    // it dropped one person's recorded days to 7 of 22 rostered (client report 2026-08-20). On any
-    // time-paid contract it is money: the day contributes nothing to the base, and nothing on the
-    // slip says a day went missing. Blocked there, flagged everywhere else.
+    // "Present" with the hours box left blank writes absent=false and worked_min=null, so the day
+    // counts as neither worked nor absent — it vanishes from both totals with nothing to say so.
+    //
+    // Refused outright on a day that was clocked in but never out. That day has no computable hours
+    // to begin with, and saving it "present" with none entered is precisely how four days in one
+    // August cycle ended up crediting zero hours and zero OT (client 2026-08-20: "ถ้ามากดเช็คอิน
+    // แต่ไม่กดเช็คเอ้าต้องไม่ให้บันทึก"). HR must put the real hours in, or call the day absent or
+    // leave — anything definite.
+    //
+    // Refused too on any time-paid contract, where an hours-less day silently costs a day's wage.
+    // Elsewhere (flat monthly) it only misleads, so it warns and saves.
     if (status === 'present' && hoursStrToMin(worked) == null) {
+      const clockedInNeverOut = !!target?.day.first_in && !target.day.last_out;
+      if (clockedInNeverOut) {
+        toast({ type: 'error', title: t('missingClockOutNeedsHours') });
+        return;
+      }
       if (TIME_PAID.has(target?.payType ?? '')) {
         toast({ type: 'error', title: t('presentNeedsHours') });
         return;
@@ -315,6 +326,13 @@ export function TimesheetEditModal({
             </div>
           )
         ) : (
+          <>
+            {/* Say it before the save is refused, not after. */}
+            {status === 'present' && !!target?.day.first_in && !target.day.last_out && (
+              <p className="mb-2 rounded-md bg-orange-50 px-3 py-2 text-xs text-orange-800 dark:bg-orange-900/30 dark:text-orange-200">
+                {t('missingClockOutNotice', { at: target.day.first_in.slice(11, 16) })}
+              </p>
+            )}
           <div className="grid grid-cols-3 gap-3">
             <Input
               label={t('worked')}
@@ -345,6 +363,7 @@ export function TimesheetEditModal({
               onChange={(e) => setOt(e.target.value)}
             />
           </div>
+          </>
         )}
 
         {/* payroll.ts pays 0 OT unless hr_employees.ot_eligible is on. Without this the field
