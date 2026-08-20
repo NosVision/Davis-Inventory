@@ -34,6 +34,9 @@ export interface PayslipDetailData {
   payrun: {
     period_year: number;
     period_month: number;
+    /** the salary period this slip covers — 26th of the previous month to the 25th of this one */
+    cycle_start?: string | null;
+    cycle_end?: string | null;
     pay_date: string | null;
     status?: string;
     company?: { name: string | null; address: string | null; day_divisor?: number | null } | null;
@@ -82,6 +85,12 @@ const SV_SOURCE_TH: Record<string, string> = {
 
 /** Carried-in lines take the Thai label above even though the row carries its own English one. */
 const CARRY_IN_SOURCES = new Set(['warning_carry', 'eval_carry', 'stock_penalty_carry']);
+
+/** SV pool month 'YYYY-MM-01' → 'MM/YYYY' — the window its leave/absence lines are counted over. */
+function svRoundMonth(periodMonth: string): string {
+  const [y, m] = String(periodMonth).slice(0, 10).split('-');
+  return y && m ? `${m}/${y}` : String(periodMonth);
+}
 
 /** 'YYYY-MM-DD' → 'DD/MM/YYYY'. */
 function formatDayMonthYear(date: string): string {
@@ -272,6 +281,17 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
       <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
         <Meta label={t('employee')} value={payslip.employee_name ?? '—'} print={print} />
         <Meta label={t('period')} value={monthLabel} print={print} />
+        {/* Salary absence is counted over this window; the SV panel counts its own calendar month.
+            One slip therefore read "ขาดงาน 16 วัน" beside "ขาดงาน (11 วัน)" in the SV — both right,
+            five days of late July falling in the salary cycle but in the PREVIOUS SV pool (client
+            2026-08-20). Neither figure explains itself unless the slip says what it measured. */}
+        {payrun?.cycle_start && payrun?.cycle_end && (
+          <Meta
+            label={t('metaCycle')}
+            value={`${formatDayMonthYear(payrun.cycle_start)} – ${formatDayMonthYear(payrun.cycle_end)}`}
+            print={print}
+          />
+        )}
         <Meta label={t('payType')} value={payTypeLabel} print={print} />
         <Meta label={t('payDate')} value={payDateLabel} print={print} />
         {!print && (payslip.rate_satang ?? 0) > 0 && (
@@ -383,7 +403,7 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
             </span>
           </h3>
           <p className="mb-1 text-xs text-violet-600/70 dark:text-violet-400/70">
-            {t('sc.round')}
+            {t('sc.round')} · {t('sc.deductWindow', { month: svRoundMonth(data.service_charge.period_month) })}
           </p>
           <ul className="divide-y divide-violet-200/60 dark:divide-violet-800/60">
             <li className="flex items-center justify-between py-1">
@@ -407,6 +427,18 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
               <span className="tabular-nums text-violet-700 dark:text-violet-300">{formatBaht(data.service_charge.net_satang)}</span>
             </li>
           </ul>
+          {/* A deduction larger than the month's SV is taken across months, and each line says what
+              it carried. Nobody should have to add those up — least of all when the net is 0 and the
+              carry is the only thing left to understand. */}
+          {(() => {
+            const carried = data.service_charge.deductions.reduce((s, x) => s + (x.carry_satang || 0), 0);
+            if (carried <= 0) return null;
+            return (
+              <p className="mt-1 rounded-md bg-amber-100 px-2 py-1.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+                {t('sc.carryTotal', { amount: formatBaht(carried) })}
+              </p>
+            );
+          })()}
           {/* The money on a slip is a SNAPSHOT taken when the payrun was generated; this panel reads
               the pool as it stands now. Edit the pool afterwards and the two drift apart — the same
               "two SV numbers on one slip" shape that sent the client hunting for a double-count. Say

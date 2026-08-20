@@ -3235,7 +3235,9 @@
         "allocated": "SV allocated",
         "net": "SV net",
         "carry": "carried to next month {amount}",
-        "stale": "This slip paid SV {paid} ฿ (snapshot at generation) but the pool now nets {pool} ฿ — the pool changed after the payrun was generated; regenerate it to match."
+        "stale": "This slip paid SV {paid} ฿ (snapshot at generation) but the pool now nets {pool} ฿ — the pool changed after the payrun was generated; regenerate it to match.",
+        "deductWindow": "deductions counted over {month}",
+        "carryTotal": "Carried to next month: {amount} ฿ (more than this month SV could absorb)"
       },
       "twoRounds": "Paid in 2 transfers: service charge/tip {sv} ฿ ({svDate}) · salary {salary} ฿ ({salaryDate}) — total received for {month}: {total} ฿",
       "metaRate": "Rate",
@@ -3283,7 +3285,8 @@
         "pt_daily": "Part-time (daily)",
         "pt_monthly": "Part-time (monthly)"
       },
-      "twoRoundsMidMonth": "the 15th"
+      "twoRoundsMidMonth": "the 15th",
+      "metaCycle": "Salary period"
     },
     "serviceCharge": {
       "title": "Service Charge",
