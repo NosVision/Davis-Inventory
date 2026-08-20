@@ -60,6 +60,8 @@ interface EmployeeRow {
   full_name: string | null;
   work_hours_per_day: number | null;
   ot_eligible: boolean | null;
+  /** Day-rated staff are paid worked_days × rate, so a day edit that credits no hours costs them. */
+  pay_type: string | null;
   status: string | null;
   end_date: string | null;
   // Why a venue's timesheet and its payrun list different people: the timesheet is keyed on store
@@ -280,7 +282,7 @@ export async function GET(request: NextRequest) {
     service
       .from('hr_employees')
       .select(
-        'profile_id, company_id, full_name, work_hours_per_day, ot_eligible, status, end_date, ' +
+        'profile_id, company_id, full_name, work_hours_per_day, ot_eligible, pay_type, status, end_date, ' +
           'company:hr_companies(name), payroll_group:hr_payroll_groups(name)'
       )
       .in('profile_id', userIds),
@@ -435,6 +437,7 @@ export async function GET(request: NextRequest) {
         payroll_group_name: e ? refName(e.payroll_group) : null,
         work_hours_per_day: workHours,
         ot_eligible: otEligible,
+        pay_type: e?.pay_type ?? null,
         // Set only for leavers — lets the timesheet UI flag the row as departed.
         end_date: departed ? (e?.end_date ?? null) : null,
         days,

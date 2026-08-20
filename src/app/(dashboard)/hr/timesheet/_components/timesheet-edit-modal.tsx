@@ -23,10 +23,20 @@ export interface EditTarget {
   companyId: string | null; // the employee's company — scopes the leave-type options
   /** hr_employees.ot_eligible — when false the payroll engine pays 0 OT no matter what is stored here. */
   otEligible: boolean;
+  /** hr_employees.pay_type — day-rated staff are paid worked_days × rate, so an hours-less
+   *  "present" day silently costs them a day's wage. */
+  payType: string | null;
   day: DaySummary;
 }
 
 type DayStatusChoice = 'present' | 'absent' | 'leave';
+
+/**
+ * Pay types whose base is built from recorded time (payroll.ts computeBaseSalary): pt_daily and
+ * pt_monthly multiply worked_days, pt_hourly multiplies the summed worked minutes. All three lose
+ * real money when a day records none. Only full_monthly is flat and therefore unaffected.
+ */
+const TIME_PAID = new Set(['pt_daily', 'pt_monthly', 'pt_hourly']);
 
 interface TimesheetEditModalProps {
   isOpen: boolean;
@@ -134,6 +144,18 @@ export function TimesheetEditModal({
     if (status === 'leave' && !leaveTypeId) {
       toast({ type: 'warning', title: t('selectLeaveTypeRequired') });
       return;
+    }
+    // "Present" with the hours box left blank writes absent=false and worked_min=null, which makes
+    // the day count as neither worked nor absent. On a flat monthly salary that is only confusing —
+    // it dropped one person's recorded days to 7 of 22 rostered (client report 2026-08-20). On any
+    // time-paid contract it is money: the day contributes nothing to the base, and nothing on the
+    // slip says a day went missing. Blocked there, flagged everywhere else.
+    if (status === 'present' && hoursStrToMin(worked) == null) {
+      if (TIME_PAID.has(target?.payType ?? '')) {
+        toast({ type: 'error', title: t('presentNeedsHours') });
+        return;
+      }
+      toast({ type: 'warning', title: t('presentNoHoursHint') });
     }
     setSaving(true);
     try {

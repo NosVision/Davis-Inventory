@@ -4096,7 +4096,9 @@
       "selectLeaveType": "Select leave type",
       "selectLeaveTypeRequired": "Please select a leave type",
       "noLeaveTypes": "Employee has no company linked, or no available leave types",
-      "close": "Close"
+      "close": "Close",
+      "presentNeedsHours": "Day-rated staff need worked hours — leaving it blank makes the day count as neither worked nor absent, so a day of wage disappears silently.",
+      "presentNoHoursHint": "Saved without worked hours — this day will count as neither worked nor absent."
     },
     "otRequests": {
       "title": "OT requests",

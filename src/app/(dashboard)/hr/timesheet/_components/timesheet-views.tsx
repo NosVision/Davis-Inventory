@@ -19,6 +19,8 @@ export type TimesheetEmployee = PayrollScopeInfo & {
   company_id: string | null;
   work_hours_per_day: number;
   ot_eligible: boolean;
+  /** hr_employees.pay_type — day-rated staff are paid worked_days × rate. */
+  pay_type: string | null;
   /** Set only for departed (resigned/terminated) staff — their last working day. The API keeps
    *  a leaver visible while the viewed period overlaps their employment, then drops them. */
   end_date?: string | null;

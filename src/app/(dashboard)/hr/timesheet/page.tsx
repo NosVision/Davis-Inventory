@@ -366,7 +366,7 @@ export default function HrTimesheetPage() {
         <TimesheetBlockGrid
           employees={filtered}
           homeCompany={homeCompany}
-          onPick={(emp, day) => setEditTarget({ userId: emp.user_id, name: emp.name, companyId: emp.company_id, otEligible: emp.ot_eligible, day })}
+          onPick={(emp, day) => setEditTarget({ userId: emp.user_id, name: emp.name, companyId: emp.company_id, otEligible: emp.ot_eligible, payType: emp.pay_type, day })}
         />
       ) : view === 'summary' ? (
         <TimesheetSummaryTable
@@ -392,7 +392,7 @@ export default function HrTimesheetPage() {
                 {hasData ? (
                   <DayTable
                     days={emp.days}
-                    onEditDay={(day) => setEditTarget({ userId: emp.user_id, name: emp.name, companyId: emp.company_id, otEligible: emp.ot_eligible, day })}
+                    onEditDay={(day) => setEditTarget({ userId: emp.user_id, name: emp.name, companyId: emp.company_id, otEligible: emp.ot_eligible, payType: emp.pay_type, day })}
                   />
                 ) : (
                   <p className="rounded-xl border border-dashed border-gray-200 px-4 py-6 text-center text-sm text-gray-400 dark:border-gray-700">
