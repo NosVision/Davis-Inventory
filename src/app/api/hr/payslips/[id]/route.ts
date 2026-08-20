@@ -98,11 +98,9 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   // Remark column of their register (owner ask 2026-07-10). SC pools are per store, so a
   // multi-store employee's allocations are summed. Absent → null (no SV on this slip).
   //
-  // The pool is the PREVIOUS month (svPeriodMonth) — the same one the generator paid into the
-  // earnings line. Reading the payrun's OWN month here showed the round that has not been cut yet:
-  // an August slip paid July's 4,666.67 but explained August's 9,000.01 right underneath it, and
-  // the client read the two numbers as double-counting (report 2026-08-19). The panel now carries
-  // its period so the slip says WHICH round it is explaining.
+  // The pool comes from svPeriodMonth() — the same helper the generator paid into the earnings
+  // line, so the panel always explains the money above it. When the two derived the month
+  // separately they disagreed, and one slip carried two different SV rounds (report 2026-08-19).
   type SvLine = { source_type: string; label: string | null; amount_satang: number; carry_satang: number; note: string | null; auto: boolean };
   let serviceCharge: {
     period_month: string;

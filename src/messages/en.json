@@ -3228,7 +3228,7 @@
       "net": "Net pay",
       "sc": {
         "title": "Service Charge (SV)",
-        "round": "from the {month} service-charge takings",
+        "round": "allocated at the start of the month, transferred to staff on the 15th of it",
         "paidOn": "transferred {date}",
         "allocated": "SV allocated",
         "net": "SV net",
@@ -3374,7 +3374,7 @@
         "unpaid": "Unpaid leave",
         "vacation": "Vacation"
       },
-      "monthMeaning": "month the SV was collected · transferred to staff {payDate}"
+      "monthMeaning": "the month this SV is paid · transferred to staff {payDate}"
     },
     "offboarding": {
       "title": "Offboarding",

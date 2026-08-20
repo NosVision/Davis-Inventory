@@ -28,7 +28,7 @@ function Meta({ tone, children }: { tone: 'api' | 'notify' | 'gate'; children: R
 interface Step { t: string; b: React.ReactNode; meta?: React.ReactNode }
 const STEPS: Step[] = [
   { t: 'เลือกบริษัท + เดือนจ่าย', b: <>เลือกงวดจากประวัติ (จอใหญ่ = รายการซ้าย · จอเล็ก = แถบ chip เลื่อนด้านบน) · <b>การ์ดสถานะ</b>บนสุดสรุปงวด/สถานะ/ขั้นตอน พร้อม<b>ปุ่มหลักปุ่มเดียว</b>ที่พาไปขั้นถัดไปเสมอ (ส่งให้บัญชี → ปิดยอด → ประกาศ) — ปุ่มอื่นทั้งหมดอยู่ในเมนู <b>"เพิ่มเติม ▾"</b> (คำนวณใหม่ · Excel · พิมพ์ทดสอบ · Reopen) · ทะเบียนแจกแจงต่อคน (วัน/เงินเดือน/OT/เบี้ย/หักอื่น/สปส./ภาษี/SV/สุทธิ) กดลูกศรหน้าชื่อ<b>กางดูทุกบรรทัด</b>ได้ · ปุ่ม <b>Excel</b> ในเมนูโหลดทะเบียน Payment เต็ม (แยก SS5/SS3 + Remark)</> },
-  { t: 'Generate — สร้างรอบ (draft)', b: <>คำนวณสลิปทุกคนตาม input ข้างบน · <b>ดึง SV เดือน N−1</b> เข้ามา · เป็น draft (กด Recompute สร้างใหม่ได้เรื่อยๆ ตราบยังไม่ปิดยอด) · ถ้างวดที่เลือกมีร่างอยู่แล้ว ปุ่มบนขวาเปลี่ยนเป็น <b>"อัพเดทข้อมูล"</b> (งวดที่ปิดแล้ว = กดไม่ได้)</>, meta: <><Meta tone="api">POST /api/hr/payruns</Meta><Meta tone="gate">รอบที่ปิดแล้ว → 409</Meta></> },
+  { t: 'Generate — สร้างรอบ (draft)', b: <>คำนวณสลิปทุกคนตาม input ข้างบน · <b>ดึง SV ของเดือนนั้น</b> เข้ามา · เป็น draft (กด Recompute สร้างใหม่ได้เรื่อยๆ ตราบยังไม่ปิดยอด) · ถ้างวดที่เลือกมีร่างอยู่แล้ว ปุ่มบนขวาเปลี่ยนเป็น <b>"อัพเดทข้อมูล"</b> (งวดที่ปิดแล้ว = กดไม่ได้)</>, meta: <><Meta tone="api">POST /api/hr/payruns</Meta><Meta tone="gate">รอบที่ปิดแล้ว → 409</Meta></> },
   { t: 'ตรวจ/แก้ระหว่าง draft', b: <>ปุ่ม 2 ปุ่มใน<b>การ์ดสถานะ</b>เปิดเป็นหน้าต่าง: <b>"รายการประจำทั้งบริษัท"</b> (ตารางทั้งบริษัท — ตั้งครั้งเดียว ใช้ทุกเดือน) และ <b>"รายการเฉพาะงวด"</b>: เพิ่ม/ลบรายการรับ-หักครั้งเดียว (กยศ, ค่าเสียหาย, โบนัส) <b>บังคับใส่เหตุผล</b> + ปุ่มคัดลอกจากงวดก่อนแล้วแก้เฉพาะยอด · ไอคอน ⚙ หลังชื่อแต่ละคนเปิดของ<b>คนนั้น</b> (แท็บ รายการประจำ / เฉพาะงวดนี้) · ล.ย.01 · หมายเหตุ (Remark) ต่อคน · ใส่ภาษีเองเป็น fallback — ทุกการแก้คำนวณสลิปใหม่ให้อัตโนมัติ</>, meta: <Meta tone="api">recurring · tax-allowance · adjustments · remarks · tax-override</Meta> },
   { t: 'ส่งให้บัญชี — สร้างลิงก์ตรวจ', b: <>สร้างลิงก์ <code className="rounded bg-gray-100 px-1 font-mono text-[0.85em] dark:bg-gray-700">/review/&lt;token&gt;</code> + รหัสผ่าน 6 หลัก (อายุ 14 วัน · เก็บเฉพาะ hash) · โชว์ token ครั้งเดียว · ยกเลิกได้</>, meta: <Meta tone="api">GET/POST/DELETE review-link</Meta> },
   { t: 'บัญชีตรวจ (พอร์ทัลสาธารณะ)', b: <>กรอกรหัสก่อนเห็นข้อมูล → ตารางแบบไฟล์ Payment เดิม (เงินเดือน/OT/SV/gross/YTD/ภาษี/net) · <b>กรอกภาษีต่อคน</b> → แจ้ง HR · กด <b>"ตรวจครบแล้ว"</b> → แจ้ง HR · โหลด Excel ได้</>, meta: <><Meta tone="api">payrun-review · taxes · confirm · export</Meta><Meta tone="notify">แจ้ง HR: tax_submitted · review_confirmed</Meta></> },
@@ -39,11 +39,11 @@ const STEPS: Step[] = [
   { t: 'พิมพ์สลิปกระดาษ', b: 'คิวพิมพ์ = คนตั้งค่ารับกระดาษประจำ หรือขอเป็นรอบ · พิมพ์แล้ว mark + แจ้งพนักงานมารับ', meta: <><Meta tone="api">print-queue</Meta><Meta tone="notify">แจ้งพนักงาน: paper_ready</Meta></> },
 ];
 
-const INPUTS: { n: 'N' | 'N−1'; title: string; items: React.ReactNode[] }[] = [
+const INPUTS: { n: 'N' | 'SV'; title: string; items: React.ReactNode[] }[] = [
   { n: 'N', title: 'เวลางาน → วันทำงาน/OT', items: [<>ตาราง + ลงเวลา (ตัด punch ที่ HR reject) + timesheet override</>, <>→ <b>วันทำงาน</b>, <b>OT</b>, <b>สาย</b>, <b>ขาด</b></>, <><b>Prorate</b> เข้า/ออกกลางเดือน = ÷30</>] },
   { n: 'N', title: 'ลา (อนุมัติแล้ว)', items: [<>หัก<b>เงินเดือน</b> ÷30 × วันลา + หัก<b>ค่าเดินทาง</b> ÷30 × วันลา</>, <>ลากิจ/ป่วยไม่มีใบ → หักหมด · ป่วยมีใบ → เงินเดือนไม่หัก · พักร้อน/นักขัต → ไม่หัก</>, <>นับเฉพาะ<b>วันที่ควรทำงาน</b> (ตัดวันหยุด)</>] },
   { n: 'N', title: 'รายการประจำ (recurring)', items: [<><b>ค่าตอบแทน:</b> ครองชีพ · บ้าน · โทร · <b>เดินทาง</b> · ชดเชยวันหยุด</>, <><b>รายการหักประจำ</b> (กยศ · เบิกล่วงหน้า · เงินประกัน · ผ่อนกู้)</>, <><b>ตั้งครั้งเดียว</b>ผ่านปุ่ม "รายการประจำทั้งบริษัท" ในการ์ดสถานะ — ดึงเข้าทุกงวดเอง · ตั้ง<b>เดือนสิ้นสุด</b>ได้ (หมดแล้วหยุดเอง) หรือปล่อยถาวร</>] },
-  { n: 'N−1', title: 'กองที่ยกมาเดือนก่อน', items: [<><b>Service Charge สุทธิ</b> = จัดสรร − หัก</>, <><b>ทิปสุทธิ</b></>, <><b>โบนัสประเมิน</b> (ลบ→หัก SV แยก)</>] },
+  { n: 'SV', title: 'กองที่จัดสรรต้นเดือน (โอนวันที่ 15)', items: [<><b>Service Charge สุทธิ</b> = จัดสรร − หัก</>, <><b>ทิปสุทธิ</b></>, <><b>โบนัสประเมิน</b> (ลบ→หัก SV แยก)</>] },
   { n: 'N', title: 'อื่นๆ เข้าสลิป', items: [<><b>เบิก/claim</b> อนุมัติแล้วยังไม่จ่าย</>, <><b>รายการเฉพาะงวด</b> (รับ/หักครั้งเดียว + เหตุผล — โบนัสก็ใส่ทางนี้; เก็บนอกแถวสลิป)</>] },
   { n: 'N', title: 'ฐานภาษี/ประกัน', items: [<><b>ล.ย.01</b> ค่าลดหย่อน</>, <><b>PVD</b> กองทุนสำรองฯ</>, <>วันหยุดนักขัตฤกษ์</>] },
 ];
@@ -64,12 +64,12 @@ export default function PayrollFlowPage() {
     <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
       <PageHeader
         title="โฟลการทำเงินเดือน"
-        subtitle="รอบ 26 (เดือนก่อน) → 25 · จ่ายสิ้นเดือน · SV/ทิป จ่ายแยกวันที่ 15 และไม่รวมในยอดโอนธนาคาร แต่โชว์ในสลิป"
+        subtitle="เงินเดือน: รอบ 26 (เดือนก่อน) → 25 จ่ายสิ้นเดือน · SV/ทิป: จัดสรรต้นเดือน โอนวันที่ 15 ของเดือนเดียวกัน — ไม่รวมในยอดโอนสิ้นเดือน แต่โชว์ในสลิปเดือนนั้น"
       />
 
       {/* legend */}
       <div className="flex flex-wrap gap-x-5 gap-y-2 text-[13px] text-gray-500 dark:text-gray-400">
-        {[['bg-indigo-500', 'เดือนนี้ / เงินเดือน (N)'], ['bg-teal-500', 'เดือนก่อน / SV·ทิป·ประเมิน (N−1)'], ['bg-amber-500', 'จุดล็อก / ต้องระวัง'], ['bg-emerald-500', 'เงินสุทธิ / จ่าย']].map(([c, l]) => (
+        {[['bg-indigo-500', 'เดือนนี้ / เงินเดือน (N)'], ['bg-teal-500', 'SV·ทิป·ประเมิน — โอนวันที่ 15'], ['bg-amber-500', 'จุดล็อก / ต้องระวัง'], ['bg-emerald-500', 'เงินสุทธิ / จ่าย']].map(([c, l]) => (
           <span key={l} className="inline-flex items-center gap-2"><i className={`h-2.5 w-2.5 rounded-sm ${c}`} />{l}</span>
         ))}
       </div>
@@ -80,7 +80,7 @@ export default function PayrollFlowPage() {
         <div className={card}>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-[15fr_10fr_4fr_3fr]">
             {[
-              ['1–15', 'ปิดกอง SV เดือนก่อน (ประเมิน→ยอด→หัก HQ→จัดสรร→ล็อก)', 'bg-teal-50 border-teal-300 dark:bg-teal-900/25 dark:border-teal-700'],
+              ['1–15', 'จัดสรร + ปิดกอง SV ของเดือนนี้ (ประเมิน→ยอด→หัก HQ→จัดสรร→ล็อก) แล้วโอนวันที่ 15', 'bg-teal-50 border-teal-300 dark:bg-teal-900/25 dark:border-teal-700'],
               ['16–25', 'รอรอบเวลางานปิด (25)', 'bg-gray-50 border-gray-200 dark:bg-gray-800/60 dark:border-gray-700'],
               ['26–29', 'ทำเงินเดือน + ส่งบัญชี', 'bg-indigo-50 border-indigo-300 dark:bg-indigo-900/25 dark:border-indigo-700'],
               ['30/31', 'ปิดยอด + จ่าย', 'bg-amber-50 border-amber-400 dark:bg-amber-900/25 dark:border-amber-600'],
@@ -95,8 +95,8 @@ export default function PayrollFlowPage() {
             <span className="rounded-full border border-indigo-300 bg-indigo-50 px-3 py-1 text-[13px] font-semibold text-indigo-700 dark:border-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300">เงินเดือนเดือน N</span>
             <span className="text-lg text-gray-400">←</span>
             <span className="text-[13px] text-gray-500 dark:text-gray-400">ถือกอง SV / ทิป / ประเมิน ของ</span>
-            <span className="rounded-full border border-teal-300 bg-teal-50 px-3 py-1 text-[13px] font-semibold text-teal-700 dark:border-teal-700 dark:bg-teal-900/30 dark:text-teal-300">เดือน N−1</span>
-            <span className="text-[13px] text-gray-500 dark:text-gray-400">(เพราะยอดเดือนก่อนเพิ่งปิดวันที่ 15)</span>
+            <span className="rounded-full border border-teal-300 bg-teal-50 px-3 py-1 text-[13px] font-semibold text-teal-700 dark:border-teal-700 dark:bg-teal-900/30 dark:text-teal-300">SV เดือนเดียวกัน</span>
+            <span className="text-[13px] text-gray-500 dark:text-gray-400">(จัดสรรต้นเดือน โอนวันที่ 15 ก่อนทำเงินเดือน)</span>
           </div>
           <p className="mt-3 text-[13px] text-gray-500 dark:text-gray-400">หน้า <code className="rounded bg-gray-100 px-1 font-mono text-[0.85em] dark:bg-gray-700">/hr/close</code> คือศูนย์รวมจังหวะนี้ — ขั้น 7–9 (สร้าง/ตรวจ/จ่าย) ลิงก์มาที่หน้าเงินเดือน</p>
         </div>

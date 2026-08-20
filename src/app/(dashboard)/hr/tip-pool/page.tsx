@@ -18,6 +18,7 @@ import {
 import { cn } from '@/lib/utils/cn';
 import { formatBaht, bahtToSatang } from '@/lib/pos/money';
 import { employeeNameLabel } from '@/lib/hr/employee-name';
+import { svPayDate } from '@/lib/hr/pay-cycle';
 
 // Tip pool page — mirrors /hr/service-charge (00109 mirrors 00103) but tips are MANUAL-only:
 // no recompute (no auto warning/leave/eval lines), every deduction is a manual line.
@@ -38,25 +39,11 @@ function currentMonth(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
-/**
- * A tip pool collected in 'YYYY-MM' is transferred on the 15th of the FOLLOWING month — the same
- * timing as service charge, and the month payrun generation reads it from (svPeriodMonth). The
- * fallback used to be the 15th of the same month, which is what taught HR that a pool belongs to
- * the month it is paid in and cost days of argument on the SC side (2026-08-19).
- */
-function nextMonthFifteenth(month: string): string {
-  const [y, m] = month.split('-').map(Number);
-  if (!y || !m) return `${month}-15`;
-  const ny = m === 12 ? y + 1 : y;
-  const nm = m === 12 ? 1 : m + 1;
-  return `${ny}-${String(nm).padStart(2, '0')}-15`;
-}
-
 export default function HrTipPoolPage() {
   const isTh = useLocale() === 'th';
   const L = isTh
-    ? { title: 'กองทุนทิป', subtitle: 'จัดสรรทิปต่อคนต่อเดือน (กรอกยอดเอง)', store: 'สาขา', month: 'งวด', monthMeaning: (pd: string) => `เดือนที่เก็บทิปได้ · โอนให้พนักงาน ${pd}`, noStores: 'ไม่มีสาขาที่จัดการได้', loadFailed: 'โหลดไม่สำเร็จ', poolTotal: 'ยอดทิปรวม', payDate: 'วันจ่าย', notes: 'หมายเหตุ', notesPh: 'หมายเหตุ (ถ้ามี)', draft: 'ร่าง', finalized: 'ปิดงวดแล้ว', createPool: 'สร้างกองทิป', savePool: 'บันทึกยอด', allocations: 'การจัดสรร', saveAllocations: 'บันทึกการจัดสรร', print: 'พิมพ์', finalize: 'ปิดงวด', colEmployee: 'พนักงาน', colAllocated: 'จัดสรร', colDeductions: 'หัก', colNet: 'สุทธิ', totals: 'รวม', noEmployees: 'ไม่มีพนักงาน', noDeductions: 'ไม่มีรายการหัก', addDeduction: 'เพิ่มรายการหัก', delete: 'ลบ', dedLabelPh: 'เหตุผล', savePoolFirst: 'บันทึกยอดกองก่อน', saveAllocHint: 'บันทึกการจัดสรรก่อนจึงเพิ่มรายการหักได้', finalizeConfirm: 'ปิดงวดกองทิปนี้? จะแก้ไขไม่ได้อีก', saved: 'บันทึกแล้ว', finalizedMsg: 'ปิดงวดแล้ว', locked: 'ปิดงวดแล้ว แก้ไขไม่ได้', invalid: 'กรอกจำนวนให้ถูกต้อง', add: 'เพิ่ม' }
-    : { title: 'Tip pool', subtitle: 'Allocate tips per person per month (manual)', store: 'Store', month: 'Period', monthMeaning: (pd: string) => `month the tips were collected · transferred to staff ${pd}`, noStores: 'No manageable stores', loadFailed: 'Load failed', poolTotal: 'Total tips', payDate: 'Pay date', notes: 'Notes', notesPh: 'Notes (optional)', draft: 'Draft', finalized: 'Finalized', createPool: 'Create pool', savePool: 'Save total', allocations: 'Allocations', saveAllocations: 'Save allocations', print: 'Print', finalize: 'Finalize', colEmployee: 'Employee', colAllocated: 'Allocated', colDeductions: 'Deductions', colNet: 'Net', totals: 'Total', noEmployees: 'No employees', noDeductions: 'No deductions', addDeduction: 'Add deduction', delete: 'Delete', dedLabelPh: 'Reason', savePoolFirst: 'Save the pool total first', saveAllocHint: 'Save allocations before adding a deduction', finalizeConfirm: 'Finalize this tip pool? It cannot be edited afterwards.', saved: 'Saved', finalizedMsg: 'Finalized', locked: 'Finalized — locked', invalid: 'Enter a valid amount', add: 'Add' };
+    ? { title: 'กองทุนทิป', subtitle: 'จัดสรรทิปต่อคนต่อเดือน (กรอกยอดเอง)', store: 'สาขา', month: 'งวด', monthMeaning: (pd: string) => `งวดที่จ่ายทิป · โอนให้พนักงาน ${pd}`, noStores: 'ไม่มีสาขาที่จัดการได้', loadFailed: 'โหลดไม่สำเร็จ', poolTotal: 'ยอดทิปรวม', payDate: 'วันจ่าย', notes: 'หมายเหตุ', notesPh: 'หมายเหตุ (ถ้ามี)', draft: 'ร่าง', finalized: 'ปิดงวดแล้ว', createPool: 'สร้างกองทิป', savePool: 'บันทึกยอด', allocations: 'การจัดสรร', saveAllocations: 'บันทึกการจัดสรร', print: 'พิมพ์', finalize: 'ปิดงวด', colEmployee: 'พนักงาน', colAllocated: 'จัดสรร', colDeductions: 'หัก', colNet: 'สุทธิ', totals: 'รวม', noEmployees: 'ไม่มีพนักงาน', noDeductions: 'ไม่มีรายการหัก', addDeduction: 'เพิ่มรายการหัก', delete: 'ลบ', dedLabelPh: 'เหตุผล', savePoolFirst: 'บันทึกยอดกองก่อน', saveAllocHint: 'บันทึกการจัดสรรก่อนจึงเพิ่มรายการหักได้', finalizeConfirm: 'ปิดงวดกองทิปนี้? จะแก้ไขไม่ได้อีก', saved: 'บันทึกแล้ว', finalizedMsg: 'ปิดงวดแล้ว', locked: 'ปิดงวดแล้ว แก้ไขไม่ได้', invalid: 'กรอกจำนวนให้ถูกต้อง', add: 'เพิ่ม' }
+    : { title: 'Tip pool', subtitle: 'Allocate tips per person per month (manual)', store: 'Store', month: 'Period', monthMeaning: (pd: string) => `the month these tips are paid · transferred to staff ${pd}`, noStores: 'No manageable stores', loadFailed: 'Load failed', poolTotal: 'Total tips', payDate: 'Pay date', notes: 'Notes', notesPh: 'Notes (optional)', draft: 'Draft', finalized: 'Finalized', createPool: 'Create pool', savePool: 'Save total', allocations: 'Allocations', saveAllocations: 'Save allocations', print: 'Print', finalize: 'Finalize', colEmployee: 'Employee', colAllocated: 'Allocated', colDeductions: 'Deductions', colNet: 'Net', totals: 'Total', noEmployees: 'No employees', noDeductions: 'No deductions', addDeduction: 'Add deduction', delete: 'Delete', dedLabelPh: 'Reason', savePoolFirst: 'Save the pool total first', saveAllocHint: 'Save allocations before adding a deduction', finalizeConfirm: 'Finalize this tip pool? It cannot be edited afterwards.', saved: 'Saved', finalizedMsg: 'Finalized', locked: 'Finalized — locked', invalid: 'Enter a valid amount', add: 'Add' };
 
   const { confirm, dialog } = useConfirm();
 
@@ -197,7 +184,8 @@ export default function HrTipPoolPage() {
   };
 
   const toggleRow = (userId: string) => setExpanded((prev) => { const next = new Set(prev); if (next.has(userId)) next.delete(userId); else next.add(userId); return next; });
-  const payDateDisplay = pool?.pay_date ?? nextMonthFifteenth(month);
+  // Allocated at the start of the month, transferred on the 15th of it — same rule as SC.
+  const payDateDisplay = pool?.pay_date ?? svPayDate(month);
   const busy = savingPool || savingAlloc || finalizing;
 
   return (

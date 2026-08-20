@@ -33,6 +33,7 @@ import {
 import { cn } from '@/lib/utils/cn';
 import { useScLineLabel } from '@/components/hr/use-sc-line-label';
 import { formatBaht, bahtToSatang } from '@/lib/pos/money';
+import { svPayDate } from '@/lib/hr/pay-cycle';
 import { ManualDeductionModal, type ManualTarget } from './_components/manual-deduction-modal';
 import { ScPrintView } from './_components/sc-print-view';
 import type {
@@ -70,15 +71,6 @@ function dmy(d?: string | null): string {
 function currentMonth(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-}
-
-/** A pool collected in 'YYYY-MM' is transferred on the 15th of the following month (00103, §H). */
-function nextMonthFifteenth(month: string): string {
-  const [y, m] = month.split('-').map(Number);
-  if (!y || !m) return `${month}-15`;
-  const ny = m === 12 ? y + 1 : y;
-  const nm = m === 12 ? 1 : m + 1;
-  return `${ny}-${String(nm).padStart(2, '0')}-15`;
 }
 
 export default function HrServiceChargePage() {
@@ -463,13 +455,11 @@ export default function HrServiceChargePage() {
   };
   const sourceLabel = (s: ScSourceType) => t(SOURCE_LABEL_KEY[s] ?? 'srcManual');
 
-  // A pool is collected over its own month and transferred on the 15th of the NEXT one (00103).
-  // The fallback used `${month}-15` — the 15th of the SAME month — so an unsaved August pool
-  // announced "จ่าย 15/08/2026" on screen. HR read that as "the August pool is the one paid on 15
-  // Aug", concluded the August slip must carry it, and days of argument followed from a date this
-  // page invented. Derive it from the rule instead (client confirmed 2026-08-19: the July pool is
-  // July's 1–31 takings, transferred 15 Aug).
-  const payDateDisplay = pool?.pay_date ?? nextMonthFifteenth(month);
+  // A pool is allocated at the start of its month and transferred on the 15th of that SAME month.
+  // svPayDate is the single definition of that, shared with the tip page and the payslip so the
+  // three surfaces cannot disagree about when a pool lands — which is exactly how this page once
+  // taught HR the wrong month (2026-08-19).
+  const payDateDisplay = pool?.pay_date ?? svPayDate(month);
   const busy = savingPool || savingAlloc || recomputing || finalizing;
 
   return (

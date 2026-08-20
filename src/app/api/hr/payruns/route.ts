@@ -261,9 +261,10 @@ export async function POST(request: NextRequest) {
 
   // Bulk-load everything for the cycle in parallel.
   const dates = dateRange(start, end);
-  // SV / tip / evaluation pools are the PREVIOUS month (N−1) — see svPeriodMonth(). The salary
-  // itself is period N (26 prev → 25 this). Read paths MUST use the same helper: they used to
-  // re-derive the month and drifted to N, putting two different SV rounds on one slip.
+  // SV / tip / evaluation pools are THIS month — see svPeriodMonth(): allocated at the start of the
+  // month, transferred on the 15th, and reported on this same month's slip. The salary alongside
+  // them is period N (26 prev → 25 this). Read paths MUST use the same helper: when they each
+  // derived the month, one drifted and a single payslip showed two different SV rounds.
   const svMonth = svPeriodMonth(year, month);
   const [scheduleRes, attendanceRes, overridesRes, leavesRes, leaveTypesRes, recurringRes, scRes, claimsRes, taxAllowRes, tipRes, evalBonusRes] =
     await Promise.all([
@@ -296,7 +297,8 @@ export async function POST(request: NextRequest) {
         .eq('status', 'approved')
         .lte('from_date', end)
         .gte('to_date', start),
-      service.from('hr_leave_types').select('id, code, paid, paid_with_cert, deduct_sc, deduct_travel'),      // Recurring items: only THIS run's employees (was an unscoped all-tenant scan), and only rows
+      service.from('hr_leave_types').select('id, code, paid, paid_with_cert, deduct_sc, deduct_travel'),
+      // Recurring items: only THIS run's employees (was an unscoped all-tenant scan), and only rows
       // whose period window covers this payrun period. Window sides are 'YYYY-MM' text (00162);
       // null start = since forever, null end = perpetual — expiry is enforced here, not by memory.
       service
@@ -306,7 +308,7 @@ export async function POST(request: NextRequest) {
         .in('employee_id', employees.map((e) => e.id))
         .or(`start_period.is.null,start_period.lte.${year}-${pad(month)}`)
         .or(`end_period.is.null,end_period.gte.${year}-${pad(month)}`),
-      // Net SC for the PREVIOUS month's pool (N−1) — carried into this payslip.
+      // Net SC for THIS month's pool — allocated at the start of it, transferred on the 15th.
       service
         .from('hr_sc_allocations')
         .select('user_id, allocated_satang, pool:hr_sc_pools!inner(period_month), hr_sc_deductions(amount_satang)')
@@ -323,13 +325,13 @@ export async function POST(request: NextRequest) {
         .select('employee_id, amount_satang')
         .eq('tax_year', year)
         .eq('active', true),
-      // Net Tip pool for the PREVIOUS month (N−1) — same mechanism/timing as SC.
+      // Net Tip pool for THIS month — same mechanism/timing as SC.
       service
         .from('hr_tip_allocations')
         .select('user_id, allocated_satang, pool:hr_tip_pools!inner(period_month), hr_tip_deductions(amount_satang)')
         .eq('pool.period_month', svMonth),
-      // POSITIVE eval payouts (bonuses) for the PREVIOUS month's period (N−1) → payslip earning.
-      // Negative eval payouts are handled as SC deductions (apply-sc), not here.
+      // POSITIVE eval payouts (bonuses) for THIS month's period → payslip earning. Negative eval
+      // payouts are handled as SC deductions (apply-sc) against the same month's pool, not here.
       service
         .from('hr_eval_payouts')
         .select('id, amount_satang, result:hr_eval_results!inner(employee_id, period:hr_eval_periods!inner(period_month))')
@@ -361,7 +363,8 @@ export async function POST(request: NextRequest) {
   );
   const leaveTypeById = new Map(
     ((leaveTypesRes.data ?? []) as { id: string; code: string; paid: boolean; paid_with_cert: boolean; deduct_sc: boolean; deduct_travel: boolean }[]).map((t) => [t.id, t])
-  );  const leavesByUser = new Map<string, LeaveRow[]>();
+  );
+  const leavesByUser = new Map<string, LeaveRow[]>();
   for (const lv of (leavesRes.data ?? []) as LeaveRow[]) {
     const list = leavesByUser.get(lv.user_id) ?? [];
     list.push(lv);

@@ -3,6 +3,7 @@
 import { useLocale, useTranslations } from 'next-intl';
 import { formatBaht } from '@/lib/pos/money';
 import { useScLineLabel } from '@/components/hr/use-sc-line-label';
+import { svPayDate } from '@/lib/hr/pay-cycle';
 
 export interface PayslipLine {
   type: string;
@@ -42,8 +43,8 @@ export interface PayslipDetailData {
   /** HR one-time bonus for this payrun (null = none) */
   bonus?: { amount_satang: number; label: string | null } | null;
   /** Service Charge (SV) detail for the round this slip pays: gross allocation + every deduction
-   *  line (null = none). `period_month` is the pool's own month (N−1), NOT the payrun's — the panel
-   *  labels itself with it so the SV here can never be mistaken for the round still being collected. */
+   *  line (null = none). `period_month` is this payslip's own month — the pool is allocated at the
+   *  start of it and transferred on the 15th, which is the date the panel leads with. */
   service_charge?: {
     period_month: string;
     pay_date: string | null;
@@ -80,12 +81,6 @@ const SV_SOURCE_TH: Record<string, string> = {
 /** Carried-in lines take the Thai label above even though the row carries its own English one. */
 const CARRY_IN_SOURCES = new Set(['warning_carry', 'eval_carry', 'stock_penalty_carry']);
 
-/** SV pool month 'YYYY-MM-01' → 'MM/YYYY', matching how the slip's own period is written. */
-function svRoundLabel(periodMonth: string): string {
-  const [y, m] = String(periodMonth).slice(0, 10).split('-');
-  return y && m ? `${m}/${y}` : String(periodMonth);
-}
-
 /** 'YYYY-MM-DD' → 'DD/MM/YYYY'. */
 function formatDayMonthYear(date: string): string {
   const [y, m, d] = String(date).slice(0, 10).split('-');
@@ -93,17 +88,13 @@ function formatDayMonthYear(date: string): string {
 }
 
 /**
- * When the SV transfer lands, as 'DD/MM/YYYY'. A pool carries its own pay_date once HR finalizes
- * it; before that the field is null, and the transfer date is the one thing this slip must not go
- * quiet about — the whole point of the panel is "how much arrives on the 15th". So fall back to the
- * rule the pool is built on (§H/00103: collected over its month, transferred the 15th of the next),
- * which is also what the service-charge page shows for an unsaved pool.
+ * When the SV transfer lands, as 'DD/MM/YYYY'. A pool carries its own pay_date once HR finalizes it;
+ * before that the field is null, and the transfer date is the one thing this slip must not go quiet
+ * about — the whole point of the panel is "how much arrives on the 15th". Falling back to svPayDate
+ * keeps the slip saying what the service-charge page says for the same unsaved pool.
  */
 function svTransferDate(periodMonth: string, payDate: string | null): string {
-  if (payDate) return formatDayMonthYear(payDate);
-  const [y, m] = String(periodMonth).slice(0, 10).split('-').map(Number);
-  if (!y || !m) return '';
-  return `15/${String(m === 12 ? 1 : m + 1).padStart(2, '0')}/${m === 12 ? y + 1 : y}`;
+  return formatDayMonthYear(payDate ?? svPayDate(periodMonth));
 }
 
 // Localized line-type labels; a standard type (salary/ot/sso/tax/…) is translated, while a
@@ -363,7 +354,7 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
             </span>
           </h3>
           <p className="mb-1 text-xs text-violet-600/70 dark:text-violet-400/70">
-            {t('sc.round', { month: svRoundLabel(data.service_charge.period_month) })}
+            {t('sc.round')}
           </p>
           <ul className="divide-y divide-violet-200/60 dark:divide-violet-800/60">
             <li className="flex items-center justify-between py-1">

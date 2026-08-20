@@ -20,8 +20,9 @@ import { PageHeader } from '@/components/ui';
 
 // HR "ปิดยอดประจำเดือน / Monthly Close" hub (Phase 2). One place that makes the two things the
 // old flow hid explicit: (1) the month RHYTHM — SV closes on the 1st–15th, payroll runs 26th–29th
-// with the accountant, and everything locks by the 30th/31st; (2) the N−1 OFFSET — the salary run
-// for month N carries the Service-Charge pool of month N−1. Each stage deep-links to the real page
+// with the accountant, and everything locks by the 30th/31st; (2) the TWO TRANSFERS — the Service
+// Charge for month N is allocated at the start of N and paid on the 15th, and the salary for the
+// same month follows at month end. Each stage deep-links to the real page
 // that owns it, so a full close is one scroll instead of ~10 hub-and-spoke tiles.
 
 type Lang = 'th' | 'en';
@@ -65,9 +66,7 @@ export default function HrClosePage() {
     // Salary cycle for pay-month N = 26th of (N−1) → 25th of N. Pay on the last day of N.
     const startMonth = m === 1 ? 12 : m - 1;
     const startYear = m === 1 ? y - 1 : y;
-    // SV pool carried in = the previous calendar month (N−1).
-    const svMonth = m === 1 ? 12 : m - 1;
-    const svYear = m === 1 ? y - 1 : y;
+    // The SV pool belongs to THIS month: allocated at the start of it, transferred on the 15th.
     const lastDay = new Date(y, m, 0).getDate();
     return {
       y,
@@ -75,7 +74,7 @@ export default function HrClosePage() {
       cycleStart: `26 ${monthLabel(lang, startYear, startMonth)}`,
       cycleEnd: `25 ${monthLabel(lang, y, m)}`,
       payDate: `${lastDay} ${monthLabel(lang, y, m)}`,
-      svLabel: monthLabel(lang, svYear, svMonth),
+      svLabel: monthLabel(lang, y, m),
       svPayDate: `15 ${monthLabel(lang, y, m)}`,
       qs: `?company=&month=${y}-${pad(m)}`,
       todayDom: now.getDate(),
@@ -83,19 +82,19 @@ export default function HrClosePage() {
   }, [ym, lang, now]);
 
   const stages: Stage[] = [
-    { n: 1, icon: Star, th: 'ปิดผลประเมิน', en: 'Evaluation', period: 'N-1', href: '/hr/evaluation', digestTh: 'ปิดงวดประเมินเดือนก่อน → ป้อน SV', digestEn: 'Close last month eval → feeds SV' },
-    { n: 2, icon: Coins, th: 'ยอดกอง SV', en: 'SV pool', period: 'N-1', href: '/hr/service-charge', digestTh: 'กรอกยอด 7% ต่อร้าน (เดือนก่อน)', digestEn: 'Enter each store 7% pool (last month)' },
-    { n: 3, icon: AlertTriangle, th: 'หักจาก HQ', en: 'HQ deductions', period: 'N-1', href: '/hr/stock-deductions', digestTh: 'ค่าปรับสต๊อก + ใบเตือน → หัก SV', digestEn: 'Stock fines + warnings → dock SV' },
-    { n: 4, icon: SlidersHorizontal, th: 'จัดสรร + คำนวณ SV', en: 'Allocate + recompute', period: 'N-1', href: '/hr/service-charge', digestTh: 'หยอดรายคน แล้วคำนวณหักลา ÷30', digestEn: 'Allocate per person, recompute leave dock' },
-    { n: 5, icon: Lock, th: 'ล็อกกอง SV', en: 'Finalize SV', period: 'N-1', href: '/hr/service-charge', digestTh: 'ล็อกทุกร้านก่อนสร้างรอบเงินเดือน', digestEn: 'Lock all stores before generating payroll' },
+    { n: 1, icon: Star, th: 'ปิดผลประเมิน', en: 'Evaluation', period: 'N', href: '/hr/evaluation', digestTh: 'ปิดงวดประเมินของเดือนนี้ → ป้อน SV', digestEn: 'Close this month eval → feeds SV' },
+    { n: 2, icon: Coins, th: 'ยอดกอง SV', en: 'SV pool', period: 'N', href: '/hr/service-charge', digestTh: 'กรอกยอด 7% ต่อร้าน (เดือนนี้)', digestEn: 'Enter each store 7% pool (this month)' },
+    { n: 3, icon: AlertTriangle, th: 'หักจาก HQ', en: 'HQ deductions', period: 'N', href: '/hr/stock-deductions', digestTh: 'ค่าปรับสต๊อก + ใบเตือน → หัก SV', digestEn: 'Stock fines + warnings → dock SV' },
+    { n: 4, icon: SlidersHorizontal, th: 'จัดสรร + คำนวณ SV', en: 'Allocate + recompute', period: 'N', href: '/hr/service-charge', digestTh: 'หยอดรายคน แล้วคำนวณหักลา ÷30', digestEn: 'Allocate per person, recompute leave dock' },
+    { n: 5, icon: Lock, th: 'ล็อกกอง SV', en: 'Finalize SV', period: 'N', href: '/hr/service-charge', digestTh: 'ล็อกทุกร้านก่อนวันโอน 15 และก่อนสร้างรอบเงินเดือน', digestEn: 'Lock all stores before the 15th transfer and before payroll' },
     { n: 6, icon: CalendarClock, th: 'ตรวจเวลางาน', en: 'Attendance', period: 'N', href: '/hr/timesheet', digestTh: 'ยืนยันวัน/สาย/ลา/ขาด ของรอบนี้ (หลังรอบปิด 25) ก่อนทำเงินเดือน', digestEn: 'Verify days / late / leave / absent (after the 25th cutoff) before payroll' },
-    { n: 7, icon: Wallet, th: 'สร้างรอบเงินเดือน', en: 'Generate payroll', period: 'N', href: '/hr/payroll', digestTh: 'ดึง SV เดือนก่อนเข้าสลิป', digestEn: 'Pulls last month SV into slips' },
+    { n: 7, icon: Wallet, th: 'สร้างรอบเงินเดือน', en: 'Generate payroll', period: 'N', href: '/hr/payroll', digestTh: 'ดึง SV เดือนนี้เข้าสลิป', digestEn: 'Pulls this month SV into slips' },
     { n: 8, icon: FileCheck2, th: 'ตรวจทาน + ส่งบัญชี', en: 'Review + accountant', period: 'N', href: '/hr/payroll', digestTh: '26–29 ส่งลิงก์บัญชีกรอกภาษี แล้วปิดยอด', digestEn: '26–29 send accountant tax link, then lock' },
     { n: 9, icon: Banknote, th: 'ไฟล์ธนาคาร + ประกาศ', en: 'Bank file + announce', period: 'N', href: '/hr/payroll', digestTh: '30/31 โหลด CSV โอนเงิน + แจ้งพนักงาน', digestEn: '30/31 download transfer CSV + announce' },
   ];
 
   const rhythm = [
-    { grow: 15, tone: 'sv', dTh: '1–15', dEn: '1–15', lTh: 'ปิดกอง SV เดือนก่อน', lEn: 'Close last month SV' },
+    { grow: 15, tone: 'sv', dTh: '1–15', dEn: '1–15', lTh: 'จัดสรร + ปิดกอง SV แล้วโอนวันที่ 15', lEn: 'Allocate + close SV, transfer on the 15th' },
     { grow: 10, tone: 'wait', dTh: '16–25', dEn: '16–25', lTh: 'รอรอบเวลางานปิด (25)', lEn: 'Wait for cycle close (25)' },
     { grow: 4, tone: 'pay', dTh: '26–29', dEn: '26–29', lTh: 'ทำเงินเดือน + ส่งบัญชี', lEn: 'Run payroll + accountant' },
     { grow: 3, tone: 'deadline', dTh: '30/31', dEn: '30/31', lTh: 'ปิดยอด + จ่าย', lEn: 'Finalize + pay' },
@@ -129,7 +128,7 @@ export default function HrClosePage() {
         </label>
       </div>
 
-      {/* period chips: N and N−1 made explicit */}
+      {/* the month's two transfers: salary at month end, service charge on the 15th */}
       <div className="mb-4 grid gap-3 sm:grid-cols-2">
         <div className="relative overflow-hidden rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
           <span className="absolute inset-y-0 left-0 w-1 bg-indigo-500" />
@@ -147,11 +146,11 @@ export default function HrClosePage() {
         <div className="relative overflow-hidden rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
           <span className="absolute inset-y-0 left-0 w-1 bg-teal-500" />
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-teal-600 dark:text-teal-300">
-            <span className="rounded-full bg-teal-500 px-1.5 py-0.5 text-[10px] text-white">{tt(lang, 'เดือนก่อน', 'last month')}</span>
-            {tt(lang, 'SV ที่ยกมา', 'SV carried in')} — {period.svLabel}
+            <span className="rounded-full bg-teal-500 px-1.5 py-0.5 text-[10px] text-white">{tt(lang, 'เดือนนี้', 'this month')}</span>
+            {tt(lang, 'เซอร์วิสชาร์จ', 'Service charge')} — {period.svLabel}
           </div>
           <div className="mt-1 text-sm font-bold text-gray-900 dark:text-gray-100">
-            {tt(lang, 'กอง Service Charge เดือนก่อน', 'Last month service-charge pool')}
+            {tt(lang, 'จัดสรรต้นเดือน โอนวันที่ 15', 'Allocated at month start, paid on the 15th')}
           </div>
           <div className="text-xs text-gray-500 dark:text-gray-400">
             {tt(lang, 'จ่ายแยก', 'Paid separately')} {period.svPayDate} · {tt(lang, 'โชว์ในสลิป ไม่รวม net', 'shown on slip, not in net')}

@@ -38,9 +38,8 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   const slipRows = slips ?? [];
   const userIds = [...new Set(slipRows.map((s) => s.user_id))];
   const pr = payrun as { period_year: number; period_month: number };
-  // The SV/tip pool that belongs to this run is the PREVIOUS month (svPeriodMonth) — the one the
-  // generator actually paid into these payslips. This used to read the run's own month, so the
-  // register's SV column and the readiness chips described a round nobody on this run was paid.
+  // The SV/tip pool for this run — svPeriodMonth(), the same helper the generator used, so the
+  // register's SV column and the readiness chips always describe the round these payslips paid.
   const periodMonth = svPeriodMonth(pr.period_year, pr.period_month);
 
   // Names (prefer the real full name), Service-Charge net + SV-deductions for the month, and the

@@ -43,22 +43,37 @@ export function isCycleClosed(cycle: PayCycle, today: string = todayBangkok()): 
 }
 
 /**
- * The SV / tip / evaluation pool month that belongs on a payslip labelled (year, month).
+ * The SV / tip / evaluation pool month that belongs on a payslip labelled (year, month) — which is
+ * that SAME month.
  *
- * These pools are the PREVIOUS month (N−1): month N−1's pool is totalled and finalized during
- * days 1–15 of month N and transferred on the 15th, then rides along on the salary slip issued at
- * the end of month N. The client states it as "the SV on this salary is last month's" — e.g. the
- * June pool (paid 15 Jul) sits on the July slip, the July pool (paid 15 Aug) on the August slip.
+ * A pool is allocated at the START of its month and transferred to staff on the 15th of it; the
+ * salary for the same month follows at month end. So August's pool, August's evaluation and
+ * August's salary all land on the August slip, and the slip states one month throughout.
  *
- * Lives here because it was previously re-derived at each call site, and the read paths drifted to
- * month N while generation stayed on N−1 — so one slip showed the July SV in the money and the
- * August SV in the breakdown panel (client report 2026-08-19). One definition, no drift.
+ * It used to be the previous month (N−1), on the reading that a pool is totalled during days 1–15
+ * of the NEXT month. The client settled it on 2026-08-19: there is no month-before to carry — the
+ * allocation is made up front and paid inside its own month.
+ *
+ * Kept as a named definition rather than inlined because generation and every read path must agree.
+ * When they each derived the month themselves, one drifted and a single payslip showed two
+ * different SV rounds. One definition, no drift — whatever the rule happens to be.
  *
  * @param month 1–12
  * @returns 'YYYY-MM-01' — matches hr_sc_pools.period_month / hr_tip_pools.period_month
  */
 export function svPeriodMonth(year: number, month: number): string {
-  const m = month === 1 ? 12 : month - 1;
-  const y = month === 1 ? year - 1 : year;
-  return `${y}-${pad(m)}-01`;
+  return `${year}-${pad(month)}-01`;
+}
+
+/**
+ * The day a pool reaches staff: the 15th of the pool's own month.
+ *
+ * Shared by the service-charge and tip pages (the default shown before a pool is saved) and by the
+ * payslip (the fallback when a draft pool has no pay_date yet). Three copies of this arithmetic is
+ * how the screens came to disagree about which month a pool belonged to.
+ *
+ * @param periodMonth 'YYYY-MM' or any longer ISO date starting with it
+ */
+export function svPayDate(periodMonth: string): string {
+  return `${periodMonth.slice(0, 7)}-15`;
 }
