@@ -441,6 +441,7 @@
       "metaRate": "ອັດຕາຈ້າງ",
       "metaDailyRate": "ອັດຕາລາຍວັນ (÷{divisor})",
       "metaWorkedDays": "ວັນເຮັດວຽກ",
+      "metaRecordedDays": "ວັນທີ່ບັນທຶກເວລາ",
       "adjBadge": "ສະເພາະງວດ",
       "formula": {
         "absent": "ຂາດ {days} ວັນ × ອັດຕາລາຍວັນ",

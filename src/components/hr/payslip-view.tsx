@@ -97,6 +97,9 @@ function svTransferDate(periodMonth: string, payDate: string | null): string {
   return formatDayMonthYear(payDate ?? svPayDate(periodMonth));
 }
 
+/** Pay types whose base is worked_days × rate — for everyone else the count is informational. */
+const PAY_BY_DAY = new Set(['pt_daily', 'pt_monthly']);
+
 // Localized line-type labels; a standard type (salary/ot/sso/tax/…) is translated, while a
 // free-form label (an allowance name, a leave code) falls through to the stored text.
 const KNOWN_TYPES = new Set([
@@ -261,8 +264,18 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
             <Meta label={t('metaDailyRate', { divisor: dayDivisor })} value={`${formatBaht(Math.round((payslip.rate_satang as number) / dayDivisor))} ฿`} print={print} />
           </>
         )}
+        {/* worked_days is the count of days with a real time record. For pt_daily/pt_monthly it IS
+            the pay base (payroll.ts computeBaseSalary), so it belongs beside the money. For monthly
+            staff it drives nothing — the salary is a flat month and absence is itemised as its own
+            deduction — yet "วันทำงาน 7" on a slip paying a full month reads as an underpayment or a
+            mistake (client report 2026-08-20: rostered 22, punched 7, paid the full 27,000). Same
+            label, two meanings; name the one that applies. */}
         {!print && payslip.worked_days != null && (
-          <Meta label={t('metaWorkedDays')} value={String(payslip.worked_days)} print={print} />
+          <Meta
+            label={PAY_BY_DAY.has(payslip.pay_type) ? t('metaWorkedDays') : t('metaRecordedDays')}
+            value={String(payslip.worked_days)}
+            print={print}
+          />
         )}
       </div>
 

@@ -3240,6 +3240,7 @@
       "metaRate": "อัตราจ้าง",
       "metaDailyRate": "อัตรารายวัน (÷{divisor})",
       "metaWorkedDays": "วันทำงาน",
+      "metaRecordedDays": "วันที่บันทึกเวลา",
       "adjBadge": "เฉพาะงวด",
       "formula": {
         "absent": "ขาด {days} วัน × อัตรารายวัน",

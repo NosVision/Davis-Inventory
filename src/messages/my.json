@@ -441,6 +441,7 @@
       "metaRate": "လုပ်ခနှုန်း",
       "metaDailyRate": "တစ်ရက်နှုန်း (÷{divisor})",
       "metaWorkedDays": "အလုပ်လုပ်ရက်",
+      "metaRecordedDays": "အချိန်မှတ်တမ်းရှိသည့်ရက်",
       "adjBadge": "ဤကာလသာ",
       "formula": {
         "absent": "ပျက်ကွက် {days} ရက် × တစ်ရက်နှုန်း",

@@ -3239,6 +3239,7 @@
       "metaRate": "Rate",
       "metaDailyRate": "Daily rate (÷{divisor})",
       "metaWorkedDays": "Worked days",
+      "metaRecordedDays": "Days with a time record",
       "adjBadge": "One-off",
       "formula": {
         "absent": "absent {days}d × daily rate",
