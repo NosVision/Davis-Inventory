@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>กติกากอง SV</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap">
+<style>
+  :root{
+    --paper:#F7F7F4; --card:#FFFFFF; --ink:#22242E; --muted:#6D7280; --line:#E4E4DE;
+    --sv:#6D28D9; --sv-soft:#F3EEFC; --sv-line:#DDD0F5;
+    --ev:#0F766E; --ev-soft:#E9F5F2; --ev-line:#C4E3DC;
+    --bad:#B42318; --bad-soft:#FBEAE7;
+    --good:#067647; --good-soft:#E8F4EC;
+    --warn:#B54708; --warn-soft:#FBF1E2;
+  }
+  *{box-sizing:border-box;margin:0}
+  html{-webkit-text-size-adjust:100%}
+  body{background:var(--paper);color:var(--ink);
+       font-family:'IBM Plex Sans Thai','Noto Sans Thai','Thonburi','Leelawadee UI',Tahoma,sans-serif;
+       line-height:1.75;padding:40px 20px 72px;font-size:15.5px}
+  .wrap{max-width:780px;margin:0 auto;display:flex;flex-direction:column;gap:28px}
+
+  .eyebrow{font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+  h1{font-size:27px;font-weight:700;line-height:1.4;text-wrap:balance;margin-top:6px}
+  h2{font-size:18.5px;font-weight:700;line-height:1.5;text-wrap:balance}
+  .sub{color:var(--muted);margin-top:6px;max-width:62ch}
+
+  section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:26px 28px}
+  section>.eyebrow{display:block;margin-bottom:8px}
+
+  /* thesis */
+  .thesis{background:var(--sv);border-color:var(--sv);color:#fff}
+  .thesis .eyebrow{color:#D8C8F7}
+  .thesis h1{color:#fff}
+  .thesis p{color:#E9DFFB;margin-top:10px;max-width:60ch}
+  .thesis strong{color:#fff}
+
+  /* month chips — one code used everywhere on the page */
+  .chip{display:inline-block;padding:1px 10px;border-radius:999px;font-size:13px;font-weight:600;white-space:nowrap}
+  .chip.ev{background:var(--ev-soft);color:var(--ev);border:1px solid var(--ev-line)}
+  .chip.sv{background:var(--sv-soft);color:var(--sv);border:1px solid var(--sv-line)}
+  .legend{display:flex;flex-wrap:wrap;gap:10px 22px;margin-top:14px;font-size:13.5px;color:var(--muted)}
+  .legend .chip{margin-right:6px}
+
+  /* timeline strip */
+  .strip{display:flex;margin-top:18px;border:1px solid var(--line);border-radius:10px;overflow:hidden;text-align:center}
+  .strip>div{flex:1;padding:12px 8px 14px;font-size:13.5px;line-height:1.5}
+  .strip .d{font-weight:700;font-size:14px}
+  .strip .ok{background:var(--good-soft)}
+  .strip .pay{background:var(--sv-soft);border-left:2px solid var(--sv);border-right:2px solid var(--sv)}
+  .strip .broken{background:var(--bad-soft)}
+  .strip small{color:var(--muted);display:block;margin-top:2px}
+  .strip .broken small{color:var(--bad)}
+
+  .verdict{margin-top:14px;padding:12px 16px;border-radius:10px;font-weight:600;font-size:14.5px}
+  .verdict.bad{background:var(--bad-soft);color:var(--bad)}
+  .verdict.good{background:var(--good-soft);color:var(--good)}
+
+  .rule{margin-top:16px;padding:18px 22px;background:var(--sv-soft);border:1px solid var(--sv-line);
+        border-radius:12px;font-size:18px;font-weight:700;line-height:1.65;text-align:center;color:var(--sv);text-wrap:balance}
+
+  /* tables */
+  .tblwrap{overflow-x:auto;margin-top:16px;-webkit-overflow-scrolling:touch}
+  table{border-collapse:collapse;width:100%;min-width:520px;font-size:14.5px;line-height:1.6}
+  th{font-size:12.5px;font-weight:600;letter-spacing:.05em;color:var(--muted);text-align:left;
+     padding:8px 14px;border-bottom:2px solid var(--line);white-space:nowrap}
+  td{padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  .ok-cell{color:var(--good);font-weight:600}
+  .bad-cell{color:var(--bad);font-weight:600}
+
+  /* pool cards */
+  .pools{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+  .pool{border:1px solid var(--sv-line);border-radius:12px;overflow:hidden}
+  .pool header{background:var(--sv-soft);padding:12px 18px;border-bottom:1px solid var(--sv-line)}
+  .pool header .t{font-weight:700;color:var(--sv);font-size:15.5px}
+  .pool header small{color:var(--muted);display:block;font-size:13px}
+  .pool ul{list-style:none;padding:12px 18px}
+  .pool li{display:flex;justify-content:space-between;gap:12px;padding:4px 0;font-size:14px}
+  .pool li span:last-child{font-variant-numeric:tabular-nums;white-space:nowrap}
+  .pool li.minus span:last-child{color:var(--bad)}
+  .pool li.total{border-top:1.5px solid var(--line);margin-top:6px;padding-top:9px;font-weight:700}
+  .pool li.total span:last-child{color:var(--sv)}
+  .pool .note{padding:0 18px 14px;font-size:13px;color:var(--muted)}
+
+  /* month flow */
+  .flow{list-style:none;margin-top:16px;display:flex;flex-direction:column}
+  .flow li{display:grid;grid-template-columns:96px 1fr;gap:14px;padding:10px 0;border-bottom:1px dashed var(--line)}
+  .flow li:last-child{border-bottom:none}
+  .flow .when{font-weight:700;font-size:14px;white-space:nowrap}
+  .flow .what{font-size:14.5px}
+  .flow .what small{color:var(--muted);display:block}
+
+  .accept{margin-top:14px;padding:14px 18px;border-radius:10px;background:var(--warn-soft);color:var(--warn);font-size:14px;line-height:1.7}
+  .accept strong{font-weight:700}
+
+  .foot{color:var(--muted);font-size:12.5px;text-align:center}
+
+  /* ── responsive ── */
+  @media(max-width:640px){
+    .pools{grid-template-columns:1fr}
+  }
+  @media(max-width:560px){
+    body{padding:20px 12px 48px;font-size:15px}
+    section{padding:20px 18px;border-radius:12px}
+    h1{font-size:22px}
+    h2{font-size:17px}
+    .rule{font-size:16px;padding:14px 16px}
+    /* timeline folds to a 2×2 grid instead of squeezing four cells in a row */
+    .strip{display:grid;grid-template-columns:1fr 1fr}
+    .strip .pay{border-left:none;border-right:none;border-top:2px solid var(--sv)}
+    .strip .broken{border-top:2px solid var(--bad)}
+    .flow li{grid-template-columns:80px 1fr;gap:10px}
+  }
+  @media print{
+    body{background:#fff;padding:0}
+    section{border-color:#ccc;break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <section class="thesis">
+    <span class="eyebrow">หลักการที่ยึด — ไม่เปลี่ยน ทั้งก่อนและหลังแก้</span>
+    <h1>เงินที่โอน 15 ส.ค. = รายได้เดือน ส.ค. บนสลิปเดือน ส.ค.</h1>
+    <p>กอง SV ใช้ชื่อ<strong>เดือนที่จ่าย</strong>เสมอ — กอง "สิงหาคม" โอนให้พนักงานวันที่ 15 ส.ค.
+       และขึ้นเป็นรายได้บนสลิปเดือน ส.ค. ข้อนี้คงเดิมทุกประการ
+       สิ่งเดียวที่เสนอให้แก้คือ <strong>รายการหักของกองมาจากเดือนไหน</strong></p>
+  </section>
+
+  <section>
+    <span class="eyebrow">ปัญหาของลอจิกปัจจุบัน</span>
+    <h2>กองจ่ายเงินวันที่ 15 แต่ยังนับขาด/ลา/ใบเตือนต่อจนถึงสิ้นเดือน</h2>
+    <p class="sub">กอง "สิงหาคม" ตอนนี้หักจากเหตุการณ์ของเดือน ส.ค. เอง (1–31 ส.ค.)
+       ทั้งที่เงินออกจากบัญชีไปแล้วตั้งแต่วันที่ 15</p>
+    <div class="strip">
+      <div class="ok"><span class="d">1 ส.ค.</span><small>จัดสรรกอง</small></div>
+      <div class="ok"><span class="d">1–15 ส.ค.</span><small>หักได้ ยังไม่จ่าย</small></div>
+      <div class="pay"><span class="d">15 ส.ค.</span><small>โอนให้พนักงานแล้ว</small></div>
+      <div class="broken"><span class="d">16–31 ส.ค.</span><small>ยังนับหักเข้ากองเดิม</small></div>
+    </div>
+    <div class="verdict bad">ขาดงานวันที่ 20 ส.ค. ต้องไปหักเงินที่โอนออกไปแล้วตั้งแต่ 15 ส.ค. — เป็นไปไม่ได้</div>
+    <p class="sub" style="margin-top:14px">ตอนกดโอนวันที่ 15 ระบบรู้ข้อมูลแค่ครึ่งเดือน
+       ส่วนที่เกิดหลังจากนั้นจะกลายเป็นยอดค้างไล่หักเดือนถัดไปไม่รู้จบ</p>
+  </section>
+
+  <section>
+    <span class="eyebrow">ข้อเสนอ</span>
+    <h2>ป้ายตามเดือนที่จ่าย · หน้าต่างหักตามเดือนก่อนหน้า</h2>
+    <div class="rule">กองที่จ่ายวันที่ 15 เดือนใด<br>หักจากเหตุการณ์ทั้งหมดของเดือนก่อนหน้า</div>
+    <div class="legend">
+      <span><span class="chip ev">เดือนเกิดเหตุการณ์</span>ขาด · ลา · ใบเตือน · ผลประเมิน</span>
+      <span><span class="chip sv">เดือนที่จ่าย</span>ชื่อกอง · วันโอน 15 · เดือนบนสลิป</span>
+    </div>
+    <p class="sub" style="margin-top:14px">พอถึงวันโอน เดือนก่อนหน้าจบไปแล้วทั้งเดือน —
+       ข้อมูลขาด/ลา/ใบเตือนครบ 100% และงวดประเมินก็ปิดทัน (ปิดราววันที่ 10) ก่อนเงินออกวันที่ 15 เสมอ</p>
+  </section>
+
+  <section>
+    <span class="eyebrow">เทียบทีละแหล่งหัก — กองที่โอน 15 ก.ย.</span>
+    <h2>ลอจิกปัจจุบัน vs หลังแก้</h2>
+    <div class="tblwrap"><table>
+      <tr><th>แหล่งหัก</th><th>ปัจจุบัน</th><th>หลังแก้</th></tr>
+      <tr>
+        <td>ขาดงาน / ลา</td>
+        <td class="bad-cell">ของเดือน ก.ย. — ครึ่งเดือนหลังยังไม่เกิด ตอนเงินออก</td>
+        <td class="ok-cell">ของเดือน ส.ค. — จบเดือนแล้ว ครบทุกวัน</td>
+      </tr>
+      <tr>
+        <td>ใบเตือน</td>
+        <td class="bad-cell">ที่ออกเดือน ก.ย. — ปัญหาเดียวกัน</td>
+        <td class="ok-cell">ที่ออกเดือน ส.ค.</td>
+      </tr>
+      <tr>
+        <td>ผลประเมิน</td>
+        <td class="ok-cell">งวดเดือน ส.ค. (แก้ไปแล้ว)</td>
+        <td class="ok-cell">งวดเดือน ส.ค. — เหมือนเดิม</td>
+      </tr>
+    </table></div>
+    <p class="sub" style="margin-top:12px">ตอนนี้ผลประเมินใช้กฎหนึ่ง ขาด/ลา/ใบเตือนใช้อีกกฎหนึ่ง —
+       หลังแก้ ทั้ง 4 แหล่งใช้กฎเดียวกันหมด และระบบยังคำนวณหักให้<strong>อัตโนมัติ</strong>เหมือนเดิม
+       HR ไม่ต้องกรอกเอง</p>
+  </section>
+
+  <section>
+    <span class="eyebrow">ตัวอย่างตัวเลขจริง (เคสคุณเมย์ · จัดสรร 10,000)</span>
+    <h2>เหตุการณ์แต่ละเดือน ไปโผล่กองไหน</h2>
+    <div class="pools">
+      <div class="pool">
+        <header>
+          <span class="t">กอง "สิงหาคม" · โอน 15 ส.ค.</span>
+          <small>ขึ้นสลิปเดือน ส.ค. · หักจากเหตุการณ์ <b>เดือน ก.ค.</b></small>
+        </header>
+        <ul>
+          <li><span>ยอดจัดสรร</span><span>10,000.00</span></li>
+          <li class="minus"><span>ใบเตือนหัก 50% (ออก 20 ก.ค.)</span><span>−5,000.00</span></li>
+          <li class="minus"><span>ขาดงาน ก.ค. 1 วัน</span><span>−333.33</span></li>
+          <li class="total"><span>SV สุทธิ</span><span>4,666.67</span></li>
+        </ul>
+        <div class="note">ยอด 4,666.67 เดิมที่เคยเห็น — กลับมาอยู่ถูกที่: เป็นรายได้เดือน ส.ค. เต็มตัว</div>
+      </div>
+      <div class="pool">
+        <header>
+          <span class="t">กอง "กันยายน" · โอน 15 ก.ย.</span>
+          <small>ขึ้นสลิปเดือน ก.ย. · หักจากเหตุการณ์ <b>เดือน ส.ค.</b></small>
+        </header>
+        <ul>
+          <li><span>ยอดจัดสรร</span><span>10,000.00</span></li>
+          <li class="minus"><span>ลากิจ 1 วัน (5 ส.ค.)</span><span>−333.33</span></li>
+          <li class="minus"><span>ลาป่วย 1 วัน (6 ส.ค.)</span><span>−333.33</span></li>
+          <li class="minus"><span>ใบเตือน 2 ใบ (ออก 20 ส.ค.)</span><span>−4,000.00</span></li>
+          <li class="minus"><span>ผลประเมินงวด ส.ค. (ปิด ~10 ก.ย.)</span><span>ตามผล</span></li>
+          <li class="total"><span>SV สุทธิ</span><span>5,333.34</span></li>
+        </ul>
+        <div class="note">ขาดงานเดือน ส.ค. บวกเพิ่มตามจริงหลังทดลองแก้เวลาเสร็จ</div>
+      </div>
+    </div>
+    <div class="verdict good">ทุกรายการหักเกิดก่อนวันโอนเสมอ — ไม่มีการหักเงินที่จ่ายไปแล้วอีก</div>
+  </section>
+
+  <section>
+    <span class="eyebrow">งานของ HR ในหนึ่งเดือน (เดือน ก.ย. เป็นตัวอย่าง)</span>
+    <h2>ขั้นตอนเหมือนเดิม แค่รู้ว่ายอดมาจากเดือนก่อน</h2>
+    <ul class="flow">
+      <li><span class="when">ต้นเดือน</span>
+          <div class="what">สร้างกอง "กันยายน" — กรอกยอด 7% จากยอดขาย<b>เดือน ส.ค.</b>
+          <small>ระบบหักขาด/ลา/ใบเตือนของเดือน ส.ค. ให้อัตโนมัติทันที</small></div></li>
+      <li><span class="when">~10 ก.ย.</span>
+          <div class="what">ปิดงวดประเมินเดือน ส.ค. → ผลหักเข้ากองนี้
+          <small>ระบบเตือนถ้ายังไม่มีรอบประเมิน หรือยังไม่ปิดงวด</small></div></li>
+      <li><span class="when">ก่อน 15 ก.ย.</span>
+          <div class="what">ตรวจ + ปิดกอง → โอนวันที่ 15 = รายได้เดือน ก.ย.</div></li>
+      <li><span class="when">สิ้นเดือน</span>
+          <div class="what">สลิปเดือน ก.ย. = เงินเดือน (รอบ 26 ส.ค.–25 ก.ย.) + SV ก้อนที่โอน 15 ก.ย.</div></li>
+    </ul>
+    <div class="accept"><strong>สิ่งที่ต้องยอมรับ:</strong> ตัวเลข "ขาดงาน" ฝั่งเงินเดือนกับฝั่ง SV
+      ยังนับคนละช่วงเหมือนเดิม (เงินเดือนนับรอบ 26–25 · SV นับเดือนก่อนหน้าเต็มเดือน)
+      — สลิปเขียนกำกับช่วงวันของแต่ละฝั่งไว้แล้ว จึงตรวจสอบย้อนได้เสมอ</div>
+  </section>
+
+  <p class="foot">ข้อเสนอกติกากอง Service Charge · Davis Inventory HR · 20 ส.ค. 2569</p>
+</div>
+</body>
+</html>
