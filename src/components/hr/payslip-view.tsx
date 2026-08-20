@@ -103,15 +103,17 @@ function svTransferDate(periodMonth: string, payDate: string | null): string {
 const PAY_BY_DAY = new Set(['pt_daily', 'pt_monthly']);
 
 /**
- * The day count, split when some of those days were approved leave the person also clocked on.
+ * The day count, with the leave days inside it named.
  *
- * A bare "7" invites the reading that they worked seven days; two of them were a ลากิจ and a ลาป่วย
- * she punched on anyway (client 2026-08-20). Says so only when the two numbers differ, and falls
- * back to the plain total for slips generated before attended_days existed.
+ * The total LEADS: it is what the row's label counts, and what the timesheet's own "วันทำงาน" chip
+ * shows for the same cycle — a slip whose headline read 5 against the timesheet's 7 looked like the
+ * two disagreed when they never did (client 2026-08-20). The split then explains it: two of those
+ * seven were a ลากิจ and a ลาป่วย she clocked on anyway. Shown only when the numbers differ, and the
+ * plain total for slips generated before attended_days existed.
  */
 function dayCountLabel(workedDays: number, attendedDays: number | null | undefined, t: (k: string, v?: Record<string, string | number>) => string): string {
   if (attendedDays == null || attendedDays >= workedDays) return String(workedDays);
-  return t('metaDaysSplit', { attended: attendedDays, leave: workedDays - attendedDays });
+  return t('metaDaysSplit', { total: workedDays, attended: attendedDays, leave: workedDays - attendedDays });
 }
 
 // Localized line-type labels; a standard type (salary/ot/sso/tax/…) is translated, while a

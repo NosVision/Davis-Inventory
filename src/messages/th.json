@@ -3241,7 +3241,7 @@
       "metaDailyRate": "อัตรารายวัน (÷{divisor})",
       "metaWorkedDays": "วันทำงาน",
       "metaRecordedDays": "วันที่บันทึกเวลา",
-      "metaDaysSplit": "{attended} วัน · ลา {leave} วัน",
+      "metaDaysSplit": "{total} วัน (มาทำงาน {attended} · ลา {leave})",
       "adjBadge": "เฉพาะงวด",
       "formula": {
         "absent": "ขาด {days} วัน × อัตรารายวัน",

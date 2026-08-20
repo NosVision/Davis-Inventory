@@ -442,7 +442,7 @@
       "metaDailyRate": "ອັດຕາລາຍວັນ (÷{divisor})",
       "metaWorkedDays": "ວັນເຮັດວຽກ",
       "metaRecordedDays": "ວັນທີ່ບັນທຶກເວລາ",
-      "metaDaysSplit": "{attended} ວັນ · ລາ {leave} ວັນ",
+      "metaDaysSplit": "{total} ວັນ (ເຮັດວຽກ {attended} · ລາ {leave})",
       "adjBadge": "ສະເພາະງວດ",
       "formula": {
         "absent": "ຂາດ {days} ວັນ × ອັດຕາລາຍວັນ",

@@ -3240,7 +3240,7 @@
       "metaDailyRate": "Daily rate (÷{divisor})",
       "metaWorkedDays": "Worked days",
       "metaRecordedDays": "Days with a time record",
-      "metaDaysSplit": "{attended} worked · {leave} on leave",
+      "metaDaysSplit": "{total} days ({attended} worked · {leave} on leave)",
       "adjBadge": "One-off",
       "formula": {
         "absent": "absent {days}d × daily rate",
