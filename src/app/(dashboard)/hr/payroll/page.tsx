@@ -378,7 +378,19 @@ export default function HrPayrollPage() {
           toast({ type: 'error', title: t('generateFailed'), message: json?.error });
           return;
         }
-        toast({ type: 'success', title: t('generated', { n: json?.data?.payslips ?? 0 }) });
+        // Generating also refreshes this month's draft SC pools, so the SV on these slips matches
+        // the timesheet they were built from. It edits those pools — say so rather than let HR find
+        // the numbers moved on their own.
+        const scDone = Number(json?.data?.sc_pools_recomputed ?? 0);
+        const scFailed = (json?.data?.sc_pools_failed ?? []) as string[];
+        toast({
+          type: 'success',
+          title: t('generated', { n: json?.data?.payslips ?? 0 }),
+          message: scDone > 0 ? t('generatedScRecomputed', { n: scDone }) : undefined,
+        });
+        if (scFailed.length > 0) {
+          toast({ type: 'error', title: t('generatedScFailed', { n: scFailed.length }) });
+        }
         await Promise.all([loadCoverage(), loadPayruns()]);
         if (json?.data?.id) await openPayrun(json.data.id);
       } catch {

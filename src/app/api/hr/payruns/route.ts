@@ -15,6 +15,7 @@ import { refuseIfConfidentialInScope } from '@/lib/hr/pay-visibility';
 import { getHrPolicies } from '@/lib/hr/policy';
 import { isUniqueViolation } from '@/lib/hr/db-errors';
 import { cycleDates, svPeriodMonth } from '@/lib/hr/pay-cycle';
+import { recomputePoolDeductions } from '@/lib/hr/sc-recompute';
 import { businessDateBangkok } from '@/lib/utils/date';
 
 // Last business day that has CLOSED. A rostered day after this is still ahead of us, so it must
@@ -267,6 +268,53 @@ export async function POST(request: NextRequest) {
   // them is period N (26 prev → 25 this). Read paths MUST use the same helper: when they each
   // derived the month, one drifted and a single payslip showed two different SV rounds.
   const svMonth = svPeriodMonth(year, month);
+
+  // Refresh the SC pools this run is about to read, BEFORE reading them.
+  //
+  // A pool's automatic deductions (leave, absence, warnings, carry) are only rebuilt when HR saves
+  // allocations, presses Recompute, or finalizes. Correct a timesheet after that and the pool keeps
+  // the figures it had: one August run carried "ขาดงาน 3 วัน" in the SV while the slip beside it
+  // docked 16, because the timesheet had been reset in between (client report 2026-08-20). HR was
+  // left having to remember which button to press in which order.
+  //
+  // Doing it here rather than on every timesheet edit is deliberate: a recompute costs a query per
+  // source per allocation, and the timesheet is edited dozens of times a day — the bulk-backfill
+  // tool stamps a whole grid at once. This runs once per generation, at the moment the numbers have
+  // to be right. Only DRAFT pools are touched (recompute no-ops on a finalized one) and only their
+  // auto lines are rebuilt, so anything HR entered by hand survives.
+  //
+  // A pool that fails to refresh does not sink the run — the payslips are the point — but it is
+  // named in the response instead of passing for a silent success.
+  const scRecomputed: string[] = [];
+  const scRecomputeFailed: string[] = [];
+  {
+    const { data: poolRows } = await service
+      .from('hr_sc_allocations')
+      .select('pool_id, pool:hr_sc_pools!inner(id, store_id, period_month, status)')
+      .in('user_id', userIds)
+      .eq('pool.period_month', svMonth)
+      .eq('pool.status', 'draft');
+    const poolIds = [...new Set(((poolRows ?? []) as unknown as { pool_id: string }[]).map((r) => r.pool_id))];
+    for (const poolId of poolIds) {
+      try {
+        await recomputePoolDeductions(service, poolId, auth.userId);
+        scRecomputed.push(poolId);
+      } catch {
+        scRecomputeFailed.push(poolId);
+      }
+    }
+    if (scRecomputed.length > 0 || scRecomputeFailed.length > 0) {
+      await logHrAudit(service, {
+        actorId: auth.userId,
+        action: 'update',
+        table: 'hr_sc_pools',
+        recordId: payrunId,
+        after: { period_month: svMonth, recomputed: scRecomputed, failed: scRecomputeFailed },
+        reason: `SC pools refreshed by payrun generation ${year}-${pad(month)}`,
+      });
+    }
+  }
+
   const [scheduleRes, attendanceRes, overridesRes, leavesRes, leaveTypesRes, recurringRes, scRes, claimsRes, taxAllowRes, tipRes, evalBonusRes] =
     await Promise.all([
       service
@@ -679,7 +727,16 @@ export async function POST(request: NextRequest) {
   });
 
   return NextResponse.json({
-    data: { id: payrunId, cycle_start: start, cycle_end: end, pay_date: payDate, payslips: created },
+    data: {
+      id: payrunId,
+      cycle_start: start,
+      cycle_end: end,
+      pay_date: payDate,
+      payslips: created,
+      // Which SC pools this generation refreshed on the way — the run edits them, so it says so.
+      sc_pools_recomputed: scRecomputed.length,
+      sc_pools_failed: scRecomputeFailed,
+    },
   });
 }
 

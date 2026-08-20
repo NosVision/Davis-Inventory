@@ -3201,7 +3201,9 @@
       "nextActionFinalize": "Finalize",
       "nextActionAnnounce": "Announce payday",
       "announcedBadge": "Announced",
-      "printQueueSummary": "Paper slip print queue · {n} waiting"
+      "printQueueSummary": "Paper slip print queue · {n} waiting",
+      "generatedScRecomputed": "Refreshed SV deductions for {n} pool(s) from the current timesheet",
+      "generatedScFailed": "{n} SV pool(s) could not be refreshed — press Recompute on the service-charge page"
     },
     "payslip": {
       "title": "Payslip",
