@@ -85,6 +85,7 @@ interface AssembledLine {
   totalDed: number;
   net: number;
   workedDays: number;
+  attendedDays: number;
 }
 
 // POST /api/hr/payruns — generate a payrun for a company (optionally one store) over a pay
@@ -544,6 +545,15 @@ export async function POST(request: NextRequest) {
       (d) => d.absent && !leaveCovered.has(d.business_date) && inWindow(d.business_date)
     ).length;
 
+    // Recorded days that were real attendance. workedDays counts any day with a time record, which
+    // includes a day someone punched while on approved leave — correct for pay, misleading on a
+    // slip (7 recorded days where 5 were attendance and 2 were leave she also clocked on). Split
+    // here, off the same `days` and leaveCovered the absence count uses, so the rule stays in one
+    // place instead of being restated wherever the number is shown.
+    const attendedDays = days.filter(
+      (d) => (d.first_in || (d.worked_min ?? 0) > 0) && !leaveCovered.has(d.business_date)
+    ).length;
+
     const recurring = recurringByEmp.get(emp.id) ?? [];
     const allowances = recurring
       .filter((r) => r.kind === 'earning')
@@ -609,7 +619,7 @@ export async function POST(request: NextRequest) {
       emp,
       slip: {
         earnings: slip.earnings, deductions: slip.deductions, gross: slip.gross_satang, sso: slip.sso_satang,
-        tax: slip.tax_satang, totalDed: slip.total_deduction_satang, net: slip.net_satang, workedDays,
+        tax: slip.tax_satang, totalDed: slip.total_deduction_satang, net: slip.net_satang, workedDays, attendedDays,
       },
       claimIds: claimList.map((c) => c.id),
     });
@@ -628,6 +638,7 @@ export async function POST(request: NextRequest) {
         pay_type: emp.pay_type,
         tax_mode: emp.tax_mode,
         worked_days: slip.workedDays,
+        attended_days: slip.attendedDays,
         gross_satang: slip.gross,
         sso_satang: slip.sso,
         tax_satang: slip.tax,

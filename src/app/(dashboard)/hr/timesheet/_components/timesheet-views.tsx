@@ -260,8 +260,8 @@ export function TimesheetSummaryTable({
 }) {
   const isTh = useLocale() === 'th';
   const H = isTh
-    ? { name: 'พนักงาน', workDays: 'วันทำงาน', hours: 'ชั่วโมง', ot: 'OT (ชม.)', late: 'สาย (นาที)', absent: 'ขาด' }
-    : { name: 'Employee', workDays: 'Work days', hours: 'Hours', ot: 'OT (h)', late: 'Late (min)', absent: 'Absent' };
+    ? { name: 'พนักงาน', workDays: 'วันทำงาน', hours: 'ชั่วโมง', ot: 'OT (ชม.)', late: 'สาย (นาที)', absent: 'ขาด', incomplete: 'ไม่ออกงาน' }
+    : { name: 'Employee', workDays: 'Work days', hours: 'Hours', ot: 'OT (h)', late: 'Late (min)', absent: 'Absent', incomplete: 'No clock-out' };
 
   return (
     // Capped height so the column headers can pin: a venue runs to dozens of rows, and scrolling
@@ -278,6 +278,9 @@ export function TimesheetSummaryTable({
             <th className="sticky top-0 z-10 border-b border-gray-100 bg-gray-50 px-3 py-2 text-right font-medium dark:border-gray-700 dark:bg-gray-800">{H.ot}</th>
             <th className="sticky top-0 z-10 border-b border-gray-100 bg-gray-50 px-3 py-2 text-right font-medium dark:border-gray-700 dark:bg-gray-800">{H.late}</th>
             <th className="sticky top-0 z-10 border-b border-gray-100 bg-gray-50 px-3 py-2 text-right font-medium dark:border-gray-700 dark:bg-gray-800">{H.absent}</th>
+            {/* Days clocked in but never out. Their hours and OT compute to zero, so a period closed
+                on them silently underpays anyone paid by time — worth its own column beside ขาด. */}
+            <th className="sticky top-0 z-10 border-b border-gray-100 bg-gray-50 px-3 py-2 text-right font-medium dark:border-gray-700 dark:bg-gray-800">{H.incomplete}</th>
           </tr>
         </thead>
         <tbody>
@@ -318,6 +321,9 @@ export function TimesheetSummaryTable({
               </td>
               <td className="px-3 py-2 text-right tabular-nums">
                 {emp.totals.absent_days > 0 ? <span className="font-medium text-red-600 dark:text-red-400">{emp.totals.absent_days}</span> : <span className="text-gray-400 dark:text-gray-600">0</span>}
+              </td>
+              <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">
+                {emp.totals.incomplete_days > 0 ? <span className="font-medium text-orange-600 dark:text-orange-400">{emp.totals.incomplete_days}</span> : <span className="text-gray-400 dark:text-gray-600">0</span>}
               </td>
             </tr>
           ))}

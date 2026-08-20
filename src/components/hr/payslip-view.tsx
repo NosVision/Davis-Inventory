@@ -23,6 +23,8 @@ export interface PayslipDetailData {
     pay_type: string;
     tax_mode?: string;
     worked_days?: number;
+    /** recorded days that were NOT approved leave; null on slips generated before it existed */
+    attended_days?: number | null;
     gross_satang: number;
     sso_satang: number;
     tax_satang: number;
@@ -99,6 +101,18 @@ function svTransferDate(periodMonth: string, payDate: string | null): string {
 
 /** Pay types whose base is worked_days × rate — for everyone else the count is informational. */
 const PAY_BY_DAY = new Set(['pt_daily', 'pt_monthly']);
+
+/**
+ * The day count, split when some of those days were approved leave the person also clocked on.
+ *
+ * A bare "7" invites the reading that they worked seven days; two of them were a ลากิจ and a ลาป่วย
+ * she punched on anyway (client 2026-08-20). Says so only when the two numbers differ, and falls
+ * back to the plain total for slips generated before attended_days existed.
+ */
+function dayCountLabel(workedDays: number, attendedDays: number | null | undefined, t: (k: string, v?: Record<string, string | number>) => string): string {
+  if (attendedDays == null || attendedDays >= workedDays) return String(workedDays);
+  return t('metaDaysSplit', { attended: attendedDays, leave: workedDays - attendedDays });
+}
 
 // Localized line-type labels; a standard type (salary/ot/sso/tax/…) is translated, while a
 // free-form label (an allowance name, a leave code) falls through to the stored text.
@@ -273,7 +287,7 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
         {!print && payslip.worked_days != null && (
           <Meta
             label={PAY_BY_DAY.has(payslip.pay_type) ? t('metaWorkedDays') : t('metaRecordedDays')}
-            value={String(payslip.worked_days)}
+            value={dayCountLabel(payslip.worked_days, payslip.attended_days, t)}
             print={print}
           />
         )}

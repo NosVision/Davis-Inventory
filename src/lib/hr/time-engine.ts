@@ -252,6 +252,8 @@ export interface TimesheetTotals {
   ot_min: number;
   late_min: number;
   break_min: number;
+  /** Clocked in with no clock-out — hours and OT for those days compute to zero. */
+  incomplete_days: number;
 }
 
 /** Roll a set of day summaries into per-employee totals. */
@@ -267,7 +269,12 @@ export function sumDays(days: DaySummary[]): TimesheetTotals {
       ot_min: acc.ot_min + d.ot_min,
       late_min: acc.late_min + (d.late_min ?? 0),
       break_min: acc.break_min + d.break_min,
+      // Clocked in, never clocked out. The day has no computable worked minutes, so its hours and
+      // OT settle at zero — which costs a time-paid employee real money if the period closes on it.
+      // Counted here so a surface can warn on the total instead of relying on someone spotting the
+      // per-day marker across a month-wide grid (client ask 2026-08-20).
+      incomplete_days: acc.incomplete_days + (d.incomplete && !d.absent ? 1 : 0),
     }),
-    { work_days: 0, absent_days: 0, late_days: 0, worked_min: 0, ot_min: 0, late_min: 0, break_min: 0 }
+    { work_days: 0, absent_days: 0, late_days: 0, worked_min: 0, ot_min: 0, late_min: 0, break_min: 0, incomplete_days: 0 }
   );
 }

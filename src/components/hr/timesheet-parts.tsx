@@ -47,6 +47,8 @@ export interface TimesheetTotals {
   ot_min: number;
   late_min: number;
   break_min: number;
+  /** clocked in with no clock-out — those days compute zero hours and zero OT */
+  incomplete_days: number;
 }
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -95,6 +97,16 @@ export function SummaryChips({ totals }: { totals: TimesheetTotals }) {
           <span className="font-semibold tabular-nums text-gray-900 dark:text-white">{c.value}</span>
         </span>
       ))}
+      {/* Only when there are any. A day clocked in but never out yields no worked minutes, so its
+          hours and OT land at zero — close the period on it and anyone paid by time is short. The
+          grid already marks each such day, but a marker among thirty is easy to walk past; the
+          count is not (client ask 2026-08-20). */}
+      {totals.incomplete_days > 0 && (
+        <span className="inline-flex items-baseline gap-1.5 rounded-lg bg-orange-100 px-2.5 py-1 text-xs text-orange-800 dark:bg-orange-900/40 dark:text-orange-200">
+          <span>{t('incompleteDays')}</span>
+          <span className="font-semibold tabular-nums">{totals.incomplete_days}</span>
+        </span>
+      )}
     </div>
   );
 }
