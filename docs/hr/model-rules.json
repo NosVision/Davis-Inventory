@@ -1,0 +1,9 @@
+{
+  "default": { "model": "claude-sonnet-5", "effort": "high" },
+  "rules": [
+    { "match": "payroll engine", "model": "claude-opus-4-8", "effort": "max" },
+    { "match": "payroll|payrun|สลิป|commission|ลดหย่อน|ภงด|ทวิ|สปส|SSO|ภาษี|ชดเชย|§A", "model": "claude-opus-4-8", "effort": "high" },
+    { "match": "gate|security|review|scope|RLS|enforce|per-store|ห้ามข้าม", "model": "claude-opus-4-8", "effort": "high" },
+    { "match": "แดชบอร์ด", "model": "claude-sonnet-5", "effort": "medium" }
+  ]
+}

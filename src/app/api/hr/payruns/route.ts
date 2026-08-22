@@ -380,7 +380,7 @@ export async function POST(request: NextRequest) {
         .select('user_id, allocated_satang, pool:hr_tip_pools!inner(period_month), hr_tip_deductions(amount_satang)')
         .eq('pool.period_month', svMonth),
       // POSITIVE eval payouts (bonuses) for the PREVIOUS month's period — the same evaluation whose
-      // negative side docks this month's SC pool (apply-sc / evalScPoolMonth), so both halves of one
+      // negative side docks this month's SC pool (apply-sc / scPoolMonthForEvent), so both halves of one
       // evaluation land on one slip. Negative payouts are not read here.
       service
         .from('hr_eval_payouts')

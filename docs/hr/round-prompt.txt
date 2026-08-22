@@ -1,0 +1,6 @@
+กู้ซากก่อน: git status ถ้ามีงานค้างจากรอบที่ตายกลางคัน ให้เก็บให้จบ (typecheck เขียว + e2e + commit local) ก่อนขึ้นงานใหม่
+จากนั้นทำต่อตาม docs/hr/HR-BUILD-LOOP-PLAN.md จากสถานะใน docs/hr/HR-BUILD-STATE.md — ทำต่อเนื่องรอบละ 3-5 work unit (หรือจน context ใกล้เต็ม) อย่าจบเทิร์นหลังทำแค่ unit เดียว: overhead ต่อรอบมีราคาคงที่ ต้องเฉลี่ยให้คุ้ม
+ทำเองเป็นหลัก ใช้ sub-agent เฉพาะงานที่แยกอิสระและขนานกันได้จริง (ยิงทีเดียวหลายตัว) — ห้าม spawn ทีละตัวต่อ unit
+verify แบบประหยัด: typecheck เขียวหลังจบทุก unit (ตามวิธี ENV note ใน state: TS compiler API ใน node -e) · e2e กับ dev server localhost:3000 เฉพาะตอนจบ feature/ก่อนติ๊ก gate หรือทุก ~3 unit (node+fetch ตาม ENV note พอ — chrome mcp เฉพาะที่ต้องเช็ค UI จริง) · commit local ทุกครั้งที่ verify ผ่าน (ห้าม push เด็ดขาด)
+จบรอบ: ติ๊ก checkbox ที่เสร็จใน HR-BUILD-STATE.md ให้ครบ + อัปเดต ENV note ถ้าเจอของใหม่ แล้วจบเทิร์นทันที อย่าตั้ง ScheduleWakeup (มี watchdog ภายนอกปลุกให้แล้ว)
+ถ้า HR-BUILD-STATE.md ติ๊กครบทุกข้อถึง P5 gate + สรุปรายงานรวมแล้ว: เติมบรรทัด "AUTOLOOP: COMPLETE" ท้ายไฟล์ HR-BUILD-STATE.md และตอบแค่ AUTOLOOP: COMPLETE

@@ -8,6 +8,7 @@ import {
 } from '@/lib/hr/service-charge';
 import { reconcilePoolDeductions } from '@/lib/hr/sc-reconcile';
 import { businessDateBangkok, toBangkokISO } from '@/lib/utils/date';
+import { scEventMonthForPool, scPoolMonthForEvent } from '@/lib/hr/pay-cycle';
 
 const POOL = 'hr_sc_pools';
 const ALLOC = 'hr_sc_allocations';
@@ -66,13 +67,22 @@ export async function recomputePoolDeductions(
   if ((pool.status as string) === 'finalized') return; // locked — nothing to recompute
 
   const storeId = pool.store_id as string;
-  const periodStart = pool.period_month as string; // 'YYYY-MM-01'
-  const nextStart = nextMonthFirst(periodStart);
-  const periodEnd = prevDay(nextStart);
-  const periodStartTs = `${periodStart}T00:00:00+07:00`;
-  const nextStartTs = `${nextStart}T00:00:00+07:00`;
+  const poolMonth = pool.period_month as string; // 'YYYY-MM-01' — the month this pool PAYS in
 
-  const prevStart = prevMonthFirst(periodStart);
+  // The window every deduction below is measured over: the month BEFORE the pool's own.
+  //
+  // A pool is allocated at the start of its month and transferred on the 15th of it, so its own
+  // month is only half over when the money leaves. Measuring against it meant an absence on the
+  // 20th had to come out of a payment made on the 15th — five days after the fact. The previous
+  // month is complete by then, so leave, absence and warnings are all read from there, matching
+  // where the evaluation already docks from (scPoolMonthForEvent). Client confirmed 2026-08-22.
+  const periodStart = scEventMonthForPool(poolMonth);
+  const periodEnd = prevDay(poolMonth);
+  const periodStartTs = `${periodStart}T00:00:00+07:00`;
+  const nextStartTs = `${poolMonth}T00:00:00+07:00`;
+
+  // Carry still chains pool to pool: what last month's pool could not absorb lands on this one.
+  const prevStart = prevMonthFirst(poolMonth);
   const { data: prevPool, error: prevPoolErr } = await service
     .from(POOL)
     .select('id')
@@ -249,8 +259,8 @@ export async function recomputePoolDeductions(
  * Every DRAFT pool for that month holding an allocation for this person is rebuilt — a person can
  * be allocated at more than one store, and a finalized pool is deliberately left alone.
  *
- * @param at ISO timestamp of the event; its BANGKOK month decides the pool, matching the window
- *           recomputePoolDeductions() itself queries warnings over.
+ * @param at ISO timestamp of the event; its BANGKOK month decides the pool via
+ *           scPoolMonthForEvent, matching the window recomputePoolDeductions() reads warnings over.
  * @returns what happened, so the caller can tell HR when a dock could not be applied
  */
 export async function recomputeScForUserAt(
@@ -260,8 +270,10 @@ export async function recomputeScForUserAt(
   actorId: string | null,
 ): Promise<'ok' | 'no_pool' | 'failed'> {
   try {
+    // The pool an event docks is the one paid the month AFTER it — a warning issued in August is
+    // taken out of the pool transferred 15 September, the first one not already paid.
     const bkk = toBangkokISO(at ? new Date(at) : undefined);
-    const periodMonth = `${bkk.slice(0, 7)}-01`;
+    const periodMonth = scPoolMonthForEvent(bkk.slice(0, 7));
 
     const { data: allocs, error: allocErr } = await service
       .from(ALLOC)

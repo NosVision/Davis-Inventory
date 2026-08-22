@@ -3,7 +3,7 @@
 import { useLocale, useTranslations } from 'next-intl';
 import { formatBaht } from '@/lib/pos/money';
 import { useScLineLabel } from '@/components/hr/use-sc-line-label';
-import { svPayDate } from '@/lib/hr/pay-cycle';
+import { svPayDate, scEventMonthForPool } from '@/lib/hr/pay-cycle';
 
 export interface PayslipLine {
   type: string;
@@ -86,10 +86,17 @@ const SV_SOURCE_TH: Record<string, string> = {
 /** Carried-in lines take the Thai label above even though the row carries its own English one. */
 const CARRY_IN_SOURCES = new Set(['warning_carry', 'eval_carry', 'stock_penalty_carry']);
 
-/** SV pool month 'YYYY-MM-01' → 'MM/YYYY' — the window its leave/absence lines are counted over. */
-function svRoundMonth(periodMonth: string): string {
-  const [y, m] = String(periodMonth).slice(0, 10).split('-');
-  return y && m ? `${m}/${y}` : String(periodMonth);
+/**
+ * The month an SV pool's leave/absence/warning lines are counted over, as 'MM/YYYY'.
+ *
+ * A pool pays on the 15th of its own month, so only the month BEFORE it is complete by then — that
+ * is the window every deduction is measured against (scEventMonthForPool). Naming the pool's own
+ * month here would point at days that had not happened when the money left.
+ */
+function svDeductWindow(periodMonth: string): string {
+  const ev = scEventMonthForPool(periodMonth);
+  const [y, m] = ev.slice(0, 10).split('-');
+  return y && m ? `${m}/${y}` : ev;
 }
 
 /** 'YYYY-MM-DD' → 'DD/MM/YYYY'. */
@@ -403,7 +410,7 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
             </span>
           </h3>
           <p className="mb-1 text-xs text-violet-600/70 dark:text-violet-400/70">
-            {t('sc.round')} · {t('sc.deductWindow', { month: svRoundMonth(data.service_charge.period_month) })}
+            {t('sc.round')} · {t('sc.deductWindow', { month: svDeductWindow(data.service_charge.period_month) })}
           </p>
           <ul className="divide-y divide-violet-200/60 dark:divide-violet-800/60">
             <li className="flex items-center justify-between py-1">

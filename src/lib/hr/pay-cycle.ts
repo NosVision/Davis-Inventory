@@ -79,33 +79,38 @@ export function svPayDate(periodMonth: string): string {
 }
 
 /**
- * The SC pool an evaluation period's result belongs to — the month AFTER the period.
+ * The SC pool that an event in `eventMonth` is docked from — the pool paid the month AFTER it.
  *
- * An evaluation for month M is scored through the end of M and closed around the 10th of M+1, then
- * staff see it before the 15th. The pool it can still reach is therefore the one transferred on the
- * 15th of M+1 — under svPeriodMonth that is pool month M+1, not M.
+ * A pool is allocated at the start of its month and transferred on the 15th of it, so by then only
+ * the PREVIOUS month is complete. Every source of deduction therefore lands one month on: leave and
+ * absence from month M, warnings issued in M, and the evaluation for M (closed around the 10th of
+ * M+1) all dock the pool paid on 15 M+1. Client confirmed 2026-08-22.
  *
- * Pointing it at its own month (the arrangement inherited from when a pool paid on the 15th of the
- * FOLLOWING month) now aims at a pool already transferred a month earlier, so an evaluation could
- * never dock anything again. Client 2026-08-20: "ประเมินสิ้นเดือนสิงหาก็ต้องเอาไปหัก SV ที่จะจ่าย
- * วันที่ 15 กันยา".
+ * Pointing a deduction at its own month — the arrangement inherited from when a pool paid on the
+ * 15th of the FOLLOWING month — now aims at money already transferred: an absence on 20 August
+ * cannot be taken out of a payment made on 15 August.
  *
- * @param periodMonth 'YYYY-MM' or any longer ISO date starting with it
- * @returns 'YYYY-MM-01'
+ * @param eventMonth 'YYYY-MM' or any longer ISO date starting with it
+ * @returns 'YYYY-MM-01' — matches hr_sc_pools.period_month
  */
-export function evalScPoolMonth(periodMonth: string): string {
-  const [y, m] = periodMonth.slice(0, 7).split('-').map(Number);
-  if (!y || !m) return `${periodMonth.slice(0, 7)}-01`;
+export function scPoolMonthForEvent(eventMonth: string): string {
+  const [y, m] = eventMonth.slice(0, 7).split('-').map(Number);
+  if (!y || !m) return `${eventMonth.slice(0, 7)}-01`;
   return m === 12 ? `${y + 1}-01-01` : `${y}-${pad(m + 1)}-01`;
 }
 
 /**
- * The evaluation period whose result rides the payslip for (year, month) — the month before it,
- * mirroring evalScPoolMonth from the other side.
+ * The inverse: the month whose events a pool is docked for — the month before the pool's own.
  *
- * @param month 1–12
- * @returns 'YYYY-MM-01' — matches hr_eval_periods.period_month
+ * @param poolMonth 'YYYY-MM' or any longer ISO date starting with it
+ * @returns 'YYYY-MM-01'
  */
+export function scEventMonthForPool(poolMonth: string): string {
+  const [y, m] = poolMonth.slice(0, 7).split('-').map(Number);
+  if (!y || !m) return `${poolMonth.slice(0, 7)}-01`;
+  return m === 1 ? `${y - 1}-12-01` : `${y}-${pad(m - 1)}-01`;
+}
+
 export function evalPeriodMonth(year: number, month: number): string {
   return month === 1 ? `${year - 1}-12-01` : `${year}-${pad(month - 1)}-01`;
 }

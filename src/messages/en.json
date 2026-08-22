@@ -3236,7 +3236,7 @@
         "net": "SV net",
         "carry": "carried to next month {amount}",
         "stale": "This slip paid SV {paid} ฿ (snapshot at generation) but the pool now nets {pool} ฿ — the pool changed after the payrun was generated; regenerate it to match.",
-        "deductWindow": "deductions counted over {month}",
+        "deductWindow": "deductions come from what happened in {month}",
         "carryTotal": "Carried to next month: {amount} ฿ (more than this month SV could absorb)"
       },
       "twoRounds": "Paid in 2 transfers: service charge/tip {sv} ฿ ({svDate}) · salary {salary} ฿ ({salaryDate}) — total received for {month}: {total} ฿",
@@ -3311,7 +3311,7 @@
       "noEmployees": "No employees at this store",
       "loadFailed": "Failed to load",
       "saveFailed": "Save failed",
-      "poolTotalLabel": "Monthly SC pool total (Baht)",
+      "poolTotalLabel": "SC pool (THB) — 7% of the previous month takings",
       "poolTotalInvalid": "Please enter a valid amount",
       "payDateLabel": "Pay date",
       "notesLabel": "Notes",
@@ -3381,7 +3381,7 @@
         "unpaid": "Unpaid leave",
         "vacation": "Vacation"
       },
-      "monthMeaning": "the month this SV is paid · transferred to staff {payDate}",
+      "monthMeaning": "the month this SV is paid · transferred to staff {payDate} · docked by the previous month",
       "evalMissing": "No evaluation period exists for {month} — its result docks this pool, and finalizing first makes that impossible",
       "evalNotClosed": "The {month} evaluation is not closed — its result docks this pool, so close it first"
     },
