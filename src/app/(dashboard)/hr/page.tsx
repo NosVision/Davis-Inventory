@@ -94,9 +94,9 @@ const NAV_TILES: { key: string; icon: LucideIcon; href?: string }[] = [
  * scannable: finding a menu meant reading every label. Grouping replaces that with the question an
  * HR user actually starts from — "which area is this?" — and then a handful of tiles to read.
  *
- * Group order follows the month: what you look at daily, then people, time, leave, pay, and only
- * last the pages you touch when a rule changes. It mirrors the chapter order of the HR manual in
- * /guide, so the two surfaces teach the same map.
+ * Group order is by how often HR opens the area, not by where it sits in the month: the overview,
+ * then pay (owner ask 2026-08-22 — it is the reason most visits happen), then the person, their
+ * time, their leave, and only last the pages you touch when a rule changes.
  *
  * Order INSIDE a group is fixed on purpose — a tile that moves is a tile you have to re-find. What
  * is urgent is carried by the strip above and by the count on each group header, so nothing needs
@@ -104,13 +104,13 @@ const NAV_TILES: { key: string; icon: LucideIcon; href?: string }[] = [
  */
 const TILE_GROUPS: { key: string; tiles: string[] }[] = [
   { key: 'overview', tiles: ['today', 'close', 'reports'] },
-  { key: 'people', tiles: ['employees', 'orgChart', 'profileRequests', 'offboarding'] },
-  { key: 'time', tiles: ['attendance', 'timesheet', 'schedule', 'swaps'] },
-  { key: 'leave', tiles: ['leave', 'requests', 'claims'] },
   {
     key: 'pay',
     tiles: ['payroll', 'serviceCharge', 'tipPool', 'stockDeductions', 'importedPayslips'],
   },
+  { key: 'people', tiles: ['employees', 'orgChart', 'profileRequests', 'offboarding'] },
+  { key: 'time', tiles: ['attendance', 'timesheet', 'schedule', 'swaps'] },
+  { key: 'leave', tiles: ['leave', 'requests', 'claims'] },
   { key: 'performance', tiles: ['warnings', 'evaluation'] },
   { key: 'documents', tiles: ['documentRequests', 'certificates', 'announcements', 'policies', 'assets'] },
   { key: 'settings', tiles: ['companies', 'policySettings', 'org', 'leaveTypes', 'locations', 'audit'] },
@@ -501,9 +501,9 @@ export default function HrDashboardPage() {
                   <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                     {t(`navGroups.${section.key}`)}
                   </span>
-                  <span className="text-xs tabular-nums text-gray-300 dark:text-gray-600">
-                    {section.tiles.length}
-                  </span>
+                  {/* No tile count here on purpose: next to a red pending badge, a second small
+                      number reads as the same figure twice. The only number worth a glance is the
+                      one that means "there is work in here". */}
                   {groupCount > 0 && (
                     <span className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[11px] font-bold leading-none text-white">
                       {groupCount > 99 ? '99+' : groupCount}
