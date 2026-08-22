@@ -236,6 +236,10 @@ export default function HrDashboardPage() {
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem(COLLAPSE_KEY);
+      // Read after mount, not in a lazy initializer: the server has no localStorage, so seeding
+      // state from it would render a different tree than it hydrates into. One extra render on
+      // mount is the price of a preference the server cannot know.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (raw) setCollapsed(JSON.parse(raw) as string[]);
     } catch {
       /* a corrupt pref must never keep the hub from rendering */
