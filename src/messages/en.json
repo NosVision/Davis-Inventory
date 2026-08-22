@@ -2777,6 +2777,22 @@
     "subtitle": "Employee records, attendance, payroll & evaluation",
     "dashboard": "HR Dashboard",
     "comingSoon": "This section is under construction",
+    "searchTiles": "Search menus…",
+    "noTileMatch": "No menu matches “{query}”",
+    "collapseAll": "Collapse all",
+    "expandAll": "Expand all",
+    "navGroups": {
+      "pinned": "Pinned",
+      "overview": "Overview & close",
+      "people": "People",
+      "time": "Time & schedule",
+      "leave": "Leave & requests",
+      "pay": "Payroll & pay items",
+      "performance": "Discipline & evaluation",
+      "documents": "Documents & comms",
+      "settings": "Settings & audit",
+      "other": "Other"
+    },
     "nav": {
       "employees": "Employees & user accounts",
       "identityClaims": "Identity claims",
@@ -3381,7 +3397,8 @@
         "unpaid": "Unpaid leave",
         "vacation": "Vacation"
       },
-      "monthMeaning": "the month this SV is paid · transferred to staff {payDate} · docked by the previous month",
+      "payTransferOn": "Transferred to staff {payDate}",
+      "deductWindowOn": "Docked by events in {month}",
       "evalMissing": "No evaluation period exists for {month} — its result docks this pool, and finalizing first makes that impossible",
       "evalNotClosed": "The {month} evaluation is not closed — its result docks this pool, so close it first"
     },

@@ -40,6 +40,9 @@ import {
   Pin,
   PinOff,
   Check,
+  Search,
+  ChevronDown,
+  ChevronRight,
   type LucideIcon,
 } from 'lucide-react';
 import { PageHeader } from '@/components/ui';
@@ -86,6 +89,33 @@ const NAV_TILES: { key: string; icon: LucideIcon; href?: string }[] = [
   { key: 'reports', icon: BarChart3, href: '/hr/reports' },
 ];
 
+/**
+ * Sub-sections of the hub (owner ask 2026-08-22). Thirty-odd tiles in one flat grid stopped being
+ * scannable: finding a menu meant reading every label. Grouping replaces that with the question an
+ * HR user actually starts from — "which area is this?" — and then a handful of tiles to read.
+ *
+ * Group order follows the month: what you look at daily, then people, time, leave, pay, and only
+ * last the pages you touch when a rule changes. It mirrors the chapter order of the HR manual in
+ * /guide, so the two surfaces teach the same map.
+ *
+ * Order INSIDE a group is fixed on purpose — a tile that moves is a tile you have to re-find. What
+ * is urgent is carried by the strip above and by the count on each group header, so nothing needs
+ * to float to the front any more.
+ */
+const TILE_GROUPS: { key: string; tiles: string[] }[] = [
+  { key: 'overview', tiles: ['today', 'close', 'reports'] },
+  { key: 'people', tiles: ['employees', 'orgChart', 'profileRequests', 'offboarding'] },
+  { key: 'time', tiles: ['attendance', 'timesheet', 'schedule', 'swaps'] },
+  { key: 'leave', tiles: ['leave', 'requests', 'claims'] },
+  {
+    key: 'pay',
+    tiles: ['payroll', 'serviceCharge', 'tipPool', 'stockDeductions', 'importedPayslips'],
+  },
+  { key: 'performance', tiles: ['warnings', 'evaluation'] },
+  { key: 'documents', tiles: ['documentRequests', 'certificates', 'announcements', 'policies', 'assets'] },
+  { key: 'settings', tiles: ['companies', 'policySettings', 'org', 'leaveTypes', 'locations', 'audit'] },
+];
+
 // Tile keys that can carry a "needs HR action" count (from /api/hr/dashboard/badges).
 const BADGE_KEYS = [
   'leave',
@@ -121,6 +151,8 @@ const QUEUE_HREF_BY_KEY: Record<string, string> = {
 function actionHref(key: string): string | undefined {
   return QUEUE_HREF_BY_KEY[key] ?? HREF_BY_KEY[key];
 }
+
+const COLLAPSE_KEY = 'hr-hub-collapsed-groups';
 
 export default function HrDashboardPage() {
   const t = useTranslations('hr');
@@ -199,19 +231,139 @@ export default function HrDashboardPage() {
     return t;
   }, [badges]);
 
-  // Order: pinned tiles first (in the account's saved order), then tiles with something pending
-  // (badge float), then everything else in the default layout.
-  const orderedTiles = useMemo(() => {
-    const byKey = new Map(NAV_TILES.map((tile) => [tile.key, tile]));
+  // Collapsed groups — a per-browser preference, not per-account data, so localStorage is enough.
+  const [collapsed, setCollapsed] = useState<string[]>([]);
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(COLLAPSE_KEY);
+      if (raw) setCollapsed(JSON.parse(raw) as string[]);
+    } catch {
+      /* a corrupt pref must never keep the hub from rendering */
+    }
+  }, []);
+  const saveCollapsed = useCallback((next: string[]) => {
+    setCollapsed(next);
+    try {
+      window.localStorage.setItem(COLLAPSE_KEY, JSON.stringify(next));
+    } catch {
+      /* private mode / quota — the hub still works, it just forgets */
+    }
+  }, []);
+  const toggleGroup = (key: string) =>
+    saveCollapsed(collapsed.includes(key) ? collapsed.filter((k) => k !== key) : [...collapsed, key]);
+
+  const [query, setQuery] = useState('');
+  const q = query.trim().toLowerCase();
+
+  const byKey = useMemo(() => new Map(NAV_TILES.map((tile) => [tile.key, tile])), []);
+
+  // Pinned tiles are lifted out of their groups into a section of their own, so a tile never
+  // appears twice. A tile in NAV_TILES but in no group lands in a trailing "other" section —
+  // adding a tile can therefore never silently drop it off the hub.
+  const sections = useMemo(() => {
     const pinSet = new Set(pinned);
-    const pinnedTiles = pinned
-      .map((k) => byKey.get(k))
-      .filter((tile): tile is (typeof NAV_TILES)[number] => !!tile);
-    const rest = NAV_TILES.filter((tile) => !pinSet.has(tile.key));
-    const withBadge = rest.filter((tile) => (tileBadges[tile.key] ?? 0) > 0);
-    const calm = rest.filter((tile) => (tileBadges[tile.key] ?? 0) === 0);
-    return [...pinnedTiles, ...withBadge, ...calm];
-  }, [tileBadges, pinned]);
+    const grouped = new Set(TILE_GROUPS.flatMap((g) => g.tiles));
+    const out = TILE_GROUPS.map((g) => ({
+      key: g.key,
+      tiles: g.tiles.filter((k) => byKey.has(k) && !pinSet.has(k)),
+    })).filter((g) => g.tiles.length > 0);
+    const ungrouped = NAV_TILES.filter((tile) => !grouped.has(tile.key) && !pinSet.has(tile.key)).map(
+      (tile) => tile.key
+    );
+    if (ungrouped.length) out.push({ key: 'other', tiles: ungrouped });
+    const pinnedTiles = pinned.filter((k) => byKey.has(k));
+    return pinnedTiles.length ? [{ key: 'pinned', tiles: pinnedTiles }, ...out] : out;
+  }, [pinned, byKey]);
+
+  // Tiles matching the search box, flattened — searching is a "find one menu" gesture, so the
+  // grouping gets out of the way rather than making the reader scan section headers too.
+  const searchHits = useMemo(
+    () => (q ? NAV_TILES.filter((tile) => t(`nav.${tile.key}`).toLowerCase().includes(q)) : []),
+    [q, t]
+  );
+
+  const allCollapsed = collapsed.length >= sections.length;
+
+  const renderTile = ({ key, icon: Icon, href: navHref }: (typeof NAV_TILES)[number]) => {
+    const count = tileBadges[key] ?? 0;
+    const flagged = count > 0;
+    // A flagged tile goes where its badge points; an unflagged one opens the section normally.
+    const href = flagged ? actionHref(key) ?? navHref : navHref;
+    const pinIdx = pinned.indexOf(key);
+    const isPinned = pinIdx >= 0;
+    const inner = (
+      <>
+        {flagged && (
+          <span className="absolute right-2 top-2 inline-flex min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[11px] font-bold leading-none text-white shadow-sm">
+            {count > 99 ? '99+' : count}
+          </span>
+        )}
+        {/* Pin marker: edit mode shows the toggle + order number; normal mode a subtle pin */}
+        {editMode ? (
+          <span
+            className={cn(
+              'absolute left-2 top-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1 text-[11px] font-bold leading-none',
+              isPinned
+                ? 'bg-indigo-500 text-white shadow-sm'
+                : 'border border-dashed border-gray-300 text-gray-300 dark:border-gray-600 dark:text-gray-600'
+            )}
+          >
+            {isPinned ? pinIdx + 1 : <Pin className="h-3 w-3" />}
+          </span>
+        ) : (
+          isPinned && <Pin className="absolute left-2 top-2 h-3.5 w-3.5 text-indigo-400 dark:text-indigo-500" />
+        )}
+        <div
+          className={`flex h-10 w-10 items-center justify-center rounded-lg ${
+            flagged
+              ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-300'
+              : 'bg-teal-50 text-teal-600 dark:bg-teal-900/30 dark:text-teal-400'
+          }`}
+        >
+          <Icon className="h-5 w-5" />
+        </div>
+        <span className="text-sm font-medium text-gray-900 dark:text-white">{t(`nav.${key}`)}</span>
+        <span className="text-xs text-gray-400 dark:text-gray-500">{href ? '' : t('comingSoon')}</span>
+      </>
+    );
+    const base = `relative flex flex-col gap-2 rounded-xl border bg-white p-4 dark:bg-gray-800 ${
+      flagged
+        ? 'border-amber-300 ring-1 ring-amber-200 dark:border-amber-800 dark:ring-amber-900/40'
+        : 'border-gray-200 dark:border-gray-700'
+    }`;
+    // จัดเรียง mode: tiles become pin toggles (no navigation) so a stray tap can't leave.
+    if (editMode) {
+      return (
+        <button
+          key={key}
+          type="button"
+          onClick={() => togglePin(key)}
+          className={cn(
+            base,
+            'text-left transition-colors',
+            isPinned
+              ? 'border-indigo-300 ring-1 ring-indigo-200 dark:border-indigo-700 dark:ring-indigo-900/40'
+              : 'hover:border-indigo-300 dark:hover:border-indigo-700'
+          )}
+        >
+          {inner}
+        </button>
+      );
+    }
+    return href ? (
+      <Link
+        key={key}
+        href={href}
+        className={`${base} transition-colors hover:border-teal-300 hover:bg-teal-50/40 dark:hover:border-teal-700 dark:hover:bg-teal-900/10`}
+      >
+        {inner}
+      </Link>
+    ) : (
+      <div key={key} className={base}>
+        {inner}
+      </div>
+    );
+  };
 
   return (
     <div className="mx-auto max-w-5xl space-y-4 p-4">
@@ -290,90 +442,84 @@ export default function HrDashboardPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        {orderedTiles.map(({ key, icon: Icon, href: navHref }) => {
-          const count = tileBadges[key] ?? 0;
-          const flagged = count > 0;
-          // A flagged tile goes where its badge points; an unflagged one opens the section normally.
-          const href = flagged ? actionHref(key) ?? navHref : navHref;
-          const pinIdx = pinned.indexOf(key);
-          const isPinned = pinIdx >= 0;
-          const inner = (
-            <>
-              {flagged && (
-                <span className="absolute right-2 top-2 inline-flex min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[11px] font-bold leading-none text-white shadow-sm">
-                  {count > 99 ? '99+' : count}
-                </span>
-              )}
-              {/* Pin marker: edit mode shows the toggle + order number; normal mode a subtle pin */}
-              {editMode ? (
-                <span
-                  className={cn(
-                    'absolute left-2 top-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1 text-[11px] font-bold leading-none',
-                    isPinned
-                      ? 'bg-indigo-500 text-white shadow-sm'
-                      : 'border border-dashed border-gray-300 text-gray-300 dark:border-gray-600 dark:text-gray-600'
-                  )}
-                >
-                  {isPinned ? pinIdx + 1 : <Pin className="h-3 w-3" />}
-                </span>
-              ) : (
-                isPinned && (
-                  <Pin className="absolute left-2 top-2 h-3.5 w-3.5 text-indigo-400 dark:text-indigo-500" />
-                )
-              )}
-              <div
-                className={`flex h-10 w-10 items-center justify-center rounded-lg ${
-                  flagged
-                    ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-300'
-                    : 'bg-teal-50 text-teal-600 dark:bg-teal-900/30 dark:text-teal-400'
-                }`}
-              >
-                <Icon className="h-5 w-5" />
-              </div>
-              <span className="text-sm font-medium text-gray-900 dark:text-white">{t(`nav.${key}`)}</span>
-              <span className="text-xs text-gray-400 dark:text-gray-500">{href ? '' : t('comingSoon')}</span>
-            </>
-          );
-          const base = `relative flex flex-col gap-2 rounded-xl border bg-white p-4 dark:bg-gray-800 ${
-            flagged
-              ? 'border-amber-300 ring-1 ring-amber-200 dark:border-amber-800 dark:ring-amber-900/40'
-              : 'border-gray-200 dark:border-gray-700'
-          }`;
-          // จัดเรียง mode: tiles become pin toggles (no navigation) so a stray tap can't leave.
-          if (editMode) {
-            return (
-              <button
-                key={key}
-                type="button"
-                onClick={() => togglePin(key)}
-                className={cn(
-                  base,
-                  'text-left transition-colors',
-                  isPinned
-                    ? 'border-indigo-300 ring-1 ring-indigo-200 dark:border-indigo-700 dark:ring-indigo-900/40'
-                    : 'hover:border-indigo-300 dark:hover:border-indigo-700'
-                )}
-              >
-                {inner}
-              </button>
-            );
-          }
-          return href ? (
-            <Link
-              key={key}
-              href={href}
-              className={`${base} transition-colors hover:border-teal-300 hover:bg-teal-50/40 dark:hover:border-teal-700 dark:hover:bg-teal-900/10`}
-            >
-              {inner}
-            </Link>
-          ) : (
-            <div key={key} className={base}>
-              {inner}
-            </div>
-          );
-        })}
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t('searchTiles')}
+            className="w-full rounded-xl border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-teal-400 focus:outline-none focus:ring-1 focus:ring-teal-300 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+          />
+        </div>
+        {!q && (
+          <button
+            type="button"
+            onClick={() => saveCollapsed(allCollapsed ? [] : sections.map((s) => s.key))}
+            className="shrink-0 rounded-xl border border-gray-200 px-3 py-2 text-xs font-medium text-gray-600 transition-colors hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+          >
+            {allCollapsed ? t('expandAll') : t('collapseAll')}
+          </button>
+        )}
       </div>
+
+      {q ? (
+        searchHits.length > 0 ? (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {searchHits.map(renderTile)}
+          </div>
+        ) : (
+          <p className="rounded-xl border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+            {t('noTileMatch', { query: query.trim() })}
+          </p>
+        )
+      ) : (
+        <div className="space-y-5">
+          {sections.map((section) => {
+            const isOpen = !collapsed.includes(section.key);
+            // A collapsed group still has to admit what is waiting inside it, or hiding a section
+            // would hide the work.
+            const groupCount = section.tiles.reduce((sum, k) => sum + (tileBadges[k] ?? 0), 0);
+            return (
+              <section key={section.key}>
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(section.key)}
+                  className="mb-2.5 flex w-full items-center gap-2 text-left"
+                  aria-expanded={isOpen}
+                >
+                  {isOpen ? (
+                    <ChevronDown className="h-4 w-4 shrink-0 text-gray-400" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" />
+                  )}
+                  <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                    {t(`navGroups.${section.key}`)}
+                  </span>
+                  <span className="text-xs tabular-nums text-gray-300 dark:text-gray-600">
+                    {section.tiles.length}
+                  </span>
+                  {groupCount > 0 && (
+                    <span className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[11px] font-bold leading-none text-white">
+                      {groupCount > 99 ? '99+' : groupCount}
+                    </span>
+                  )}
+                  <span className="ml-1 h-px flex-1 bg-gray-200 dark:bg-gray-700" />
+                </button>
+                {isOpen && (
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                    {section.tiles.map((key) => {
+                      const tile = byKey.get(key);
+                      return tile ? renderTile(tile) : null;
+                    })}
+                  </div>
+                )}
+              </section>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
