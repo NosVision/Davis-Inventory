@@ -33,7 +33,7 @@ import {
 import { cn } from '@/lib/utils/cn';
 import { useScLineLabel } from '@/components/hr/use-sc-line-label';
 import { formatBaht, bahtToSatang } from '@/lib/pos/money';
-import { svPayDate } from '@/lib/hr/pay-cycle';
+import { svPayDate, scEventMonthForPool } from '@/lib/hr/pay-cycle';
 import { ManualDeductionModal, type ManualTarget } from './_components/manual-deduction-modal';
 import { ScPrintView } from './_components/sc-print-view';
 import type {
@@ -466,6 +466,10 @@ export default function HrServiceChargePage() {
   // three surfaces cannot disagree about when a pool lands — which is exactly how this page once
   // taught HR the wrong month (2026-08-19).
   const payDateDisplay = pool?.pay_date ?? svPayDate(month);
+  // The month the automatic deductions are read from — always the one before the pool pays, so a
+  // dock can never land on money already transferred. Named with a real month rather than
+  // "the previous one": a relative phrase is what let the two months be confused to begin with.
+  const deductWindowLabel = monthLabel(scEventMonthForPool(pool?.period_month ?? `${month}-01`));
   const busy = savingPool || savingAlloc || recomputing || finalizing;
 
   return (
@@ -495,11 +499,12 @@ export default function HrServiceChargePage() {
                   ))}
                 </select>
               </label>
-              {/* Say which month this picker means. "เดือน" alone reads as the pay month to anyone
-                  looking at a pay screen; it is the COLLECTION month, and the transfer is the 15th
-                  of the one after. Naming the transfer date right under the picker is what stops
-                  the two from being confused again. */}
-              <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
+              {/* Say which month this picker means. On a pay screen "เดือน" is ambiguous on its
+                  own, so both halves of the rule are spelled out under it with real dates: the
+                  pool pays on the 15th of the month picked, and it is docked by what happened the
+                  month before. Two short lines, not one run-on — this caption is read at a glance
+                  while choosing a month. */}
+              <label className="flex max-w-[14rem] flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
                 {t('filterMonth')}
                 <input
                   type="month"
@@ -507,8 +512,11 @@ export default function HrServiceChargePage() {
                   onChange={(e) => setMonth(e.target.value)}
                   className="control mt-1"
                 />
-                <span className="mt-1 font-normal text-gray-500 dark:text-gray-400">
-                  {t('monthMeaning', { payDate: payDateDisplay })}
+                <span className="mt-1.5 font-normal leading-snug tabular-nums text-gray-600 dark:text-gray-300">
+                  {t('payTransferOn', { payDate: dmy(payDateDisplay) })}
+                </span>
+                <span className="text-[11px] font-normal leading-snug tabular-nums text-gray-400 dark:text-gray-500">
+                  {t('deductWindowOn', { month: deductWindowLabel })}
                 </span>
               </label>
             </>

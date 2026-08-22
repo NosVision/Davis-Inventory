@@ -39,11 +39,18 @@ function currentMonth(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
+/** 'YYYY-MM-DD' → 'DD/MM/YYYY' (same convention as the SC page and the payroll register). */
+function dmy(d?: string | null): string {
+  if (!d) return '—';
+  const [y, m, dd] = String(d).slice(0, 10).split('-');
+  return y && m && dd ? `${dd}/${m}/${y}` : String(d);
+}
+
 export default function HrTipPoolPage() {
   const isTh = useLocale() === 'th';
   const L = isTh
-    ? { title: 'กองทุนทิป', subtitle: 'จัดสรรทิปต่อคนต่อเดือน (กรอกยอดเอง)', store: 'สาขา', month: 'งวด', monthMeaning: (pd: string) => `งวดที่จ่ายทิป · โอนให้พนักงาน ${pd}`, noStores: 'ไม่มีสาขาที่จัดการได้', loadFailed: 'โหลดไม่สำเร็จ', poolTotal: 'ยอดทิปรวม', payDate: 'วันจ่าย', notes: 'หมายเหตุ', notesPh: 'หมายเหตุ (ถ้ามี)', draft: 'ร่าง', finalized: 'ปิดงวดแล้ว', createPool: 'สร้างกองทิป', savePool: 'บันทึกยอด', allocations: 'การจัดสรร', saveAllocations: 'บันทึกการจัดสรร', print: 'พิมพ์', finalize: 'ปิดงวด', colEmployee: 'พนักงาน', colAllocated: 'จัดสรร', colDeductions: 'หัก', colNet: 'สุทธิ', totals: 'รวม', noEmployees: 'ไม่มีพนักงาน', noDeductions: 'ไม่มีรายการหัก', addDeduction: 'เพิ่มรายการหัก', delete: 'ลบ', dedLabelPh: 'เหตุผล', savePoolFirst: 'บันทึกยอดกองก่อน', saveAllocHint: 'บันทึกการจัดสรรก่อนจึงเพิ่มรายการหักได้', finalizeConfirm: 'ปิดงวดกองทิปนี้? จะแก้ไขไม่ได้อีก', saved: 'บันทึกแล้ว', finalizedMsg: 'ปิดงวดแล้ว', locked: 'ปิดงวดแล้ว แก้ไขไม่ได้', invalid: 'กรอกจำนวนให้ถูกต้อง', add: 'เพิ่ม' }
-    : { title: 'Tip pool', subtitle: 'Allocate tips per person per month (manual)', store: 'Store', month: 'Period', monthMeaning: (pd: string) => `the month these tips are paid · transferred to staff ${pd}`, noStores: 'No manageable stores', loadFailed: 'Load failed', poolTotal: 'Total tips', payDate: 'Pay date', notes: 'Notes', notesPh: 'Notes (optional)', draft: 'Draft', finalized: 'Finalized', createPool: 'Create pool', savePool: 'Save total', allocations: 'Allocations', saveAllocations: 'Save allocations', print: 'Print', finalize: 'Finalize', colEmployee: 'Employee', colAllocated: 'Allocated', colDeductions: 'Deductions', colNet: 'Net', totals: 'Total', noEmployees: 'No employees', noDeductions: 'No deductions', addDeduction: 'Add deduction', delete: 'Delete', dedLabelPh: 'Reason', savePoolFirst: 'Save the pool total first', saveAllocHint: 'Save allocations before adding a deduction', finalizeConfirm: 'Finalize this tip pool? It cannot be edited afterwards.', saved: 'Saved', finalizedMsg: 'Finalized', locked: 'Finalized — locked', invalid: 'Enter a valid amount', add: 'Add' };
+    ? { title: 'กองทุนทิป', subtitle: 'จัดสรรทิปต่อคนต่อเดือน (กรอกยอดเอง)', store: 'สาขา', month: 'งวด', monthMeaning: (pd: string) => `โอนให้พนักงาน ${pd}`, noStores: 'ไม่มีสาขาที่จัดการได้', loadFailed: 'โหลดไม่สำเร็จ', poolTotal: 'ยอดทิปรวม', payDate: 'วันจ่าย', notes: 'หมายเหตุ', notesPh: 'หมายเหตุ (ถ้ามี)', draft: 'ร่าง', finalized: 'ปิดงวดแล้ว', createPool: 'สร้างกองทิป', savePool: 'บันทึกยอด', allocations: 'การจัดสรร', saveAllocations: 'บันทึกการจัดสรร', print: 'พิมพ์', finalize: 'ปิดงวด', colEmployee: 'พนักงาน', colAllocated: 'จัดสรร', colDeductions: 'หัก', colNet: 'สุทธิ', totals: 'รวม', noEmployees: 'ไม่มีพนักงาน', noDeductions: 'ไม่มีรายการหัก', addDeduction: 'เพิ่มรายการหัก', delete: 'ลบ', dedLabelPh: 'เหตุผล', savePoolFirst: 'บันทึกยอดกองก่อน', saveAllocHint: 'บันทึกการจัดสรรก่อนจึงเพิ่มรายการหักได้', finalizeConfirm: 'ปิดงวดกองทิปนี้? จะแก้ไขไม่ได้อีก', saved: 'บันทึกแล้ว', finalizedMsg: 'ปิดงวดแล้ว', locked: 'ปิดงวดแล้ว แก้ไขไม่ได้', invalid: 'กรอกจำนวนให้ถูกต้อง', add: 'เพิ่ม' }
+    : { title: 'Tip pool', subtitle: 'Allocate tips per person per month (manual)', store: 'Store', month: 'Period', monthMeaning: (pd: string) => `Transferred to staff ${pd}`, noStores: 'No manageable stores', loadFailed: 'Load failed', poolTotal: 'Total tips', payDate: 'Pay date', notes: 'Notes', notesPh: 'Notes (optional)', draft: 'Draft', finalized: 'Finalized', createPool: 'Create pool', savePool: 'Save total', allocations: 'Allocations', saveAllocations: 'Save allocations', print: 'Print', finalize: 'Finalize', colEmployee: 'Employee', colAllocated: 'Allocated', colDeductions: 'Deductions', colNet: 'Net', totals: 'Total', noEmployees: 'No employees', noDeductions: 'No deductions', addDeduction: 'Add deduction', delete: 'Delete', dedLabelPh: 'Reason', savePoolFirst: 'Save the pool total first', saveAllocHint: 'Save allocations before adding a deduction', finalizeConfirm: 'Finalize this tip pool? It cannot be edited afterwards.', saved: 'Saved', finalizedMsg: 'Finalized', locked: 'Finalized — locked', invalid: 'Enter a valid amount', add: 'Add' };
 
   const { confirm, dialog } = useConfirm();
 
@@ -205,9 +212,9 @@ export default function HrTipPoolPage() {
             </label>
             <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">{L.month}
               <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="control mt-1" />
-              {/* Name the transfer date under the picker: "งวด" on a pay screen reads as the pay
-                  month, and it is the collection month. */}
-              <span className="mt-1 font-normal text-gray-500 dark:text-gray-400">{L.monthMeaning(payDateDisplay)}</span>
+              {/* Name the transfer date under the picker: "งวด" alone is ambiguous on a pay
+                  screen. The month picked is the month the pool PAYS in, on the 15th. */}
+              <span className="mt-1.5 font-normal leading-snug tabular-nums text-gray-600 dark:text-gray-300">{L.monthMeaning(dmy(payDateDisplay))}</span>
             </label>
           </>
         }
