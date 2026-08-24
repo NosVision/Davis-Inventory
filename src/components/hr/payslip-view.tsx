@@ -87,22 +87,17 @@ const SV_SOURCE_TH: Record<string, string> = {
 const CARRY_IN_SOURCES = new Set(['warning_carry', 'eval_carry', 'stock_penalty_carry']);
 
 /**
- * The month an SV pool's leave/absence/warning lines are counted over, as 'MM/YYYY'.
+ * The window an SV pool's leave/absence/warning lines are counted over, as dates.
  *
- * A pool pays on the 15th of its own month, so only the month BEFORE it is complete by then — that
- * is the window every deduction is measured against (scEventMonthForPool). Naming the pool's own
- * month here would point at days that had not happened when the money left.
+ * The payroll CYCLE before the pool pays — 26th to 25th, the same shape as the salary window right
+ * above it on this slip, one month earlier. Naming a calendar month here (which it did until
+ * 2026-08-24) described a span the salary cycle only partly overlapped, and nobody could tell which
+ * of the two a given ขาด count had come from.
  */
-function svDeductWindow(periodMonth: string): string {
-  const ev = scEventMonthForPool(periodMonth);
-  const [y, m] = ev.slice(0, 10).split('-');
-  return y && m ? `${m}/${y}` : ev;
-}
-
-/** The same window as svDeductWindow, spelled out as dates: '01/07/2026 – 31/07/2026'. */
 function svDeductRange(periodMonth: string): string {
   const w = payWindows(periodMonth).find((x) => x.key === 'svCurrent');
-  return w ? `${formatDayMonthYear(w.from)} – ${formatDayMonthYear(w.to)}` : svDeductWindow(periodMonth);
+  const ev = scEventMonthForPool(periodMonth);
+  return w ? `${formatDayMonthYear(w.from)} – ${formatDayMonthYear(w.to)}` : ev;
 }
 
 /** 'YYYY-MM-DD' → 'DD/MM/YYYY'. */
@@ -415,15 +410,14 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
               · {t('sc.paidOn', { date: svTransferDate(data.service_charge.period_month, data.service_charge.pay_date) })}
             </span>
           </h3>
-          <p className="mb-1 text-xs text-violet-600/70 dark:text-violet-400/70">
-            {t('sc.round')} · {t('sc.deductWindow', { month: svDeductWindow(data.service_charge.period_month) })}
-          </p>
-          {/* The two spans, printed together.
-              The salary cycle was already stated at the top of the slip and the SV window here, half
-              a page apart — so nobody put them side by side, and the difference between them read as
-              the system contradicting itself. They only overlap for the last few days of the month:
-              1–25 of the previous month docks SV but not this cycle, 1–25 of this month docks this
-              cycle but reaches SV a round later. That is the whole of the confusion, said once. */}
+          {/* The window itself is spelled out in the block below, beside the salary one — saying it
+              here too, in a different unit, is how the two came to be read as different rules. */}
+          <p className="mb-1 text-xs text-violet-600/70 dark:text-violet-400/70">{t('sc.round')}</p>
+          {/* The two spans, printed together. Both are payroll cycles now, one month apart and end
+              to end — so this block reads as one rule seen twice rather than two rules that have to
+              be reconciled. Kept because the reader still has to be told WHICH cycle each figure on
+              the slip came from; before, the cycle sat at the top of the slip and the SV window half
+              a page below, and nobody put them side by side. */}
           {payrun?.cycle_start && payrun?.cycle_end && (
             <div className="mb-1.5 rounded-md bg-white/70 px-2 py-1.5 text-[11px] leading-relaxed dark:bg-gray-800/40">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3 text-gray-600 dark:text-gray-300">

@@ -33,7 +33,7 @@ import {
 import { cn } from '@/lib/utils/cn';
 import { useScLineLabel } from '@/components/hr/use-sc-line-label';
 import { formatBaht, bahtToSatang } from '@/lib/pos/money';
-import { svPayDate, scEventMonthForPool } from '@/lib/hr/pay-cycle';
+import { svPayDate, scEventCycleForPool } from '@/lib/hr/pay-cycle';
 import { ManualDeductionModal, type ManualTarget } from './_components/manual-deduction-modal';
 import { ScPrintView } from './_components/sc-print-view';
 import type {
@@ -466,10 +466,12 @@ export default function HrServiceChargePage() {
   // three surfaces cannot disagree about when a pool lands — which is exactly how this page once
   // taught HR the wrong month (2026-08-19).
   const payDateDisplay = pool?.pay_date ?? svPayDate(month);
-  // The month the automatic deductions are read from — always the one before the pool pays, so a
-  // dock can never land on money already transferred. Named with a real month rather than
-  // "the previous one": a relative phrase is what let the two months be confused to begin with.
-  const deductWindowLabel = monthLabel(scEventMonthForPool(pool?.period_month ?? `${month}-01`));
+  // The window the automatic deductions are read from — the PAYROLL CYCLE before the pool pays, so
+  // a dock can never land on money already transferred and the figures line up with the payroll
+  // file HR reconciles against. Spelled out as dates: a relative phrase, or a bare month against a
+  // 26th–25th cycle, is what let the two spans be confused to begin with.
+  const deductCycle = scEventCycleForPool(pool?.period_month ?? `${month}-01`);
+  const deductWindowLabel = `${dmy(deductCycle.start)} – ${dmy(deductCycle.end)}`;
   const busy = savingPool || savingAlloc || recomputing || finalizing;
 
   return (

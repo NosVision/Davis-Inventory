@@ -41,29 +41,41 @@ export function shiftMonth(month: string, by: number): string {
   return new Date(Date.UTC(y, m - 1 + by, 1)).toISOString().slice(0, 7);
 }
 
-/** What each window feeds, said in the words HR uses for it. */
+/**
+ * What each window feeds, said in the words HR uses for it.
+ *
+ * Since every SV figure moved onto the payroll cycle, `salary` and `svNext` are the SAME days — one
+ * cycle pays a salary at its end and an SV a month later — so the current cycle is titled by its
+ * cycle number and its two consumers are named in the purpose line, rather than shown as two
+ * identical chips.
+ */
 export function windowTitle(w: PayWindow, payMonth: string, isTh: boolean): string {
   if (w.key === 'salary') {
-    return isTh ? `เงินเดือน งวด ${monthLabel(payMonth)}` : `Salary · ${monthLabel(payMonth)}`;
+    return isTh ? `งวด ${monthLabel(payMonth)}` : `Cycle ${monthLabel(payMonth)}`;
+  }
+  if (w.key === 'svCurrent') {
+    const prev = shiftMonth(payMonth, -1);
+    return isTh ? `งวด ${monthLabel(prev)} (งวดก่อน)` : `Cycle ${monthLabel(prev)} (previous)`;
   }
   return isTh ? `SV โอน ${dmy(w.payDate!)}` : `SV paid ${dmy(w.payDate!)}`;
 }
 
 /** One line saying what a window's numbers are actually spent on. */
 export function windowPurpose(w: PayWindow, payMonth: string, isTh: boolean): string {
+  const next = shiftMonth(payMonth, 1);
   if (w.key === 'salary') {
     return isTh
-      ? `ขาด/ลา/สาย ในช่วงนี้ หักจากเงินเดือนที่จ่ายสิ้นเดือน ${monthLabel(payMonth)}`
-      : `Absence, leave and lateness here dock the salary paid at the end of ${monthLabel(payMonth)}`;
+      ? `ขาด/ลา/สาย ในงวดนี้ หักจากเงินเดือนที่จ่ายสิ้นเดือน ${monthLabel(payMonth)} และหัก SV ที่จะโอน ${dmy(`${next}-15`)}`
+      : `Absence, leave and lateness in this cycle dock the salary paid at the end of ${monthLabel(payMonth)}, and the SV transferred on ${dmy(`${next}-15`)}`;
   }
   if (w.key === 'svCurrent') {
     return isTh
-      ? `ขาด/ลา/ใบเตือน ในช่วงนี้ หัก SV ที่โอน ${dmy(w.payDate!)} — ก้อนที่พิมพ์อยู่บนสลิปเดือน ${monthLabel(payMonth)}`
-      : `Absence, leave and warnings here dock the SV transferred on ${dmy(w.payDate!)} — the pool printed on the ${monthLabel(payMonth)} slip`;
+      ? `ขาด/ลา/ใบเตือน ในงวดนี้ หัก SV ที่โอน ${dmy(w.payDate!)} — ก้อนที่พิมพ์อยู่บนสลิปเดือน ${monthLabel(payMonth)}`
+      : `Absence, leave and warnings in this cycle dock the SV transferred on ${dmy(w.payDate!)} — the pool printed on the ${monthLabel(payMonth)} slip`;
   }
   return isTh
-    ? `ขาด/ลา/ใบเตือน ในช่วงนี้ หัก SV ที่จะโอน ${dmy(w.payDate!)} — ยังไม่อยู่บนสลิปเดือน ${monthLabel(payMonth)}`
-    : `Absence, leave and warnings here dock the SV that transfers on ${dmy(w.payDate!)} — not on the ${monthLabel(payMonth)} slip yet`;
+    ? `ขาด/ลา/ใบเตือน ในงวดนี้ หัก SV ที่จะโอน ${dmy(w.payDate!)}`
+    : `Absence, leave and warnings in this cycle dock the SV transferred on ${dmy(w.payDate!)}`;
 }
 
 export function isSameWindow(w: PayWindow, from: string, to: string): boolean {
@@ -85,7 +97,13 @@ export function PayWindowBar({
   onShiftMonth: (by: number) => void;
 }) {
   const isTh = useLocale() === 'th';
-  const windows = payWindows(payMonth);
+  // svNext covers the same days as salary — one cycle, two payments. Showing both would put two
+  // identical ranges side by side and invite the reader to hunt for a difference that isn't there;
+  // the salary chip's purpose line names the SV it also feeds.
+  const all = payWindows(payMonth);
+  const windows = all.filter(
+    (w, i) => all.findIndex((o) => o.from === w.from && o.to === w.to) === i
+  );
   const custom = !windows.some((w) => isSameWindow(w, from, to));
 
   return (
@@ -117,8 +135,8 @@ export function PayWindowBar({
         </span>
         <span className="text-[11px] text-indigo-700/70 dark:text-indigo-400/70">
           {isTh
-            ? 'ตัวเลขบนสลิปใบเดียวกันนับคนละช่วง — กดเพื่อดูช่วงที่ตัวเลขนั้นใช้'
-            : 'One slip measures its figures over different spans — pick the one a number came from'}
+            ? 'ทุกอย่างนับตามงวด 26–25 · เงินเดือนจ่ายสิ้นงวด · SV ของงวดนั้นโอนวันที่ 15 เดือนถัดไป'
+            : 'Everything counts on the 26th–25th cycle · salary paid at its end · that cycle’s SV transfers on the 15th a month later'}
         </span>
       </div>
 

@@ -3252,10 +3252,10 @@
         "net": "SV net",
         "carry": "carried to next month {amount}",
         "stale": "This slip paid SV {paid} ฿ (snapshot at generation) but the pool now nets {pool} ฿ — the pool changed after the payrun was generated; regenerate it to match.",
-        "deductWindow": "deductions come from what happened in {month}",
+        "deductWindow": "deductions come from the {month} cycle",
         "windowSalary": "Salary deductions counted over",
         "windowSv": "SV deductions counted over",
-        "windowWhy": "The two spans do not match, so the counts can differ and both still be right — an absence early in the previous month docks SV but falls outside this pay cycle, while an absence this month docks this salary and reaches SV a round later",
+        "windowWhy": "The two cycles sit end to end with no overlap — an absence docks that cycle’s salary, and the same cycle’s SV one transfer later",
         "carryTotal": "Carried to next month: {amount} ฿ (more than this month SV could absorb)"
       },
       "twoRounds": "Paid in 2 transfers: service charge/tip {sv} ฿ ({svDate}) · salary {salary} ฿ ({salaryDate}) — total received for {month}: {total} ฿",
@@ -3330,7 +3330,7 @@
       "noEmployees": "No employees at this store",
       "loadFailed": "Failed to load",
       "saveFailed": "Save failed",
-      "poolTotalLabel": "SC pool (THB) — 7% of the previous month takings",
+      "poolTotalLabel": "SC pool (THB) — 7% of the previous cycle takings",
       "poolTotalInvalid": "Please enter a valid amount",
       "payDateLabel": "Pay date",
       "notesLabel": "Notes",
@@ -3401,7 +3401,7 @@
         "vacation": "Vacation"
       },
       "payTransferOn": "Transferred to staff {payDate}",
-      "deductWindowOn": "Docked by events in {month}",
+      "deductWindowOn": "Docked by the {month} cycle",
       "evalMissing": "No evaluation period exists for {month} — its result docks this pool, and finalizing first makes that impossible",
       "evalNotClosed": "The {month} evaluation is not closed — its result docks this pool, so close it first"
     },
