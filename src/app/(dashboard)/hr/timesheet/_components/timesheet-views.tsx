@@ -100,10 +100,13 @@ function weekdayIndex(dateStr: string): number {
 export function TimesheetBlockGrid({
   employees,
   onPick,
+  onPickEmployee,
   homeCompany = null,
 }: {
   employees: TimesheetEmployee[];
   onPick: (emp: TimesheetEmployee, day: DaySummary) => void;
+  /** Opens the period summary for one person — the name cell, as opposed to a day block. */
+  onPickEmployee?: (emp: TimesheetEmployee) => void;
   /** The venue's own company — only OTHER companies get named on a row. See PayrollScopeChips. */
   homeCompany?: string | null;
 }) {
@@ -194,7 +197,23 @@ export function TimesheetBlockGrid({
                     )}
                   >
                     <span className="flex items-center">
-                      <span className="truncate" title={nickTitle(emp, isTh)}>{emp.name}</span>
+                      {/* The name opens this person's period summary; the day blocks stay the way
+                          in to editing one day. */}
+                      {onPickEmployee ? (
+                        <button
+                          type="button"
+                          onClick={() => onPickEmployee(emp)}
+                          title={
+                            nickTitle(emp, isTh) ??
+                            (isTh ? 'ดูสรุป ขาด/ลา/สาย ของช่วงนี้' : 'Absence, leave and lateness for this range')
+                          }
+                          className="truncate text-left hover:text-indigo-600 hover:underline dark:hover:text-indigo-400"
+                        >
+                          {emp.name}
+                        </button>
+                      ) : (
+                        <span className="truncate" title={nickTitle(emp, isTh)}>{emp.name}</span>
+                      )}
                       {emp.end_date && <DepartedChip endDate={emp.end_date} isTh={isTh} />}
                       <PayrollScopeChips emp={emp} homeCompany={homeCompany} isTh={isTh} />
                     </span>

@@ -15,8 +15,11 @@ import {
   type TimesheetEmployee,
 } from './_components/timesheet-views';
 import { TimesheetEditModal, type EditTarget, type LeaveTypeOption } from './_components/timesheet-edit-modal';
+import { PayWindowBar, shiftMonth } from './_components/pay-window-bar';
+import { EmployeePeriodSummary } from './_components/employee-period-summary';
 import { AttendanceScoreCard } from '@/components/hr/attendance-score-card';
 import { PayrollScopeChips, dominantCompany } from '@/components/hr/payroll-scope-chips';
+import { payMonthOf, payWindows, type PayWindow } from '@/lib/hr/pay-cycle';
 import type { ScoreConfig } from '@/lib/hr/attendance-score';
 
 interface StoreOpt {
@@ -39,13 +42,14 @@ function dayDiff(from: string, to: string): number {
   return Math.round((b - a) / 86_400_000);
 }
 
-// The active payroll month runs 26th → 25th (§ pay cycle). Given today, return that window so the
-// timesheet defaults to the cycle HR is actually working on rather than a rolling 7-day slice.
-function payCycleRange(today: string): { from: string; to: string } {
-  const [y, m, d] = today.split('-').map(Number);
-  const startMs = d >= 26 ? Date.UTC(y, m - 1, 26) : Date.UTC(y, m - 2, 26);
-  const endMs = d >= 26 ? Date.UTC(y, m, 25) : Date.UTC(y, m - 1, 25);
-  return { from: new Date(startMs).toISOString().slice(0, 10), to: new Date(endMs).toISOString().slice(0, 10) };
+/**
+ * The salary window of a payroll month — the 26th→25th cycle, so the sheet opens on the cycle HR is
+ * working on rather than a rolling slice. Read from payWindows so this page and the slip cannot
+ * drift on where a cycle starts; the same helper supplies the two SV windows beside it.
+ */
+function salaryRange(payMonth: string): { from: string; to: string } {
+  const w = payWindows(payMonth)[0];
+  return { from: w.from, to: w.to };
 }
 
 export default function HrTimesheetPage() {
@@ -63,7 +67,8 @@ export default function HrTimesheetPage() {
         noCompany: '— No company —', showAlso: 'Show them too', hideAgain: 'Hide again',
       };
 
-  const initialRange = useMemo(() => payCycleRange(openBusinessDateBangkok()), []);
+  const initialPayMonth = useMemo(() => payMonthOf(openBusinessDateBangkok()), []);
+  const initialRange = useMemo(() => salaryRange(initialPayMonth), [initialPayMonth]);
 
   const [stores, setStores] = useState<StoreOpt[]>([]);
   const [storeId, setStoreId] = useState('');
@@ -79,6 +84,11 @@ export default function HrTimesheetPage() {
   const [includeInactive, setIncludeInactive] = useState(false);
   const [from, setFrom] = useState<string>(initialRange.from);
   const [to, setTo] = useState<string>(initialRange.to);
+  // The payroll month the window chips are derived from. Held separately from from/to because the
+  // SV windows sit in the month BEFORE the one they pay in — deriving the anchor back out of the
+  // dates would make picking "SV 15/08" re-anchor the bar onto July and rename every chip.
+  const [payMonth, setPayMonth] = useState<string>(initialPayMonth);
+  const [summaryOf, setSummaryOf] = useState<string | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [leaveTypes, setLeaveTypes] = useState<LeaveTypeOption[]>([]);
   const [scoreConfig, setScoreConfig] = useState<ScoreConfig | undefined>(undefined);
@@ -98,7 +108,12 @@ export default function HrTimesheetPage() {
     const qStore = p.get('store');
     const qSearch = p.get('q');
     if (qFrom && DATE_RE.test(qFrom)) setFrom(qFrom);
-    if (qTo && DATE_RE.test(qTo)) setTo(qTo);
+    if (qTo && DATE_RE.test(qTo)) {
+      setTo(qTo);
+      // Follow the deep link's month, so a slip that sends HR here lands with the chips describing
+      // the payroll month it came from rather than whatever month today happens to be in.
+      setPayMonth(payMonthOf(qTo));
+    }
     if (qStore) setStoreId(qStore);
     if (qSearch) setSearch(qSearch);
   }, []);
@@ -312,6 +327,29 @@ export default function HrTimesheetPage() {
         </div>
       </div>
 
+      {/* Which payroll figure the range on screen is the one behind — and one tap to the others. */}
+      <PayWindowBar
+        payMonth={payMonth}
+        from={from}
+        to={to}
+        onPick={(w) => {
+          setFrom(w.from);
+          setTo(w.to);
+        }}
+        onShiftMonth={(by) => {
+          const next = shiftMonth(payMonth, by);
+          setPayMonth(next);
+          // Carry the reading across: someone stepping months while looking at an SV window wants
+          // the next month's SV window, not to be dropped back onto the salary cycle.
+          const from0 = payWindows(payMonth).find((w) => w.from === from && w.to === to);
+          const moved = payWindows(next).find((w) => w.key === (from0?.key ?? 'salary'));
+          if (moved) {
+            setFrom(moved.from);
+            setTo(moved.to);
+          }
+        }}
+      />
+
       {/* Members held out of the grid: attached to this venue but with no roster row and no punch
           here this window. They are almost always people who OVERSEE the venue rather than work it —
           user_stores cannot tell the two apart — so they are offered rather than shown. */}
@@ -367,15 +405,13 @@ export default function HrTimesheetPage() {
           employees={filtered}
           homeCompany={homeCompany}
           onPick={(emp, day) => setEditTarget({ userId: emp.user_id, name: emp.name, companyId: emp.company_id, otEligible: emp.ot_eligible, payType: emp.pay_type, day })}
+          onPickEmployee={(emp) => setSummaryOf(emp.user_id)}
         />
       ) : view === 'summary' ? (
         <TimesheetSummaryTable
           employees={filtered}
           homeCompany={homeCompany}
-          onPick={(emp) => {
-            setSearch(emp.name);
-            setView('full');
-          }}
+          onPick={(emp) => setSummaryOf(emp.user_id)}
         />
       ) : (
         <div className="space-y-6">
@@ -404,6 +440,31 @@ export default function HrTimesheetPage() {
           })}
         </div>
       )}
+
+      {(() => {
+        const emp = summaryOf ? employees.find((e) => e.user_id === summaryOf) : null;
+        if (!emp) return null;
+        return (
+          <EmployeePeriodSummary
+            emp={emp}
+            from={from}
+            to={to}
+            payMonth={payMonth}
+            onClose={() => setSummaryOf(null)}
+            onPickWindow={(w: PayWindow) => {
+              setFrom(w.from);
+              setTo(w.to);
+              // Stay open: the whole point is comparing the same person across the two windows,
+              // and reopening the card by hand after every switch defeats that.
+            }}
+            onViewDays={() => {
+              setSummaryOf(null);
+              setSearch(emp.name);
+              setView('full');
+            }}
+          />
+        );
+      })()}
 
       <TimesheetEditModal
         isOpen={!!editTarget}

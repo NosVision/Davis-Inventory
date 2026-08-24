@@ -114,3 +114,71 @@ export function scEventMonthForPool(poolMonth: string): string {
 export function evalPeriodMonth(year: number, month: number): string {
   return month === 1 ? `${year - 1}-12-01` : `${year}-${pad(month - 1)}-01`;
 }
+
+/** The whole calendar month containing `monthFirst`, as an inclusive ISO date range. */
+function calendarMonth(monthFirst: string): { from: string; to: string } {
+  const [y, m] = monthFirst.slice(0, 7).split('-').map(Number);
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate(); // day 0 of next month = last of this
+  return { from: `${y}-${pad(m)}-01`, to: `${y}-${pad(m)}-${pad(last)}` };
+}
+
+/** One reading window on the timesheet, with the payroll consumer it feeds. */
+export interface PayWindow {
+  key: 'salary' | 'svCurrent' | 'svNext';
+  from: string;
+  to: string;
+  /** 'YYYY-MM-01' of the SC pool this window docks — absent for the salary window. */
+  poolMonth?: string;
+  /** 'YYYY-MM-DD' the SV is transferred — absent for the salary window. */
+  payDate?: string;
+}
+
+/**
+ * The windows a single payroll month reads the timesheet over — the answer to "which days does
+ * this number count?", which is the question HR keeps having to reconstruct by hand.
+ *
+ * A slip for month M carries figures measured over two DIFFERENT spans that merely overlap:
+ *   salary    26th of M−1 → 25th of M   (the pay cycle; drives absence/leave/late deductions)
+ *   svCurrent all of M−1                (the pool transferred on 15 M, printed on the same slip)
+ * and a third the slip has not reached yet:
+ *   svNext    all of M                  (the pool that will transfer on 15 of M+1)
+ *
+ * So days 1–25 of M−1 dock SV but not this slip's salary, and days 1–25 of M dock this slip's
+ * salary but their SV lands a month later. One absence, two different totals, both correct — the
+ * reason a slip could read "ขาดงาน 16 วัน" beside an SV panel saying 11 (client 2026-08-20).
+ *
+ * @param payMonth 'YYYY-MM' or any longer ISO date starting with it — the month the slip PAYS in
+ */
+export function payWindows(payMonth: string): PayWindow[] {
+  const monthFirst = `${payMonth.slice(0, 7)}-01`;
+  const [y, m] = monthFirst.slice(0, 7).split('-').map(Number);
+  const prevFirst = scEventMonthForPool(monthFirst);
+  const prev = calendarMonth(prevFirst);
+  const cur = calendarMonth(monthFirst);
+  return [
+    // The cycle END is the 25th of the pay month; its start is the 26th of the month before, which
+    // is the last day of prev's calendar month minus five — always the 26th, never a clamped date.
+    { key: 'salary', from: `${prevFirst.slice(0, 7)}-26`, to: `${y}-${pad(m)}-25` },
+    { key: 'svCurrent', from: prev.from, to: prev.to, poolMonth: monthFirst, payDate: svPayDate(monthFirst) },
+    {
+      key: 'svNext',
+      from: cur.from,
+      to: cur.to,
+      poolMonth: scPoolMonthForEvent(monthFirst),
+      payDate: svPayDate(scPoolMonthForEvent(monthFirst)),
+    },
+  ];
+}
+
+/**
+ * The payroll month a date belongs to — the month whose 26th→25th cycle contains it.
+ *
+ * @param date 'YYYY-MM-DD'
+ * @returns 'YYYY-MM'
+ */
+export function payMonthOf(date: string): string {
+  const [y, m, d] = date.slice(0, 10).split('-').map(Number);
+  // On or after the 26th the cycle has rolled into next month's pay run.
+  const ms = d >= 26 ? Date.UTC(y, m, 1) : Date.UTC(y, m - 1, 1);
+  return new Date(ms).toISOString().slice(0, 7);
+}

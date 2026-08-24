@@ -3253,6 +3253,9 @@
         "carry": "carried to next month {amount}",
         "stale": "This slip paid SV {paid} ฿ (snapshot at generation) but the pool now nets {pool} ฿ — the pool changed after the payrun was generated; regenerate it to match.",
         "deductWindow": "deductions come from what happened in {month}",
+        "windowSalary": "Salary deductions counted over",
+        "windowSv": "SV deductions counted over",
+        "windowWhy": "The two spans do not match, so the counts can differ and both still be right — an absence early in the previous month docks SV but falls outside this pay cycle, while an absence this month docks this salary and reaches SV a round later",
         "carryTotal": "Carried to next month: {amount} ฿ (more than this month SV could absorb)"
       },
       "twoRounds": "Paid in 2 transfers: service charge/tip {sv} ฿ ({svDate}) · salary {salary} ฿ ({salaryDate}) — total received for {month}: {total} ฿",

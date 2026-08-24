@@ -3,7 +3,7 @@
 import { useLocale, useTranslations } from 'next-intl';
 import { formatBaht } from '@/lib/pos/money';
 import { useScLineLabel } from '@/components/hr/use-sc-line-label';
-import { svPayDate, scEventMonthForPool } from '@/lib/hr/pay-cycle';
+import { svPayDate, scEventMonthForPool, payWindows } from '@/lib/hr/pay-cycle';
 
 export interface PayslipLine {
   type: string;
@@ -97,6 +97,12 @@ function svDeductWindow(periodMonth: string): string {
   const ev = scEventMonthForPool(periodMonth);
   const [y, m] = ev.slice(0, 10).split('-');
   return y && m ? `${m}/${y}` : ev;
+}
+
+/** The same window as svDeductWindow, spelled out as dates: '01/07/2026 – 31/07/2026'. */
+function svDeductRange(periodMonth: string): string {
+  const w = payWindows(periodMonth).find((x) => x.key === 'svCurrent');
+  return w ? `${formatDayMonthYear(w.from)} – ${formatDayMonthYear(w.to)}` : svDeductWindow(periodMonth);
 }
 
 /** 'YYYY-MM-DD' → 'DD/MM/YYYY'. */
@@ -412,6 +418,29 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
           <p className="mb-1 text-xs text-violet-600/70 dark:text-violet-400/70">
             {t('sc.round')} · {t('sc.deductWindow', { month: svDeductWindow(data.service_charge.period_month) })}
           </p>
+          {/* The two spans, printed together.
+              The salary cycle was already stated at the top of the slip and the SV window here, half
+              a page apart — so nobody put them side by side, and the difference between them read as
+              the system contradicting itself. They only overlap for the last few days of the month:
+              1–25 of the previous month docks SV but not this cycle, 1–25 of this month docks this
+              cycle but reaches SV a round later. That is the whole of the confusion, said once. */}
+          {payrun?.cycle_start && payrun?.cycle_end && (
+            <div className="mb-1.5 rounded-md bg-white/70 px-2 py-1.5 text-[11px] leading-relaxed dark:bg-gray-800/40">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 text-gray-600 dark:text-gray-300">
+                <span>{t('sc.windowSalary')}</span>
+                <span className="tabular-nums font-medium">
+                  {formatDayMonthYear(payrun.cycle_start)} – {formatDayMonthYear(payrun.cycle_end)}
+                </span>
+              </div>
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 text-violet-700 dark:text-violet-300">
+                <span>{t('sc.windowSv')}</span>
+                <span className="tabular-nums font-medium">
+                  {svDeductRange(data.service_charge.period_month)}
+                </span>
+              </div>
+              <p className="mt-1 text-gray-500 dark:text-gray-400">{t('sc.windowWhy')}</p>
+            </div>
+          )}
           <ul className="divide-y divide-violet-200/60 dark:divide-violet-800/60">
             <li className="flex items-center justify-between py-1">
               <span>{t('sc.allocated')}</span>
