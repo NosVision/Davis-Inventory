@@ -4,7 +4,7 @@ import { getHrPolicies } from '@/lib/hr/policy';
 import { haversineMeters, isValidLat, isValidLng } from '@/lib/hr/geo';
 import { assessIp } from '@/lib/hr/ip-geo';
 import { getClientIp } from '@/lib/hr/request-ip';
-import { findUnclosedDays, flagUnclosedDays } from '@/lib/hr/open-attendance';
+import { findUnclosedDays, flagUnclosedDays, findBlockingOpenDays } from '@/lib/hr/open-attendance';
 import { openBusinessDateBangkok } from '@/lib/utils/date';
 import { notifyHrManagers } from '@/lib/hr/notify';
 import { notifyUser } from '@/lib/notifications/service';
@@ -312,6 +312,32 @@ export async function POST(request: NextRequest) {
       { error: 'ยังไม่มีตารางงานของวันนี้ — ต้องให้ฝ่ายบุคคลจัดตารางก่อนจึงจะลงเวลาได้' },
       { status: 409 }
     );
+  }
+
+  // --- Unclosed-day gate (client decision 2026-08-25) ---
+  // You cannot open a NEW day while an earlier one is still hanging. Until now the punch was let
+  // through and the employee merely notified, on the reasoning that losing today's time record is
+  // worse than a dangling yesterday. In practice the dangling day was then never closed: the
+  // check-in screen shows only today, so the forgotten day was invisible there and the employee
+  // simply clocked in again. One account reached three check-ins and not a single check-out.
+  //
+  // Refusing the punch is what makes the forgotten day impossible to walk past. The employee files
+  // the missing check-out with a reason from that same screen, and filing unblocks them at once —
+  // HR reviews afterwards, so nobody is kept from working while an approval is pending.
+  if (type === 'in') {
+    const blocking = await findBlockingOpenDays(service, user.id, businessDate);
+    if (blocking.length > 0) {
+      await flagUnclosedDays(service, blocking);
+      return NextResponse.json(
+        {
+          error:
+            'มีวันที่เช็คอินแล้วยังไม่ได้เช็คเอาท์ — กรุณาส่งเวลาออกงานพร้อมเหตุผลให้ HR ก่อน แล้วจึงเช็คอินวันนี้ได้',
+          code: 'unclosed_day',
+          open_days: blocking.map((d) => ({ business_date: d.business_date, in_ts: d.in_ts })),
+        },
+        { status: 409 }
+      );
+    }
   }
 
   const { data: inserted, error: insertErr } = await service

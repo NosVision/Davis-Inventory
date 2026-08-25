@@ -8,6 +8,7 @@ import { Button, PageHeader, StatusBadge, DataList, DataCard, ViewToggle, useVie
 import { cn } from '@/lib/utils/cn';
 import { toBangkokISO, formatTimeBangkok } from '@/lib/utils/date';
 import { TileNotices } from '../_components/tile-notices';
+import { UnclosedDayCard, type OpenDay } from '../_components/unclosed-day-card';
 
 type AttendanceType = 'in' | 'out' | 'break_start' | 'break_end';
 
@@ -111,6 +112,22 @@ export default function CheckinPage() {
     );
   }, []);
 
+  // Days with a check-IN and no check-OUT that the employee has not filed for yet. While any
+  // exists, the check-in controls are replaced by the card that closes it — the server refuses the
+  // punch anyway (409 unclosed_day), so showing the button would only produce a dead tap.
+  const [openDays, setOpenDays] = useState<OpenDay[]>([]);
+  const fetchOpenDays = useCallback(async () => {
+    try {
+      const res = await fetch('/api/hr/ess/attendance/open-days');
+      if (!res.ok) return;
+      const json = await res.json();
+      const all = (json.data ?? []) as OpenDay[];
+      setOpenDays(all.filter((d) => !d.existing_request));
+    } catch {
+      // Never let this keep the page from rendering — the server gate is the real guard.
+    }
+  }, []);
+
   // --- Today's list ---
   const fetchToday = useCallback(async () => {
     setLoadingList(true);
@@ -129,7 +146,8 @@ export default function CheckinPage() {
   useEffect(() => {
     getLocation();
     fetchToday();
-  }, [getLocation, fetchToday]);
+    fetchOpenDays();
+  }, [getLocation, fetchToday, fetchOpenDays]);
 
   // If the selected punch type has already been recorded today, move to the next unused type.
   useEffect(() => {
@@ -275,7 +293,12 @@ export default function CheckinPage() {
         }),
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json?.error || t('failed'));
+      if (!res.ok) {
+        // The server refuses a new check-in while a day hangs open. Surfacing the card is more use
+        // than the message alone — it is the thing that clears the block.
+        if (json?.code === 'unclosed_day') fetchOpenDays();
+        throw new Error(json?.error || t('failed'));
+      }
       const pending = json.review_status === 'pending';
       toast({
         type: pending ? 'warning' : 'success',
@@ -300,7 +323,7 @@ export default function CheckinPage() {
     } finally {
       setSubmitting(false);
     }
-  }, [coords, photo, type, t, tx, fetchToday]);
+  }, [coords, photo, type, t, tx, fetchToday, fetchOpenDays]);
 
   const submit = useCallback(() => {
     if (!photo) {
@@ -315,7 +338,10 @@ export default function CheckinPage() {
     void doSubmit();
   }, [photo, coords, doSubmit, t]);
 
-  const canSubmit = photo !== null && !submitting && !usedTypes.has(type);
+  // An unresolved open day blocks a new check-in server-side, so the button must not offer one.
+  // Closing punches stay allowed: someone mid-shift must always be able to clock OUT.
+  const blockedByOpenDay = openDays.length > 0 && type === 'in';
+  const canSubmit = photo !== null && !submitting && !usedTypes.has(type) && !blockedByOpenDay;
 
   return (
     <div className="mx-auto max-w-md space-y-5 p-4">
@@ -327,6 +353,16 @@ export default function CheckinPage() {
       />
 
       <TileNotices tile="checkin" />
+
+      {openDays.length > 0 && (
+        <UnclosedDayCard
+          days={openDays}
+          onFiled={() => {
+            fetchOpenDays();
+            fetchToday();
+          }}
+        />
+      )}
 
       {/* Type selector */}
       <div className="grid grid-cols-2 gap-2">

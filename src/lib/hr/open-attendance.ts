@@ -92,3 +92,29 @@ export async function flagUnclosedDays(
     .select('id');
   return (data ?? []).length;
 }
+
+/**
+ * Open days the EMPLOYEE still has to act on — the ones with no correction request in flight.
+ *
+ * A day already filed for is waiting on HR, not on them: it must not keep nagging, and it must not
+ * keep them from clocking in tomorrow. Everything else is unresolved, and since 2026-08-25 an
+ * unresolved day blocks the next check-in outright (client decision): the employee closes it with a
+ * reason first, which is the only moment they reliably notice they forgot.
+ */
+export async function findBlockingOpenDays(
+  service: SupabaseClient,
+  userId: string,
+  beforeBusinessDate: string
+): Promise<OpenDay[]> {
+  const open = await findUnclosedDays(service, userId, beforeBusinessDate);
+  if (open.length === 0) return [];
+
+  const { data } = await service
+    .from('hr_attendance_requests')
+    .select('business_date')
+    .eq('user_id', userId)
+    .in('business_date', open.map((d) => d.business_date))
+    .in('status', ['pending', 'approved']);
+  const filed = new Set((data ?? []).map((r) => (r as { business_date: string }).business_date));
+  return open.filter((d) => !filed.has(d.business_date));
+}
