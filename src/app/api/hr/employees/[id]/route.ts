@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { callerCanViewConfidentialPay, redactEmployeePay } from '@/lib/hr/pay-visibility';
+import {
+  callerCanViewConfidentialPay,
+  isPayHiddenFrom,
+  loadPayVisibility,
+  redactEmployeePay,
+} from '@/lib/hr/pay-visibility';
 import { requireHrManagerForEmployeeId } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import {
@@ -48,7 +53,7 @@ export async function GET(
 
   const [redacted] = redactEmployeePay(
     [data as unknown as Record<string, unknown>],
-    await callerCanViewConfidentialPay(service, auth.userId)
+    await loadPayVisibility(service, auth.userId)
   );
   return NextResponse.json({ data: redacted });
 }
@@ -98,6 +103,27 @@ export async function PUT(
         { status: 403 }
       );
     }
+  }
+
+  // The same lock, seen from the write side (§00195). An HR user who cannot see this person's pay
+  // must not be able to move them OUT of the group that hides them — the figures would be readable
+  // a moment later. Decided on where the employee is NOW (`current`), not where the request wants
+  // them to be.
+  const visibility = await loadPayVisibility(service, auth.userId);
+  if (isPayHiddenFrom(current as { pay_confidential: boolean; payroll_group_id: string | null }, visibility)) {
+    if (
+      'payroll_group_id' in fields &&
+      (fields.payroll_group_id ?? null) !== (current.payroll_group_id ?? null)
+    ) {
+      return NextResponse.json(
+        { error: 'คุณไม่มีสิทธิ์ย้ายกลุ่มเงินเดือนของพนักงานคนนี้' },
+        { status: 403 }
+      );
+    }
+    // The employee form posts every field on every save, and this caller received the pay fields
+    // blanked by redactEmployeePay. Writing those blanks back would erase a salary they were never
+    // allowed to read. Drop them rather than refuse, so editing a phone number still works.
+    for (const key of SENSITIVE_KEYS) delete fields[key];
   }
 
   // Company changes MUST go through the dedicated transfer endpoint (mandatory reason + effective_date + audit, §A).

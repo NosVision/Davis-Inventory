@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { callerCanViewConfidentialPay, confidentialProfileIds } from '@/lib/hr/pay-visibility';
+import { callerCanViewConfidentialPay, payHiddenProfileIds } from '@/lib/hr/pay-visibility';
 import { requireHrManagerForStore } from '@/lib/hr/route-auth';
 import { buildPayrunReviewRows } from '@/lib/hr/review-link';
 import { loadWorkVenues } from '@/lib/hr/work-venues';
@@ -182,7 +182,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   // from the full run — a complete total beside a partial list is a subtraction away from the
   // figures being hidden. The response says how many are missing so the page can label itself.
   const canSeeAll = await callerCanViewConfidentialPay(service, auth.userId);
-  const confidential = canSeeAll ? new Set<string>() : await confidentialProfileIds(service);
+  const confidential = canSeeAll ? new Set<string>() : await payHiddenProfileIds(service, auth.userId);
   const hiddenCount = canSeeAll ? 0 : payslips.filter((s) => confidential.has(s.user_id)).length;
   const visibleSlips = canSeeAll ? payslips : payslips.filter((s) => !confidential.has(s.user_id));
 
