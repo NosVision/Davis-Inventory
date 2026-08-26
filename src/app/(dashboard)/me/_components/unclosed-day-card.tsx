@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { AlertTriangle, Loader2, Send } from 'lucide-react';
 import { Button, toast } from '@/components/ui';
 import { formatTimeBangkok } from '@/lib/utils/date';
+import { businessDayInstant, BUSINESS_DAY_CUTOFF_HOUR } from '@/lib/hr/attendance-window';
 
 /**
  * The blocking card shown on /me/checkin when an earlier day was never checked out.
@@ -32,34 +33,68 @@ function dmy(date: string): string {
   return y && m && d ? `${d}/${m}/${y}` : date;
 }
 
-/** 'YYYY-MM-DDTHH:mm' for a datetime-local input, in Bangkok wall-clock. */
-function toLocalInput(iso: string): string {
-  const d = new Date(iso);
-  const bkk = new Date(d.getTime() + 7 * 3_600_000);
-  return bkk.toISOString().slice(0, 16);
-}
-
-/** A Bangkok wall-clock 'YYYY-MM-DDTHH:mm' back to a real instant. */
-function fromLocalInput(local: string): string {
-  return new Date(`${local}:00+07:00`).toISOString();
+/**
+ * The Bangkok wall-clock 'HH:mm' of an instant — what `<input type="time">` wants.
+ *
+ * Arithmetic rather than Intl: an `hour12: false` formatter reports midnight as "24:00" under some
+ * locale data, which a time input rejects outright.
+ */
+function toTimeInput(iso: string): string {
+  return new Date(new Date(iso).getTime() + 7 * 3_600_000).toISOString().slice(11, 16);
 }
 
 export function UnclosedDayCard({ days, onFiled }: { days: OpenDay[]; onFiled: () => void }) {
-  const [reason, setReason] = useState('');
-  const [outAt, setOutAt] = useState(() => {
-    const d = days[0];
-    // Falls back to the check-in instant rather than "now": a blank field invites a guess, and the
-    // employee can always correct it. HR sees the reason either way.
-    return toLocalInput(d?.suggested_out_ts ?? d?.in_ts ?? new Date().toISOString());
-  });
-  const [sending, setSending] = useState(false);
-
   const day = days[0];
   if (!day) return null;
+  // Keyed on the day BEING CLOSED, not mounted once for the queue. The form's initial time comes
+  // from `days[0]`, and a useState initializer runs only on mount: without this key the card kept
+  // the first day's time as the queue advanced, and three days filed back to back all proposed the
+  // FIRST day's timestamp — writing 20/07 19:00 as the check-out of 24/08 and 25/08 (May, 26/08).
+  // Remounting per day also clears the reason, which belongs to one day, not to the queue.
+  return (
+    <DayCloseForm
+      key={day.business_date}
+      day={day}
+      remaining={days.length - 1}
+      onFiled={onFiled}
+    />
+  );
+}
+
+function DayCloseForm({
+  day,
+  remaining,
+  onFiled,
+}: {
+  day: OpenDay;
+  remaining: number;
+  onFiled: () => void;
+}) {
+  const [reason, setReason] = useState('');
+  // Time only. The DATE is not the employee's to choose — it is the day being closed, stated above
+  // — and a full datetime picker made it theirs to get wrong: on a Thai phone it rendered as
+  // "20 Jul BE 2569 at 19:00", too wide for the screen and reading like a field they had to type.
+  const [outTime, setOutTime] = useState(() =>
+    toTimeInput(day.suggested_out_ts ?? day.in_ts)
+  );
+  const [sending, setSending] = useState(false);
+
+  // A shift ending in the small hours belongs to this business day but the NEXT calendar one; say
+  // so, or "ออก 02:00 ของวันที่ 20" looks like a typo.
+  const spillsToNextDay = Number(outTime.slice(0, 2)) < BUSINESS_DAY_CUTOFF_HOUR;
 
   const submit = async () => {
     if (!reason.trim()) {
       toast({ type: 'error', title: 'กรุณากรอกเหตุผล' });
+      return;
+    }
+    const proposedTs = businessDayInstant(day.business_date, outTime);
+    if (new Date(proposedTs).getTime() <= new Date(day.in_ts).getTime()) {
+      toast({
+        type: 'error',
+        title: 'เวลาออกงานต้องอยู่หลังเวลาเข้างาน',
+        message: `วันนั้นเข้างาน ${formatTimeBangkok(day.in_ts)}`,
+      });
       return;
     }
     setSending(true);
@@ -71,7 +106,7 @@ export function UnclosedDayCard({ days, onFiled }: { days: OpenDay[]; onFiled: (
           business_date: day.business_date,
           kind: 'missing_out',
           proposed_type: 'out',
-          proposed_ts: fromLocalInput(outAt),
+          proposed_ts: proposedTs,
           reason: reason.trim(),
         }),
       });
@@ -97,8 +132,8 @@ export function UnclosedDayCard({ days, onFiled }: { days: OpenDay[]; onFiled: (
         <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
         <div className="min-w-0">
           <h2 className="text-sm font-bold text-amber-900 dark:text-amber-200">
-            {days.length > 1
-              ? `มี ${days.length} วันที่ยังไม่ได้เช็คเอาท์`
+            {remaining > 0
+              ? `มี ${remaining + 1} วันที่ยังไม่ได้เช็คเอาท์`
               : 'มีวันที่ยังไม่ได้เช็คเอาท์'}
           </h2>
           <p className="mt-0.5 text-xs leading-relaxed text-amber-800 dark:text-amber-300">
@@ -118,27 +153,37 @@ export function UnclosedDayCard({ days, onFiled }: { days: OpenDay[]; onFiled: (
             {day.shift_label ? ` · กะ ${day.shift_label}` : ''}
           </span>
         </div>
-        {days.length > 1 && (
+        {remaining > 0 && (
           <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-            อีก {days.length - 1} วันจะขึ้นให้ส่งต่อหลังส่งวันนี้เสร็จ
+            อีก {remaining} วันจะขึ้นให้ส่งต่อหลังส่งวันนี้เสร็จ
           </p>
         )}
       </div>
 
-      <label className="block text-xs font-medium text-amber-900 dark:text-amber-200">
-        เวลาออกงานจริง
+      <div>
+        <label
+          htmlFor="unclosed-out-time"
+          className="block text-xs font-medium text-amber-900 dark:text-amber-200"
+        >
+          ออกงานจริงกี่โมง — วันที่ {dmy(day.business_date)}
+        </label>
+        {/* `w-auto` on purpose: a time field sized to its own content stays inside the screen on a
+            phone, where a full-width one stretched past the edge. */}
         <input
-          type="datetime-local"
-          value={outAt}
-          onChange={(e) => setOutAt(e.target.value)}
-          className="control mt-1 w-full"
+          id="unclosed-out-time"
+          type="time"
+          value={outTime}
+          onChange={(e) => setOutTime(e.target.value)}
+          className="control mt-1 w-auto max-w-full text-base tabular-nums"
         />
-        {day.suggested_out_ts && (
-          <span className="mt-1 block text-[11px] font-normal text-amber-700/80 dark:text-amber-400/80">
-            เติมเวลาเลิกกะตามตารางให้แล้ว — แก้ได้ถ้าออกจริงคนละเวลา
-          </span>
-        )}
-      </label>
+        <p className="mt-1 text-[11px] text-amber-700/80 dark:text-amber-400/80">
+          {spillsToNextDay
+            ? `นับเป็นกะของวันที่ ${dmy(day.business_date)} (เลิกหลังเที่ยงคืน)`
+            : day.suggested_out_ts
+              ? 'เติมเวลาเลิกกะตามตารางให้แล้ว — แก้ได้ถ้าออกจริงคนละเวลา'
+              : 'ใส่เวลาที่ออกงานจริงของวันนั้น'}
+        </p>
+      </div>
 
       <label className="block text-xs font-medium text-amber-900 dark:text-amber-200">
         เหตุผล <span className="text-red-500">*</span>

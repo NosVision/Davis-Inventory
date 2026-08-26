@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { openBusinessDateBangkok } from '@/lib/utils/date';
 import { findUnclosedDays } from '@/lib/hr/open-attendance';
+import { businessDayInstant } from '@/lib/hr/attendance-window';
 
 /**
  * GET /api/hr/ess/attendance/open-days — the caller's own days that have a check-IN and no
@@ -62,9 +63,10 @@ export async function GET() {
         in_ts: d.in_ts,
         // Pre-fill: the shift's scheduled end is the closest thing to "when you actually left"
         // that the system knows. null when the day had no rostered shift — the employee types it.
-        suggested_out_ts: shift
-          ? new Date(`${d.business_date}T${shift.end_time}+07:00`).toISOString()
-          : null,
+        // businessDayInstant, not the date pasted onto the time: a shift ending at 02:00 finishes
+        // in the small hours of the NEXT calendar day, and suggesting 02:00 on the business date
+        // itself would propose an out BEFORE the evening's own check-in.
+        suggested_out_ts: shift ? businessDayInstant(d.business_date, shift.end_time) : null,
         shift_label: shift?.label ?? null,
         existing_request: reqByDate.get(d.business_date) ?? null,
       };

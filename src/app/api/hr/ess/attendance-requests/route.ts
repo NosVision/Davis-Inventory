@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { isDateInFinalizedPeriod, FINALIZED_PERIOD_ERROR } from '@/lib/hr/period-lock';
-import { isFutureAttendanceDate, FUTURE_ATTENDANCE_ERROR } from '@/lib/hr/attendance-window';
+import {
+  isFutureAttendanceDate,
+  FUTURE_ATTENDANCE_ERROR,
+  isInstantOnBusinessDate,
+  OFF_BUSINESS_DATE_ERROR,
+  OUT_BEFORE_IN_ERROR,
+} from '@/lib/hr/attendance-window';
 import { businessDateBangkok } from '@/lib/utils/date';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -95,6 +101,13 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    // The punch must actually fall on the day it claims. Without this a stale form field wrote a
+    // 20/07 19:00 check-OUT onto business dates 24/08 and 25/08 — an out a month BEFORE its own
+    // check-in, which pairs with nothing, so the day stayed "ไม่ได้ลงเวลาออก" with no worked
+    // minutes and the employee saw their filed, approved correction change nothing (May, 26/08).
+    if (!isInstantOnBusinessDate(proposedTs, businessDate)) {
+      return NextResponse.json({ error: OFF_BUSINESS_DATE_ERROR }, { status: 400 });
+    }
   } else if (kind === 'wrong_time') {
     if (!targetAttendanceId) {
       return NextResponse.json(
@@ -107,6 +120,9 @@ export async function POST(request: NextRequest) {
         { error: 'A valid proposed_ts is required for a wrong-time request' },
         { status: 400 }
       );
+    }
+    if (!isInstantOnBusinessDate(proposedTs, businessDate)) {
+      return NextResponse.json({ error: OFF_BUSINESS_DATE_ERROR }, { status: 400 });
     }
 
     // Authz-critical: the referenced punch must belong to the requesting user, or an
@@ -141,6 +157,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'you are not scheduled on that date' }, { status: 400 });
     }
     storeId = sched.store_id as string;
+  }
+
+  // A check-OUT at or before that day's check-IN pairs with nothing: the time engine reads the day
+  // as still open, worked minutes stay null, and the day keeps its "ไม่ได้ลงเวลาออก" badge even
+  // after HR approves the correction. Refuse it while the employee is still looking at the form,
+  // rather than let an approved request quietly change nothing.
+  if (kind === 'missing_out' && proposedTs) {
+    const { data: firstIn } = await service
+      .from('hr_attendance')
+      .select('ts')
+      .eq('user_id', user.id)
+      .eq('business_date', businessDate)
+      .eq('type', 'in')
+      .order('ts', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    const inTs = (firstIn as { ts: string } | null)?.ts;
+    if (inTs && new Date(proposedTs).getTime() <= new Date(inTs).getTime()) {
+      return NextResponse.json({ error: OUT_BEFORE_IN_ERROR }, { status: 400 });
+    }
   }
 
   // §Phase 0B: once the pay period covering this date is finalized, its punches are settled — a

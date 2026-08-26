@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { requireStoreManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import { isDateInFinalizedPeriod, FINALIZED_PERIOD_ERROR } from '@/lib/hr/period-lock';
+import { isInstantOnBusinessDate, OFF_BUSINESS_DATE_ERROR } from '@/lib/hr/attendance-window';
 
 const REQUEST_TABLE = 'hr_attendance_requests';
 const ATTENDANCE_TABLE = 'hr_attendance';
@@ -68,6 +69,11 @@ export async function POST(
   const overrideTs = typeof body.override_ts === 'string' && body.override_ts ? body.override_ts : null;
   if (overrideTs && Number.isNaN(Date.parse(overrideTs))) {
     return NextResponse.json({ error: 'override_ts is not a valid timestamp' }, { status: 400 });
+  }
+  // HR's correction of the proposed time has to land on the day it is correcting — a punch outside
+  // its own business day pairs with nothing and silently voids the day it was meant to fix.
+  if (overrideTs && !isInstantOnBusinessDate(overrideTs, row.business_date as string)) {
+    return NextResponse.json({ error: OFF_BUSINESS_DATE_ERROR }, { status: 400 });
   }
   const leaveTypeId = typeof body.leave_type_id === 'string' ? body.leave_type_id : '';
   if (resolution === 'leave' && !leaveTypeId) {
