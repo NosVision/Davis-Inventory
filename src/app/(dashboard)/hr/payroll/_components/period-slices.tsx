@@ -32,12 +32,14 @@ export interface CoverageBucket {
   state: SliceState;
   payrun: { id: string; status: string } | null;
   missing: { user_id: string; name: string; stores: string[]; end_date: string | null }[];
+  /** Full-month staff with no start date on file — paid a whole cycle on an assumption. */
+  no_start_date: { user_id: string; name: string; status: string | null }[];
 }
 
 export interface CoverageData {
   period: { year: number; month: number; cycle_start: string; cycle_end: string; pay_date: string; closed: boolean };
   buckets: CoverageBucket[];
-  totals: { expected: number; with_slip: number; missing: number };
+  totals: { expected: number; with_slip: number; missing: number; no_start_date: number };
 }
 
 interface PeriodSlicesProps {
@@ -68,6 +70,7 @@ export function PeriodSlices({
 }: PeriodSlicesProps) {
   const tt = (th: string, en: string) => (isTh ? th : en);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [expandedNoStart, setExpandedNoStart] = useState<string | null>(null);
 
   const { mine, others } = useMemo(() => {
     const all = data?.buckets ?? [];
@@ -106,6 +109,7 @@ export function PeriodSlices({
             const isOpen = !!b.payrun && b.payrun.id === openPayrunId;
             const finalized = b.payrun?.status === 'finalized';
             const missing = b.missing.length;
+            const noStart = b.no_start_date.length;
             const tone = finalized
               ? 'border-emerald-300 dark:border-emerald-800'
               : b.state === 'incomplete'
@@ -172,6 +176,27 @@ export function PeriodSlices({
                         </span>
                       )}
                     </p>
+                    {/* Amber, not red, and never blocking: the run is valid, but every one of these
+                        people is being paid a full month on the assumption they worked it. Someone
+                        who joined mid-cycle is overpaid and nothing else on this page would say so. */}
+                    {noStart > 0 && (
+                      <p className="mt-1">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedNoStart((cur) => (cur === key ? null : key))}
+                          className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 hover:underline dark:text-amber-400"
+                        >
+                          <TriangleAlert className="h-3.5 w-3.5" />
+                          {tt(
+                            `${noStart} คนไม่มีวันเริ่มงาน — จ่ายเต็มเดือน`,
+                            `${noStart} with no start date — paid a full month`
+                          )}
+                          <span className="text-amber-600/70 dark:text-amber-500/70">
+                            {tt('· ดูรายชื่อ', '· show names')}
+                          </span>
+                        </button>
+                      </p>
+                    )}
                   </div>
 
                   <div className="ml-auto flex flex-wrap items-center gap-2">
@@ -209,6 +234,29 @@ export function PeriodSlices({
                     )}
                   </div>
                 </div>
+
+                {expandedNoStart === key && noStart > 0 && (
+                  <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs dark:border-amber-900/60 dark:bg-amber-900/20">
+                    <p className="mb-1 text-amber-800 dark:text-amber-300">
+                      {tt(
+                        'ถ้าคนเหล่านี้เพิ่งเข้างานกลางงวด ระบบจะจ่ายเต็มเดือน — เติมวันเริ่มงานในประวัติพนักงาน แล้วกดคำนวณใหม่',
+                        'If any of these joined mid-cycle they are being paid for the whole one. Fill in their start date on the employee record, then recompute.'
+                      )}
+                    </p>
+                    <ul className="space-y-1">
+                      {b.no_start_date.map((m) => (
+                        <li key={m.user_id} className="flex flex-wrap items-center gap-x-2 text-gray-700 dark:text-gray-300">
+                          <span className="font-medium">{m.name}</span>
+                          {m.status === 'probation' && (
+                            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                              {tt('ทดลองงาน', 'probation')}
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
                 {expanded === key && missing > 0 && (
                   <ul className="mt-2 space-y-1 rounded-lg bg-gray-50 p-2 text-xs dark:bg-gray-900/40">

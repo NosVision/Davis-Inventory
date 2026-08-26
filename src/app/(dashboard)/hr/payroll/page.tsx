@@ -416,6 +416,17 @@ export default function HrPayrollPage() {
         if (scFailed.length > 0) {
           toast({ type: 'error', title: t('generatedScFailed', { n: scFailed.length }) });
         }
+        // Not a failure — the run is valid — but these people were paid a full month because no
+        // start date was on file to prorate against. Said at the moment of generating, because
+        // after that the figure looks like every other one on the slip.
+        const noStart = json?.data?.no_start_date as { count: number; names: string[] } | undefined;
+        if (noStart && noStart.count > 0) {
+          toast({
+            type: 'warning',
+            title: t('generatedNoStartDate', { n: noStart.count }),
+            message: noStart.names.slice(0, 5).join(', ') + (noStart.count > 5 ? ' …' : ''),
+          });
+        }
         await Promise.all([loadCoverage(), loadPayruns()]);
         if (json?.data?.id) await openPayrun(json.data.id);
       } catch {

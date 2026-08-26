@@ -26,6 +26,7 @@ interface EligibleRow {
   status: string | null;
   start_date: string | null;
   end_date: string | null;
+  pay_type: string | null;
 }
 
 export type BucketState =
@@ -62,7 +63,7 @@ export async function GET(request: NextRequest) {
     // Same filter as payrun generation: employed at some point inside the cycle.
     service
       .from('hr_employees')
-      .select('profile_id, company_id, payroll_group_id, full_name, status, start_date, end_date')
+      .select('profile_id, company_id, payroll_group_id, full_name, status, start_date, end_date, pay_type')
       .or(`status.in.(active,probation),end_date.gte.${cycle.start}`),
     service
       .from('hr_payruns')
@@ -157,6 +158,12 @@ export async function GET(request: NextRequest) {
   const data = [...buckets.values()]
     .map((b) => {
       const missing = b.rows.filter((e) => !paidUserIds.has(e.profile_id));
+      // Mid-period hire/leave proration reads hr_employees.start_date. With none, the engine takes
+      // the person as employed for the WHOLE cycle and pays a full month — no error, no line on the
+      // slip, nothing to notice. 23 of 130 staff had no start date on 26/08/2026, including every
+      // one of the 16 on probation: the people most likely to have joined mid-cycle.
+      // Only full_monthly is prorated, so a part-timer without a start date is not at risk here.
+      const noStartDate = b.rows.filter((e) => !e.start_date && e.pay_type === 'full_monthly');
       const run =
         payruns.find(
           (p) => p.company_id === b.company_id && (p.payroll_group_id ?? null) === b.payroll_group_id
@@ -177,6 +184,16 @@ export async function GET(request: NextRequest) {
         with_slip: b.rows.length - missing.length,
         state,
         payrun: run ? { id: run.id, status: run.status } : null,
+        no_start_date: noStartDate
+          .map((e) => {
+            const p = profById.get(e.profile_id);
+            return {
+              user_id: e.profile_id,
+              name: e.full_name?.trim() || p?.display_name || p?.username || '—',
+              status: e.status,
+            };
+          })
+          .sort((a, b2) => a.name.localeCompare(b2.name, 'th')),
         missing: missing
           .map((e) => {
             const p = profById.get(e.profile_id);
@@ -210,6 +227,7 @@ export async function GET(request: NextRequest) {
       with_slip: 0,
       state: 'ok',
       payrun: { id: run.id, status: run.status },
+      no_start_date: [],
       missing: [],
     });
   }
@@ -219,8 +237,9 @@ export async function GET(request: NextRequest) {
       expected: acc.expected + b.expected,
       with_slip: acc.with_slip + b.with_slip,
       missing: acc.missing + b.missing.length,
+      no_start_date: acc.no_start_date + b.no_start_date.length,
     }),
-    { expected: 0, with_slip: 0, missing: 0 }
+    { expected: 0, with_slip: 0, missing: 0, no_start_date: 0 }
   );
 
   return NextResponse.json({

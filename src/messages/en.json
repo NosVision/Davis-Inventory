@@ -3220,6 +3220,7 @@
       "announcedBadge": "Announced",
       "printQueueSummary": "Paper slip print queue · {n} waiting",
       "generatedScRecomputed": "Refreshed SV deductions for {n} pool(s) from the current timesheet",
+      "generatedNoStartDate": "{n} staff have no start date — paid a full month. If any joined mid-cycle, fill it in and recompute.",
       "generatedScFailed": "{n} SV pool(s) could not be refreshed — press Recompute on the service-charge page"
     },
     "payslip": {

@@ -57,6 +57,7 @@ interface EmployeeFull {
   status: string | null;
   start_date: string | null;
   end_date: string | null;
+  full_name: string | null;
 }
 interface TaxAllowanceRow {
   employee_id: string;
@@ -140,7 +141,7 @@ export async function POST(request: NextRequest) {
   const { data: empRows, error: empErr } = await service
     .from('hr_employees')
     .select(
-      'id, profile_id, rate_satang, pay_type, work_hours_per_day, ot_eligible, ot_hour_divisor, tax_mode, sso_enrolled, pvd_enrolled, pvd_employee_rate, status, start_date, end_date, payroll_group_id'
+      'id, profile_id, rate_satang, pay_type, work_hours_per_day, ot_eligible, ot_hour_divisor, tax_mode, sso_enrolled, pvd_enrolled, pvd_employee_rate, status, start_date, end_date, full_name, payroll_group_id'
     )
     .eq('company_id', companyId)
     // Active/probation staff, PLUS anyone who left on/after the cycle start so a mid-period
@@ -727,6 +728,19 @@ export async function POST(request: NextRequest) {
     reason: 'payrun generated',
   });
 
+  // Paid a full month because nobody knows when they started. start_date is what drives mid-period
+  // proration, and its absence is indistinguishable from "employed all cycle" — no error, no line
+  // on the slip. Someone who joined on the 20th is then paid for 30 days instead of 6, and the run
+  // looks completely normal. Only full_monthly prorates, so part-timers are not at risk.
+  const noStartDate = assembled
+    .filter((a) => !a.emp.start_date && a.emp.pay_type === 'full_monthly')
+    .map((a) => (a.emp.full_name ?? '').trim())
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, 'th'));
+  const noStartDateCount = assembled.filter(
+    (a) => !a.emp.start_date && a.emp.pay_type === 'full_monthly'
+  ).length;
+
   return NextResponse.json({
     data: {
       id: payrunId,
@@ -734,6 +748,8 @@ export async function POST(request: NextRequest) {
       cycle_end: end,
       pay_date: payDate,
       payslips: created,
+      // Not an error — the run is valid. But HR has to know these figures rest on an assumption.
+      no_start_date: { count: noStartDateCount, names: noStartDate },
       // Which SC pools this generation refreshed on the way — the run edits them, so it says so.
       sc_pools_recomputed: scRecomputed.length,
       sc_pools_failed: scRecomputeFailed,
