@@ -3057,6 +3057,7 @@
       "bonusInvalid": "Enter a valid bonus amount",
       "slipTitle": "Payslip",
       "print": "Print",
+      "downloadPdf": "Download PDF",
       "close": "Close",
       "confirm": "Confirm",
       "cancel": "Cancel",

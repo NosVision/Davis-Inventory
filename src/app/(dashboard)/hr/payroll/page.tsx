@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
-import { Loader2, Wallet, Lock, LockOpen, Printer, X, FileText, Settings2, SlidersHorizontal, Percent, GitCompareArrows, Users, Coins, Send, Megaphone, RefreshCw, CheckCircle2, ChevronRight, ChevronDown, ArrowRight, BookOpen, StickyNote, Landmark, Banknote, type LucideIcon } from 'lucide-react';
+import { Loader2, Wallet, Lock, LockOpen, Printer, Download, X, FileText, Settings2, SlidersHorizontal, Percent, GitCompareArrows, Users, Coins, Send, Megaphone, RefreshCw, CheckCircle2, ChevronRight, ChevronDown, ArrowRight, BookOpen, StickyNote, Landmark, Banknote, type LucideIcon } from 'lucide-react';
 import { Button, EmptyState, Modal, ModalFooter, PageHeader, KpiRow, StatTile, MoneyValue, StatusBadge, Skeleton, toast, useConfirm, usePromptDialog } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { formatBaht } from '@/lib/pos/money';
@@ -153,6 +153,31 @@ export default function HrPayrollPage() {
 
   const [slip, setSlip] = useState<PayslipDetailData | null>(null);
   const [printSlip, setPrintSlip] = useState<PayslipDetailData | null>(null);
+  // Downloading is deliberately NOT the print path. Printing targets pre-printed security paper on
+  // a dot-matrix printer and is pinned to fixed physical positions; a download is read on a screen
+  // or on A4, so it gets a layout scaled to that sheet. Both render from the same slot mapping, so
+  // the two documents cannot disagree about a figure.
+  const [pdfBusyId, setPdfBusyId] = useState<string | null>(null);
+  const downloadSlipPdf = useCallback(async (d: PayslipDetailData) => {
+    setPdfBusyId(d.payslip.id);
+    try {
+      const { buildPayslipFormPdf } = await import('@/components/hr/payslip-form-pdf');
+      const blob = await buildPayslipFormPdf(d);
+      const y = d.payrun?.period_year ?? '';
+      const m = String(d.payrun?.period_month ?? '').padStart(2, '0');
+      const who = (d.payslip.employee_code || d.payslip.employee_name || 'slip').toString().trim();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `payslip-${y}-${m}-${who}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast({ type: 'error', title: 'สร้างไฟล์ PDF ไม่สำเร็จ' });
+    } finally {
+      setPdfBusyId(null);
+    }
+  }, []);
   const [recurringFor, setRecurringFor] = useState<{ employeeId: string; profileId: string; name: string } | null>(null);
   // company-wide item modals (one obvious spot in the hero, owner ask 2026-07-15)
   const [recurringGridOpen, setRecurringGridOpen] = useState(false);
@@ -1312,6 +1337,13 @@ export default function HrPayrollPage() {
           </div>
           <ModalFooter>
             <Button variant="outline" onClick={() => doPrint(slip)} icon={<Printer className="h-4 w-4" />}>{t('print')}</Button>
+            <Button
+              onClick={() => downloadSlipPdf(slip)}
+              disabled={pdfBusyId === slip.payslip.id}
+              icon={pdfBusyId === slip.payslip.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            >
+              {t('downloadPdf')}
+            </Button>
             <Button variant="ghost" onClick={() => setSlip(null)} icon={<X className="h-4 w-4" />}>{t('close')}</Button>
           </ModalFooter>
         </Modal>

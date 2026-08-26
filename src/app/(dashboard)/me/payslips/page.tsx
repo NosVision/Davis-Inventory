@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { Loader2, Calendar, Download, Wallet, X, FileText } from 'lucide-react';
 import { Button, EmptyState, Modal, ModalFooter, PageHeader, DataList, DataCard, MoneyValue, StatusBadge, ViewToggle, useViewMode, toast } from '@/components/ui';
-import { PayslipView, payslipLineLabel, type PayslipDetailData } from '@/components/hr/payslip-view';
+import { PayslipView, type PayslipDetailData } from '@/components/hr/payslip-view';
 import { ImportedPayslipView, periodLabel, type ImportedSlip } from '@/components/hr/imported-payslip-view';
 import { useEssText } from '@/lib/i18n/ess-locale';
 import { TileNotices } from '../_components/tile-notices';
@@ -139,15 +139,12 @@ export default function MyPayslipsPage() {
     if (!slip) return;
     setPdfBusy(true);
     try {
-      const { buildPayslipPdf } = await import('@/components/hr/payslip-pdf');
-      // Same label resolver the on-screen slip uses, so the saved file reads in Thai and word for
-      // word matches what the employee just looked at.
-      const blob = await buildPayslipPdf(slip, (line) =>
-        payslipLineLabel(line, t, (code) => {
-          const lt = slip.leave_types?.[code];
-          return lt ? (locale === 'en' ? lt.name_en : lt.name_th) : undefined;
-        })
-      );
+      const { buildPayslipFormPdf } = await import('@/components/hr/payslip-form-pdf');
+      // The accountant's form layout, the same one HR prints and downloads (client ask 2026-08-25).
+      // An employee taking their slip to a bank or a landlord should be handing over the document
+      // the company issues, not a second one that only they have ever seen. The detailed Thai
+      // breakdown stays on screen above, where the questions it answers actually get asked.
+      const blob = await buildPayslipFormPdf(slip);
       const y = slip.payrun?.period_year ?? year;
       const m = String(slip.payrun?.period_month ?? 0).padStart(2, '0');
       const url = URL.createObjectURL(blob);
@@ -161,7 +158,7 @@ export default function MyPayslipsPage() {
     } finally {
       setPdfBusy(false);
     }
-  }, [slip, year, t, locale]);
+  }, [slip, year]);
 
   return (
     <div className="mx-auto max-w-lg space-y-4 p-4">
