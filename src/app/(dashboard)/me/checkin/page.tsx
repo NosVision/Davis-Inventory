@@ -236,7 +236,19 @@ export default function CheckinPage() {
     canvas.height = h;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    // Mirrored, to match the preview above it. getUserMedia hands over the RAW front-camera frame,
+    // which is not what anyone has ever seen of themselves — every phone camera and every video
+    // call shows a mirror, so raising your right hand should move the hand on the right. Un-mirrored
+    // it reads as the camera being back-to-front (client report 2026-08-26).
+    //
+    // Mirroring the preview alone would only move the surprise to the saved photo, so the capture
+    // is flipped the same way. The transform is reset before the watermark, or the burned-in time
+    // and GPS would come out as mirror writing.
+    ctx.save();
+    ctx.translate(w, 0);
+    ctx.scale(-1, 1);
     ctx.drawImage(video, 0, 0, w, h);
+    ctx.restore();
     drawWatermark(ctx, w, h);
     setPhoto(canvas.toDataURL('image/jpeg', 0.85));
     stopCamera();
@@ -463,7 +475,9 @@ export default function CheckinPage() {
               autoPlay
               playsInline
               muted
-              className="h-full w-full object-cover"
+              /* Mirrored — the selfie convention. `capture` flips the canvas to match, so the
+                 photo that gets saved is the one the employee was looking at. */
+              className="h-full w-full -scale-x-100 object-cover"
             />
           ) : (
             <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-gray-400">
