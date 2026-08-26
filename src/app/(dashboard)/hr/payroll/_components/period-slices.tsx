@@ -30,6 +30,9 @@ export interface CoverageBucket {
   expected: number;
   with_slip: number;
   state: SliceState;
+  /** False when this slice holds someone whose pay the viewer may not see — the payrun POST would
+   *  refuse it, so the buttons say why instead of 403-ing on click. */
+  can_manage: boolean;
   payrun: { id: string; status: string } | null;
   missing: { user_id: string; name: string; stores: string[]; end_date: string | null }[];
   /** Full-month staff with no start date on file — paid a whole cycle on an assumption. */
@@ -201,11 +204,23 @@ export function PeriodSlices({
 
                   <div className="ml-auto flex flex-wrap items-center gap-2">
                     {/* The action lives on the slice it acts upon — no dropdown to set first. */}
+                    {!b.can_manage && (
+                      <span
+                        className="inline-flex items-center gap-1 rounded-lg bg-gray-100 px-2 py-1 text-xs text-gray-600 dark:bg-gray-700 dark:text-gray-300"
+                        title={tt(
+                          'กลุ่มนี้มีผู้จัดการเฉพาะ หรือมีพนักงานที่ปิดข้อมูลเงินเดือน',
+                          'This slice is owned by someone else, or holds confidential pay'
+                        )}
+                      >
+                        <Lock className="h-3 w-3" />
+                        {tt('คุณไม่มีสิทธิ์ทำงวดนี้', 'Not yours to run')}
+                      </span>
+                    )}
                     {!b.payrun ? (
                       <Button
                         size="sm"
                         icon={<Play className="h-4 w-4" />}
-                        disabled={busy || b.expected === 0}
+                        disabled={busy || b.expected === 0 || !b.can_manage}
                         onClick={() => onGenerate(b.payroll_group_id)}
                       >
                         {tt('สร้างรอบจ่าย', 'Generate')}
@@ -217,7 +232,7 @@ export function PeriodSlices({
                             size="sm"
                             variant="outline"
                             icon={<RefreshCw className="h-4 w-4" />}
-                            disabled={busy}
+                            disabled={busy || !b.can_manage}
                             onClick={() => onGenerate(b.payroll_group_id)}
                             title={tt(
                               'สร้างใหม่ทั้งใบจากข้อมูลล่าสุด — ดึงคนที่เพิ่งเพิ่มเข้ามาด้วย',

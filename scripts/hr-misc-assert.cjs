@@ -300,6 +300,59 @@ eq('sc-line manual passes through', sl.parseScLine({ source_type: 'manual', labe
 eq('sc-line absent without a count', sl.parseScLine({ source_type: 'absent', label: 'Absent' }), { kind: 'absent', days: null });
 eq('sc-line null label', sl.parseScLine({ source_type: 'warning', label: null }), { kind: 'warning', level: null });
 
+// ── pay-visibility.ts: who may see whose pay (§00182 the ลับ flag + §00195 group ownership) ──
+// This predicate is the whole access-control story for payroll figures — 14 routes gate on it, and
+// the SQL pay_hidden_from_caller() must agree with it exactly. Two locks OR'd, one bypass.
+const pv = load('pay-visibility.ts');
+const GROUP_A = 'aaaaaaaa-0000-0000-0000-000000000001'; // restricted, owned by our caller
+const GROUP_B = 'bbbbbbbb-0000-0000-0000-000000000002'; // restricted, owned by SOMEONE ELSE
+const GROUP_OPEN = 'cccccccc-0000-0000-0000-000000000003'; // exists, but nobody owns it
+const asManagerOfA = {
+  canViewAll: false,
+  managedGroupIds: new Set([GROUP_A]),
+  restrictedGroupIds: new Set([GROUP_A, GROUP_B]),
+};
+const plainHr = { canViewAll: false, managedGroupIds: new Set(), restrictedGroupIds: new Set([GROUP_A, GROUP_B]) };
+const hidden = (emp, ctx) => pv.isPayHiddenFrom(emp, ctx);
+
+// The bypass: can_view_confidential_pay (owner included) sees everything, both locks notwithstanding.
+eq('pv canViewAll beats the ลับ flag', hidden({ pay_confidential: true, payroll_group_id: GROUP_B }, pv.PAY_VISIBILITY_ALL), false);
+
+// Lock 1 — the per-employee ลับ flag, unchanged by this migration.
+eq('pv flagged employee is hidden', hidden({ pay_confidential: true, payroll_group_id: null }, plainHr), true);
+eq('pv unflagged + ungrouped is visible', hidden({ pay_confidential: false, payroll_group_id: null }, plainHr), false);
+
+// Lock 2 — group ownership. Managing the group is what lifts it, nothing else.
+eq('pv own restricted group is visible', hidden({ pay_confidential: false, payroll_group_id: GROUP_A }, asManagerOfA), false);
+eq("pv someone else's restricted group is hidden", hidden({ pay_confidential: false, payroll_group_id: GROUP_B }, asManagerOfA), true);
+eq('pv plain HR sees neither restricted group', hidden({ pay_confidential: false, payroll_group_id: GROUP_A }, plainHr), true);
+
+// A group with no managers is not a restriction — this is what keeps every pre-00195 group working.
+eq('pv unowned group stays open', hidden({ pay_confidential: false, payroll_group_id: GROUP_OPEN }, plainHr), false);
+
+// The locks are OR'd: owning the group does NOT unlock a member who is also flagged ลับ.
+eq('pv flag still applies inside your own group', hidden({ pay_confidential: true, payroll_group_id: GROUP_A }, asManagerOfA), true);
+
+// Missing/absent fields must fail OPEN only where that is right: no flag + no group = nothing to hide.
+eq('pv empty employee is visible', hidden({}, plainHr), false);
+
+// redactEmployeePay blanks money and marks the row, leaving the person and the true flag value.
+const redacted = pv.redactEmployeePay(
+  [
+    { id: 'e1', full_name: 'ในกลุ่มคนอื่น', rate_satang: 1_800_000, bank_account_no: '1234567890', pay_confidential: false, payroll_group_id: GROUP_B },
+    { id: 'e2', full_name: 'กลุ่มของเรา', rate_satang: 2_000_000, bank_account_no: '9999999999', pay_confidential: false, payroll_group_id: GROUP_A },
+  ],
+  asManagerOfA
+);
+eq('pv redact blanks the rate of a hidden row', redacted[0].rate_satang, null);
+eq('pv redact blanks the bank account of a hidden row', redacted[0].bank_account_no, null);
+eq('pv redact keeps the person on the row', redacted[0].full_name, 'ในกลุ่มคนอื่น');
+eq('pv redact marks the row for the UI', redacted[0].pay_hidden, true);
+eq('pv redact leaves a visible row untouched', redacted[1].rate_satang, 2_000_000);
+eq('pv redact does not mark a visible row', redacted[1].pay_hidden, undefined);
+// The employee form round-trips the real flag, so redaction must not forge it to true.
+eq('pv redact does not forge pay_confidential', redacted[0].pay_confidential, false);
+
 const fail = R.filter((r) => !r.pass);
 for (const r of R) if (!r.pass) console.log(`FAIL ${r.name}: got=${JSON.stringify(r.got)} want=${JSON.stringify(r.want)}`);
 console.log(`\nHR_MISC_ASSERT = ${R.length - fail.length}/${R.length} ${fail.length ? 'FAILED' : 'ALL PASS'}`);
