@@ -2769,6 +2769,10 @@
       "can_manage_hr": {
         "label": "Manage HR",
         "description": "Access employee records, attendance, payroll and evaluation"
+      },
+      "can_view_confidential_pay": {
+        "label": "Issue company filings & see all pay",
+        "description": "Produce the company-wide PND1 / SSO / payroll register / 50 Twi filings, and see every payroll group's salaries including staff marked confidential"
       }
     }
   },

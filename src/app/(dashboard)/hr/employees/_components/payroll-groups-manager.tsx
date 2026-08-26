@@ -11,7 +11,7 @@
  * otherwise, and that was the complaint this screen was rebuilt to answer.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Loader2, Plus, Trash2, Users, Lock, Layers, ShieldCheck, Pencil, Globe } from 'lucide-react';
 import { Button, Input, Modal, ModalFooter, Select, StatusBadge, useConfirm, toast } from '@/components/ui';
 
@@ -33,6 +33,11 @@ interface Group {
 interface CompanyOpt {
   id: string;
   name: string;
+}
+interface IssuerCandidate extends Manager {
+  is_issuer: boolean;
+  /** An owner — holds the right through their role, so it cannot be taken away here. */
+  implicit: boolean;
 }
 
 /** "สมชาย (เมย์)" — the project-wide way of naming a person on screen. */
@@ -87,6 +92,15 @@ export function PayrollGroupsManager() {
   const [ungrouped, setUngrouped] = useState({ total: 0, confidential: 0 });
   const [candidates, setCandidates] = useState<Manager[]>([]);
   const [canEditManagers, setCanEditManagers] = useState(false);
+
+  // Who issues the company-wide filings — a separate right from owning a slice, and the honest
+  // answer to "is my group really private?". Computed by the server from the rule it enforces.
+  const [issuerLabel, setIssuerLabel] = useState('');
+  const [issuerCandidates, setIssuerCandidates] = useState<IssuerCandidate[]>([]);
+  const [canEditIssuers, setCanEditIssuers] = useState(false);
+  const [issuerOpen, setIssuerOpen] = useState(false);
+  const [issuerIds, setIssuerIds] = useState<Set<string>>(new Set());
+  const [savingIssuers, setSavingIssuers] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -122,6 +136,9 @@ export function PayrollGroupsManager() {
       setUngrouped(json.data?.ungrouped ?? { total: 0, confidential: 0 });
       setCandidates((json.data?.candidates ?? []) as Manager[]);
       setCanEditManagers(Boolean(json.data?.can_edit_managers));
+      setIssuerLabel(String(json.data?.document_issuers_label ?? ''));
+      setIssuerCandidates((json.data?.issuer_candidates ?? []) as IssuerCandidate[]);
+      setCanEditIssuers(Boolean(json.data?.can_edit_issuers));
     } catch {
       toast({ type: 'error', title: 'โหลดกลุ่มเงินเดือนไม่สำเร็จ' });
     } finally {
@@ -132,14 +149,6 @@ export function PayrollGroupsManager() {
   useEffect(() => {
     load();
   }, [load]);
-
-  // Whoever may edit manager lists is also the person who files ภ.ง.ด.1 / สปส. for the whole
-  // company — no single group's manager can produce those. Naming them here is the honest version
-  // of "your group is private": private from the other HR users, not from the person filing tax.
-  const documentIssuers = useMemo(
-    () => candidates.filter((c) => c.role === 'owner' || c.role === 'hr'),
-    [candidates]
-  );
 
   const openCreate = () => {
     setEditing(null);
@@ -164,6 +173,42 @@ export function PayrollGroupsManager() {
       else next.add(userId);
       return next;
     });
+
+  const openIssuers = () => {
+    setIssuerIds(new Set(issuerCandidates.filter((c) => c.is_issuer).map((c) => c.user_id)));
+    setIssuerOpen(true);
+  };
+
+  const toggleIssuer = (c: IssuerCandidate) => {
+    // Owners cannot be unticked — the right comes from their role, not from this list.
+    if (c.implicit) return;
+    setIssuerIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(c.user_id)) next.delete(c.user_id);
+      else next.add(c.user_id);
+      return next;
+    });
+  };
+
+  const saveIssuers = async () => {
+    setSavingIssuers(true);
+    try {
+      const res = await fetch('/api/hr/payroll-document-issuers', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_ids: [...issuerIds] }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'บันทึกไม่สำเร็จ');
+      toast({ type: 'success', title: 'บันทึกรายชื่อผู้ออกเอกสารแล้ว' });
+      setIssuerOpen(false);
+      await load();
+    } catch (e) {
+      toast({ type: 'error', title: e instanceof Error ? e.message : 'บันทึกไม่สำเร็จ' });
+    } finally {
+      setSavingIssuers(false);
+    }
+  };
 
   const save = async () => {
     if (!name.trim() || !companyId) return;
@@ -234,15 +279,25 @@ export function PayrollGroupsManager() {
         </p>
       </div>
 
-      {documentIssuers.length > 0 && (
+      {issuerLabel && (
         <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50/70 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-800/60 dark:bg-amber-900/15 dark:text-amber-300">
           <Globe className="mt-0.5 h-4 w-4 shrink-0" />
-          <p>
-            เอกสารระดับบริษัท (ภ.ง.ด.1 / สปส. / ทะเบียนค่าจ้าง / 50 ทวิ) ต้องมีพนักงาน<span className="font-semibold">ครบทุกคนทุกกลุ่ม</span>ตามกฎหมาย
-            ผู้จัดการกลุ่มออกเองไม่ได้ — ออกโดย{' '}
-            <span className="font-semibold">{documentIssuers.map(personLabel).join(', ')}</span>{' '}
-            ซึ่งจึงเห็นเงินเดือนของทุกกลุ่ม
-          </p>
+          <div className="min-w-0 flex-1">
+            <p>
+              เอกสารระดับบริษัท (ภ.ง.ด.1 / สปส. / ทะเบียนค่าจ้าง / 50 ทวิ) ต้องมีพนักงาน
+              <span className="font-semibold">ครบทุกคนทุกกลุ่ม</span>ตามกฎหมาย ผู้จัดการกลุ่มออกเองไม่ได้ — ออกโดย{' '}
+              <span className="font-semibold">{issuerLabel}</span> ซึ่งจึงเห็นเงินเดือนของทุกกลุ่ม
+            </p>
+            {canEditIssuers && (
+              <button
+                type="button"
+                onClick={openIssuers}
+                className="mt-1 inline-flex cursor-pointer items-center gap-1 font-medium underline underline-offset-2 hover:opacity-80"
+              >
+                <Pencil className="h-3 w-3" /> แก้ไขรายชื่อผู้ออกเอกสาร
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -395,6 +450,58 @@ export function PayrollGroupsManager() {
           <Button size="sm" onClick={save} disabled={!name.trim() || saving}>
             {saving && <Loader2 className="h-4 w-4 animate-spin" />}
             {editing ? 'บันทึก' : 'สร้าง'}
+          </Button>
+        </ModalFooter>
+      </Modal>
+      <Modal
+        isOpen={issuerOpen}
+        onClose={() => setIssuerOpen(false)}
+        title="ใครออกเอกสารบริษัทได้"
+        size="sm"
+      >
+        <div className="space-y-3">
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            คนในรายชื่อนี้ออก ภ.ง.ด.1 / สปส. / ทะเบียนค่าจ้าง / 50 ทวิ ของทั้งบริษัทได้
+            และ<span className="font-medium">เห็นเงินเดือนของทุกกลุ่ม</span> รวมถึงคนที่ปิดข้อมูล —
+            เลี่ยงไม่ได้ เพราะเอกสารยื่นสรรพากรต้องมีพนักงานครบทุกคนตามกฎหมาย
+          </p>
+
+          <div className="max-h-60 space-y-0.5 overflow-y-auto rounded-lg border border-gray-200 p-1 dark:border-gray-700">
+            {issuerCandidates.map((c) => (
+              <label
+                key={c.user_id}
+                className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
+                  c.implicit
+                    ? 'cursor-not-allowed opacity-60'
+                    : 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  checked={c.implicit || issuerIds.has(c.user_id)}
+                  onChange={() => toggleIssuer(c)}
+                  disabled={c.implicit}
+                />
+                <span className="truncate text-gray-800 dark:text-gray-100">{personLabel(c)}</span>
+                {c.implicit && (
+                  <span className="ml-auto shrink-0 text-[10px] text-gray-400">เจ้าของระบบ — ถอดไม่ได้</span>
+                )}
+              </label>
+            ))}
+          </div>
+
+          <p className="text-xs text-gray-400">
+            ถอนสิทธิ์ของตัวเองไม่ได้ — ให้เจ้าของระบบหรือผู้ออกเอกสารคนอื่นเป็นคนถอนให้
+          </p>
+        </div>
+        <ModalFooter>
+          <Button variant="ghost" size="sm" onClick={() => setIssuerOpen(false)} disabled={savingIssuers}>
+            ยกเลิก
+          </Button>
+          <Button size="sm" onClick={saveIssuers} disabled={savingIssuers}>
+            {savingIssuers && <Loader2 className="h-4 w-4 animate-spin" />}
+            บันทึก
           </Button>
         </ModalFooter>
       </Modal>

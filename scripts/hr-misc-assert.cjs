@@ -353,6 +353,21 @@ eq('pv redact does not mark a visible row', redacted[1].pay_hidden, undefined);
 // The employee form round-trips the real flag, so redaction must not forge it to true.
 eq('pv redact does not forge pay_confidential', redacted[0].pay_confidential, false);
 
+// ── issuer-label.ts: how the company-document issuers read on the payroll-groups screen ──
+// The wrong version of this list shipped once — guessed from role in the client, it named an HR
+// user who could not issue anything. Owners collapse to one word so a break-glass login is not
+// printed on a shared screen.
+const il = load('issuer-label.ts');
+const owner = (name) => ({ user_id: name, name, nickname: null, implicit: true });
+const granted = (name, nick = null) => ({ user_id: name, name, nickname: nick, implicit: false });
+
+eq('issuers: one grantee + owners', il.describeIssuers([granted('ปิยธิดา', 'May'), owner('Tah'), owner('kkd')]), 'ปิยธิดา (May) และเจ้าของระบบ');
+eq('issuers: owners only', il.describeIssuers([owner('Tah'), owner('admin_recovery')]), 'เจ้าของระบบ');
+eq('issuers: grantees only', il.describeIssuers([granted('ปิยธิดา', 'May'), granted('ชาญชัย')]), 'ปิยธิดา (May), ชาญชัย');
+eq('issuers: nobody at all', il.describeIssuers([]), 'ยังไม่มีใคร');
+eq('issuers: no nickname prints the bare name', il.describeIssuers([granted('ชาญชัย'), owner('Tah')]), 'ชาญชัย และเจ้าของระบบ');
+eq('issuers: english', il.describeIssuers([granted('Piyathida', 'May'), owner('Tah')], false), 'Piyathida (May) and the system owners');
+
 const fail = R.filter((r) => !r.pass);
 for (const r of R) if (!r.pass) console.log(`FAIL ${r.name}: got=${JSON.stringify(r.got)} want=${JSON.stringify(r.want)}`);
 console.log(`\nHR_MISC_ASSERT = ${R.length - fail.length}/${R.length} ${fail.length ? 'FAILED' : 'ALL PASS'}`);

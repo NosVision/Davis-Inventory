@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocale } from 'next-intl';
-import { Loader2, BarChart3, Download, FileText } from 'lucide-react';
+import { Loader2, BarChart3, Download, FileText, History } from 'lucide-react';
 import { Button, PageHeader, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 
@@ -21,8 +21,8 @@ type Row = Record<string, unknown>;
 export default function HrReportsPage() {
   const isTh = useLocale() === 'th';
   const L = isTh
-    ? { title: 'รายงานภาษี/ประกันสังคม', subtitle: 'ภ.ง.ด.1 · สปส.1-10 · ทะเบียนเงินเดือน · ภ.ง.ด.1ก · 50 ทวิ (จากงวดที่ปิดแล้ว)', company: 'บริษัท', year: 'ปี (พ.ศ.)', month: 'เดือน', pick: '—', load: 'ดูรายงาน', csv: 'ดาวน์โหลด CSV (e-filing)', pdf: 'ออก 50 ทวิ PDF', empty: 'ไม่มีข้อมูล (ต้องมีงวดที่ปิดแล้ว)', loadFailed: 'โหลดไม่สำเร็จ', pickCompany: 'เลือกบริษัทก่อน', total: 'รวม', name: 'ชื่อ', taxId: 'เลขผู้เสียภาษี', ssoNo: 'เลข สปส.', income: 'เงินได้', tax: 'ภาษีหัก', wageBase: 'ฐานค่าจ้าง', empSso: 'สมทบลูกจ้าง', erSso: 'สมทบนายจ้าง', gross: 'รายรับ', ded: 'หักรวม', net: 'สุทธิ', sso: 'ปกส.', months: 'เดือน', pdfDone: 'สร้าง PDF แล้ว', pdfFail: 'สร้าง PDF ไม่สำเร็จ' }
-    : { title: 'Tax / SSO reports', subtitle: 'PND1 · SSO 1-10 · payroll register · PND1Kor · 50 Twi (from finalized payruns)', company: 'Company', year: 'Year (BE)', month: 'Month', pick: '—', load: 'View', csv: 'Download CSV (e-filing)', pdf: 'Generate 50 Twi PDF', empty: 'No data (needs a finalized payrun)', loadFailed: 'Load failed', pickCompany: 'Pick a company first', total: 'Total', name: 'Name', taxId: 'Tax ID', ssoNo: 'SSO no.', income: 'Income', tax: 'Tax', wageBase: 'Wage base', empSso: 'Employee', erSso: 'Employer', gross: 'Gross', ded: 'Deductions', net: 'Net', sso: 'SSO', months: 'Months', pdfDone: 'PDF created', pdfFail: 'PDF failed' };
+    ? { title: 'รายงานภาษี/ประกันสังคม', subtitle: 'ภ.ง.ด.1 · สปส.1-10 · ทะเบียนเงินเดือน · ภ.ง.ด.1ก · 50 ทวิ (จากงวดที่ปิดแล้ว)', company: 'บริษัท', year: 'ปี (พ.ศ.)', month: 'เดือน', pick: '—', load: 'ดูรายงาน', csv: 'ดาวน์โหลด CSV (e-filing)', pdf: 'ออก 50 ทวิ PDF', empty: 'ไม่มีข้อมูล (ต้องมีงวดที่ปิดแล้ว)', loadFailed: 'โหลดไม่สำเร็จ', pickCompany: 'เลือกบริษัทก่อน', total: 'รวม', name: 'ชื่อ', taxId: 'เลขผู้เสียภาษี', ssoNo: 'เลข สปส.', income: 'เงินได้', tax: 'ภาษีหัก', wageBase: 'ฐานค่าจ้าง', empSso: 'สมทบลูกจ้าง', erSso: 'สมทบนายจ้าง', gross: 'รายรับ', ded: 'หักรวม', net: 'สุทธิ', sso: 'ปกส.', months: 'เดือน', pdfDone: 'สร้าง PDF แล้ว', pdfFail: 'สร้าง PDF ไม่สำเร็จ', lastIssued: 'ออกล่าสุด', neverIssued: 'ยังไม่เคยออกเอกสารงวดนี้', by: 'โดย' }
+    : { title: 'Tax / SSO reports', subtitle: 'PND1 · SSO 1-10 · payroll register · PND1Kor · 50 Twi (from finalized payruns)', company: 'Company', year: 'Year (BE)', month: 'Month', pick: '—', load: 'View', csv: 'Download CSV (e-filing)', pdf: 'Generate 50 Twi PDF', empty: 'No data (needs a finalized payrun)', loadFailed: 'Load failed', pickCompany: 'Pick a company first', total: 'Total', name: 'Name', taxId: 'Tax ID', ssoNo: 'SSO no.', income: 'Income', tax: 'Tax', wageBase: 'Wage base', empSso: 'Employee', erSso: 'Employer', gross: 'Gross', ded: 'Deductions', net: 'Net', sso: 'SSO', months: 'Months', pdfDone: 'PDF created', pdfFail: 'PDF failed', lastIssued: 'Last issued', neverIssued: 'Never issued for this period', by: 'by' };
 
   const TABS: { key: ReportType; label: string }[] = [
     { key: 'pnd1', label: 'ภ.ง.ด.1' }, { key: 'sso', label: 'สปส.1-10' }, { key: 'register', label: isTh ? 'ทะเบียนเงินเดือน' : 'Register' }, { key: 'pnd1k', label: 'ภ.ง.ด.1ก' }, { key: 'cert50twi', label: '50 ทวิ' },
@@ -77,6 +77,8 @@ export default function HrReportsPage() {
       a.href = url; a.download = `${type}_${yearBe}${MONTHLY.includes(type) ? '-' + month : ''}.csv`;
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 1000);
+      // The export was just logged server-side; reload so the line above says so.
+      void load();
     } catch { toast({ type: 'error', title: L.loadFailed }); }
   };
 
@@ -102,6 +104,18 @@ export default function HrReportsPage() {
         })),
       });
       downloadBlob(blob, `50twi_${yearBe}.pdf`);
+      // The PDF is built here in the browser, so the server never sees it leave. Tell it, or this
+      // one filing would be the only export missing from the issuance log.
+      await fetch('/api/hr/reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type,
+          company_id: companyId,
+          year: yearAd,
+          lines: data.certificates?.length ?? 0,
+        }),
+      }).catch(() => {});
       toast({ type: 'success', title: L.pdfDone });
     } catch { toast({ type: 'error', title: L.pdfFail }); }
     finally { setPdfBusy(false); }
@@ -178,6 +192,34 @@ export default function HrReportsPage() {
         <div className="flex items-center justify-center py-16 text-gray-400"><Loader2 className="h-6 w-6 animate-spin" /></div>
       ) : payload && table ? (
         <>
+          {/* Nothing used to record that a filing had been produced, so "did we already file
+              August?" had no answer. Only real exports (CSV / PDF) count — browsing does not. */}
+          {(() => {
+            const li = (payload.data as { last_issued?: { at: string; by: string | null; format: string | null } | null })
+              .last_issued;
+            return (
+              <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                <History className="h-3.5 w-3.5 shrink-0" />
+                {li ? (
+                  <span>
+                    {L.lastIssued}{' '}
+                    <span className="font-medium text-gray-700 dark:text-gray-200">
+                      {new Date(li.at).toLocaleString(isTh ? 'th-TH' : 'en-GB')}
+                    </span>
+                    {li.format && <span className="uppercase"> ({li.format})</span>}
+                    {li.by && (
+                      <>
+                        {' '}
+                        {L.by} <span className="font-medium text-gray-700 dark:text-gray-200">{li.by}</span>
+                      </>
+                    )}
+                  </span>
+                ) : (
+                  <span>{L.neverIssued}</span>
+                )}
+              </div>
+            );
+          })()}
           <div className="flex flex-wrap justify-end gap-2">
             {(payload.type === 'pnd1' || payload.type === 'pnd1k') && (
               <Button variant="outline" type="button" onClick={downloadCsv} icon={<Download className="h-4 w-4" />}>{L.csv}</Button>

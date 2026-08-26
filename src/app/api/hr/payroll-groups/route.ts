@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
-import { buildEmployeeNameMap } from '@/lib/hr/employee-name-map';
 import { callerCanViewConfidentialPay } from '@/lib/hr/pay-visibility';
+import { describeIssuers, loadDocumentIssuers } from '@/lib/hr/document-issuers';
 
 /**
  * Payroll groups — slices of one company's payroll that are run separately, so two HR users can
@@ -92,41 +92,25 @@ export async function GET(request: NextRequest) {
     .in('status', ['active', 'probation']);
   if (companyId) empQ = empQ.eq('company_id', companyId);
 
-  const [{ data: emps }, managersRes, candidatesRes, canEditManagers] = await Promise.all([
+  // One source for both people lists on this screen: who may own a slice, and who may issue the
+  // company-wide filings. Both are "HR-capable, active, not a system account", so they share a
+  // query rather than drifting apart — an earlier version guessed the issuers from role alone and
+  // named someone who could not issue anything.
+  const [{ data: emps }, managersRes, people, canEditManagers] = await Promise.all([
     empQ,
     service.from(MANAGERS_TABLE).select('group_id, user_id'),
-    // Only someone who can already run HR can own a payroll slice. Mirrors can_manage_hr():
-    // role owner/hr, or an explicit grant.
-    service.from('profiles').select('id, username, display_name, role').eq('active', true),
+    loadDocumentIssuers(service),
     callerCanViewConfidentialPay(service, auth.userId),
   ]);
 
-  const { data: grants } = await service
-    .from('user_permissions')
-    .select('user_id')
-    .eq('permission', 'can_manage_hr');
-  const grantedIds = new Set((grants ?? []).map((g) => g.user_id as string));
-  const candidates = (
-    (candidatesRes.data ?? []) as {
-      id: string;
-      username: string;
-      display_name: string | null;
-      role: string;
-    }[]
-  ).filter((c) => c.role === 'owner' || c.role === 'hr' || grantedIds.has(c.id));
-
   const managerRows = (managersRes.data ?? []) as ManagerRow[];
-  const names = await buildEmployeeNameMap(service, [
-    ...managerRows.map((m) => m.user_id),
-    ...candidates.map((c) => c.id),
-  ]);
-  const candidateById = new Map(candidates.map((c) => [c.id, c]));
+  const candidateById = new Map(people.candidates.map((c) => [c.user_id, c]));
   const decorate = (id: string) => {
     const c = candidateById.get(id);
     return {
       user_id: id,
-      name: names.get(id)?.name ?? c?.display_name ?? c?.username ?? '—',
-      nickname: names.get(id)?.nickname ?? null,
+      name: c?.name ?? '—',
+      nickname: c?.nickname ?? null,
       role: c?.role ?? null,
     };
   };
@@ -157,10 +141,16 @@ export async function GET(request: NextRequest) {
         managers: managersByGroup.get(g.id as string) ?? [],
       })),
       ungrouped: counts.get('') ?? { total: 0, confidential: 0 },
-      candidates: candidates.map((c) => decorate(c.id)),
-      // Drives the UI: whether this caller may edit manager lists at all, and who files the
-      // company-wide statutory documents no group manager can produce alone.
+      candidates: people.candidates.map((c) => decorate(c.user_id)),
+      // Who files the company-wide statutory documents that no group manager can produce alone.
+      // The label collapses the owners into one word so a break-glass login is not named on screen;
+      // the array is what the edit dialog ticks.
+      document_issuers: people.issuers,
+      document_issuers_label: describeIssuers(people.issuers),
+      issuer_candidates: people.candidates,
+      // The same grant governs both lists: editing either means you already see every salary.
       can_edit_managers: canEditManagers,
+      can_edit_issuers: canEditManagers,
     },
   });
 }
