@@ -12,6 +12,7 @@ import {
 } from '@/lib/hr/tax-reports';
 import { buildEmployeeNameMap } from '@/lib/hr/employee-name-map';
 import { refuseIfConfidentialInScope } from '@/lib/hr/pay-visibility';
+import { logHrAudit } from '@/lib/hr/audit';
 
 // The tax-report input plus the two register-only figures (net + total deduction), so a single
 // assembly pass feeds every report. The extra fields are ignored by buildPnd1/buildSso/buildCert50Twi.
@@ -46,6 +47,96 @@ interface SlipRow {
   sso_satang: number;
   total_deduction_satang: number;
   net_satang: number;
+}
+
+/**
+ * Issuance log for the statutory filings.
+ *
+ * Nothing recorded who produced ภ.ง.ด.1 for which month, so "has August been filed, and by whom?"
+ * had no answer anywhere in the system — the reports are rebuilt from the payruns on every view
+ * and never stored. Restricting WHO may issue them (§00195) without recording THAT they were
+ * issued would have been half a control.
+ *
+ * Only a real export is logged — the CSV e-filing and the 50 ทวิ PDF. Opening the on-screen table
+ * is browsing, and logging every type/period change would bury the real events.
+ *
+ * `hr_tax_documents` is a label, not a table: the filings have no rows of their own. record_id is
+ * the company, which is the only real id involved, and the period/type live in `after`.
+ */
+const ISSUANCE_TABLE = 'hr_tax_documents';
+
+const TYPE_LABEL: Record<string, string> = {
+  pnd1: 'ภ.ง.ด.1',
+  sso: 'สปส.1-10',
+  register: 'ทะเบียนค่าจ้าง',
+  pnd1k: 'ภ.ง.ด.1ก',
+  cert50twi: 'ใบ 50 ทวิ',
+};
+
+interface IssuanceKey {
+  companyId: string;
+  type: string;
+  year: number;
+  /** null for the annual filings, which have no month. */
+  month: number | null;
+}
+
+function periodLabel(key: IssuanceKey): string {
+  const be = key.year + 543;
+  return key.month ? `${String(key.month).padStart(2, '0')}/${be}` : `ปี ${be}`;
+}
+
+/** The previous issuance of this exact filing, so the screen can say whether it has been done. */
+async function readLastIssuance(
+  service: ReturnType<typeof createServiceClient>,
+  key: IssuanceKey
+): Promise<{ at: string; by: string | null; format: string | null } | null> {
+  const { data } = await service
+    .from('hr_audit_log')
+    .select('created_at, actor_id, after, actor:profiles!hr_audit_log_actor_id_fkey(display_name, username)')
+    .eq('table_name', ISSUANCE_TABLE)
+    .eq('record_id', key.companyId)
+    .order('created_at', { ascending: false })
+    .limit(50);
+
+  // PostgREST types a to-one embed as an array; at runtime it is the object. Accept both.
+  type ActorRef = { display_name: string | null; username: string | null };
+  for (const row of (data ?? []) as unknown as {
+    created_at: string;
+    after: { type?: string; year?: number; month?: number | null; format?: string } | null;
+    actor: ActorRef | ActorRef[] | null;
+  }[]) {
+    const a = row.after;
+    if (!a || a.type !== key.type || a.year !== key.year) continue;
+    if ((a.month ?? null) !== key.month) continue;
+    const actor = Array.isArray(row.actor) ? row.actor[0] : row.actor;
+    return {
+      at: row.created_at,
+      by: actor?.display_name ?? actor?.username ?? null,
+      format: a.format ?? null,
+    };
+  }
+  return null;
+}
+
+/** Record that this filing was actually exported. Fire-and-forget, like every other audit write. */
+async function recordIssuance(
+  service: ReturnType<typeof createServiceClient>,
+  actorId: string,
+  key: IssuanceKey,
+  format: 'csv' | 'pdf',
+  companyName: string,
+  lineCount: number
+): Promise<void> {
+  await logHrAudit(service, {
+    actorId,
+    action: 'create',
+    table: ISSUANCE_TABLE,
+    recordId: key.companyId,
+    before: null,
+    after: { type: key.type, year: key.year, month: key.month, format, lines: lineCount },
+    reason: `ออก${TYPE_LABEL[key.type] ?? key.type} งวด ${periodLabel(key)} — ${companyName} (${format.toUpperCase()})`,
+  });
 }
 
 // GET /api/hr/reports?type=&company_id=&year=&month=&employee_id=&format=
@@ -100,26 +191,48 @@ export async function GET(request: NextRequest) {
   // Assemble the enriched payslip lines for those payruns.
   const lines = await assembleLines(service, runIds, ceiling, auth.userId);
 
+  // Read the PREVIOUS issuance before writing this one, so the screen shows "last filed on …"
+  // rather than the export the viewer is making right now.
+  const issuanceKey: IssuanceKey = {
+    companyId,
+    type,
+    year,
+    month: MONTHLY_TYPES.has(type) ? month : null,
+  };
+  const lastIssued = await readLastIssuance(service, issuanceKey);
+
   switch (type) {
     case 'pnd1': {
       const report = buildPnd1(lines);
       if (asCsv) {
+        await recordIssuance(service, auth.userId, issuanceKey, 'csv', company.name, report.lines.length);
         return csvResponse(buildPnd1EfilingCsv(report.lines), `pnd1_${year}${pad(month)}.csv`);
       }
-      return NextResponse.json({ data: { company: company.name, year, month, report } });
+      return NextResponse.json({ data: { company: company.name, year, month, report, last_issued: lastIssued } });
     }
     case 'sso': {
-      return NextResponse.json({ data: { company: company.name, year, month, report: buildSso(lines) } });
+      return NextResponse.json({
+        data: { company: company.name, year, month, report: buildSso(lines), last_issued: lastIssued },
+      });
     }
     case 'register': {
       return NextResponse.json({
-        data: { company: company.name, year, month, report: buildPayrollRegister(lines.map(registerLine)) },
+        data: {
+          company: company.name,
+          year,
+          month,
+          report: buildPayrollRegister(lines.map(registerLine)),
+          last_issued: lastIssued,
+        },
       });
     }
     case 'pnd1k': {
       const report = buildPnd1k(lines);
-      if (asCsv) return csvResponse(buildPnd1EfilingCsv(report.lines), `pnd1k_${year}.csv`);
-      return NextResponse.json({ data: { company: company.name, year, report } });
+      if (asCsv) {
+        await recordIssuance(service, auth.userId, issuanceKey, 'csv', company.name, report.lines.length);
+        return csvResponse(buildPnd1EfilingCsv(report.lines), `pnd1k_${year}.csv`);
+      }
+      return NextResponse.json({ data: { company: company.name, year, report, last_issued: lastIssued } });
     }
     case 'cert50twi': {
       // One certificate per employee (or a single employee when employee_id is given).
@@ -135,11 +248,81 @@ export async function GET(request: NextRequest) {
         employee_name: slips[0]?.employee_name ?? '',
         tax_id: slips[0]?.tax_id ?? null,
       }));
-      return NextResponse.json({ data: { company: company.name, year, certificates: certs } });
+      return NextResponse.json({
+        data: { company: company.name, year, certificates: certs, last_issued: lastIssued },
+      });
     }
     default:
       return NextResponse.json({ error: 'unsupported type' }, { status: 400 });
   }
+}
+
+/**
+ * POST /api/hr/reports { type, company_id, year, month?, lines? } — record that a filing was
+ * exported as a PDF.
+ *
+ * The 50 ทวิ PDF is rendered in the browser from the JSON this route already returned, so unlike
+ * the CSV it never passes back through the server. Without this the one filing that leaves the
+ * building as a finished document would be the only one missing from the issuance log.
+ */
+export async function POST(request: NextRequest) {
+  const auth = await requireHrManager();
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
+  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  const type = typeof body.type === 'string' ? body.type : '';
+  const companyId = typeof body.company_id === 'string' ? body.company_id : '';
+  const year = Number(body.year);
+  const monthRaw = Number(body.month);
+  const month = MONTHLY_TYPES.has(type) && Number.isInteger(monthRaw) ? monthRaw : null;
+  const lineCount = Number.isInteger(Number(body.lines)) ? Number(body.lines) : 0;
+
+  if (!MONTHLY_TYPES.has(type) && !ANNUAL_TYPES.has(type)) {
+    return NextResponse.json({ error: 'unsupported type' }, { status: 400 });
+  }
+  if (!companyId || !Number.isInteger(year)) {
+    return NextResponse.json({ error: 'company_id and year are required' }, { status: 400 });
+  }
+
+  const service = createServiceClient();
+  const { data: company } = await service
+    .from('hr_companies')
+    .select('id, name')
+    .eq('id', companyId)
+    .maybeSingle();
+  if (!company) return NextResponse.json({ error: 'Company not found' }, { status: 404 });
+
+  // Same gate as producing the filing: a document covering everyone may only be issued by someone
+  // who may see everyone. Without this, the log could be written by someone who could not export.
+  const { data: slips } = await service
+    .from('hr_payruns')
+    .select('id')
+    .eq('company_id', companyId)
+    .eq('period_year', year)
+    .eq('status', 'finalized');
+  const runIds = (slips ?? []).map((r) => r.id as string);
+  if (runIds.length > 0) {
+    const { data: slipUsers } = await service
+      .from('hr_payslips')
+      .select('user_id')
+      .in('payrun_id', runIds);
+    const refusal = await refuseIfConfidentialInScope(
+      service,
+      auth.userId,
+      [...new Set(((slipUsers ?? []) as { user_id: string }[]).map((u) => u.user_id))]
+    );
+    if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
+  }
+
+  await recordIssuance(
+    service,
+    auth.userId,
+    { companyId, type, year, month },
+    'pdf',
+    company.name as string,
+    lineCount
+  );
+  return NextResponse.json({ success: true });
 }
 
 // Load payslips for the given payruns and enrich each with employee tax/sso identifiers, the
