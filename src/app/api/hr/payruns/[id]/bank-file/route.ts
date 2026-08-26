@@ -3,7 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManagerForStore } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import { buildEmployeeNameMap } from '@/lib/hr/employee-name-map';
-import { refuseIfConfidentialInScope } from '@/lib/hr/pay-visibility';
+import { refusePayrunIfHidden } from '@/lib/hr/payrun-access';
 import {
   buildBankTransferCsv,
   resolveBankCode,
@@ -82,7 +82,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   }
   const profileIds = [...new Set(slipRows.map((s) => s.user_id))];
   // A transfer file missing people is not a redacted file, it is a wrong payment run. Refuse.
-  const payRefusal = await refuseIfConfidentialInScope(service, auth.userId, profileIds);
+  const payRefusal = await refusePayrunIfHidden(service, auth.userId, id);
   if (payRefusal) return NextResponse.json({ error: payRefusal }, { status: 403 });
   if (profileIds.length) {
     // A bank matches the payee against a legal name, so this fallback must be the ชื่อจริง — it
