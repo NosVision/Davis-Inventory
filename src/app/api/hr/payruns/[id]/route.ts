@@ -235,6 +235,10 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       // > 0 → the page must say the figures are partial, or the reader will take the total as the
       // payrun's real total.
       hidden_count: hiddenCount,
+      // Every action on a payrun (export, adjust, finalize, announce, reopen, print) reaches every
+      // slip in it, so one hidden person disables the lot. Sent so the buttons can say why up
+      // front instead of each one 403-ing when pressed.
+      can_manage: hiddenCount === 0,
     },
   });
 }

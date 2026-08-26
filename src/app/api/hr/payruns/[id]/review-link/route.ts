@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManagerForStore } from '@/lib/hr/route-auth';
-import { refuseIfConfidentialInScope } from '@/lib/hr/pay-visibility';
+import { refusePayrunIfHidden } from '@/lib/hr/payrun-access';
 import { logHrAudit } from '@/lib/hr/audit';
 import { newReviewToken, hashReviewToken, REVIEW_LINK_TTL_DAYS, normalizePasscode, newReviewPasscode } from '@/lib/hr/review-link';
 
@@ -26,12 +26,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   // very figures this feature hides. Closed here; the accounting office still sees everything,
   // which is the point of the link.
   {
-    const { data: slipUsers } = await service.from('hr_payslips').select('user_id').eq('payrun_id', id);
-    const refusal = await refuseIfConfidentialInScope(
-      service,
-      auth.userId,
-      (slipUsers ?? []).map((s) => s.user_id as string)
-    );
+    const refusal = await refusePayrunIfHidden(service, auth.userId, id);
     if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
   }
 
@@ -87,12 +82,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   // very figures this feature hides. Closed here; the accounting office still sees everything,
   // which is the point of the link.
   {
-    const { data: slipUsers } = await service.from('hr_payslips').select('user_id').eq('payrun_id', id);
-    const refusal = await refuseIfConfidentialInScope(
-      service,
-      auth.userId,
-      (slipUsers ?? []).map((s) => s.user_id as string)
-    );
+    const refusal = await refusePayrunIfHidden(service, auth.userId, id);
     if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
   }
 
@@ -119,12 +109,7 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
   // very figures this feature hides. Closed here; the accounting office still sees everything,
   // which is the point of the link.
   {
-    const { data: slipUsers } = await service.from('hr_payslips').select('user_id').eq('payrun_id', id);
-    const refusal = await refuseIfConfidentialInScope(
-      service,
-      auth.userId,
-      (slipUsers ?? []).map((s) => s.user_id as string)
-    );
+    const refusal = await refusePayrunIfHidden(service, auth.userId, id);
     if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
   }
 

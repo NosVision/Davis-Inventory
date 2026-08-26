@@ -86,6 +86,8 @@ interface PayrunDetail {
   pools?: { month: string; sc: PoolSummary; tip: PoolSummary };
   /** Employees withheld because their pay is confidential to this viewer. > 0 → totals are partial. */
   hidden_count?: number;
+  /** False when the run holds someone this viewer may not see — every action on it is refused. */
+  can_manage?: boolean;
 }
 
 // Print isolation: window.print() otherwise prints the whole dashboard (sidebar/header from the
@@ -723,6 +725,12 @@ export default function HrPayrollPage() {
   const accountantConfirmed = !!detail?.review?.confirmed_at;
   const isAnnounced = !!detail?.payrun.announced_at;
   const hasSlips = (detail?.payslips.length ?? 0) > 0;
+  // A payrun action reaches every slip in the run, so one withheld person disables all of them.
+  // Saying so once, up here, beats nine buttons that each 403 only after being pressed.
+  const canManageRun = detail?.can_manage !== false;
+  const lockedReason = isTh
+    ? 'งวดนี้มีพนักงานที่คุณไม่มีสิทธิ์ดูเงินเดือน — ต้องให้ผู้จัดการกลุ่มนี้ หรือผู้ที่ดูเงินเดือนได้ทุกคน เป็นผู้ทำ'
+    : 'This run holds pay you may not see — its owner, or someone who sees all pay, must act on it';
   // skeleton only when the fetch is for a DIFFERENT payrun than the one on screen —
   // same-id refreshes (after finalize/remark/recompute) keep the current detail visible
   const openingNew = openingId !== null && openingId !== detail?.payrun.id;
@@ -765,6 +773,13 @@ export default function HrPayrollPage() {
           : []),
       ]
     : [];
+
+  const actions: MoreMenuAction[] = canManageRun
+    ? menuActions
+    : menuActions.map((a) =>
+        // 'calibrate' prints a dummy alignment slip with nobody's figures on it.
+        a.key === 'calibrate' ? a : { ...a, disabled: true, title: lockedReason }
+      );
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-4 2xl:max-w-[96rem]">
@@ -915,21 +930,21 @@ export default function HrPayrollPage() {
                     </div>
                     <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
                       {!isFinalized && !accountantConfirmed && (
-                        <Button size="sm" icon={<Send className="h-4 w-4" />} onClick={openReviewLink} disabled={busy || !hasSlips}>
+                        <Button size="sm" icon={<Send className="h-4 w-4" />} onClick={openReviewLink} disabled={busy || !hasSlips || !canManageRun} title={canManageRun ? undefined : lockedReason}>
                           {t('nextActionSend')}
                         </Button>
                       )}
                       {!isFinalized && accountantConfirmed && (
-                        <Button variant="danger" size="sm" icon={<Lock className="h-4 w-4" />} onClick={finalize} disabled={busy || recomputing || !hasSlips}>
+                        <Button variant="danger" size="sm" icon={<Lock className="h-4 w-4" />} onClick={finalize} disabled={busy || recomputing || !hasSlips || !canManageRun} title={canManageRun ? undefined : lockedReason}>
                           {t('nextActionFinalize')}
                         </Button>
                       )}
                       {isFinalized && !isAnnounced && (
-                        <Button size="sm" icon={<Megaphone className="h-4 w-4" />} onClick={announce} disabled={busy}>
+                        <Button size="sm" icon={<Megaphone className="h-4 w-4" />} onClick={announce} disabled={busy || !canManageRun} title={canManageRun ? undefined : lockedReason}>
                           {t('nextActionAnnounce')}
                         </Button>
                       )}
-                      <MoreMenu label={t('moreActions')} actions={menuActions} />
+                      <MoreMenu label={t('moreActions')} actions={actions} />
                     </div>
                   </div>
                   <div className="mt-4">
@@ -942,16 +957,29 @@ export default function HrPayrollPage() {
                     <Button size="sm" variant="outline" icon={<Settings2 className="h-4 w-4" />} onClick={() => setRecurringGridOpen(true)}>
                       {t('recurringGridLink')}
                     </Button>
-                    <Button size="sm" variant="outline" icon={<SlidersHorizontal className="h-4 w-4" />} onClick={() => setAdjOpen(true)}>
+                    <Button size="sm" variant="outline" icon={<SlidersHorizontal className="h-4 w-4" />} onClick={() => setAdjOpen(true)} disabled={!canManageRun} title={canManageRun ? undefined : lockedReason}>
                       {t('adjustments.title')} ({adjCount})
                     </Button>
                   </div>
                 </div>
 
                 {detail.payslips.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700">
-                    <EmptyState icon={Wallet} title={t('noPayslips')} />
-                  </div>
+                  /* Every slip withheld is not an empty run. Showing "ไม่มีสลิป" here told the
+                     viewer the payroll had not been built, when in fact it was built and simply
+                     is not theirs to read. */
+                  (detail.hidden_count ?? 0) > 0 ? (
+                    <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50/70 px-3 py-3 text-sm text-amber-800 dark:border-amber-800/60 dark:bg-amber-900/15 dark:text-amber-300">
+                      <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+                      <p>
+                        <span className="font-semibold">งวดนี้มีสลิป {detail.hidden_count} คน แต่คุณดูไม่ได้</span>{' '}
+                        — {lockedReason}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700">
+                      <EmptyState icon={Wallet} title={t('noPayslips')} />
+                    </div>
+                  )
                 ) : (
                   <div className="space-y-3">
                   {/* Some slips are withheld from this viewer, so every figure below covers only
@@ -965,7 +993,9 @@ export default function HrPayrollPage() {
                           แสดง {detail.payslips.length} จาก {detail.payslips.length + (detail.hidden_count ?? 0)} คน
                         </span>{' '}
                         — อีก {detail.hidden_count} คนถูกปิดข้อมูลเงินเดือนไว้ ยอดรวมด้านล่างจึงเป็นยอดเฉพาะที่แสดง
-                        ไม่ใช่ยอดรวมทั้งงวด
+                        ไม่ใช่ยอดรวมทั้งงวด · <span className="font-semibold">ปุ่มจัดการงวดนี้ถูกปิดไว้ทั้งหมด</span>{' '}
+                        (Excel · ไฟล์ธนาคาร · ส่งบัญชี · ปิดยอด · ประกาศ · รายการเฉพาะงวด) เพราะทุกปุ่มทำงานกับทั้งงวด
+                        ไม่ใช่เฉพาะคนที่คุณเห็น
                       </p>
                     </div>
                   )}

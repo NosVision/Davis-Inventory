@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManagerForStore } from '@/lib/hr/route-auth';
+import { refusePayrunIfHidden } from '@/lib/hr/payrun-access';
 import { buildPayrunReviewRows } from '@/lib/hr/review-link';
 import { THAI_BANK_OPTIONS, isCashBank, normalizeAccountNo } from '@/lib/hr/bank-transfer';
 import { buildXlsx } from '@/lib/xlsx';
@@ -31,6 +32,13 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   if (!payrun) return NextResponse.json({ error: 'Payrun not found' }, { status: 404 });
   const auth = await requireHrManagerForStore(payrun.store_id as string | null);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
+  // §00195: every action on a payrun reaches every slip in it — refuse the whole thing when the
+  // caller may not see part of it.
+  {
+    const refusal = await refusePayrunIfHidden(service, auth.userId, id);
+    if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
+  }
 
   const rows = await buildPayrunReviewRows(service, id);
   if (rows === null) return NextResponse.json({ error: 'Failed to load payrun rows' }, { status: 500 });

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManagerForStore } from '@/lib/hr/route-auth';
+import { refusePayrunIfHidden } from '@/lib/hr/payrun-access';
 import { logHrAudit } from '@/lib/hr/audit';
 import { notifyUser } from '@/lib/notifications/service';
 
@@ -26,6 +27,13 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   const { payrun, auth } = await authForPayrun(service, id);
   if (!payrun) return NextResponse.json({ error: 'Payrun not found' }, { status: 404 });
   if (!auth || !auth.ok) return NextResponse.json({ error: auth?.error ?? 'Forbidden' }, { status: auth?.status ?? 403 });
+
+  // §00195: every action on a payrun reaches every slip in it — refuse the whole thing when the
+  // caller may not see part of it.
+  {
+    const refusal = await refusePayrunIfHidden(service, auth.userId, id);
+    if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
+  }
 
   const { data: slips, error: slipErr } = await service
     .from('hr_payslips')
@@ -77,6 +85,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { payrun, auth } = await authForPayrun(service, id);
   if (!payrun) return NextResponse.json({ error: 'Payrun not found' }, { status: 404 });
   if (!auth || !auth.ok) return NextResponse.json({ error: auth?.error ?? 'Forbidden' }, { status: auth?.status ?? 403 });
+
+  // §00195: every action on a payrun reaches every slip in it — refuse the whole thing when the
+  // caller may not see part of it.
+  {
+    const refusal = await refusePayrunIfHidden(service, auth.userId, id);
+    if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
+  }
 
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const ids = Array.isArray(body.payslip_ids) ? body.payslip_ids.filter((x): x is string => typeof x === 'string') : [];

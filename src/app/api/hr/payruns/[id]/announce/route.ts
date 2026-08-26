@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManagerForStore } from '@/lib/hr/route-auth';
+import { refusePayrunIfHidden } from '@/lib/hr/payrun-access';
 import { announcePayrun } from '@/lib/hr/announce';
 
 // POST /api/hr/payruns/[id]/announce { resend? } — ⑤ manual "ประกาศเงินเดือนออก": push the
@@ -13,6 +14,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!pr) return NextResponse.json({ error: 'Payrun not found' }, { status: 404 });
   const auth = await requireHrManagerForStore((pr.store_id as string | null) ?? null);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
+  // §00195: every action on a payrun reaches every slip in it — refuse the whole thing when the
+  // caller may not see part of it.
+  {
+    const refusal = await refusePayrunIfHidden(service, auth.userId, id);
+    if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
+  }
 
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const result = await announcePayrun(service, { payrunId: id, actorId: auth.userId, resend: body.resend === true });
