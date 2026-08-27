@@ -53,3 +53,24 @@ export function employeeNameLabel(src: EmployeeNameSource | null | undefined): s
 export function hasEmployeeRecord(src: EmployeeNameSource | null | undefined): boolean {
   return !!src?.full_name?.trim();
 }
+
+/**
+ * Does this person match a typed search? Used by the leave-quota grid, where 131 rows is too many
+ * to scan for one person.
+ *
+ * Every token must appear somewhere in "ชื่อจริงนามสกุล ชื่อเล่น", so word order does not matter.
+ * hr_employees.full_name holds the first and last name in one string, and typing them the other way
+ * round is the obvious thing to do when the surname is what you remember. Case-insensitive, because
+ * the nicknames on file are a mix of Thai, "Aum" and "tan5566".
+ *
+ * An empty query matches everyone — the caller shows the unfiltered list rather than nothing.
+ */
+export function matchesEmployeeSearch(
+  person: { name: string; nickname?: string | null },
+  query: string
+): boolean {
+  const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return true;
+  const haystack = `${person.name} ${person.nickname ?? ''}`.toLowerCase();
+  return tokens.every((tok) => haystack.includes(tok));
+}
