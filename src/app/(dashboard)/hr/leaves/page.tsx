@@ -629,7 +629,19 @@ export default function HrLeavesPage() {
   };
 
   return (
-    <div className="mx-auto max-w-4xl space-y-4 p-4">
+    /*
+     * Width follows the view, because the two halves of this page want opposite things.
+     *
+     * The approval queue is a column of request cards — read top to bottom, and stretching them
+     * across a 1900px monitor only makes the eye travel further between the name and the buttons.
+     * 6xl matches every other HR queue (employees, claims, attendance, audit).
+     *
+     * The quota matrix is a grid: 11 leave types plus 12 months plus the name column. Capping it at
+     * 4xl left it scrolling sideways inside a narrow card with empty page either side of it
+     * (owner report 2026-08-27). It gets the whole viewport; the first column stays sticky, so the
+     * scrolling that remains at least keeps the name in view.
+     */
+    <div className={`mx-auto space-y-4 p-4 ${mode === 'quota' ? 'max-w-none' : 'max-w-6xl'}`}>
       <PageHeader
         title={t('hrTitle')}
         subtitle={t('hrSubtitle')}
