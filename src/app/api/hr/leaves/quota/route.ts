@@ -15,6 +15,7 @@ const MAX_QUOTA_DAYS = 366;
 interface QuotaEmployee {
   employee_id: string;
   profile_id: string;
+  company_id: string | null;
   name: string;
   position: string | null;
 }
@@ -55,14 +56,18 @@ export async function GET(request: NextRequest) {
   // Active leave types, ordered for display. With a company: shared (NULL) + that company's.
   let typesQuery = service
     .from('hr_leave_types')
-    .select('id, code, name_th, name_en, annual_quota_days')
+    .select('id, company_id, code, name_th, name_en, annual_quota_days')
     .eq('active', true)
     .order('sort_order', { ascending: true });
   if (companyId) typesQuery = typesQuery.or(`company_id.is.null,company_id.eq.${companyId}`);
   const { data: typeRows, error: typesErr } = await typesQuery;
   if (typesErr) return NextResponse.json({ error: 'Failed to load leave types' }, { status: 500 });
+  // One row PER COMPANY per code — "ลาสมรส" is four rows, not one. The grid groups them by code
+  // and resolves the row belonging to each employee's own company, so the same leave type stops
+  // appearing as four near-identical columns (owner report 2026-08-27).
   const types = (typeRows ?? []).map((t) => ({
     id: t.id as string,
+    company_id: (t.company_id as string | null) ?? null,
     code: t.code as string,
     name_th: t.name_th as string,
     name_en: t.name_en as string,
@@ -83,7 +88,7 @@ export async function GET(request: NextRequest) {
   let empQuery = service
     .from('hr_employees')
     .select(
-      'id, profile_id, full_name, ' +
+      'id, profile_id, company_id, full_name, ' +
         'profile:profiles!hr_employees_profile_id_fkey(display_name, username), ' +
         'position:hr_positions(name)'
     )
@@ -100,6 +105,7 @@ export async function GET(request: NextRequest) {
       const r = row as unknown as {
         id: string;
         profile_id: string;
+        company_id: string | null;
         full_name: string | null;
         profile: { display_name: string | null; username: string | null } | null;
         position: { name: string | null } | null;
@@ -107,6 +113,7 @@ export async function GET(request: NextRequest) {
       return {
         employee_id: r.id,
         profile_id: r.profile_id,
+        company_id: r.company_id,
         // ชื่อจริง (ชื่อเล่น) — same rule as /hr/payroll.
         ...resolveEmployeeName({
           full_name: r.full_name,
@@ -137,9 +144,33 @@ export async function GET(request: NextRequest) {
     }));
   }
 
-  // Approved usage in the year, aggregated server-side per user × type × month.
+  // Approved usage in the year, aggregated server-side per user × type × month — plus the days
+  // sitting in the queue, which hold quota just as firmly and are what the approver needs to see
+  // before pressing approve.
   let used: UsedEntry[] = [];
+  let pendingDays: { user_id: string; leave_type_id: string; days: number }[] = [];
   if (profileIds.length) {
+    const { data: pendRows } = await service
+      .from('hr_leaves')
+      .select('user_id, leave_type_id, days')
+      .eq('status', 'pending')
+      .in('user_id', profileIds)
+      .gte('from_date', `${year}-01-01`)
+      .lte('from_date', `${year}-12-31`);
+    const pendAgg = new Map<string, { user_id: string; leave_type_id: string; days: number }>();
+    for (const row of pendRows ?? []) {
+      const key = `${row.user_id}|${row.leave_type_id}`;
+      const prev = pendAgg.get(key);
+      const days = Number(row.days ?? 0);
+      pendAgg.set(
+        key,
+        prev
+          ? { ...prev, days: Math.round((prev.days + days) * 10) / 10 }
+          : { user_id: row.user_id as string, leave_type_id: row.leave_type_id as string, days }
+      );
+    }
+    pendingDays = [...pendAgg.values()];
+
     const { data, error } = await service
       .from('hr_leaves')
       .select('user_id, leave_type_id, from_date, days')
@@ -167,7 +198,7 @@ export async function GET(request: NextRequest) {
     used = [...agg.values()];
   }
 
-  return NextResponse.json({ data: { year, types, employees, balances, used } });
+  return NextResponse.json({ data: { year, types, employees, balances, used, pending: pendingDays } });
 }
 
 // PUT /api/hr/leaves/quota — full HR only. Sets (or clears) one employee's per-year quota
@@ -209,11 +240,28 @@ export async function PUT(request: NextRequest) {
 
   const { data: emp, error: empErr } = await service
     .from('hr_employees')
-    .select('id')
+    .select('id, company_id')
     .eq('id', employeeId)
     .maybeSingle();
   if (empErr) return NextResponse.json({ error: 'Failed to load employee' }, { status: 500 });
   if (!emp) return NextResponse.json({ error: 'Employee not found' }, { status: 404 });
+
+  // Leave types are per-company rows. The grid used to show every company's copy as its own
+  // column, which made it possible to key someone's quota against another company's "ลาสมรส" —
+  // a row nothing would ever read, because every lookup resolves by the employee's own company.
+  const { data: lt, error: ltErr } = await service
+    .from('hr_leave_types')
+    .select('id, company_id, name_th')
+    .eq('id', leaveTypeId)
+    .maybeSingle();
+  if (ltErr) return NextResponse.json({ error: 'Failed to load leave type' }, { status: 500 });
+  if (!lt) return NextResponse.json({ error: 'Leave type not found' }, { status: 404 });
+  if (lt.company_id !== null && lt.company_id !== emp.company_id) {
+    return NextResponse.json(
+      { error: 'ประเภทการลานี้ไม่ใช่ของบริษัทที่พนักงานคนนี้สังกัด' },
+      { status: 400 }
+    );
+  }
 
   // Before-snapshot for the audit trail (and to know create vs update vs no-op delete).
   const { data: before, error: beforeErr } = await service
