@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Loader2, Inbox, FileText, CalendarRange, ListChecks } from 'lucide-react';
+import { Loader2, Inbox, FileText, CalendarRange, ListChecks, Search } from 'lucide-react';
 import { Button, Select, PageHeader, ViewToggle, useViewMode, DataList, DataCard, StatusBadge, SkeletonList, toast, usePromptDialog } from '@/components/ui';
+import { matchesEmployeeSearch } from '@/lib/hr/employee-name';
 import { formatThaiDate } from '@/lib/utils/format';
 import { EmployeeName } from '@/components/hr/employee-name';
 import Link from 'next/link';
@@ -128,6 +129,7 @@ export default function HrLeavesPage() {
   // Quota & stats: fetched once (cross-company — no company selector on this page,
   // so the quota API is called WITHOUT company_id and returns every visible company).
   const [quota, setQuota] = useState<QuotaData | null>(null);
+  const [quotaSearch, setQuotaSearch] = useState('');
   const [quotaLoading, setQuotaLoading] = useState(true);
   const [mode, setMode] = useState<'requests' | 'quota'>('requests');
 
@@ -238,6 +240,18 @@ export default function HrLeavesPage() {
     });
     return map;
   }, [quota]);
+  /**
+   * Name search over the quota grid — 131 rows is too many to scan for one person.
+   *
+   * Every token must match somewhere in "ชื่อจริงนามสกุล ชื่อเล่น", so word order does not matter:
+   * hr_employees.full_name holds the first and last name in one string, and typing them the other
+   * way round is the obvious thing to do when you only remember the surname.
+   */
+  const visibleQuotaEmployees = useMemo(
+    () => (quota?.employees ?? []).filter((e) => matchesEmployeeSearch(e, quotaSearch)),
+    [quota, quotaSearch]
+  );
+
   const monthlyByUser = useMemo(() => {
     const map = new Map<string, number[]>();
     (quota?.used ?? []).forEach((u) => {
@@ -524,11 +538,45 @@ export default function HrLeavesPage() {
         </div>
       );
     }
+    const total = quota.employees.length;
+    const shown = visibleQuotaEmployees.length;
     return (
       <div className="space-y-2">
-        <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
-          {t('quotaYearHeading', { year: String(quota.year) })}
-        </h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
+            {t('quotaYearHeading', { year: String(quota.year) })}
+          </h2>
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+              <input
+                type="search"
+                value={quotaSearch}
+                onChange={(e) => setQuotaSearch(e.target.value)}
+                placeholder="ค้นหาชื่อ / นามสกุล / ชื่อเล่น"
+                aria-label="ค้นหาพนักงานในตารางโควตา"
+                className="control w-56 py-1 pl-8 text-xs sm:w-64"
+              />
+            </div>
+            <span className="whitespace-nowrap text-xs tabular-nums text-gray-500 dark:text-gray-400">
+              {quotaSearch.trim() ? `แสดง ${shown} จาก ${total} คน` : `${total} คน`}
+            </span>
+          </div>
+        </div>
+
+        {shown === 0 ? (
+          <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-gray-300 px-4 py-12 text-center text-sm text-gray-400 dark:border-gray-700">
+            <Inbox className="h-8 w-8" />
+            ไม่พบพนักงานที่ตรงกับ &quot;{quotaSearch.trim()}&quot;
+            <button
+              type="button"
+              onClick={() => setQuotaSearch('')}
+              className="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+            >
+              ล้างคำค้น
+            </button>
+          </div>
+        ) : (
         <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
           <table className="w-full min-w-max border-collapse text-xs">
             <thead className="bg-gray-50 text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">
@@ -565,7 +613,7 @@ export default function HrLeavesPage() {
               </tr>
             </thead>
             <tbody className="bg-white dark:bg-gray-800">
-              {quota.employees.map((emp) => {
+              {visibleQuotaEmployees.map((emp) => {
                 const months = monthlyByUser.get(emp.profile_id);
                 return (
                   <tr key={emp.employee_id} className="border-t border-gray-100 dark:border-gray-700/60">
@@ -624,6 +672,7 @@ export default function HrLeavesPage() {
             </tbody>
           </table>
         </div>
+        )}
       </div>
     );
   };

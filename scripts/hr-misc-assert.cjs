@@ -410,6 +410,31 @@ const msgNoPending = lvq.describeQuotaExceeded('ลาพักร้อน', { 
 eq('quota msg: no pending, no cancel advice', msgNoPending.includes('ยกเลิก'), false);
 eq('quota msg: single-day range reads as one date', lvq.describeQuotaExceeded('ลากิจ', { quota: 3, approved: 3, pending: 1, requested: 1, over: 2, pendingRefs: [{ from_date: '2026-09-15', to_date: '2026-09-15', days: 1 }] }).includes('(15 ก.ย.)'), true);
 
+// ── employee-name.ts: the name search behind the leave-quota grid ──
+// 131 rows is too many to scan, and the surname is usually what people remember — so word order
+// must not matter, and a partial match has to be enough.
+const en = load('employee-name.ts');
+const P = { name: 'สมชาย ใจดี', nickname: 'Aum' };
+const hit = (q, who = P) => en.matchesEmployeeSearch(who, q);
+
+eq('search: first name', hit('สมชาย'), true);
+eq('search: surname alone', hit('ใจดี'), true);
+eq('search: nickname', hit('Aum'), true);
+eq('search: nickname is case-insensitive', hit('aum'), true);
+eq('search: partial is enough', hit('สมช'), true);
+// full_name is one string, so "surname firstname" must work as well as the written order.
+eq('search: words in written order', hit('สมชาย ใจดี'), true);
+eq('search: words reversed', hit('ใจดี สมชาย'), true);
+eq('search: extra spaces are ignored', hit('  ใจดี   สมชาย '), true);
+// Every token must land — a stray word means this is not the person being looked for.
+eq('search: one token missing = no match', hit('สมชาย สมหญิง'), false);
+eq('search: unrelated text', hit('xyz'), false);
+// Empty query shows everyone rather than nobody.
+eq('search: empty query matches all', hit(''), true);
+eq('search: whitespace-only query matches all', hit('   '), true);
+// A login with no full_name has the nickname as its name and nothing trailing — must still match.
+eq('search: person with no nickname', hit('tan5566', { name: 'tan5566', nickname: null }), true);
+
 const fail = R.filter((r) => !r.pass);
 for (const r of R) if (!r.pass) console.log(`FAIL ${r.name}: got=${JSON.stringify(r.got)} want=${JSON.stringify(r.want)}`);
 console.log(`\nHR_MISC_ASSERT = ${R.length - fail.length}/${R.length} ${fail.length ? 'FAILED' : 'ALL PASS'}`);
