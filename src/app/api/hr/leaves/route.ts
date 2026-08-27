@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
+import { describeQuotaExceeded, type QuotaBreakdown } from '@/lib/hr/leaves';
+import { loadLeaveQuotaContext } from '@/lib/hr/leave-quota';
 import {
   requireHrManager,
   requireStoreManager,
@@ -76,6 +78,12 @@ export async function POST(request: NextRequest) {
   const fromDate = typeof body.from_date === 'string' ? body.from_date : '';
   const toDate = typeof body.to_date === 'string' ? body.to_date : '';
   const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+  // Set by the confirm dialog after the caller has been shown the numbers (owner ask 2026-08-27):
+  // HR carries the authority, so an over-quota entry is a decision to record, not a wall. Forcing
+  // a hard block here would just push them to edit the person's quota instead, which corrupts it.
+  const overrideQuota = body.override_quota === true;
+  const overrideReason =
+    typeof body.override_reason === 'string' ? body.override_reason.trim() : '';
 
   if (!userId || !leaveTypeId) {
     return NextResponse.json({ error: 'user_id and leave_type_id are required' }, { status: 400 });
@@ -100,7 +108,7 @@ export async function POST(request: NextRequest) {
   // The employee's hr_employees row fixes the company (leaves are company-scoped).
   const { data: emp, error: empErr } = await service
     .from('hr_employees')
-    .select('company_id')
+    .select('id, company_id')
     .eq('profile_id', userId)
     .maybeSingle();
   if (empErr) return NextResponse.json({ error: 'Failed to load employee' }, { status: 500 });
@@ -112,7 +120,7 @@ export async function POST(request: NextRequest) {
   // Validate the leave type belongs to this company (or is a shared type).
   const { data: lt, error: ltErr } = await service
     .from('hr_leave_types')
-    .select('id, company_id')
+    .select('id, company_id, name_th, annual_quota_days')
     .eq('id', leaveTypeId)
     .maybeSingle();
   if (ltErr) return NextResponse.json({ error: 'Failed to load leave type' }, { status: 500 });
@@ -126,6 +134,51 @@ export async function POST(request: NextRequest) {
   const days = countLeaveDays(fromDate, toDate);
   if (days <= 0) {
     return NextResponse.json({ error: 'Leave range contains no working days' }, { status: 400 });
+  }
+
+  // The annual quota, counting requests still in the queue as well as approved ones. HR's own
+  // form used to skip this check entirely, so the same request refused from /me/leaves went
+  // straight through from here (owner report 2026-08-27).
+  const year = Number(fromDate.slice(0, 4));
+  const quotaCtx = await loadLeaveQuotaContext(service, {
+    employeeId: emp.id as string,
+    profileId: userId,
+    leaveTypeId,
+    typeQuotaDays: lt.annual_quota_days == null ? null : Number(lt.annual_quota_days),
+    year,
+  });
+  let quotaOverride: QuotaBreakdown | null = null;
+  if (quotaCtx.effectiveQuota != null) {
+    const pendingDays = quotaCtx.pending.reduce((sum, r) => sum + r.days, 0);
+    const total = Math.round((quotaCtx.approved + pendingDays + days) * 10) / 10;
+    if (total > quotaCtx.effectiveQuota) {
+      const breakdown: QuotaBreakdown = {
+        quota: quotaCtx.effectiveQuota,
+        approved: quotaCtx.approved,
+        pending: Math.round(pendingDays * 10) / 10,
+        requested: days,
+        over: Math.round((total - quotaCtx.effectiveQuota) * 10) / 10,
+        pendingRefs: quotaCtx.pending,
+      };
+      // 409 rather than 400: this is not malformed input, it is a decision the caller can take.
+      if (!overrideQuota) {
+        return NextResponse.json(
+          {
+            error: describeQuotaExceeded(lt.name_th as string, breakdown),
+            code: 'quota_exceeded',
+            quota: breakdown,
+          },
+          { status: 409 }
+        );
+      }
+      if (!overrideReason) {
+        return NextResponse.json(
+          { error: 'ต้องระบุเหตุผลที่ให้เกินโควตา', code: 'override_reason_required' },
+          { status: 400 }
+        );
+      }
+      quotaOverride = breakdown;
+    }
   }
 
   const nowIso = new Date().toISOString();
@@ -156,9 +209,16 @@ export async function POST(request: NextRequest) {
     table: TABLE,
     recordId: insertedRow.id,
     before: null,
-    after: insertedRow,
-    reason,
+    // The override is recorded on the row itself, not only in the reason text, so "who was let
+    // past their quota, by how much, and why" is answerable without parsing prose.
+    after: quotaOverride ? { ...insertedRow, quota_override: quotaOverride } : insertedRow,
+    reason: quotaOverride
+      ? `${reason} · เกินโควตา ${quotaOverride.over} วัน — เหตุผล: ${overrideReason}`
+      : reason,
   });
 
-  return NextResponse.json({ data: inserted }, { status: 201 });
+  return NextResponse.json(
+    { data: inserted, ...(quotaOverride ? { quota_override: quotaOverride } : {}) },
+    { status: 201 }
+  );
 }

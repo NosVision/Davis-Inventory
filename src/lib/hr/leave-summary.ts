@@ -6,7 +6,12 @@ export interface LeaveTypeSummary {
   name_th: string;
   name_en: string;
   quota: number | null;
+  /** Days already approved. */
   used: number;
+  /** Days sitting in the approval queue — spoken for, but not yet taken. */
+  pending: number;
+  /** quota − used − pending. A pending request holds its days, so it must be subtracted here too,
+   *  or the screen offers days that filing would immediately be refused for. */
   remaining: number | null;
 }
 
@@ -43,9 +48,9 @@ export async function buildLeaveSummary(
       .eq('year', year),
     service
       .from('hr_leaves')
-      .select('leave_type_id, from_date, days')
+      .select('leave_type_id, from_date, days, status')
       .eq('user_id', userId)
-      .eq('status', 'approved')
+      .in('status', ['approved', 'pending'])
       .gte('from_date', `${year}-01-01`)
       .lte('from_date', `${year}-12-31`),
   ]);
@@ -56,10 +61,17 @@ export async function buildLeaveSummary(
   );
 
   const usedByType = new Map<string, number>();
+  const pendingByType = new Map<string, number>();
   const monthly = Array.from({ length: 12 }, () => 0);
   for (const row of usedRes.data ?? []) {
     const days = Number(row.days ?? 0);
     const typeId = row.leave_type_id as string;
+    // Pending days count against the quota but are NOT leave taken — the monthly strip below
+    // stays a record of what actually happened.
+    if (row.status === 'pending') {
+      pendingByType.set(typeId, Math.round(((pendingByType.get(typeId) ?? 0) + days) * 10) / 10);
+      continue;
+    }
     usedByType.set(typeId, Math.round(((usedByType.get(typeId) ?? 0) + days) * 10) / 10);
     const month = Number(String(row.from_date).slice(5, 7));
     if (month >= 1 && month <= 12) {
@@ -71,6 +83,7 @@ export async function buildLeaveSummary(
     const override = balanceByType.get(t.id as string);
     const quota = override ?? (t.annual_quota_days == null ? null : Number(t.annual_quota_days));
     const used = usedByType.get(t.id as string) ?? 0;
+    const pending = pendingByType.get(t.id as string) ?? 0;
     return {
       id: t.id as string,
       code: t.code as string,
@@ -78,7 +91,8 @@ export async function buildLeaveSummary(
       name_en: t.name_en as string,
       quota,
       used,
-      remaining: quota == null ? null : Math.round((quota - used) * 10) / 10,
+      pending,
+      remaining: quota == null ? null : Math.round((quota - used - pending) * 10) / 10,
     };
   });
 

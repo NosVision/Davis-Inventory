@@ -60,6 +60,7 @@ const QUEUES: { key: Queue; label: string; hint: string; status: string }[] = [
 // ── Quota & stats view (per-year quota overrides + usage matrix) ───────────────
 interface QuotaType {
   id: string;
+  company_id: string | null;
   code: string;
   name_th: string;
   name_en: string;
@@ -68,6 +69,7 @@ interface QuotaType {
 interface QuotaEmployee {
   employee_id: string;
   profile_id: string;
+  company_id: string | null;
   name: string;
   nickname: string | null;
   position: string | null;
@@ -83,12 +85,18 @@ interface QuotaUsed {
   month: number; // 1-12
   days: number;
 }
+interface QuotaPending {
+  user_id: string;
+  leave_type_id: string;
+  days: number;
+}
 interface QuotaData {
   year: number;
   types: QuotaType[];
   employees: QuotaEmployee[];
   balances: QuotaBalance[];
   used: QuotaUsed[];
+  pending: QuotaPending[];
 }
 
 const MONTHS_TH = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
@@ -219,6 +227,17 @@ export default function HrLeavesPage() {
     });
     return map;
   }, [quota]);
+  // Days already in the queue for this person+type. They hold quota, so the approver has to see
+  // them before pressing approve — otherwise two requests that each look affordable get approved
+  // in turn and the second one lands the person over.
+  const pendingByUserType = useMemo(() => {
+    const map = new Map<string, number>();
+    (quota?.pending ?? []).forEach((p) => {
+      const key = `${p.user_id}|${p.leave_type_id}`;
+      map.set(key, Math.round(((map.get(key) ?? 0) + p.days) * 10) / 10);
+    });
+    return map;
+  }, [quota]);
   const monthlyByUser = useMemo(() => {
     const map = new Map<string, number[]>();
     (quota?.used ?? []).forEach((u) => {
@@ -239,6 +258,39 @@ export default function HrLeavesPage() {
     [quota]
   );
 
+  /**
+   * ONE COLUMN PER LEAVE TYPE, not per (company × leave type).
+   *
+   * hr_leave_types stores a separate row for every company, so "ลาสมรส" is four rows and the grid
+   * drew four near-identical columns — 61 of them in all, most blank for any given person (owner
+   * report 2026-08-27). Grouping by code collapses that to 15, and each cell then resolves the row
+   * belonging to THAT employee's company, which is the only one their leave ever uses.
+   */
+  const typeGroups = useMemo(() => {
+    const groups = new Map<string, { code: string; label: string; members: QuotaType[] }>();
+    for (const ty of quotaTypes) {
+      const g = groups.get(ty.code) ?? { code: ty.code, label: ty.name_th, members: [] };
+      g.members.push(ty);
+      groups.set(ty.code, g);
+    }
+    return [...groups.values()].map((g) => {
+      // Companies may name the same code differently (HR Test Co calls `personal`
+      // "ลากิจไม่รับค่าจ้าง"). Head the column with the most common name and keep the rest for the
+      // tooltip, rather than silently showing one company's wording as everyone's.
+      const tally = new Map<string, number>();
+      g.members.forEach((m) => tally.set(m.name_th, (tally.get(m.name_th) ?? 0) + 1));
+      const names = [...tally.entries()].sort((a, b) => b[1] - a[1]);
+      return { ...g, label: names[0]?.[0] ?? g.label, variants: names.length > 1 ? names.map(([n]) => n) : null };
+    });
+  }, [quotaTypes]);
+
+  /** The row of this group that applies to this employee: their own company's, else a shared one. */
+  const typeForEmployee = useCallback(
+    (members: QuotaType[], companyId: string | null): QuotaType | undefined =>
+      members.find((m) => m.company_id === companyId) ?? members.find((m) => m.company_id === null),
+    []
+  );
+
   // Effective quota/used/remaining for one employee × leave type; null when unlimited.
   const quotaInfo = useCallback(
     (profileId: string | undefined, leaveTypeId: string) => {
@@ -250,9 +302,17 @@ export default function HrLeavesPage() {
       const effective = override ?? type.annual_quota_days;
       if (effective == null) return null;
       const used = usedByUserType.get(`${profileId}|${leaveTypeId}`) ?? 0;
-      return { quota: effective, used, remaining: Math.round((effective - used) * 10) / 10 };
+      const pending = pendingByUserType.get(`${profileId}|${leaveTypeId}`) ?? 0;
+      return {
+        quota: effective,
+        used,
+        pending,
+        // What is genuinely left AFTER everything already claimed — the number the approve button
+        // is really deciding against.
+        remaining: Math.round((effective - used - pending) * 10) / 10,
+      };
     },
-    [quota, employeeByProfile, balanceMap, usedByUserType]
+    [quota, employeeByProfile, balanceMap, usedByUserType, pendingByUserType]
   );
 
   const editQuota = useCallback(
@@ -302,13 +362,38 @@ export default function HrLeavesPage() {
 
   const decide = useCallback(
     async (id: string, decision: 'approved' | 'rejected', note?: string) => {
-      try {
-        const res = await fetch(`/api/hr/leaves/${id}/decide`, {
+      const send = async (override?: { reason: string }) =>
+        fetch(`/api/hr/leaves/${id}/decide`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ decision, note: note?.trim() || undefined }),
+          body: JSON.stringify({
+            decision,
+            note: note?.trim() || undefined,
+            ...(override ? { override_quota: true, override_reason: override.reason } : {}),
+          }),
         });
-        const json = await res.json().catch(() => ({}));
+
+      try {
+        let res = await send();
+        let json = await res.json().catch(() => ({}));
+
+        // Over quota is a decision, not a dead end (owner ask 2026-08-27): show the arithmetic the
+        // server computed, take a reason, and let the approver proceed. The reason is recorded on
+        // the audit row, so "who was let past, by how much, why" stays answerable.
+        if (res.status === 409 && json?.code === 'quota_exceeded') {
+          const reason = await prompt({
+            title: 'เกินโควตา — ยืนยันอนุมัติ?',
+            message: `${json.error}
+
+ระบุเหตุผลที่อนุมัติเกินโควตา (บันทึกไว้ในประวัติ)`,
+            confirmLabel: 'ยืนยันอนุมัติ',
+            cancelLabel: t('cancel'),
+          });
+          if (!reason || !reason.trim()) return;
+          res = await send({ reason: reason.trim() });
+          json = await res.json().catch(() => ({}));
+        }
+
         if (!res.ok) throw new Error(json?.error || json?.message);
         toast({
           type: 'success',
@@ -317,11 +402,14 @@ export default function HrLeavesPage() {
         // Decision may have succeeded while its balance-apply side-effect warned — surface it.
         if (json?.warning) toast({ type: 'warning', title: json.warning });
         await load();
-      } catch {
-        toast({ type: 'error', title: t('actionFailed') });
+      } catch (e) {
+        toast({
+          type: 'error',
+          title: e instanceof Error && e.message ? e.message : t('actionFailed'),
+        });
       }
     },
-    [t, load]
+    [t, load, prompt]
   );
 
   const viewCert = useCallback(
@@ -399,7 +487,10 @@ export default function HrLeavesPage() {
     if (r.status !== 'pending') return null;
     const info = quotaInfo(r.requester?.id, r.leave_type_id);
     if (!info) return null;
-    const over = info.remaining < r.days;
+    // `remaining` already has this request's own pending days subtracted, so add them back before
+    // asking whether approving it would overshoot.
+    const remainingExcludingThis = Math.round((info.remaining + r.days) * 10) / 10;
+    const over = remainingExcludingThis < r.days;
     return (
       <span
         className={`mt-1 inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-[11px] font-medium tabular-nums ${
@@ -408,11 +499,10 @@ export default function HrLeavesPage() {
             : 'border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-600 dark:bg-gray-700/60 dark:text-gray-300'
         }`}
       >
-        {t('quotaChip', {
-          quota: fmtDays(info.quota),
-          used: fmtDays(info.used),
-          remaining: fmtDays(info.remaining),
-        })}
+        โควตา {fmtDays(info.quota)} · อนุมัติแล้ว {fmtDays(info.used)}
+        {info.pending > 0 && <> · รออนุมัติ {fmtDays(info.pending)}</>} · คงเหลือ{' '}
+        {fmtDays(remainingExcludingThis)} · ใบนี้ขอ {fmtDays(r.days)}
+        {over && <> → เกิน {fmtDays(Math.round((r.days - remainingExcludingThis) * 10) / 10)} วัน</>}
       </span>
     );
   };
@@ -449,9 +539,14 @@ export default function HrLeavesPage() {
                 >
                   {t('employeeCol')}
                 </th>
-                {quotaTypes.map((ty) => (
-                  <th key={ty.id} rowSpan={2} className="whitespace-nowrap px-2 py-2 text-center font-medium">
-                    {ty.name_th}
+                {typeGroups.map((g) => (
+                  <th
+                    key={g.code}
+                    rowSpan={2}
+                    className="whitespace-nowrap px-2 py-2 text-center font-medium"
+                    title={g.variants ? `บางบริษัทเรียก: ${g.variants.join(' · ')}` : undefined}
+                  >
+                    {g.label}
                   </th>
                 ))}
                 <th colSpan={12} className="border-l border-gray-200 px-2 py-1.5 text-center font-medium dark:border-gray-700">
@@ -480,13 +575,23 @@ export default function HrLeavesPage() {
                         <span className="block text-[10px] text-gray-400 dark:text-gray-500">{emp.position}</span>
                       )}
                     </td>
-                    {quotaTypes.map((ty) => {
+                    {typeGroups.map((g) => {
+                      const ty = typeForEmployee(g.members, emp.company_id);
+                      // Their company does not offer this leave at all — an em dash, not a 0/0 that
+                      // reads as "used none of an allowance they have".
+                      if (!ty) {
+                        return (
+                          <td key={g.code} className="px-2 py-1.5 text-center text-gray-300 dark:text-gray-600">
+                            <span title="บริษัทของพนักงานคนนี้ไม่มีประเภทการลานี้">·</span>
+                          </td>
+                        );
+                      }
                       const override = balanceMap.get(`${emp.employee_id}|${ty.id}`);
                       const effective = override ?? ty.annual_quota_days;
                       const used = usedByUserType.get(`${emp.profile_id}|${ty.id}`) ?? 0;
                       const remaining = effective == null ? null : Math.round((effective - used) * 10) / 10;
                       return (
-                        <td key={ty.id} className="px-2 py-1.5 text-center">
+                        <td key={g.code} className="px-2 py-1.5 text-center">
                           <button
                             type="button"
                             onClick={() => editQuota(emp, ty)}

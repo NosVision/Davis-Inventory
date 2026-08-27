@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManager, requireStoreManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
+import { describeQuotaExceeded, type QuotaBreakdown } from '@/lib/hr/leaves';
+import { loadLeaveQuotaContext } from '@/lib/hr/leave-quota';
 import { notifyUser } from '@/lib/notifications/service';
 import { enumerateDates, classifyLeaveEffect } from '@/lib/hr/leaves';
 import { isRangeInFinalizedPeriod, employeeStoreIds, FINALIZED_PERIOD_ERROR } from '@/lib/hr/period-lock';
@@ -74,6 +76,10 @@ export async function POST(
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const decision = typeof body.decision === 'string' ? body.decision : '';
   const note = typeof body.note === 'string' ? body.note.slice(0, 300) : null;
+  // Sent by the confirm dialog once the approver has seen the numbers.
+  const overrideQuota = body.override_quota === true;
+  const overrideReason =
+    typeof body.override_reason === 'string' ? body.override_reason.trim() : '';
 
   if (decision !== 'approved' && decision !== 'rejected') {
     return NextResponse.json({ error: 'Invalid decision' }, { status: 400 });
@@ -118,6 +124,64 @@ export async function POST(
     return NextResponse.json({ data: { id, status: 'rejected' } });
   }
 
+  // Approval is the moment the days are actually spent, and nothing checked the quota here at all.
+  // A request filed while there was room can reach this point after a colleague's request — or the
+  // person's own second request — has taken the remainder. Re-checked against everything except
+  // THIS request, which is counted as the days being approved rather than as pending.
+  let quotaOverride: QuotaBreakdown | null = null;
+  {
+    const [{ data: emp }, { data: lt }] = await Promise.all([
+      service.from('hr_employees').select('id').eq('profile_id', row.user_id as string).maybeSingle(),
+      service
+        .from('hr_leave_types')
+        .select('name_th, annual_quota_days')
+        .eq('id', row.leave_type_id as string)
+        .maybeSingle(),
+    ]);
+    if (emp && lt) {
+      const days = Number(row.days ?? 0);
+      const ctx = await loadLeaveQuotaContext(service, {
+        employeeId: emp.id as string,
+        profileId: row.user_id as string,
+        leaveTypeId: row.leave_type_id as string,
+        typeQuotaDays: lt.annual_quota_days == null ? null : Number(lt.annual_quota_days),
+        year: Number(String(row.from_date).slice(0, 4)),
+        excludeLeaveId: id,
+      });
+      if (ctx.effectiveQuota != null) {
+        const pendingDays = ctx.pending.reduce((sum, r) => sum + r.days, 0);
+        const total = Math.round((ctx.approved + pendingDays + days) * 10) / 10;
+        if (total > ctx.effectiveQuota) {
+          const breakdown: QuotaBreakdown = {
+            quota: ctx.effectiveQuota,
+            approved: ctx.approved,
+            pending: Math.round(pendingDays * 10) / 10,
+            requested: days,
+            over: Math.round((total - ctx.effectiveQuota) * 10) / 10,
+            pendingRefs: ctx.pending,
+          };
+          if (!overrideQuota) {
+            return NextResponse.json(
+              {
+                error: describeQuotaExceeded(lt.name_th as string, breakdown),
+                code: 'quota_exceeded',
+                quota: breakdown,
+              },
+              { status: 409 }
+            );
+          }
+          if (!overrideReason) {
+            return NextResponse.json(
+              { error: 'ต้องระบุเหตุผลที่อนุมัติเกินโควตา', code: 'override_reason_required' },
+              { status: 400 }
+            );
+          }
+          quotaOverride = breakdown;
+        }
+      }
+    }
+  }
+
   // §Phase 0B: approving writes paid/absent overrides for each scheduled work day in the range —
   // payroll inputs. Refuse if any day overlaps a finalized period (reject stays allowed).
   try {
@@ -152,8 +216,12 @@ export async function POST(
     table: TABLE,
     recordId: id,
     before: { status: 'pending' },
-    after: { status: 'approved', decision_note: note },
-    reason: note ?? undefined,
+    after: quotaOverride
+      ? { status: 'approved', decision_note: note, quota_override: quotaOverride }
+      : { status: 'approved', decision_note: note },
+    reason: quotaOverride
+      ? `อนุมัติเกินโควตา ${quotaOverride.over} วัน — เหตุผล: ${overrideReason}${note ? ` · ${note}` : ''}`
+      : note ?? undefined,
   });
 
   await notifyLeaveDecision(

@@ -183,8 +183,32 @@ export interface LeaveValidationInput {
   today: string;
   /** Employee is still within their 119-day probation. */
   isProbation: boolean;
-  /** Days of this leave type already used this year (for quota checks). */
+  /** Days of this leave type already APPROVED this year (for quota checks). */
   usedDaysThisYear?: number;
+  /**
+   * Still-pending requests of this type this year. They hold days just as firmly as approved ones:
+   * counting only approvals let two requests that each fit be filed back to back and then both
+   * approved, landing the person over quota with nothing having warned anybody.
+   */
+  pendingThisYear?: readonly PendingLeaveRef[];
+}
+
+/** A request already in the queue, named by its dates so a refusal can point at it. */
+export interface PendingLeaveRef {
+  from_date: string;
+  to_date: string;
+  days: number;
+}
+
+/** The arithmetic behind a quota refusal — shown on screen and repeated in the override dialog. */
+export interface QuotaBreakdown {
+  quota: number;
+  approved: number;
+  pending: number;
+  requested: number;
+  /** How far past the quota this request lands. Always > 0 when a refusal carries this. */
+  over: number;
+  pendingRefs: PendingLeaveRef[];
 }
 
 export interface LeaveValidationResult {
@@ -199,6 +223,53 @@ export interface LeaveValidationResult {
     | 'advance_notice'
     | 'quota_exceeded'
     | 'max_consecutive';
+  /** Set only on quota_exceeded, so callers can offer an informed override instead of a dead end. */
+  quota?: QuotaBreakdown;
+}
+
+const TH_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+
+/** "15–17 ก.ย." — a pending request's dates, collapsed when it is a single day. */
+function thaiRange(from: string, to: string): string {
+  const [, fm, fd] = from.split('-');
+  const [, tm, td] = to.split('-');
+  const fromMonth = TH_MONTHS[Number(fm) - 1] ?? fm;
+  const toMonth = TH_MONTHS[Number(tm) - 1] ?? tm;
+  if (from === to) return `${Number(fd)} ${fromMonth}`;
+  if (fm === tm) return `${Number(fd)}–${Number(td)} ${fromMonth}`;
+  return `${Number(fd)} ${fromMonth} – ${Number(td)} ${toMonth}`;
+}
+
+/** Rounds to one decimal — day counts are numeric(3,1) and half-days are real. */
+function d1(n: number): number {
+  return Math.round(n * 10) / 10;
+}
+
+/** Whole numbers plain, halves with one decimal. */
+function fmtDays(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
+/**
+ * The refusal message, in Thai, built once so the employee's screen, HR's screen and the approval
+ * dialog all say the same thing — including WHICH pending request is holding the days, because
+ * "you are over quota" with an empty-looking calendar is the version people report as a bug.
+ */
+export function describeQuotaExceeded(typeName: string, q: QuotaBreakdown): string {
+  const parts = [
+    `โควตา ${fmtDays(q.quota)} วัน`,
+    `อนุมัติแล้ว ${fmtDays(q.approved)} วัน`,
+  ];
+  if (q.pending > 0) {
+    const refs = q.pendingRefs.map((r) => thaiRange(r.from_date, r.to_date)).join(', ');
+    parts.push(`รออนุมัติ ${fmtDays(q.pending)} วัน${refs ? ` (${refs})` : ''}`);
+  }
+  parts.push(`ใบนี้ขอ ${fmtDays(q.requested)} วัน`);
+  const head = `เกินโควตา${typeName} — ${parts.join(' · ')} → เกิน ${fmtDays(q.over)} วัน`;
+  return q.pending > 0
+    ? `${head}
+หากต้องการยื่นใบนี้ ให้ยกเลิกใบที่รออนุมัติก่อน`
+    : head;
 }
 
 /** Days between two YYYY-MM-DD (b - a), by UTC math. */
@@ -260,16 +331,28 @@ export function validateLeaveRequest(input: LeaveValidationInput): LeaveValidati
       error: `This leave allows at most ${leaveType.max_consecutive_days} consecutive days`,
     };
   }
-  if (
-    leaveType.annual_quota_days != null &&
-    input.usedDaysThisYear != null &&
-    input.usedDaysThisYear + days > leaveType.annual_quota_days
-  ) {
-    return {
-      ok: false,
-      code: 'quota_exceeded',
-      error: `This exceeds the annual quota of ${leaveType.annual_quota_days} days for this leave type`,
-    };
+  // A null quota means the type is unlimited — never refuse on it, however much has been taken.
+  if (leaveType.annual_quota_days != null && input.usedDaysThisYear != null) {
+    const approved = d1(input.usedDaysThisYear);
+    const pendingRefs = [...(input.pendingThisYear ?? [])];
+    const pending = d1(pendingRefs.reduce((sum, r) => sum + r.days, 0));
+    const total = d1(approved + pending + days);
+    if (total > leaveType.annual_quota_days) {
+      const quota: QuotaBreakdown = {
+        quota: leaveType.annual_quota_days,
+        approved,
+        pending,
+        requested: days,
+        over: d1(total - leaveType.annual_quota_days),
+        pendingRefs,
+      };
+      return {
+        ok: false,
+        code: 'quota_exceeded',
+        error: describeQuotaExceeded(leaveType.name_th, quota),
+        quota,
+      };
+    }
   }
   return { ok: true };
 }

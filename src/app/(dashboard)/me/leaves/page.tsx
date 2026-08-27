@@ -63,7 +63,8 @@ interface SummaryType {
   name_en: string;
   quota: number | null; // effective (override ?? type default); null = unlimited
   used: number;
-  remaining: number | null;
+  pending: number; // days sitting in the approval queue — already held against the quota
+  remaining: number | null; // quota − used − pending
 }
 interface LeaveSummary {
   year: number;
@@ -259,8 +260,12 @@ export default function MyLeavesPage() {
                 const quotaDays = ty.quota as number;
                 const remaining = ty.remaining ?? 0;
                 const depleted = remaining <= 0;
+                // The bar fills with days that are spoken for — approved AND pending — because
+                // that is what "remaining" now subtracts. A bar that ignored pending would show
+                // room the next request would immediately be refused for.
+                const claimed = ty.used + ty.pending;
                 const pct =
-                  quotaDays > 0 ? Math.min(100, Math.max(0, (ty.used / quotaDays) * 100)) : 100;
+                  quotaDays > 0 ? Math.min(100, Math.max(0, (claimed / quotaDays) * 100)) : 100;
                 // Traffic-light bar by % remaining: >50% green, >20% amber, else red.
                 const remainPct = quotaDays > 0 ? Math.max(0, (remaining / quotaDays) * 100) : 0;
                 const barColor =
@@ -282,6 +287,11 @@ export default function MyLeavesPage() {
                         used: fmtDays(ty.used),
                       })}
                     </p>
+                    {ty.pending > 0 && (
+                      <p className="mt-0.5 text-[11px] tabular-nums text-amber-600 dark:text-amber-400">
+                        รออนุมัติอีก {fmtDays(ty.pending)} วัน — กันยอดไว้แล้ว
+                      </p>
+                    )}
                     <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
                       <div
                         className={`h-full rounded-full ${barColor}`}

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { User } from 'lucide-react';
-import { Modal, ModalFooter, Input, Button, toast } from '@/components/ui';
+import { Modal, ModalFooter, Input, Button, toast, usePromptDialog } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import type { DaySummary } from '@/components/hr/timesheet-parts';
 
@@ -86,6 +86,7 @@ export function TimesheetEditModal({
   onSaved,
 }: TimesheetEditModalProps) {
   const t = useTranslations('hr.timesheet');
+  const { prompt, dialog: promptDialog } = usePromptDialog();
   const isTh = useLocale() === 'th';
 
   const [status, setStatus] = useState<DayStatusChoice>('present');
@@ -183,18 +184,41 @@ export function TimesheetEditModal({
               return;
             }
           }
-          const res = await fetch('/api/hr/leaves', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({
-              user_id: target.userId,
-              store_id: storeId || undefined,
-              leave_type_id: leaveTypeId,
-              from_date: target.day.business_date,
-              to_date: target.day.business_date,
-              reason: trimmed,
-            }),
-          });
+          const postLeave = (override?: string) =>
+            fetch('/api/hr/leaves', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                user_id: target.userId,
+                store_id: storeId || undefined,
+                leave_type_id: leaveTypeId,
+                from_date: target.day.business_date,
+                to_date: target.day.business_date,
+                reason: trimmed,
+                ...(override ? { override_quota: true, override_reason: override } : {}),
+              }),
+            });
+
+          let res = await postLeave();
+          // Over quota is HR's call, not a wall — otherwise marking a leave day for someone whose
+          // quota is spent (three people are set to 0 days) would be impossible from here, and the
+          // day would silently stay unmarked.
+          if (res.status === 409) {
+            const j = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
+            if (j?.code !== 'quota_exceeded') {
+              toast({ type: 'error', title: t('saveFailed'), message: j?.error });
+              return;
+            }
+            const why = await prompt({
+              title: 'เกินโควตา — ยืนยันบันทึก?',
+              message: `${j.error}
+
+ระบุเหตุผลที่ให้เกินโควตา (บันทึกไว้ในประวัติ)`,
+              confirmLabel: 'ยืนยันบันทึก',
+            });
+            if (!why || !why.trim()) return;
+            res = await postLeave(why.trim());
+          }
           if (!res.ok) {
             const j = (await res.json().catch(() => ({}))) as { error?: string };
             toast({ type: 'error', title: t('saveFailed'), message: j?.error });
@@ -264,6 +288,7 @@ export function TimesheetEditModal({
   };
 
   return (
+    <>
     <Modal isOpen={isOpen} onClose={onClose} title={t('editDayTitle')} size="md">
       <div className="space-y-4">
         {/* Whose day is being edited — prominent so backdated manual entries aren't mis-filed. */}
@@ -403,5 +428,7 @@ export function TimesheetEditModal({
         </Button>
       </ModalFooter>
     </Modal>
+    {promptDialog}
+    </>
   );
 }

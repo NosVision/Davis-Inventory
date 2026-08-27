@@ -368,6 +368,48 @@ eq('issuers: nobody at all', il.describeIssuers([]), 'ยังไม่มี�
 eq('issuers: no nickname prints the bare name', il.describeIssuers([granted('ชาญชัย'), owner('Tah')]), 'ชาญชัย และเจ้าของระบบ');
 eq('issuers: english', il.describeIssuers([granted('Piyathida', 'May'), owner('Tah')], false), 'Piyathida (May) and the system owners');
 
+// ── leaves.ts: the annual-quota rule now counts PENDING requests, not just approved ones ──
+// Counting only approvals let two requests that each fit be filed back to back and both approved,
+// landing the person over quota with nothing having warned anybody.
+const lvq = load('leaves.ts');
+const VAC = {
+  id: 't1', company_id: 'c1', code: 'vacation', name_th: 'ลาพักร้อน', name_en: 'Vacation',
+  paid: true, requires_cert: false, requires_reason: true, annual_quota_days: 6,
+  max_consecutive_days: null, probational_allowed: true, advance_notice_days: 0,
+  cert_threshold_days: null, active: true,
+};
+const ask = (over) => lvq.validateLeaveRequest({
+  leaveType: VAC, fromDate: '2026-09-15', toDate: '2026-09-17', days: 3,
+  hasCert: false, today: '2026-09-01', isProbation: false, ...over,
+});
+
+eq('quota: room to spare passes', ask({ usedDaysThisYear: 2 }).ok, true);
+eq('quota: landing exactly ON the quota passes', ask({ usedDaysThisYear: 3 }).ok, true);
+eq('quota: one day past refuses', ask({ usedDaysThisYear: 3.5 }).code, 'quota_exceeded');
+// The whole point: approved 2 + pending 3 + this 3 = 8 > 6, though approved alone would have fit.
+const withPending = ask({ usedDaysThisYear: 2, pendingThisYear: [{ from_date: '2026-09-15', to_date: '2026-09-17', days: 3 }] });
+eq('quota: pending pushes it over', withPending.code, 'quota_exceeded');
+eq('quota: breakdown reports the overage', withPending.quota.over, 2);
+eq('quota: breakdown separates approved from pending', [withPending.quota.approved, withPending.quota.pending], [2, 3]);
+// A type with no quota is unlimited — it must never refuse, however much was taken.
+eq('quota: null quota never refuses', ask({ leaveType: { ...VAC, annual_quota_days: null }, usedDaysThisYear: 99 }).ok, true);
+// Nothing known about usage → the engine skips the rule rather than guessing zero.
+eq('quota: unknown usage skips the rule', ask({}).ok, true);
+
+// The message names the pending request by its dates, because "over quota" against an
+// empty-looking calendar is the version people report as a bug.
+const msg = lvq.describeQuotaExceeded('ลาพักร้อน', {
+  quota: 6, approved: 2, pending: 3, requested: 3, over: 2,
+  pendingRefs: [{ from_date: '2026-09-15', to_date: '2026-09-17', days: 3 }],
+});
+eq('quota msg: states the overage', msg.includes('เกิน 2 วัน'), true);
+eq('quota msg: names the pending dates', msg.includes('15–17 ก.ย.'), true);
+eq('quota msg: tells them how to proceed', msg.includes('ยกเลิกใบที่รออนุมัติก่อน'), true);
+// With nothing pending there is nothing to cancel — do not tell them to cancel it.
+const msgNoPending = lvq.describeQuotaExceeded('ลาพักร้อน', { quota: 6, approved: 6, pending: 0, requested: 1, over: 1, pendingRefs: [] });
+eq('quota msg: no pending, no cancel advice', msgNoPending.includes('ยกเลิก'), false);
+eq('quota msg: single-day range reads as one date', lvq.describeQuotaExceeded('ลากิจ', { quota: 3, approved: 3, pending: 1, requested: 1, over: 2, pendingRefs: [{ from_date: '2026-09-15', to_date: '2026-09-15', days: 1 }] }).includes('(15 ก.ย.)'), true);
+
 const fail = R.filter((r) => !r.pass);
 for (const r of R) if (!r.pass) console.log(`FAIL ${r.name}: got=${JSON.stringify(r.got)} want=${JSON.stringify(r.want)}`);
 console.log(`\nHR_MISC_ASSERT = ${R.length - fail.length}/${R.length} ${fail.length ? 'FAILED' : 'ALL PASS'}`);

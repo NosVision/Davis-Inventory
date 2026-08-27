@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { loadLeaveQuotaContext } from '@/lib/hr/leave-quota';
 import { logHrAudit } from '@/lib/hr/audit';
 import { notifyHrManagers } from '@/lib/hr/notify';
 import { todayBangkok } from '@/lib/utils/date';
@@ -152,35 +153,18 @@ export async function POST(request: NextRequest) {
   const today = todayBangkok();
   const isProbation = Boolean(emp.probation_end) && today <= (emp.probation_end as string);
 
-  // Best-effort quota tally: approved days of this type within the current calendar
-  // year. If the lookup errors we pass undefined so the engine skips the quota rule.
-  const year = today.slice(0, 4);
-  let usedDaysThisYear: number | undefined;
-  const { data: usedRows, error: usedErr } = await service
-    .from(TABLE)
-    .select('days')
-    .eq('user_id', user.id)
-    .eq('leave_type_id', leaveTypeId)
-    .eq('status', 'approved')
-    .gte('from_date', `${year}-01-01`)
-    .lte('from_date', `${year}-12-31`);
-  if (!usedErr && usedRows) {
-    usedDaysThisYear = usedRows.reduce((sum, r) => sum + Number(r.days ?? 0), 0);
-  }
-
-  // Per-employee quota override (hr_leave_balances, 00165) — the legacy sheet's per-person
-  // "พักร้อนคงเหลือ" beats the type-wide default when a row exists for this year.
-  let effectiveType = leaveType;
-  const { data: balance } = await service
-    .from('hr_leave_balances')
-    .select('quota_days')
-    .eq('employee_id', emp.id as string)
-    .eq('leave_type_id', leaveTypeId)
-    .eq('year', Number(year))
-    .maybeSingle();
-  if (balance) {
-    effectiveType = { ...leaveType, annual_quota_days: Number(balance.quota_days) };
-  }
+  // Quota context: the per-employee override (hr_leave_balances, 00165 — the legacy sheet's
+  // per-person "พักร้อนคงเหลือ") beats the type default, and requests still in the queue count
+  // alongside approved ones. Shared with /hr/leaves and the approval route so all three agree.
+  const year = Number(today.slice(0, 4));
+  const quotaCtx = await loadLeaveQuotaContext(service, {
+    employeeId: emp.id as string,
+    profileId: user.id,
+    leaveTypeId,
+    typeQuotaDays: leaveType.annual_quota_days,
+    year,
+  });
+  const effectiveType = { ...leaveType, annual_quota_days: quotaCtx.effectiveQuota };
 
   const validation = validateLeaveRequest({
     leaveType: effectiveType,
@@ -190,11 +174,15 @@ export async function POST(request: NextRequest) {
     hasCert,
     today,
     isProbation,
-    usedDaysThisYear,
+    usedDaysThisYear: quotaCtx.approved,
+    pendingThisYear: quotaCtx.pending,
   });
   if (!validation.ok) {
     await removeCert();
-    return NextResponse.json({ error: validation.error, code: validation.code }, { status: 400 });
+    return NextResponse.json(
+      { error: validation.error, code: validation.code, quota: validation.quota },
+      { status: 400 }
+    );
   }
 
   // Derive the store server-side: the schedule cell on from_date, else the caller's
