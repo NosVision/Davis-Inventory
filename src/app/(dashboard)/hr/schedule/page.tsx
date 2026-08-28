@@ -552,13 +552,22 @@ export default function SchedulePage({
       {/* Rostered here but never once produces a punch — a roster row alone is enough evidence to
           look "attached" to a venue, so this can be true even for someone scheduled every day of
           the month above. Every rostered day for them becomes an absence, silently, unless they
-          punch (owner report 2026-08-26: a payslip went from ฿32,333 to ฿9,008 this way). */}
+          punch (owner report 2026-08-26: a payslip went from ฿32,333 to ฿9,008 this way). The
+          window itself is floored at the policy start date and suppressed when there is no punch
+          evidence at all (see neverPunchedWindow in work-venues.ts) — so this can only fire once
+          there is real evidence to compare against. */}
       {neverPunched.length > 0 && (
-        <div className="rounded-xl border border-amber-300 bg-amber-50/70 px-3 py-2 text-xs text-amber-800 dark:border-amber-800/60 dark:bg-amber-900/15 dark:text-amber-300">
-          {tt(
-            `${neverPunched.length} คนในตารางนี้ยังไม่เคยลงเวลาเลยใน 3 เดือน — กะที่ตั้งจะกลายเป็นวันขาดถ้าเขาไม่ตอกบัตร`,
-            `${neverPunched.length} here have never clocked in for 3 months — rostered days become absences unless they punch`
-          )}
+        <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50/70 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-800/60 dark:bg-amber-900/15 dark:text-amber-300">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="min-w-0">
+            <p className="font-semibold">
+              {tt(
+                `${neverPunched.length} คนในตารางนี้ยังไม่เคยลงเวลาเลย — กะที่ตั้งจะกลายเป็นวันขาดถ้าเขาไม่ตอกบัตร`,
+                `${neverPunched.length} here have never clocked in — rostered days become absences unless they punch`
+              )}
+            </p>
+            <p className="mt-0.5">{neverPunched.map((p) => p.name).join(' · ')}</p>
+          </div>
         </div>
       )}
 
@@ -619,7 +628,7 @@ export default function SchedulePage({
           {t('dayOff')}
         </button>
         <button type="button" onClick={() => setBrush({ kind: 'clear' })}
-          className={`rounded-full border px-2.5 py-1 text-xs font-medium ${brush?.kind === 'clear' ? 'border-red-400 bg-red-50 text-red-600 ring-2 ring-red-200 dark:bg-red-900/20' : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300'}`}>
+          className={`rounded-full border px-2.5 py-1 text-xs font-medium ${brush?.kind === 'clear' ? 'border-red-400 bg-red-50 text-red-600 ring-2 ring-red-200 dark:bg-red-900/20 dark:text-red-200' : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300'}`}>
           {t('clear')}
         </button>
         <button type="button" onClick={() => setShowAdd((v) => !v)}

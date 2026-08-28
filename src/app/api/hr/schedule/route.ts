@@ -2,11 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireSchedulerForScope } from '@/lib/hr/route-auth';
 import { isDateInFinalizedPeriod, employeeStoreIds, FINALIZED_PERIOD_ERROR } from '@/lib/hr/period-lock';
-import { loadVenueAttachment, loadMemberVenues, belongsToVenue, loadPunchedSince } from '@/lib/hr/work-venues';
+import { loadVenueAttachment, loadMemberVenues, belongsToVenue, loadPunchedInRange, neverPunchedWindow } from '@/lib/hr/work-venues';
+import { todayBangkok } from '@/lib/utils/date';
 
 const MONTH_RE = /^\d{4}-\d{2}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';
+// The "everyone must clock in" policy only started counting from this date (spec §4 D1, owner
+// decision 2026-08-28) — see neverPunchedWindow's doc comment for why the banner floors its
+// lookback here instead of always widening a fixed number of days off of today.
+const NEVER_PUNCHED_POLICY_START = '2026-09-01';
 
 const DEFAULT_WORK_HOURS = 9;
 const DEFAULT_DAYS_OFF = 6;
@@ -200,14 +205,12 @@ export async function GET(request: NextRequest) {
   if (scope.kind === 'store') entryQuery = entryQuery.eq('store_id', scope.storeId);
   else entryQuery = userIds.length ? entryQuery.in('user_id', userIds) : entryQuery.eq('user_id', NIL_UUID);
 
-  const [profilesRes, templatesRes, entriesRes, companiesRes] = await Promise.all([
+  const [profilesRes, templatesRes, entriesRes] = await Promise.all([
     userIds.length
       ? service.from('profiles').select('id, username, display_name, is_system').in('id', userIds)
       : Promise.resolve({ data: [], error: null }),
     tplQuery,
     entryQuery,
-    // Companies for the page's scope picker (small list, sent along every load).
-    service.from('hr_companies').select('id, name').order('name'),
   ]);
 
   if (profilesRes.error || templatesRes.error || entriesRes.error) {
@@ -327,16 +330,28 @@ export async function GET(request: NextRequest) {
   // from someone simply not showing up (owner report: ten such staff docked ~20 days each, nothing on
   // any screen saying so until a payslip was opened). Store scope only: company rosters are a legacy
   // read path with no venue-attachment concept to hang this off.
+  //
+  // Window: anchored to TODAY via neverPunchedWindow, never the viewed `month` above — a future or
+  // historical month must not ask the question about a window that hasn't happened yet or has long
+  // since closed. Floored at NEVER_PUNCHED_POLICY_START, and suppressed outright when the org-wide
+  // punched set for the window is empty: no evidence is not proof of absence, and after migration
+  // 00196 wiped every attendance row, an unfloored window named ~124 of 127 people (owner report
+  // 2026-08-28).
   let neverPunched: { user_id: string; name: string }[] = [];
   if (scope.kind === 'store' && staff.length > 0) {
-    try {
-      const punched = await loadPunchedSince(service, first, last);
-      neverPunched = staff
-        .filter((s) => !punched.has(s.user_id))
-        .map((s) => ({ user_id: s.user_id, name: s.full_name || s.name }));
-    } catch {
-      // Evidence unavailable → no banner rather than a wrong one; a reload retries once it recovers.
-      neverPunched = [];
+    const window = neverPunchedWindow(todayBangkok(), NEVER_PUNCHED_POLICY_START);
+    if (window) {
+      try {
+        const punched = await loadPunchedInRange(service, window.from, window.to);
+        if (punched.size > 0) {
+          neverPunched = staff
+            .filter((s) => !punched.has(s.user_id))
+            .map((s) => ({ user_id: s.user_id, name: s.full_name || s.name }));
+        }
+      } catch {
+        // Evidence unavailable → no banner rather than a wrong one; a reload retries once it recovers.
+        neverPunched = [];
+      }
     }
   }
 
@@ -369,7 +384,6 @@ export async function GET(request: NextRequest) {
     unscheduled,
     never_punched: neverPunched,
     inactive_here,
-    companies: companiesRes.data ?? [],
   });
 }
 

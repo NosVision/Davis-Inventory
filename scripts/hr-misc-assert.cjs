@@ -561,6 +561,29 @@ eq(
   1
 );
 
+// ── work-venues.ts: neverPunchedWindow — the never-punched banner's evidence window. Anchored to
+// TODAY (not the viewed month) and floored so the lookback never reaches before the "everyone must
+// clock in" policy start date (2026-09-01, spec §4 D1). Getting this wrong is exactly what fired the
+// banner for ~124 of 127 people once migration 00196 wiped attendance (owner report 2026-08-28).
+const wv = load('work-venues.ts');
+eq('neverPunchedWindow: today before policy start → no window at all', wv.neverPunchedWindow('2026-08-31', '2026-09-01'), null);
+eq('neverPunchedWindow: today exactly the policy start → a one-day window on that date', wv.neverPunchedWindow('2026-09-01', '2026-09-01'), { from: '2026-09-01', to: '2026-09-01' });
+eq(
+  'neverPunchedWindow: shortly after policy start → floored at the policy date, not 90 days back',
+  wv.neverPunchedWindow('2026-09-10', '2026-09-01'),
+  { from: '2026-09-01', to: '2026-09-10' }
+);
+eq(
+  'neverPunchedWindow: well past policy start (> lookbackDays later) → the normal rolling window, unfloored',
+  wv.neverPunchedWindow('2027-01-15', '2026-09-01'),
+  { from: wv.shiftDays('2027-01-15', -90), to: '2027-01-15' }
+);
+eq(
+  'neverPunchedWindow: a custom lookbackDays is honoured once past the floor',
+  wv.neverPunchedWindow('2027-01-15', '2026-09-01', 30),
+  { from: wv.shiftDays('2027-01-15', -30), to: '2027-01-15' }
+);
+
 const fail = R.filter((r) => !r.pass);
 for (const r of R) if (!r.pass) console.log(`FAIL ${r.name}: got=${JSON.stringify(r.got)} want=${JSON.stringify(r.want)}`);
 console.log(`\nHR_MISC_ASSERT = ${R.length - fail.length}/${R.length} ${fail.length ? 'FAILED' : 'ALL PASS'}`);
