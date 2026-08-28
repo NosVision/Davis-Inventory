@@ -7,8 +7,16 @@ import { Loader2, Wallet, Lock, LockOpen, Printer, Download, X, FileText, Settin
 import { Button, EmptyState, Modal, ModalFooter, PageHeader, KpiRow, StatTile, MoneyValue, StatusBadge, Skeleton, toast, useConfirm, usePromptDialog } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { formatBaht } from '@/lib/pos/money';
+import { openBusinessDateBangkok } from '@/lib/utils/date';
 import { PayslipView, type PayslipDetailData } from '@/components/hr/payslip-view';
 import { PayslipFormPrint } from '@/components/hr/payslip-form-print';
+import { PeriodStrip } from '@/components/hr/period-strip';
+import type { DaySummary } from '@/components/hr/timesheet-parts';
+import {
+  TimesheetEditModal,
+  type EditTarget,
+  type LeaveTypeOption,
+} from '@/app/(dashboard)/hr/timesheet/_components/timesheet-edit-modal';
 import { RecurringModal } from './_components/recurring-modal';
 import { TaxAllowanceModal } from './_components/tax-allowance-modal';
 import { AdjustmentsPanel, type AdjustmentRow, type AdjustmentsPrevious } from './_components/adjustments-panel';
@@ -137,6 +145,7 @@ function dmy(d?: string | null): string {
 export default function HrPayrollPage() {
   const t = useTranslations('hr.payroll');
   const isTh = useLocale() === 'th';
+  const tt = (th: string, en: string) => (isTh ? th : en);
   // in-app replacements for window.confirm / window.prompt (finalize, reopen, announce-resend)
   const { confirm, dialog: confirmDialog } = useConfirm();
   const { prompt, dialog: promptDialog } = usePromptDialog();
@@ -199,23 +208,45 @@ export default function HrPayrollPage() {
   const [coverage, setCoverage] = useState<CoverageData | null>(null);
   const [coverageLoading, setCoverageLoading] = useState(true);
 
-  // Expandable register rows: full itemized slip inline (lazy-loaded, cached per payslip id;
-  // ids change on recompute so stale cache entries are simply never hit again).
+  // Expandable register rows: full itemized slip inline, lazy-loaded on first open.
+  //
+  // Both `expanded` (which rows are open) and `expandedData` (what we fetched for them) are keyed
+  // on user_id, NOT payslip id — one key space for both, deliberately. The payrun POST deletes and
+  // re-inserts every payslip on every recompute (see the comment above `regenerateCurrent`), so a
+  // payslip id is not stable across the exact action this screen exists for: editing a day, which
+  // silently recomputes on save. Keying `expandedData` on the OLD payslip id meant the refetch after
+  // a recompute always missed — the row stayed open (once `expanded` was fixed to survive by
+  // user_id) but its cache entry never found under the new id, so it spun forever. Keying on the
+  // person, who survives a recompute, fixes both: the row stays open AND its cache slot is the same
+  // slot `openPayrun` refreshes below.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [expandedData, setExpandedData] = useState<Map<string, PayslipDetailData>>(new Map());
+  // Mirrors `expanded` for openPayrun's post-recompute refresh below, which needs the CURRENT open
+  // set without taking a dependency on `expanded` (that would recreate `openPayrun` — and everything
+  // that depends on it — on every single row toggle).
+  const expandedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    expandedRef.current = expanded;
+  }, [expanded]);
+  // Which payrun `expanded`/`expandedData` belong to — cleared when the OPEN payrun itself changes
+  // (a different period/run) but left alone across a recompute of the SAME payrun, which is the
+  // whole point above. Without this, switching to a different payrun that happens to include the
+  // same person would show their row pre-expanded but with no fetched data (nothing re-triggers the
+  // fetch for a row that was never toggled in the new payrun).
+  const openExpandedForRunRef = useRef<string | null>(null);
   const toggleExpand = useCallback(
-    async (payslipId: string) => {
+    async (userId: string, payslipId: string) => {
       setExpanded((prev) => {
         const next = new Set(prev);
-        if (next.has(payslipId)) next.delete(payslipId);
-        else next.add(payslipId);
+        if (next.has(userId)) next.delete(userId);
+        else next.add(userId);
         return next;
       });
-      if (!expandedData.has(payslipId)) {
+      if (!expandedData.has(userId)) {
         try {
           const res = await fetch(`/api/hr/payslips/${payslipId}`);
           const json = await res.json();
-          if (res.ok) setExpandedData((prev) => new Map(prev).set(payslipId, json.data as PayslipDetailData));
+          if (res.ok) setExpandedData((prev) => new Map(prev).set(userId, json.data as PayslipDetailData));
         } catch {
           // row stays expandable; the modal path still works
         }
@@ -223,21 +254,35 @@ export default function HrPayrollPage() {
     },
     [expandedData]
   );
-  // In-place slip mutations (remark edit, tax override) keep the payslip id — refetch the cached
-  // expanded view so an open row never shows a pre-edit snapshot.
+  // In-place slip mutations (remark edit, tax override) keep the payslip id (no recompute happens on
+  // either path) — refetch the cached expanded view so an open row never shows a pre-edit snapshot.
+  // Looks the person up from `detail` rather than taking a `userId` parameter: both call sites only
+  // have the payslip id / a PayslipDetailData at hand, and this keeps their signatures unchanged.
   const refreshExpanded = useCallback(
     async (payslipId: string) => {
-      if (!expandedData.has(payslipId)) return;
+      const userId = detail?.payslips.find((p) => p.id === payslipId)?.user_id;
+      if (!userId || !expandedData.has(userId)) return;
       try {
         const res = await fetch(`/api/hr/payslips/${payslipId}`);
         const json = await res.json();
-        if (res.ok) setExpandedData((prev) => new Map(prev).set(payslipId, json.data as PayslipDetailData));
+        if (res.ok) setExpandedData((prev) => new Map(prev).set(userId, json.data as PayslipDetailData));
       } catch {
         // stale cache is refreshed on the next toggle
       }
     },
-    [expandedData]
+    [detail, expandedData]
   );
+
+  // Attendance for the open payrun's period, by person — feeds the strip under each expanded
+  // register row. Company scope, since the payrun is a company's: this is the same call
+  // /hr/timesheet makes in company mode, so the numbers are the payrun's own people.
+  const [timesheetByUser, setTimesheetByUser] = useState<Map<string, DaySummary[]>>(new Map());
+  // hr_employees.ot_eligible per person — not on PayslipSummary, but the timesheet fetch above
+  // already carries it per employee, so the edit modal's EditTarget is built from that instead of
+  // a second request just for one flag.
+  const [otEligibleByUser, setOtEligibleByUser] = useState<Map<string, boolean>>(new Map());
+  const [leaveTypes, setLeaveTypes] = useState<LeaveTypeOption[]>([]);
+  const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
 
   // companies → default first
   useEffect(() => {
@@ -283,12 +328,58 @@ export default function HrPayrollPage() {
   }, [loadPayruns]);
 
   const openPayrun = useCallback(async (id: string) => {
+    // A different run than the one `expanded`/`expandedData` belong to — close every row rather
+    // than showing a pre-expanded row with no data for a person who happens to appear in both runs.
+    // A recompute of THIS SAME run calls openPayrun(detail.payrun.id) again with an unchanged id —
+    // `isRecompute` below is exactly that case, and is what triggers the post-recompute refresh
+    // instead of a reset.
+    const isRecompute = id === openExpandedForRunRef.current;
+    if (!isRecompute) {
+      setExpanded(new Set());
+      setExpandedData(new Map());
+      openExpandedForRunRef.current = id;
+    }
     setBusy(true);
     setOpeningId(id);
     try {
       const res = await fetch(`/api/hr/payruns/${id}`);
       const json = await res.json();
-      setDetail((json.data ?? null) as PayrunDetail | null);
+      const nextDetail = (json.data ?? null) as PayrunDetail | null;
+      setDetail(nextDetail);
+      // A recompute just deleted and re-inserted every payslip (new ids), so any row left open
+      // through it (expandedRef, not `expanded` — this must read the LIVE set, not one captured in
+      // this callback's closure) is showing data cached under a payslip id that no longer exists.
+      // Refetch each still-open person's NEW payslip so the row shows the recomputed figures rather
+      // than either a stale pre-recompute snapshot or (before this fix) a permanent spinner —
+      // `expandedData` never found the new id under the old-id key it used to be stored under.
+      // Someone who no longer has a payslip in this run (dropped by the recompute) is closed
+      // instead of left open with nothing to show.
+      if (isRecompute && nextDetail) {
+        const stillOpen = expandedRef.current;
+        const payslipIdByUser = new Map(nextDetail.payslips.map((p) => [p.user_id, p.id]));
+        setExpanded(new Set([...stillOpen].filter((uid) => payslipIdByUser.has(uid))));
+        for (const uid of stillOpen) {
+          const newPayslipId = payslipIdByUser.get(uid);
+          if (!newPayslipId) {
+            setExpandedData((prev) => {
+              if (!prev.has(uid)) return prev;
+              const next = new Map(prev);
+              next.delete(uid);
+              return next;
+            });
+            continue;
+          }
+          fetch(`/api/hr/payslips/${newPayslipId}`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((j) => {
+              if (j) setExpandedData((prev) => new Map(prev).set(uid, j.data as PayslipDetailData));
+            })
+            .catch(() => {
+              // row stays open showing the pre-recompute figures — better than a spinner, and the
+              // register table above (the actual figures) is already correct regardless.
+            });
+        }
+      }
       // ④ paper print queue (standing prefs + per-slip requests)
       try {
         const qRes = await fetch(`/api/hr/payruns/${id}/print-queue`);
@@ -448,8 +539,13 @@ export default function HrPayrollPage() {
   // The slice used to be omitted from this POST, so recomputing a GROUP run rebuilt the company's
   // ungrouped run instead — the wrong run silently changed and the open one did not (fixed
   // 2026-08-18).
-  const regenerateCurrent = useCallback(async (silent = false) => {
-    if (!detail) return;
+  // Returns whether the recompute actually succeeded — callers that show their own follow-up
+  // toast (e.g. the attendance-edit flow below) need to know, so a failed recompute never gets
+  // reported as done while stale figures sit on screen looking authoritative. On every failure
+  // path this already toasts the error itself, so a caller that gets `false` back needs no
+  // second error toast — only to skip claiming success.
+  const regenerateCurrent = useCallback(async (silent = false): Promise<boolean> => {
+    if (!detail) return false;
     const { company_id, period_year, period_month, payroll_group_id } = detail.payrun;
     setRecomputing(true);
     try {
@@ -458,21 +554,83 @@ export default function HrPayrollPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ company_id, period_year, period_month, payroll_group_id: payroll_group_id ?? undefined }),
       });
-      if (res.status === 409) { toast({ type: 'error', title: t('finalizedLocked') }); return; }
+      if (res.status === 409) { toast({ type: 'error', title: t('finalizedLocked') }); return false; }
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
         toast({ type: 'error', title: t('generateFailed'), message: j?.error });
-        return;
+        return false;
       }
       await Promise.all([loadCoverage(), loadPayruns()]);
       await openPayrun(detail.payrun.id);
       if (!silent) toast({ type: 'success', title: t('recomputed') });
+      return true;
     } catch {
       toast({ type: 'error', title: t('generateFailed') });
+      return false;
     } finally {
       setRecomputing(false);
     }
   }, [detail, loadCoverage, loadPayruns, openPayrun, t]);
+
+  // Reloads the open payrun's attendance strip (+ the leave types / ot_eligible flags the edit
+  // modal needs) whenever the payrun on screen changes, and again after a day is saved. A failed
+  // load just hides the strip rather than blocking the register — the payslip figures it sits
+  // beside are the record of truth either way.
+  const reloadTimesheet = useCallback(async () => {
+    if (!detail) {
+      setTimesheetByUser(new Map());
+      setOtEligibleByUser(new Map());
+      setLeaveTypes([]);
+      return;
+    }
+    const { company_id, cycle_start, cycle_end } = detail.payrun;
+    try {
+      const res = await fetch(`/api/hr/timesheet?company_id=${company_id}&from=${cycle_start}&to=${cycle_end}`);
+      if (!res.ok) throw new Error();
+      const json = await res.json();
+      const rows = (json.employees ?? []) as { user_id: string; ot_eligible: boolean; days: DaySummary[] }[];
+      setTimesheetByUser(new Map(rows.map((r) => [r.user_id, r.days])));
+      setOtEligibleByUser(new Map(rows.map((r) => [r.user_id, r.ot_eligible])));
+      setLeaveTypes((json.leave_types ?? []) as LeaveTypeOption[]);
+    } catch {
+      setTimesheetByUser(new Map());
+      setOtEligibleByUser(new Map());
+      // The payslip figures above are untouched by this — say so, so a blank strip reads as "failed
+      // to load" and not as "nobody has any attendance this period".
+      // (Reads `isTh` directly rather than through `tt` — `tt` is a plain function re-created every
+      // render, and putting it in this callback's deps would give `reloadTimesheet` a new identity
+      // every render, retriggering the effect below on every render — an unbounded refetch loop.)
+      toast({
+        type: 'warning',
+        title: isTh ? 'โหลดแถบเวลาทำงานไม่สำเร็จ' : 'Could not load the attendance strip',
+        message: isTh
+          ? 'ยอดเงินเดือนด้านบนยังถูกต้อง — เฉพาะแถบเวลาทำงานใต้แต่ละแถวที่โหลดไม่สำเร็จ'
+          : 'The payroll figures above are still correct — only the per-day attendance strip failed to load',
+      });
+    }
+  }, [detail, isTh]);
+
+  useEffect(() => {
+    reloadTimesheet();
+  }, [reloadTimesheet]);
+
+  // Editing here rewrites the employee's real attendance record, which they can see in their own
+  // app — not just a number on a slip. Said once per session, then trusted: warning on every cell
+  // would destroy the spreadsheet feel this screen exists to give back.
+  const [attendanceWarningSeen, setAttendanceWarningSeen] = useState(false);
+  const confirmAttendanceEdit = useCallback(async () => {
+    if (attendanceWarningSeen) return true;
+    const ok = await confirm({
+      title: tt('แก้เวลาทำงานจริง', 'Editing real attendance'),
+      message: tt(
+        'การแก้ตรงนี้เขียนทับเวลาทำงานจริงของพนักงาน และพนักงานจะเห็นในแอปของเขาด้วย · ทุกการแก้ถูกบันทึกในประวัติ',
+        'This rewrites the employee’s real attendance, visible in their own app. Every edit is audited.'
+      ),
+      confirmLabel: tt('เข้าใจแล้ว', 'Understood'),
+    });
+    if (ok) setAttendanceWarningSeen(true);
+    return ok;
+  }, [attendanceWarningSeen, confirm, tt]);
 
   // Free-form register remark (legacy Payment file Remark column) — annotation only, so it is
   // editable on finalized runs too.
@@ -1068,14 +1226,14 @@ export default function HrPayrollPage() {
                       </thead>
                       <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                         {detail.payslips.map((s, idx) => {
-                          const isOpen = expanded.has(s.id);
-                          const exp = expandedData.get(s.id);
+                          const isOpen = expanded.has(s.user_id);
+                          const exp = expandedData.get(s.user_id);
                           return (
                           <Fragment key={s.id}>
                           <tr className="bg-white dark:bg-gray-800">
                             <td className="px-2 py-2">
                               <button
-                                onClick={() => toggleExpand(s.id)}
+                                onClick={() => toggleExpand(s.user_id, s.id)}
                                 title={t('expandRow')}
                                 aria-label={t('expandRow')}
                                 className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-700"
@@ -1161,6 +1319,31 @@ export default function HrPayrollPage() {
                           {isOpen && (
                             <tr className="bg-gray-50/70 dark:bg-gray-900/30">
                               <td colSpan={13} className="px-4 py-3">
+                                {timesheetByUser.get(s.user_id) && (
+                                  <div className="mb-3 space-y-1.5">
+                                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                                      {tt('เวลาทำงานในงวดนี้ — คลิกวันเพื่อแก้', 'Attendance this period — click a day to edit')}
+                                    </p>
+                                    <PeriodStrip
+                                      days={timesheetByUser.get(s.user_id)!}
+                                      today={openBusinessDateBangkok()}
+                                      disabled={isFinalized || !canManageRun || recomputing}
+                                      onPickDay={async (businessDate) => {
+                                        if (!(await confirmAttendanceEdit())) return;
+                                        const day = timesheetByUser.get(s.user_id)?.find((d) => d.business_date === businessDate);
+                                        if (!day || !detail) return;
+                                        setEditTarget({
+                                          userId: s.user_id,
+                                          name: s.name,
+                                          companyId: detail.payrun.company_id,
+                                          otEligible: otEligibleByUser.get(s.user_id) ?? false,
+                                          payType: s.pay_type,
+                                          day,
+                                        });
+                                      }}
+                                    />
+                                  </div>
+                                )}
                                 {exp ? (
                                   <div className="max-w-2xl">
                                     <PayslipView data={exp} />
@@ -1412,6 +1595,35 @@ export default function HrPayrollPage() {
         </Modal>
       )}
 
+      {/* Attendance day edit, opened from the strip under an expanded register row. Company-scoped
+          screen with no store filter of its own, so storeId is sent empty — exactly what
+          /hr/timesheet's own company-mode view already sends to this same modal. The employee's
+          company is fixed (this payrun is one company's), and store_id on the written override /
+          leave is optional metadata used only to scope a store manager's queue view; the
+          finalized-period lock and the leave's company scope are both resolved from the
+          employee's own records server-side regardless of what is sent here. */}
+      <TimesheetEditModal
+        isOpen={!!editTarget}
+        target={editTarget}
+        storeId=""
+        leaveTypes={leaveTypes}
+        onClose={() => setEditTarget(null)}
+        onSaved={async () => {
+          setEditTarget(null);
+          // A finalized run is locked and the API refuses the edit anyway; only a draft is worth
+          // redoing. regenerateCurrent(true) suppresses its own generic "recomputed" toast — this
+          // is a more specific one — and its own error toast already fires on failure, so a failed
+          // recompute is never reported as done while stale figures sit on screen looking right.
+          if (detail && !isFinalized) {
+            const recomputed = await regenerateCurrent(true);
+            if (recomputed) {
+              toast({ type: 'success', title: tt('อัปเดตยอดงวดแล้ว', 'Payrun totals updated') });
+            }
+          }
+          await reloadTimesheet();
+        }}
+      />
+
       {recurringFor && (
         <RecurringModal
           employeeId={recurringFor.employeeId}
@@ -1419,7 +1631,7 @@ export default function HrPayrollPage() {
           payrunId={detail?.payrun.id}
           profileId={recurringFor.profileId}
           isDraft={detail?.payrun.status === 'draft'}
-          onAdjustChanged={() => regenerateCurrent(true)}
+          onAdjustChanged={async () => { await regenerateCurrent(true); }}
           onChanged={() => setRecurringDirty(true)}
           onClose={() => {
             setRecurringFor(null);
@@ -1453,7 +1665,7 @@ export default function HrPayrollPage() {
             payrunId={detail.payrun.id}
             isDraft={detail.payrun.status === 'draft'}
             slips={detail.payslips.map((s) => ({ user_id: s.user_id, name: s.name }))}
-            onChanged={() => regenerateCurrent(true)}
+            onChanged={async () => { await regenerateCurrent(true); }}
           />
         </Modal>
       )}

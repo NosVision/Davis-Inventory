@@ -42,7 +42,7 @@ export type WorkVenueMap = Map<string, Set<string>>;
 export const VENUE_ATTACHMENT_LOOKBACK_DAYS = 90;
 
 /** YYYY-MM-DD shifted by whole days, in UTC (these are calendar dates, never instants). */
-function shiftDays(date: string, days: number): string {
+export function shiftDays(date: string, days: number): string {
   const [y, m, d] = date.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
 }
@@ -99,6 +99,53 @@ export function belongsToVenue(params: {
   const { storeId, memberStoreIds, workedStoreIds } = params;
   if (memberStoreIds.length <= 1) return true;
   return workedStoreIds?.has(storeId) ?? false;
+}
+
+/**
+ * Every profile id with at least one KEPT punch anywhere, over an EXACT `from`..`to` window — pure
+ * attendance evidence, unlike {@link loadWorkVenues} which also counts a bare roster row as
+ * "worked". A roster row is exactly what a rostered-but-never-punching employee has plenty of, so
+ * the roster∪punch union can never flag them; this is the punch-only half, for exactly that case
+ * (see migration 00197's comment for the incident this exists to catch). Callers intersect the
+ * result against their own candidate list — this returns org-wide ids, not a per-user lookup.
+ *
+ * No automatic widening here, unlike the venue-attachment functions above: the never-punched
+ * banner's caller (`schedule/route.ts`) computes its own bounded window via
+ * {@link neverPunchedWindow} and needs that window respected exactly, not silently pushed further
+ * back.
+ */
+export async function loadPunchedInRange(
+  service: SupabaseClient,
+  from: string,
+  to: string
+): Promise<Set<string>> {
+  const { data, error } = await service.rpc('hr_punched_user_ids', { p_from: from, p_to: to });
+  if (error) throw new Error(`hr_punched_user_ids failed: ${error.message}`);
+  return new Set(((data ?? []) as { user_id: string }[]).map((r) => r.user_id));
+}
+
+/**
+ * The never-punched banner's evidence window (spec §4 D1,
+ * `docs/superpowers/specs/2026-08-28-payroll-command-center-design.md`): anchored to TODAY, never
+ * the viewed month — so opening a future or historical month never asks the question about a
+ * window that hasn't happened yet or has already closed — and floored so the lookback never
+ * reaches before `policyStart`, the date the "everyone must clock in" policy began counting
+ * (2026-09-01). Before that date there is no valid window at all: returns null, and the caller
+ * shows no banner rather than querying a window that ends before it begins.
+ *
+ * The floor matters because the alternative — widening blindly by `lookbackDays` off of `today` —
+ * is exactly what fired the banner for ~124 of 127 people on first open: migration 00196 wiped
+ * every attendance row, so a window reaching back past the policy start found almost nobody
+ * punched, including everyone the policy was never asking to have punched yet.
+ */
+export function neverPunchedWindow(
+  today: string,
+  policyStart: string,
+  lookbackDays: number = VENUE_ATTACHMENT_LOOKBACK_DAYS
+): { from: string; to: string } | null {
+  if (today < policyStart) return null;
+  const rawFrom = shiftDays(today, -lookbackDays);
+  return { from: rawFrom > policyStart ? rawFrom : policyStart, to: today };
 }
 
 /** profile id → their full user_stores set, for the given people. */

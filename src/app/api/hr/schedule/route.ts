@@ -2,11 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireSchedulerForScope } from '@/lib/hr/route-auth';
 import { isDateInFinalizedPeriod, employeeStoreIds, FINALIZED_PERIOD_ERROR } from '@/lib/hr/period-lock';
-import { loadVenueAttachment, loadMemberVenues, belongsToVenue } from '@/lib/hr/work-venues';
+import { loadVenueAttachment, loadMemberVenues, belongsToVenue, loadPunchedInRange, neverPunchedWindow } from '@/lib/hr/work-venues';
+import { todayBangkok } from '@/lib/utils/date';
 
 const MONTH_RE = /^\d{4}-\d{2}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';
+// The "everyone must clock in" policy only started counting from this date (spec §4 D1, owner
+// decision 2026-08-28) — see neverPunchedWindow's doc comment for why the banner floors its
+// lookback here instead of always widening a fixed number of days off of today.
+const NEVER_PUNCHED_POLICY_START = '2026-09-01';
 
 const DEFAULT_WORK_HOURS = 9;
 const DEFAULT_DAYS_OFF = 6;
@@ -200,14 +205,12 @@ export async function GET(request: NextRequest) {
   if (scope.kind === 'store') entryQuery = entryQuery.eq('store_id', scope.storeId);
   else entryQuery = userIds.length ? entryQuery.in('user_id', userIds) : entryQuery.eq('user_id', NIL_UUID);
 
-  const [profilesRes, templatesRes, entriesRes, companiesRes] = await Promise.all([
+  const [profilesRes, templatesRes, entriesRes] = await Promise.all([
     userIds.length
       ? service.from('profiles').select('id, username, display_name, is_system').in('id', userIds)
       : Promise.resolve({ data: [], error: null }),
     tplQuery,
     entryQuery,
-    // Companies for the page's scope picker (small list, sent along every load).
-    service.from('hr_companies').select('id, name').order('name'),
   ]);
 
   if (profilesRes.error || templatesRes.error || entriesRes.error) {
@@ -320,6 +323,38 @@ export async function GET(request: NextRequest) {
     .filter((s) => !scheduledUserIds.has(s.user_id))
     .map((s) => ({ user_id: s.user_id, name: s.full_name || s.name, position_name: s.position_name ?? null }));
 
+  // Rostered here but never actually clocks in — the other half of the same incident. Someone can be
+  // "attached" to this venue purely on the strength of a roster row (loadVenueAttachment above counts
+  // that as evidence too), while never once producing a KEPT punch — and that combination is exactly
+  // what turns every one of their rostered days into an absence the time engine cannot tell apart
+  // from someone simply not showing up (owner report: ten such staff docked ~20 days each, nothing on
+  // any screen saying so until a payslip was opened). Store scope only: company rosters are a legacy
+  // read path with no venue-attachment concept to hang this off.
+  //
+  // Window: anchored to TODAY via neverPunchedWindow, never the viewed `month` above — a future or
+  // historical month must not ask the question about a window that hasn't happened yet or has long
+  // since closed. Floored at NEVER_PUNCHED_POLICY_START, and suppressed outright when the org-wide
+  // punched set for the window is empty: no evidence is not proof of absence, and after migration
+  // 00196 wiped every attendance row, an unfloored window named ~124 of 127 people (owner report
+  // 2026-08-28).
+  let neverPunched: { user_id: string; name: string }[] = [];
+  if (scope.kind === 'store' && staff.length > 0) {
+    const window = neverPunchedWindow(todayBangkok(), NEVER_PUNCHED_POLICY_START);
+    if (window) {
+      try {
+        const punched = await loadPunchedInRange(service, window.from, window.to);
+        if (punched.size > 0) {
+          neverPunched = staff
+            .filter((s) => !punched.has(s.user_id))
+            .map((s) => ({ user_id: s.user_id, name: s.full_name || s.name }));
+        }
+      } catch {
+        // Evidence unavailable → no banner rather than a wrong one; a reload retries once it recovers.
+        neverPunched = [];
+      }
+    }
+  }
+
   // Names of the members held out of the grid, so the page can offer them back rather than just
   // quietly showing fewer people than last month.
   let inactive_here: { user_id: string; name: string }[] = [];
@@ -347,8 +382,8 @@ export async function GET(request: NextRequest) {
     balance,
     monthStatus,
     unscheduled,
+    never_punched: neverPunched,
     inactive_here,
-    companies: companiesRes.data ?? [],
   });
 }
 
@@ -359,7 +394,15 @@ export async function POST(request: NextRequest) {
   const storeId = typeof body.store_id === 'string' ? body.store_id : '';
   const scope = parseScope(storeId, typeof body.company_id === 'string' ? body.company_id : '');
   if (!scope) return NextResponse.json({ error: 'store_id or company_id is required' }, { status: 400 });
-  const auth = await requireSchedulerForScope(scope.kind === 'store' ? scope.storeId : null);
+  // Rosters are per-store from 2026-08-28 (owner decision): the office is itself a store, so the
+  // company scope no longer has a population of its own. Reads still accept it for legacy rows.
+  if (scope.kind === 'company') {
+    return NextResponse.json(
+      { error: 'ตารางกะจัดเป็นรายสาขาเท่านั้น — เลือกสาขา (สำนักงานก็เป็นสาขาหนึ่ง)' },
+      { status: 400 }
+    );
+  }
+  const auth = await requireSchedulerForScope(scope.storeId);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const userId = typeof body.user_id === 'string' ? body.user_id : '';
@@ -382,28 +425,16 @@ export async function POST(request: NextRequest) {
 
   const service = createServiceClient();
 
-  // The employee must belong to this scope: store membership, or the company on their HR record.
-  if (scope.kind === 'store') {
-    const { data: member, error: memberErr } = await service
-      .from('user_stores')
-      .select('user_id')
-      .eq('store_id', scope.storeId)
-      .eq('user_id', userId)
-      .maybeSingle();
-    if (memberErr) return NextResponse.json({ error: 'Failed to verify staff' }, { status: 500 });
-    if (!member) {
-      return NextResponse.json({ error: 'Employee is not assigned to this store' }, { status: 400 });
-    }
-  } else {
-    const { data: emp, error: empErr } = await service
-      .from('hr_employees')
-      .select('company_id')
-      .eq('profile_id', userId)
-      .maybeSingle();
-    if (empErr) return NextResponse.json({ error: 'Failed to verify staff' }, { status: 500 });
-    if (!emp || (emp.company_id ?? null) !== scope.companyId) {
-      return NextResponse.json({ error: 'Employee is not in this company scope' }, { status: 400 });
-    }
+  // The employee must belong to this store.
+  const { data: member, error: memberErr } = await service
+    .from('user_stores')
+    .select('user_id')
+    .eq('store_id', scope.storeId)
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (memberErr) return NextResponse.json({ error: 'Failed to verify staff' }, { status: 500 });
+  if (!member) {
+    return NextResponse.json({ error: 'Employee is not assigned to this store' }, { status: 400 });
   }
 
   // A leaver stays visible on the roster for their final month, so cap edits at their
@@ -425,17 +456,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // A shift assignment must reference an active template of THIS scope.
+  // A shift assignment must reference an active template of THIS store.
   if (shiftTemplateId) {
-    let tplQ = service
+    const { data: tpl, error: tplErr } = await service
       .from('hr_shift_templates')
       .select('id')
       .eq('id', shiftTemplateId)
-      .eq('active', true);
-    if (scope.kind === 'store') tplQ = tplQ.eq('store_id', scope.storeId);
-    else if (scope.companyId) tplQ = tplQ.eq('company_id', scope.companyId);
-    else tplQ = tplQ.is('store_id', null).is('company_id', null);
-    const { data: tpl, error: tplErr } = await tplQ.maybeSingle();
+      .eq('active', true)
+      .eq('store_id', scope.storeId)
+      .maybeSingle();
     if (tplErr) return NextResponse.json({ error: 'Failed to verify shift' }, { status: 500 });
     if (!tpl) {
       return NextResponse.json({ error: 'Invalid shift template for this scope' }, { status: 400 });
@@ -446,7 +475,7 @@ export async function POST(request: NextRequest) {
   // hr_schedule is unique on (user_id, work_date), so the lock must span EVERY store the employee
   // works — not just this one — or an upsert here could overwrite another store's finalized row.
   try {
-    const storeIds = await employeeStoreIds(service, userId, scope.kind === 'store' ? scope.storeId : null);
+    const storeIds = await employeeStoreIds(service, userId, scope.storeId);
     if (await isDateInFinalizedPeriod(service, workDate, storeIds)) {
       return NextResponse.json({ error: FINALIZED_PERIOD_ERROR }, { status: 409 });
     }
@@ -458,8 +487,8 @@ export async function POST(request: NextRequest) {
     .from('hr_schedule')
     .upsert(
       {
-        store_id: scope.kind === 'store' ? scope.storeId : null,
-        company_id: scope.kind === 'company' ? scope.companyId : null,
+        store_id: scope.storeId,
+        company_id: null,
         user_id: userId,
         work_date: workDate,
         shift_template_id: isDayOff ? null : shiftTemplateId,

@@ -37,6 +37,8 @@ export interface CoverageBucket {
   missing: { user_id: string; name: string; stores: string[]; end_date: string | null }[];
   /** Full-month staff with no start date on file — paid a whole cycle on an assumption. */
   no_start_date: { user_id: string; name: string; status: string | null }[];
+  /** Staff at 5+ unauthorized-absence days this cycle — the SAME count the payslip would dock. */
+  heavy_absence: { user_id: string; name: string; absent_days: number }[];
 }
 
 export interface CoverageData {
@@ -198,6 +200,20 @@ export function PeriodSlices({
                             {tt('· ดูรายชื่อ', '· show names')}
                           </span>
                         </button>
+                      </p>
+                    )}
+                    {/* Same 5+-day count the payslip would dock — checked BEFORE finalizing rather
+                        than discovered by opening one slip at a time (owner report 2026-08-26: a
+                        slip went from ฿32,333 to ฿9,008 and nothing on any screen said so). */}
+                    {b.heavy_absence.length > 0 && (
+                      <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                        {tt(
+                          `${b.heavy_absence.length} คนมีวันขาด 5 วันขึ้นไปในงวดนี้ — เปิดดูก่อนปิดยอด`,
+                          `${b.heavy_absence.length} people have 5+ absent days this period — check before finalizing`
+                        )}{' '}
+                        <span className="opacity-80">
+                          {b.heavy_absence.slice(0, 4).map((h) => `${h.name} (${h.absent_days})`).join(' · ')}
+                        </span>
                       </p>
                     )}
                   </div>

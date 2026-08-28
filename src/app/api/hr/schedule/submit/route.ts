@@ -18,6 +18,12 @@ function monthRange(month: string): { first: string; last: string } {
 //
 // This also unsticks company-scope rosters, which could be published but never acknowledged —
 // /acknowledge only ever accepted a store_id, and company rows carry store_id NULL.
+//
+// Deliberate exception to the 2026-08-28 "rosters are per-store, writes refuse company scope"
+// rule (see route.ts POST and batch/route.ts): this endpoint only UPDATEs the status of rows
+// that already exist — it can never manufacture a new store_id-NULL row — so refusing company_id
+// here would just strand any legacy company-scope draft still sitting in the database, unable to
+// ever be published. Company scope stays accepted on this one write path on purpose.
 export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const storeId = typeof body.store_id === 'string' ? body.store_id : '';

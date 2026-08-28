@@ -9,12 +9,22 @@ const fs = require('fs');
 const path = require('path');
 const ts = require('typescript');
 
-function load(rel) {
-  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'hr', rel), 'utf8');
+const HR_LIB_DIR = path.join(__dirname, '..', 'src', 'lib', 'hr');
+
+// Transpile-on-require for sibling .ts files: every hr/*.ts loaded here used to be fully
+// self-contained (no local imports), so a bare transpile-and-eval was enough. absence-summary.ts
+// imports computeDaySummary/applyOverride from ./time-engine rather than duplicating them — the
+// exact "share, don't copy" this plan is about — so this harness now has to resolve that real
+// require() too, not just transpile one isolated file. Registered once, globally, for this process
+// only; every other `load()` call below is unaffected (plain CommonJS output either way).
+require.extensions['.ts'] = (mod, filename) => {
+  const src = fs.readFileSync(filename, 'utf8');
   const js = ts.transpileModule(src, { compilerOptions: { module: 'commonjs', target: 'es2020' } }).outputText;
-  const mod = { exports: {} };
-  new Function('module', 'exports', 'require', js)(mod, mod.exports, require);
-  return mod.exports;
+  mod._compile(js, filename);
+};
+
+function load(rel) {
+  return require(path.join(HR_LIB_DIR, rel));
 }
 
 const bt = load('bank-transfer.ts');
@@ -434,6 +444,145 @@ eq('search: empty query matches all', hit(''), true);
 eq('search: whitespace-only query matches all', hit('   '), true);
 // A login with no full_name has the nickname as its name and nothing trailing — must still match.
 eq('search: person with no nickname', hit('tan5566', { name: 'tan5566', nickname: null }), true);
+
+// ── schedule-copy.ts: "use the same as last month" for rosters that repeat ──
+// Copies by WEEKDAY, not by date: the 1st of one month is a Tuesday and of the next a Friday, so
+// copying date-for-date would move everyone's day off.
+const sco = load('schedule-copy.ts');
+const T = 'tpl-day';
+const src = [
+  // Sep 2026: 1st = Tuesday. Two Mondays worked, one Monday off → Monday resolves to worked.
+  { user_id: 'u1', work_date: '2026-09-07', shift_template_id: T, is_day_off: false },
+  { user_id: 'u1', work_date: '2026-09-14', shift_template_id: T, is_day_off: false },
+  { user_id: 'u1', work_date: '2026-09-21', shift_template_id: null, is_day_off: true },
+  // Every Sunday off.
+  { user_id: 'u1', work_date: '2026-09-06', shift_template_id: null, is_day_off: true },
+  { user_id: 'u1', work_date: '2026-09-13', shift_template_id: null, is_day_off: true },
+];
+const plan = sco.buildCopyPlan(src, '2026-10', new Set());
+const on = (d) => plan.find((c) => c.work_date === d);
+
+eq('copy: October has 4 Mondays filled', plan.filter((c) => new Date(c.work_date + 'T00:00:00Z').getUTCDay() === 1).length, 4);
+eq('copy: Monday takes the majority pattern (worked)', on('2026-10-05').is_day_off, false);
+eq('copy: Sunday stays a day off', on('2026-10-04').is_day_off, true);
+eq('copy: a weekday never seen in the source is not invented', on('2026-10-06'), undefined);
+// Ties go to the later date — the most recent intention wins.
+const tie = sco.buildCopyPlan([
+  { user_id: 'u2', work_date: '2026-09-01', shift_template_id: T, is_day_off: false },
+  { user_id: 'u2', work_date: '2026-09-08', shift_template_id: null, is_day_off: true },
+], '2026-10', new Set());
+eq('copy: a tie takes the later source date', tie.find((c) => c.work_date === '2026-10-06').is_day_off, true);
+// Someone already rostered in the target month is skipped whole — copying must never overwrite.
+eq('copy: skips people who already have rows', sco.buildCopyPlan(src, '2026-10', new Set(['u1'])).length, 0);
+// Month lengths: February 2027 has 28 days, October 31.
+eq('copy: month length 31', sco.monthDates('2026-10').length, 31);
+eq('copy: month length 28', sco.monthDates('2027-02').length, 28);
+eq('copy: month length 29 in a leap year', sco.monthDates('2028-02').length, 29);
+
+// ── absence-summary.ts: countUnauthorizedAbsentDays — must agree with the payrun POST's own
+// unauthorized-absence day count: scheduled ∧ no in-punch ∧ not on approved leave ∧ inside the
+// employed window ∧ the day has already closed. Built on time-engine's own computeDaySummary
+// (required, not duplicated — see the file's doc comment), so this also pins that the two stay wired
+// together correctly.
+const asum = load('absence-summary.ts');
+const shift9to18 = { start_time: '09:00', end_time: '18:00' };
+const schedFull = new Map(
+  ['2026-07-01', '2026-07-02', '2026-07-03', '2026-07-04', '2026-07-05'].map((d) => [
+    d,
+    { is_day_off: false, shift: shift9to18 },
+  ])
+);
+const absBase = {
+  cycleStart: '2026-07-01',
+  cycleEnd: '2026-07-05',
+  closedThrough: '2026-07-05',
+  startDate: null,
+  endDate: null,
+  scheduleByDate: schedFull,
+  punchedDates: new Set(),
+  overrideByDate: new Map(),
+  leaves: [],
+};
+eq('absence: 5 scheduled days, no punches, all closed → 5', asum.countUnauthorizedAbsentDays(absBase), 5);
+eq(
+  'absence: a punched day drops out of the count',
+  asum.countUnauthorizedAbsentDays({ ...absBase, punchedDates: new Set(['2026-07-03']) }),
+  4
+);
+eq(
+  'absence: an approved-leave day is not unauthorized, even unpunched',
+  asum.countUnauthorizedAbsentDays({
+    ...absBase,
+    punchedDates: new Set(['2026-07-03']),
+    leaves: [{ from_date: '2026-07-04', to_date: '2026-07-04' }],
+  }),
+  3
+);
+eq(
+  'absence: an HR override clearing absent removes that day too',
+  asum.countUnauthorizedAbsentDays({
+    ...absBase,
+    punchedDates: new Set(['2026-07-03']),
+    leaves: [{ from_date: '2026-07-04', to_date: '2026-07-04' }],
+    overrideByDate: new Map([
+      ['2026-07-05', { worked_min: null, late_min: null, ot_min: null, absent: false, reason: 'fix' }],
+    ]),
+  }),
+  2
+);
+eq(
+  'absence: a day past closedThrough is never counted (future rostered day)',
+  asum.countUnauthorizedAbsentDays({ ...absBase, closedThrough: '2026-07-02' }),
+  2
+);
+eq(
+  'absence: days before the employee\'s start date are excluded',
+  asum.countUnauthorizedAbsentDays({ ...absBase, startDate: '2026-07-03' }),
+  3
+);
+eq(
+  'absence: days after the employee\'s end date (mid-period leaver) are excluded',
+  asum.countUnauthorizedAbsentDays({ ...absBase, endDate: '2026-07-03' }),
+  3
+);
+eq(
+  'absence: a date with no schedule row at all is not "scheduled" → never absent',
+  asum.countUnauthorizedAbsentDays({
+    cycleStart: '2026-07-01',
+    cycleEnd: '2026-07-02',
+    closedThrough: '2026-07-02',
+    startDate: null,
+    endDate: null,
+    scheduleByDate: new Map([['2026-07-01', { is_day_off: false, shift: shift9to18 }]]),
+    punchedDates: new Set(),
+    overrideByDate: new Map(),
+    leaves: [],
+  }),
+  1
+);
+
+// ── work-venues.ts: neverPunchedWindow — the never-punched banner's evidence window. Anchored to
+// TODAY (not the viewed month) and floored so the lookback never reaches before the "everyone must
+// clock in" policy start date (2026-09-01, spec §4 D1). Getting this wrong is exactly what fired the
+// banner for ~124 of 127 people once migration 00196 wiped attendance (owner report 2026-08-28).
+const wv = load('work-venues.ts');
+eq('neverPunchedWindow: today before policy start → no window at all', wv.neverPunchedWindow('2026-08-31', '2026-09-01'), null);
+eq('neverPunchedWindow: today exactly the policy start → a one-day window on that date', wv.neverPunchedWindow('2026-09-01', '2026-09-01'), { from: '2026-09-01', to: '2026-09-01' });
+eq(
+  'neverPunchedWindow: shortly after policy start → floored at the policy date, not 90 days back',
+  wv.neverPunchedWindow('2026-09-10', '2026-09-01'),
+  { from: '2026-09-01', to: '2026-09-10' }
+);
+eq(
+  'neverPunchedWindow: well past policy start (> lookbackDays later) → the normal rolling window, unfloored',
+  wv.neverPunchedWindow('2027-01-15', '2026-09-01'),
+  { from: wv.shiftDays('2027-01-15', -90), to: '2027-01-15' }
+);
+eq(
+  'neverPunchedWindow: a custom lookbackDays is honoured once past the floor',
+  wv.neverPunchedWindow('2027-01-15', '2026-09-01', 30),
+  { from: wv.shiftDays('2027-01-15', -30), to: '2027-01-15' }
+);
 
 const fail = R.filter((r) => !r.pass);
 for (const r of R) if (!r.pass) console.log(`FAIL ${r.name}: got=${JSON.stringify(r.got)} want=${JSON.stringify(r.want)}`);

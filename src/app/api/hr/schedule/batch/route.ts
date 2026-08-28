@@ -13,8 +13,9 @@ interface CellInput {
   clear?: boolean;
 }
 
-// Roster scope — mirrors /api/hr/schedule: store mode (user_stores members) or company mode
-// (hr_employees of that company; 'none' = no company yet). Company rows: store_id NULL.
+// Roster scope — mirrors /api/hr/schedule: store mode (user_stores members) or the legacy company
+// mode (hr_employees of that company; 'none' = no company yet; rows: store_id NULL). Company scope
+// is parsed here only so it can be refused below — rosters are per-store from 2026-08-28.
 type Scope = { kind: 'store'; storeId: string } | { kind: 'company'; companyId: string | null };
 
 // POST /api/hr/schedule/batch — save a whole draft of roster cells in ONE call (§C redesign: the
@@ -31,8 +32,16 @@ export async function POST(request: NextRequest) {
       ? { kind: 'store', storeId }
       : null;
   if (!scope) return NextResponse.json({ error: 'store_id or company_id is required' }, { status: 400 });
+  // Rosters are per-store from 2026-08-28 (owner decision): the office is itself a store, so the
+  // company scope no longer has a population of its own. Reads still accept it for legacy rows.
+  if (scope.kind === 'company') {
+    return NextResponse.json(
+      { error: 'ตารางกะจัดเป็นรายสาขาเท่านั้น — เลือกสาขา (สำนักงานก็เป็นสาขาหนึ่ง)' },
+      { status: 400 }
+    );
+  }
 
-  const auth = await requireSchedulerForScope(scope.kind === 'store' ? scope.storeId : null);
+  const auth = await requireSchedulerForScope(scope.storeId);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const rawCells = Array.isArray(body.cells) ? body.cells : [];
@@ -70,21 +79,14 @@ export async function POST(request: NextRequest) {
   let tplQuery = templateIds.length
     ? service.from('hr_shift_templates').select('id').eq('active', true).in('id', templateIds)
     : null;
-  if (tplQuery) {
-    if (scope.kind === 'store') tplQuery = tplQuery.eq('store_id', scope.storeId);
-    else if (scope.companyId) tplQuery = tplQuery.eq('company_id', scope.companyId);
-    else tplQuery = tplQuery.is('store_id', null).is('company_id', null);
-  }
-  const [userStoresRes, templatesRes, empRes] = await Promise.all([
+  if (tplQuery) tplQuery = tplQuery.eq('store_id', scope.storeId);
+  const [userStoresRes, templatesRes] = await Promise.all([
     // ALL of each employee's stores — the finalized lock must consider every store they work, since
     // hr_schedule is unique on (user_id, work_date): one row per date across all stores.
     service.from('user_stores').select('user_id, store_id').in('user_id', userIds),
     tplQuery ?? Promise.resolve({ data: [], error: null }),
-    scope.kind === 'company'
-      ? service.from('hr_employees').select('profile_id, company_id').in('profile_id', userIds)
-      : Promise.resolve({ data: [], error: null }),
   ]);
-  if (userStoresRes.error || templatesRes.error || empRes.error) {
+  if (userStoresRes.error || templatesRes.error) {
     return NextResponse.json({ error: 'Failed to validate staff/shifts' }, { status: 500 });
   }
 
@@ -95,17 +97,9 @@ export async function POST(request: NextRequest) {
     if (!set) { set = new Set(); userStores.set(uid, set); }
     set.add(r.store_id as string);
   }
-  // Every referenced employee must belong to THIS scope; every template must be the scope's + active.
-  if (scope.kind === 'store') {
-    const badMember = userIds.find((u) => !userStores.get(u)?.has(scope.storeId));
-    if (badMember) return NextResponse.json({ error: 'An employee is not assigned to this store' }, { status: 400 });
-  } else {
-    const companyByProfile = new Map(
-      (empRes.data ?? []).map((r) => [r.profile_id as string, (r.company_id as string | null) ?? null]),
-    );
-    const badMember = userIds.find((u) => !companyByProfile.has(u) || companyByProfile.get(u) !== scope.companyId);
-    if (badMember) return NextResponse.json({ error: 'An employee is not in this company scope' }, { status: 400 });
-  }
+  // Every referenced employee must belong to this store; every template must be this store's + active.
+  const badMember = userIds.find((u) => !userStores.get(u)?.has(scope.storeId));
+  if (badMember) return NextResponse.json({ error: 'An employee is not assigned to this store' }, { status: 400 });
   const templateSet = new Set((templatesRes.data ?? []).map((t) => t.id as string));
   const badTemplate = templateIds.find((t) => !templateSet.has(t));
   if (badTemplate) return NextResponse.json({ error: 'A shift template is invalid for this scope' }, { status: 400 });
@@ -143,8 +137,8 @@ export async function POST(request: NextRequest) {
   // Bulk upsert assignments (one row per user/date; any edit returns the cell to draft).
   if (toUpsert.length) {
     const rows = toUpsert.map((c) => ({
-      store_id: scope.kind === 'store' ? scope.storeId : null,
-      company_id: scope.kind === 'company' ? scope.companyId : null,
+      store_id: scope.storeId,
+      company_id: null,
       user_id: c.user_id,
       work_date: c.work_date,
       shift_template_id: c.is_day_off ? null : c.shift_template_id,
@@ -156,14 +150,17 @@ export async function POST(request: NextRequest) {
     if (error) return NextResponse.json({ error: 'Failed to save assignments' }, { status: 500 });
   }
 
-  // Clears: store mode deletes the store's (user, date) rows; company mode deletes the person's
-  // row for that date regardless of where it lives — the company view shows (and manages) the
-  // full picture, and hr_schedule is unique on (user_id, work_date) anyway. Error-checked so a
-  // failed removal is never reported as saved (the client keeps the draft and can retry).
+  // Clears: delete the store's (user, date) rows only — never another store's row for the same
+  // person and date. Error-checked so a failed removal is never reported as saved (the client
+  // keeps the draft and can retry).
   let clearFailed = 0;
   for (const c of toClear) {
-    let del = service.from('hr_schedule').delete().eq('user_id', c.user_id).eq('work_date', c.work_date);
-    if (scope.kind === 'store') del = del.eq('store_id', scope.storeId);
+    const del = service
+      .from('hr_schedule')
+      .delete()
+      .eq('user_id', c.user_id)
+      .eq('work_date', c.work_date)
+      .eq('store_id', scope.storeId);
     const { error } = await del;
     if (error) clearFailed++;
   }

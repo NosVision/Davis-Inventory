@@ -87,6 +87,30 @@ export function deriveDayStatus(d: DaySummary, today?: string): DayStatus {
   return 'empty';
 }
 
+export const STYLE_TH: Record<Exclude<DayStatus, 'empty'>, { block: string; glyph: string; dot: string; label: string }> = {
+  normal: { block: 'bg-emerald-400/90 text-white ring-emerald-500', glyph: 'ป', dot: 'bg-emerald-400', label: 'ปกติ' },
+  late: { block: 'bg-amber-400/90 text-white ring-amber-500', glyph: 'ส', dot: 'bg-amber-400', label: 'มาสาย' },
+  absent: { block: 'bg-red-400/90 text-white ring-red-500', glyph: 'ข', dot: 'bg-red-400', label: 'ขาด' },
+  leave: { block: 'bg-violet-400/90 text-white ring-violet-500', glyph: 'ล', dot: 'bg-violet-400', label: 'ลา' },
+  dayoff: { block: 'bg-gray-300 text-gray-600 ring-gray-400 dark:bg-gray-600 dark:text-gray-200', glyph: 'ห', dot: 'bg-gray-400', label: 'วันหยุด' },
+  wod: { block: 'bg-sky-400/90 text-white ring-sky-500', glyph: 'ท', dot: 'bg-sky-400', label: 'ทำวันหยุด' },
+  incomplete: { block: 'bg-orange-400/90 text-white ring-orange-500', glyph: '!', dot: 'bg-orange-400', label: 'ไม่ออกงาน' },
+  working: { block: 'bg-blue-400/90 text-white ring-blue-500', glyph: 'ก', dot: 'bg-blue-400', label: 'กำลังทำงาน' },
+};
+
+export const STYLE_EN: Record<Exclude<DayStatus, 'empty'>, { block: string; glyph: string; dot: string; label: string }> = {
+  normal: { block: 'bg-emerald-400/90 text-white ring-emerald-500', glyph: 'N', dot: 'bg-emerald-400', label: 'Normal' },
+  late: { block: 'bg-amber-400/90 text-white ring-amber-500', glyph: 'T', dot: 'bg-amber-400', label: 'Late' },
+  absent: { block: 'bg-red-400/90 text-white ring-red-500', glyph: 'A', dot: 'bg-red-400', label: 'Absent' },
+  leave: { block: 'bg-violet-400/90 text-white ring-violet-500', glyph: 'L', dot: 'bg-violet-400', label: 'Leave' },
+  dayoff: { block: 'bg-gray-300 text-gray-600 ring-gray-400 dark:bg-gray-600 dark:text-gray-200', glyph: 'O', dot: 'bg-gray-400', label: 'Day off' },
+  wod: { block: 'bg-sky-400/90 text-white ring-sky-500', glyph: 'W', dot: 'bg-sky-400', label: 'Worked day off' },
+  incomplete: { block: 'bg-orange-400/90 text-white ring-orange-500', glyph: '!', dot: 'bg-orange-400', label: 'No clock-out' },
+  working: { block: 'bg-blue-400/90 text-white ring-blue-500', glyph: 'IN', dot: 'bg-blue-400', label: 'On shift' },
+};
+
+export const STYLE = STYLE_TH;
+
 const toH = (min: number) => (min / 60).toFixed(1);
 const WD_TH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
 const WD_EN = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
@@ -112,17 +136,7 @@ export function TimesheetBlockGrid({
 }) {
   const isTh = useLocale() === 'th';
   const wd = isTh ? WD_TH : WD_EN;
-
-  const STYLE: Record<Exclude<DayStatus, 'empty'>, { block: string; glyph: string; dot: string; label: string }> = {
-    normal: { block: 'bg-emerald-400/90 text-white ring-emerald-500', glyph: isTh ? 'ป' : 'N', dot: 'bg-emerald-400', label: isTh ? 'ปกติ' : 'Normal' },
-    late: { block: 'bg-amber-400/90 text-white ring-amber-500', glyph: isTh ? 'ส' : 'T', dot: 'bg-amber-400', label: isTh ? 'มาสาย' : 'Late' },
-    absent: { block: 'bg-red-400/90 text-white ring-red-500', glyph: isTh ? 'ข' : 'A', dot: 'bg-red-400', label: isTh ? 'ขาด' : 'Absent' },
-    leave: { block: 'bg-violet-400/90 text-white ring-violet-500', glyph: isTh ? 'ล' : 'L', dot: 'bg-violet-400', label: isTh ? 'ลา' : 'Leave' },
-    dayoff: { block: 'bg-gray-300 text-gray-600 ring-gray-400 dark:bg-gray-600 dark:text-gray-200', glyph: isTh ? 'ห' : 'O', dot: 'bg-gray-400', label: isTh ? 'วันหยุด' : 'Day off' },
-    wod: { block: 'bg-sky-400/90 text-white ring-sky-500', glyph: isTh ? 'ท' : 'W', dot: 'bg-sky-400', label: isTh ? 'ทำวันหยุด' : 'Worked day off' },
-    incomplete: { block: 'bg-orange-400/90 text-white ring-orange-500', glyph: '!', dot: 'bg-orange-400', label: isTh ? 'ไม่ออกงาน' : 'No clock-out' },
-    working: { block: 'bg-blue-400/90 text-white ring-blue-500', glyph: isTh ? 'ก' : 'IN', dot: 'bg-blue-400', label: isTh ? 'กำลังทำงาน' : 'On shift' },
-  };
+  const localeStyle = isTh ? STYLE_TH : STYLE_EN;
   const LEGEND: Exclude<DayStatus, 'empty'>[] = ['normal', 'working', 'late', 'absent', 'leave', 'wod', 'incomplete', 'dayoff'];
 
   // Bangkok business date (6am cutoff) — a night shift started at 22:00 stays "today" until 6am.
@@ -148,8 +162,8 @@ export function TimesheetBlockGrid({
         <span className="font-semibold">{isTh ? 'สีสถานะ' : 'Legend'}:</span>
         {LEGEND.map((s) => (
           <span key={s} className="inline-flex items-center gap-1">
-            <i className={cn('h-2.5 w-2.5 rounded-sm', STYLE[s].dot)} />
-            {STYLE[s].label}
+            <i className={cn('h-2.5 w-2.5 rounded-sm', localeStyle[s].dot)} />
+            {localeStyle[s].label}
           </span>
         ))}
         <span className="inline-flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-full bg-violet-500" />OT</span>
@@ -235,17 +249,17 @@ export function TimesheetBlockGrid({
                           title={
                             status === 'empty'
                               ? isTh ? 'คลิกเพื่อลงเวลา' : 'Click to log time'
-                              : `${STYLE[status].label}${status === 'leave' && day?.leave ? ` · ${isTh ? day.leave.name_th : day.leave.name_en}` : ''}${missingOut ? ` · ${isTh ? 'ไม่ออกงาน' : 'no clock-out'}` : ''}${(day?.late_min ?? 0) > 0 ? ` · สาย ${day?.late_min}` : ''}${(day?.ot_min ?? 0) > 0 ? ` · OT ${toH(day?.ot_min ?? 0)}` : ''}`
+                              : `${localeStyle[status].label}${status === 'leave' && day?.leave ? ` · ${isTh ? day.leave.name_th : day.leave.name_en}` : ''}${missingOut ? ` · ${isTh ? 'ไม่ออกงาน' : 'no clock-out'}` : ''}${(day?.late_min ?? 0) > 0 ? ` · สาย ${day?.late_min}` : ''}${(day?.ot_min ?? 0) > 0 ? ` · OT ${toH(day?.ot_min ?? 0)}` : ''}`
                           }
                           className={cn(
                             'relative mx-auto flex h-7 w-7 items-center justify-center rounded-lg text-[11px] font-bold ring-1 transition-transform hover:scale-110',
                             status === 'empty'
                               ? 'cursor-pointer bg-gray-50 text-gray-300 ring-gray-200 hover:bg-indigo-50 hover:text-indigo-400 dark:bg-gray-800 dark:text-gray-600 dark:ring-gray-700 dark:hover:bg-indigo-900/20'
-                              : STYLE[status].block,
+                              : localeStyle[status].block,
                             overridden && 'ring-2 ring-indigo-500 ring-offset-1 dark:ring-offset-gray-900'
                           )}
                         >
-                          {status === 'empty' ? '+' : STYLE[status].glyph}
+                          {status === 'empty' ? '+' : localeStyle[status].glyph}
                           {hasOt && <i className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-violet-500 ring-1 ring-white dark:ring-gray-900" />}
                           {missingOut && (
                             <i className="absolute -left-0.5 -top-0.5 flex h-2.5 w-2.5 items-center justify-center rounded-full bg-orange-500 text-[7px] font-bold not-italic leading-none text-white ring-1 ring-white dark:ring-gray-900">

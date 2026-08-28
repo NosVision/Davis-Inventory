@@ -544,9 +544,13 @@ export default function EmployeesPage() {
                   companyName: e.company?.name ?? null,
                 });
               }}
-              className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-teal-600 dark:hover:bg-gray-700 dark:hover:text-teal-400"
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-teal-600 dark:hover:bg-gray-700 dark:hover:text-teal-400"
             >
               <ArrowLeftRight className="h-4 w-4" />
+              {/* Named, not just tooltipped: `title` does not exist on touch, so on a phone this was
+                  an unlabelled arrow nobody could be expected to try — and HR concluded from the
+                  greyed field in the form that moving company was impossible (report 2026-08-28). */}
+              <span className="hidden text-xs font-medium lg:inline">{t('transfer.action')}</span>
             </button>
           </div>
         ),
@@ -740,6 +744,19 @@ export default function EmployeesPage() {
         onSaved={() => {
           setFormOpen(false);
           fetchEmployees();
+        }}
+        onTransferCompany={() => {
+          // Give the form's locked company field a real way out. Close the form first: the two
+          // dialogs would otherwise stack, and a transfer is its own decision with its own
+          // mandatory reason — not a side effect of editing a phone number.
+          const row = rows.find((r) => r.id === editId);
+          if (!row) return;
+          setFormOpen(false);
+          setTransfer({
+            id: row.id,
+            companyId: (row.company_id as string) ?? null,
+            companyName: row.company?.name ?? null,
+          });
         }}
       />
 
