@@ -7,7 +7,7 @@ import { Loader2, Wallet, Lock, LockOpen, Printer, Download, X, FileText, Settin
 import { Button, EmptyState, Modal, ModalFooter, PageHeader, KpiRow, StatTile, MoneyValue, StatusBadge, Skeleton, toast, useConfirm, usePromptDialog } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { formatBaht } from '@/lib/pos/money';
-import { todayBangkok } from '@/lib/utils/date';
+import { openBusinessDateBangkok } from '@/lib/utils/date';
 import { PayslipView, type PayslipDetailData } from '@/components/hr/payslip-view';
 import { PayslipFormPrint } from '@/components/hr/payslip-form-print';
 import { PeriodStrip } from '@/components/hr/period-strip';
@@ -208,16 +208,28 @@ export default function HrPayrollPage() {
   const [coverage, setCoverage] = useState<CoverageData | null>(null);
   const [coverageLoading, setCoverageLoading] = useState(true);
 
-  // Expandable register rows: full itemized slip inline (lazy-loaded, cached per payslip id;
-  // ids change on recompute so stale cache entries are simply never hit again).
+  // Expandable register rows: full itemized slip inline (lazy-loaded, cached per payslip id — ids
+  // change on recompute so stale cache entries are simply never hit again, see refreshExpanded).
+  //
+  // `expanded` itself is keyed on user_id, NOT payslip id: the payrun POST deletes and re-inserts
+  // every payslip on every recompute (see the comment above `regenerateCurrent`), so a payslip id is
+  // not stable across the exact action this screen exists for — editing a day, which silently
+  // recomputes on save. Keying on the payslip id closed the row being edited on every single save;
+  // the person (`user_id`) survives a recompute, so keying on that keeps the row open through it.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [expandedData, setExpandedData] = useState<Map<string, PayslipDetailData>>(new Map());
+  // Which payrun `expanded`/`expandedData` belong to — cleared when the OPEN payrun itself changes
+  // (a different period/run) but left alone across a recompute of the SAME payrun, which is the
+  // whole point above. Without this, switching to a different payrun that happens to include the
+  // same person would show their row pre-expanded but with no fetched data (nothing re-triggers the
+  // fetch for a row that was never toggled in the new payrun).
+  const openExpandedForRunRef = useRef<string | null>(null);
   const toggleExpand = useCallback(
-    async (payslipId: string) => {
+    async (userId: string, payslipId: string) => {
       setExpanded((prev) => {
         const next = new Set(prev);
-        if (next.has(payslipId)) next.delete(payslipId);
-        else next.add(payslipId);
+        if (next.has(userId)) next.delete(userId);
+        else next.add(userId);
         return next;
       });
       if (!expandedData.has(payslipId)) {
@@ -303,6 +315,15 @@ export default function HrPayrollPage() {
   }, [loadPayruns]);
 
   const openPayrun = useCallback(async (id: string) => {
+    // A different run than the one `expanded`/`expandedData` belong to — close every row rather
+    // than showing a pre-expanded row with no data for a person who happens to appear in both runs.
+    // A recompute of THIS SAME run calls openPayrun(detail.payrun.id) again with an unchanged id, so
+    // it skips this and rows stay open (see the comment on `expanded` above).
+    if (id !== openExpandedForRunRef.current) {
+      setExpanded(new Set());
+      setExpandedData(new Map());
+      openExpandedForRunRef.current = id;
+    }
     setBusy(true);
     setOpeningId(id);
     try {
@@ -1155,14 +1176,14 @@ export default function HrPayrollPage() {
                       </thead>
                       <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                         {detail.payslips.map((s, idx) => {
-                          const isOpen = expanded.has(s.id);
+                          const isOpen = expanded.has(s.user_id);
                           const exp = expandedData.get(s.id);
                           return (
                           <Fragment key={s.id}>
                           <tr className="bg-white dark:bg-gray-800">
                             <td className="px-2 py-2">
                               <button
-                                onClick={() => toggleExpand(s.id)}
+                                onClick={() => toggleExpand(s.user_id, s.id)}
                                 title={t('expandRow')}
                                 aria-label={t('expandRow')}
                                 className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-700"
@@ -1255,8 +1276,8 @@ export default function HrPayrollPage() {
                                     </p>
                                     <PeriodStrip
                                       days={timesheetByUser.get(s.user_id)!}
-                                      today={todayBangkok()}
-                                      disabled={isFinalized || !canManageRun}
+                                      today={openBusinessDateBangkok()}
+                                      disabled={isFinalized || !canManageRun || recomputing}
                                       onPickDay={async (businessDate) => {
                                         if (!(await confirmAttendanceEdit())) return;
                                         const day = timesheetByUser.get(s.user_id)?.find((d) => d.business_date === businessDate);
