@@ -208,16 +208,26 @@ export default function HrPayrollPage() {
   const [coverage, setCoverage] = useState<CoverageData | null>(null);
   const [coverageLoading, setCoverageLoading] = useState(true);
 
-  // Expandable register rows: full itemized slip inline (lazy-loaded, cached per payslip id — ids
-  // change on recompute so stale cache entries are simply never hit again, see refreshExpanded).
+  // Expandable register rows: full itemized slip inline, lazy-loaded on first open.
   //
-  // `expanded` itself is keyed on user_id, NOT payslip id: the payrun POST deletes and re-inserts
-  // every payslip on every recompute (see the comment above `regenerateCurrent`), so a payslip id is
-  // not stable across the exact action this screen exists for — editing a day, which silently
-  // recomputes on save. Keying on the payslip id closed the row being edited on every single save;
-  // the person (`user_id`) survives a recompute, so keying on that keeps the row open through it.
+  // Both `expanded` (which rows are open) and `expandedData` (what we fetched for them) are keyed
+  // on user_id, NOT payslip id — one key space for both, deliberately. The payrun POST deletes and
+  // re-inserts every payslip on every recompute (see the comment above `regenerateCurrent`), so a
+  // payslip id is not stable across the exact action this screen exists for: editing a day, which
+  // silently recomputes on save. Keying `expandedData` on the OLD payslip id meant the refetch after
+  // a recompute always missed — the row stayed open (once `expanded` was fixed to survive by
+  // user_id) but its cache entry never found under the new id, so it spun forever. Keying on the
+  // person, who survives a recompute, fixes both: the row stays open AND its cache slot is the same
+  // slot `openPayrun` refreshes below.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [expandedData, setExpandedData] = useState<Map<string, PayslipDetailData>>(new Map());
+  // Mirrors `expanded` for openPayrun's post-recompute refresh below, which needs the CURRENT open
+  // set without taking a dependency on `expanded` (that would recreate `openPayrun` — and everything
+  // that depends on it — on every single row toggle).
+  const expandedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    expandedRef.current = expanded;
+  }, [expanded]);
   // Which payrun `expanded`/`expandedData` belong to — cleared when the OPEN payrun itself changes
   // (a different period/run) but left alone across a recompute of the SAME payrun, which is the
   // whole point above. Without this, switching to a different payrun that happens to include the
@@ -232,11 +242,11 @@ export default function HrPayrollPage() {
         else next.add(userId);
         return next;
       });
-      if (!expandedData.has(payslipId)) {
+      if (!expandedData.has(userId)) {
         try {
           const res = await fetch(`/api/hr/payslips/${payslipId}`);
           const json = await res.json();
-          if (res.ok) setExpandedData((prev) => new Map(prev).set(payslipId, json.data as PayslipDetailData));
+          if (res.ok) setExpandedData((prev) => new Map(prev).set(userId, json.data as PayslipDetailData));
         } catch {
           // row stays expandable; the modal path still works
         }
@@ -244,20 +254,23 @@ export default function HrPayrollPage() {
     },
     [expandedData]
   );
-  // In-place slip mutations (remark edit, tax override) keep the payslip id — refetch the cached
-  // expanded view so an open row never shows a pre-edit snapshot.
+  // In-place slip mutations (remark edit, tax override) keep the payslip id (no recompute happens on
+  // either path) — refetch the cached expanded view so an open row never shows a pre-edit snapshot.
+  // Looks the person up from `detail` rather than taking a `userId` parameter: both call sites only
+  // have the payslip id / a PayslipDetailData at hand, and this keeps their signatures unchanged.
   const refreshExpanded = useCallback(
     async (payslipId: string) => {
-      if (!expandedData.has(payslipId)) return;
+      const userId = detail?.payslips.find((p) => p.id === payslipId)?.user_id;
+      if (!userId || !expandedData.has(userId)) return;
       try {
         const res = await fetch(`/api/hr/payslips/${payslipId}`);
         const json = await res.json();
-        if (res.ok) setExpandedData((prev) => new Map(prev).set(payslipId, json.data as PayslipDetailData));
+        if (res.ok) setExpandedData((prev) => new Map(prev).set(userId, json.data as PayslipDetailData));
       } catch {
         // stale cache is refreshed on the next toggle
       }
     },
-    [expandedData]
+    [detail, expandedData]
   );
 
   // Attendance for the open payrun's period, by person — feeds the strip under each expanded
@@ -317,9 +330,11 @@ export default function HrPayrollPage() {
   const openPayrun = useCallback(async (id: string) => {
     // A different run than the one `expanded`/`expandedData` belong to — close every row rather
     // than showing a pre-expanded row with no data for a person who happens to appear in both runs.
-    // A recompute of THIS SAME run calls openPayrun(detail.payrun.id) again with an unchanged id, so
-    // it skips this and rows stay open (see the comment on `expanded` above).
-    if (id !== openExpandedForRunRef.current) {
+    // A recompute of THIS SAME run calls openPayrun(detail.payrun.id) again with an unchanged id —
+    // `isRecompute` below is exactly that case, and is what triggers the post-recompute refresh
+    // instead of a reset.
+    const isRecompute = id === openExpandedForRunRef.current;
+    if (!isRecompute) {
       setExpanded(new Set());
       setExpandedData(new Map());
       openExpandedForRunRef.current = id;
@@ -329,7 +344,42 @@ export default function HrPayrollPage() {
     try {
       const res = await fetch(`/api/hr/payruns/${id}`);
       const json = await res.json();
-      setDetail((json.data ?? null) as PayrunDetail | null);
+      const nextDetail = (json.data ?? null) as PayrunDetail | null;
+      setDetail(nextDetail);
+      // A recompute just deleted and re-inserted every payslip (new ids), so any row left open
+      // through it (expandedRef, not `expanded` — this must read the LIVE set, not one captured in
+      // this callback's closure) is showing data cached under a payslip id that no longer exists.
+      // Refetch each still-open person's NEW payslip so the row shows the recomputed figures rather
+      // than either a stale pre-recompute snapshot or (before this fix) a permanent spinner —
+      // `expandedData` never found the new id under the old-id key it used to be stored under.
+      // Someone who no longer has a payslip in this run (dropped by the recompute) is closed
+      // instead of left open with nothing to show.
+      if (isRecompute && nextDetail) {
+        const stillOpen = expandedRef.current;
+        const payslipIdByUser = new Map(nextDetail.payslips.map((p) => [p.user_id, p.id]));
+        setExpanded(new Set([...stillOpen].filter((uid) => payslipIdByUser.has(uid))));
+        for (const uid of stillOpen) {
+          const newPayslipId = payslipIdByUser.get(uid);
+          if (!newPayslipId) {
+            setExpandedData((prev) => {
+              if (!prev.has(uid)) return prev;
+              const next = new Map(prev);
+              next.delete(uid);
+              return next;
+            });
+            continue;
+          }
+          fetch(`/api/hr/payslips/${newPayslipId}`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((j) => {
+              if (j) setExpandedData((prev) => new Map(prev).set(uid, j.data as PayslipDetailData));
+            })
+            .catch(() => {
+              // row stays open showing the pre-recompute figures — better than a spinner, and the
+              // register table above (the actual figures) is already correct regardless.
+            });
+        }
+      }
       // ④ paper print queue (standing prefs + per-slip requests)
       try {
         const qRes = await fetch(`/api/hr/payruns/${id}/print-queue`);
@@ -1177,7 +1227,7 @@ export default function HrPayrollPage() {
                       <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                         {detail.payslips.map((s, idx) => {
                           const isOpen = expanded.has(s.user_id);
-                          const exp = expandedData.get(s.id);
+                          const exp = expandedData.get(s.user_id);
                           return (
                           <Fragment key={s.id}>
                           <tr className="bg-white dark:bg-gray-800">
