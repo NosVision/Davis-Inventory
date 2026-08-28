@@ -87,7 +87,7 @@ export function deriveDayStatus(d: DaySummary, today?: string): DayStatus {
   return 'empty';
 }
 
-export const STYLE: Record<Exclude<DayStatus, 'empty'>, { block: string; glyph: string; dot: string; label: string }> = {
+export const STYLE_TH: Record<Exclude<DayStatus, 'empty'>, { block: string; glyph: string; dot: string; label: string }> = {
   normal: { block: 'bg-emerald-400/90 text-white ring-emerald-500', glyph: 'ป', dot: 'bg-emerald-400', label: 'ปกติ' },
   late: { block: 'bg-amber-400/90 text-white ring-amber-500', glyph: 'ส', dot: 'bg-amber-400', label: 'มาสาย' },
   absent: { block: 'bg-red-400/90 text-white ring-red-500', glyph: 'ข', dot: 'bg-red-400', label: 'ขาด' },
@@ -97,6 +97,19 @@ export const STYLE: Record<Exclude<DayStatus, 'empty'>, { block: string; glyph: 
   incomplete: { block: 'bg-orange-400/90 text-white ring-orange-500', glyph: '!', dot: 'bg-orange-400', label: 'ไม่ออกงาน' },
   working: { block: 'bg-blue-400/90 text-white ring-blue-500', glyph: 'ก', dot: 'bg-blue-400', label: 'กำลังทำงาน' },
 };
+
+export const STYLE_EN: Record<Exclude<DayStatus, 'empty'>, { block: string; glyph: string; dot: string; label: string }> = {
+  normal: { block: 'bg-emerald-400/90 text-white ring-emerald-500', glyph: 'N', dot: 'bg-emerald-400', label: 'Normal' },
+  late: { block: 'bg-amber-400/90 text-white ring-amber-500', glyph: 'T', dot: 'bg-amber-400', label: 'Late' },
+  absent: { block: 'bg-red-400/90 text-white ring-red-500', glyph: 'A', dot: 'bg-red-400', label: 'Absent' },
+  leave: { block: 'bg-violet-400/90 text-white ring-violet-500', glyph: 'L', dot: 'bg-violet-400', label: 'Leave' },
+  dayoff: { block: 'bg-gray-300 text-gray-600 ring-gray-400 dark:bg-gray-600 dark:text-gray-200', glyph: 'O', dot: 'bg-gray-400', label: 'Day off' },
+  wod: { block: 'bg-sky-400/90 text-white ring-sky-500', glyph: 'W', dot: 'bg-sky-400', label: 'Worked day off' },
+  incomplete: { block: 'bg-orange-400/90 text-white ring-orange-500', glyph: '!', dot: 'bg-orange-400', label: 'No clock-out' },
+  working: { block: 'bg-blue-400/90 text-white ring-blue-500', glyph: 'IN', dot: 'bg-blue-400', label: 'On shift' },
+};
+
+export const STYLE = STYLE_TH;
 
 const toH = (min: number) => (min / 60).toFixed(1);
 const WD_TH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
@@ -123,37 +136,7 @@ export function TimesheetBlockGrid({
 }) {
   const isTh = useLocale() === 'th';
   const wd = isTh ? WD_TH : WD_EN;
-
-  // Create locale-aware glyph/label pairs while sharing the exported STYLE's block colors
-  const localeStyle = Object.fromEntries(
-    Object.entries(STYLE).map(([key, val]) => [
-      key,
-      {
-        ...val,
-        glyph:
-          isTh ? val.glyph
-          : key === 'normal' ? 'N'
-          : key === 'late' ? 'T'
-          : key === 'absent' ? 'A'
-          : key === 'leave' ? 'L'
-          : key === 'dayoff' ? 'O'
-          : key === 'wod' ? 'W'
-          : key === 'working' ? 'IN'
-          : val.glyph,
-        label:
-          isTh ? val.label
-          : key === 'normal' ? 'Normal'
-          : key === 'late' ? 'Late'
-          : key === 'absent' ? 'Absent'
-          : key === 'leave' ? 'Leave'
-          : key === 'dayoff' ? 'Day off'
-          : key === 'wod' ? 'Worked day off'
-          : key === 'incomplete' ? 'No clock-out'
-          : key === 'working' ? 'On shift'
-          : val.label,
-      },
-    ])
-  ) as Record<Exclude<DayStatus, 'empty'>, { block: string; glyph: string; dot: string; label: string }>;
+  const localeStyle = isTh ? STYLE_TH : STYLE_EN;
   const LEGEND: Exclude<DayStatus, 'empty'>[] = ['normal', 'working', 'late', 'absent', 'leave', 'wod', 'incomplete', 'dayoff'];
 
   // Bangkok business date (6am cutoff) — a night shift started at 22:00 stays "today" until 6am.
