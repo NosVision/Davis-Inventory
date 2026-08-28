@@ -10,7 +10,7 @@
 -- roster row IS attachment evidence — while the time engine quietly marked ~20 days a month absent
 -- for each of them and a draft payslip docked two thirds of a salary. Nothing on any screen said so
 -- until the slip was opened (owner report). This function is what lets the roster ask the punch-only
--- question directly: distinct user_id with at least one KEPT attendance row in the window, full stop.
+-- question directly: distinct user_id with at least one KEPT 'in' attendance row in the window.
 --
 -- Same shape and same reasoning as hr_work_venues: returning DISTINCT ids keeps the result bounded
 -- (organisation headcount, not headcount × days), so callers never meet PostgREST's silent 1000-row
@@ -22,9 +22,15 @@ stable
 security definer
 set search_path = public
 as $$
+  -- type = 'in' only: time-engine.ts's computeDaySummary derives `firstIn` — and therefore `absent`
+  -- — from 'in' punches alone, and this function exists to answer the same question the coverage
+  -- route's own absence check asks. Counting out/break punches here would let someone with only
+  -- those (no 'in', ever) read as "has punched" while still accumulating real absences — the two
+  -- checks would disagree about the one person this function is for.
   select distinct a.user_id
     from hr_attendance a
    where a.business_date between p_from and p_to
+     and a.type = 'in'
      and coalesce(a.review_status, '') <> 'rejected'
 $$;
 

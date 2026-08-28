@@ -5,11 +5,12 @@
  * `closedThrough` is never an absence (time-engine's `closedThrough` guard) — a published roster's
  * future days must not scream "absent" for shifts nobody could have worked yet.
  *
- * Built for the payroll coverage panel (§00xxx, the August 2026 incident: ten back-office staff who
- * never clock in were marked absent ~20 days each and a draft slip silently docked two thirds of a
- * salary — nothing on any screen said so until the slip was opened). The panel needs to know, BEFORE
- * a payrun is generated or finalized, which staff are heading for a heavy absence hit — and that
- * number is worthless unless it agrees with what the payrun itself would compute.
+ * Built for the payroll coverage panel (Task 7 of the payroll-command-center plan — the August 2026
+ * incident: ten back-office staff who never clock in were marked absent ~20 days each and a draft
+ * slip silently docked two thirds of a salary, with nothing on any screen saying so until the slip
+ * was opened). The panel needs to know, BEFORE a payrun is generated or finalized, which staff are
+ * heading for a heavy absence hit — and that number is worthless unless it agrees with what the
+ * payrun itself would compute.
  *
  * NOTE ON DUPLICATION: this reimplements a slice of the payrun POST's per-day assembly (schedule +
  * attendance + overrides + leaves → computeDaySummary → unauthorizedAbsentDays) rather than sharing

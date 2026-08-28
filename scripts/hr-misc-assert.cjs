@@ -541,6 +541,11 @@ eq(
   3
 );
 eq(
+  'absence: days after the employee\'s end date (mid-period leaver) are excluded',
+  asum.countUnauthorizedAbsentDays({ ...absBase, endDate: '2026-07-03' }),
+  3
+);
+eq(
   'absence: a date with no schedule row at all is not "scheduled" → never absent',
   asum.countUnauthorizedAbsentDays({
     cycleStart: '2026-07-01',
