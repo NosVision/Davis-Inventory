@@ -97,6 +97,10 @@ export default function SchedulePage({
   // Employees with NO roster row at all this month — "nobody thought about them", which an empty
   // grid line hides (HR ask 2026-08-07).
   const [unscheduled, setUnscheduled] = useState<{ user_id: string; name: string; position_name: string | null }[]>([]);
+  // Listed staff with no punch anywhere in the last 3 months — a roster row alone made them look
+  // attached, but nothing they're scheduled for will ever produce a punch, so it silently becomes
+  // an absence on the timesheet and a docked payslip (owner report 2026-08-26).
+  const [neverPunched, setNeverPunched] = useState<{ user_id: string; name: string }[]>([]);
   // Venue members held out of the grid: no roster row and no punch here this month. user_stores
   // cannot distinguish "works here" from "oversees this venue", so they are offered, not shown.
   const [inactiveHere, setInactiveHere] = useState<{ user_id: string; name: string }[]>([]);
@@ -179,6 +183,7 @@ export default function SchedulePage({
       setEntries((j.entries ?? []) as Entry[]);
       setMonthStatus((j.monthStatus ?? 'empty') as MonthStatus);
       setUnscheduled((j.unscheduled ?? []) as { user_id: string; name: string; position_name: string | null }[]);
+      setNeverPunched((j.never_punched ?? []) as { user_id: string; name: string }[]);
     } catch {
       toast({ type: 'error', title: t('actionFailed') });
     } finally {
@@ -541,6 +546,19 @@ export default function SchedulePage({
                 .join(' · ')}
             </p>
           </div>
+        </div>
+      )}
+
+      {/* Rostered here but never once produces a punch — a roster row alone is enough evidence to
+          look "attached" to a venue, so this can be true even for someone scheduled every day of
+          the month above. Every rostered day for them becomes an absence, silently, unless they
+          punch (owner report 2026-08-26: a payslip went from ฿32,333 to ฿9,008 this way). */}
+      {neverPunched.length > 0 && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50/70 px-3 py-2 text-xs text-amber-800 dark:border-amber-800/60 dark:bg-amber-900/15 dark:text-amber-300">
+          {tt(
+            `${neverPunched.length} คนในตารางนี้ยังไม่เคยลงเวลาเลยใน 3 เดือน — กะที่ตั้งจะกลายเป็นวันขาดถ้าเขาไม่ตอกบัตร`,
+            `${neverPunched.length} here have never clocked in for 3 months — rostered days become absences unless they punch`
+          )}
         </div>
       )}
 

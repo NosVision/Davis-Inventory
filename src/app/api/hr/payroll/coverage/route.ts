@@ -3,6 +3,8 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManager } from '@/lib/hr/route-auth';
 import { cycleDates, isCycleClosed } from '@/lib/hr/pay-cycle';
 import { payHiddenProfileIds } from '@/lib/hr/pay-visibility';
+import { loadUnauthorizedAbsentDays } from '@/lib/hr/absence-summary';
+import { businessDateBangkok } from '@/lib/utils/date';
 
 /**
  * GET /api/hr/payroll/coverage?year=&month= — did this period actually pay everyone it should?
@@ -161,8 +163,54 @@ export async function GET(request: NextRequest) {
     buckets.set(k, b);
   }
 
+  // Heavy-absence check (owner report 2026-08-17..2026-08-26: ten back-office staff who never clock
+  // in were marked absent ~20 days each and a draft slip silently docked two thirds of a salary).
+  // Computed at the SAME grain the payrun generates — per (company, payroll group) slice, over the
+  // SAME cycle dates, with the SAME closedThrough guard — because a warning that disagrees with what
+  // the payslip actually docks is worse than no warning. See absence-summary.ts for why this
+  // duplicates (rather than imports) the payrun POST's day-count logic, and for the row-cap reason
+  // this is batched per SLICE instead of one whole-company query.
+  const HEAVY_ABSENCE_THRESHOLD_DAYS = 5;
+  const closedThrough = businessDateBangkok();
+  const bucketList = [...buckets.values()];
+  // Best-effort: this whole route's job is to say whether payroll paid everyone it should, and that
+  // must still work even if the (newer, additive) absence check hits a snag — an empty heavy_absence
+  // list degrades to "nothing to warn about", never to a 500 that hides real missing-payslip data.
+  let absenceByBucket: Map<string, number>[];
+  try {
+    absenceByBucket = await Promise.all(
+      bucketList.map((b) =>
+        loadUnauthorizedAbsentDays(
+          service,
+          b.rows.map((e) => ({ profile_id: e.profile_id, start_date: e.start_date, end_date: e.end_date })),
+          cycle.start,
+          cycle.end,
+          closedThrough
+        )
+      )
+    );
+  } catch {
+    absenceByBucket = bucketList.map(() => new Map<string, number>());
+  }
+  const absenceByKey = new Map(
+    bucketList.map((b, i) => [bucketKey(b.company_id, b.payroll_group_id), absenceByBucket[i]])
+  );
+
   const data = [...buckets.values()]
     .map((b) => {
+      const absenceCounts = absenceByKey.get(bucketKey(b.company_id, b.payroll_group_id)) ?? new Map<string, number>();
+      const heavyAbsence = b.rows
+        .filter((e) => (absenceCounts.get(e.profile_id) ?? 0) >= HEAVY_ABSENCE_THRESHOLD_DAYS)
+        .map((e) => {
+          const p = profById.get(e.profile_id);
+          return {
+            user_id: e.profile_id,
+            name: e.full_name?.trim() || p?.display_name || p?.username || '—',
+            absent_days: absenceCounts.get(e.profile_id) ?? 0,
+          };
+        })
+        // Worst first — this list gets truncated to 4 on the card, so severity should lead.
+        .sort((a, c) => c.absent_days - a.absent_days || a.name.localeCompare(c.name, 'th'));
       const missing = b.rows.filter((e) => !paidUserIds.has(e.profile_id));
       // Mid-period hire/leave proration reads hr_employees.start_date. With none, the engine takes
       // the person as employed for the WHOLE cycle and pays a full month — no error, no line on the
@@ -191,6 +239,11 @@ export async function GET(request: NextRequest) {
         state,
         can_manage: !b.rows.some((e) => hiddenFromCaller.has(e.profile_id)),
         payrun: run ? { id: run.id, status: run.status } : null,
+        // NOT filtered by hiddenFromCaller — same rule as `missing`/`no_start_date` above: this
+        // route is money-free (a day count, never an amount), and the module's rule is "hide the
+        // NUMBERS, not the PERSON" (see the file header). Hiding a hidden-pay person from the one
+        // list that would catch their draft slip being wrong is exactly the silence this exists to end.
+        heavy_absence: heavyAbsence,
         no_start_date: noStartDate
           .map((e) => {
             const p = profById.get(e.profile_id);
@@ -236,6 +289,7 @@ export async function GET(request: NextRequest) {
       // No eligible members left to test, so nothing is hidden by definition.
       can_manage: true,
       payrun: { id: run.id, status: run.status },
+      heavy_absence: [],
       no_start_date: [],
       missing: [],
     });

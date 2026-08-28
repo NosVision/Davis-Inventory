@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireSchedulerForScope } from '@/lib/hr/route-auth';
 import { isDateInFinalizedPeriod, employeeStoreIds, FINALIZED_PERIOD_ERROR } from '@/lib/hr/period-lock';
-import { loadVenueAttachment, loadMemberVenues, belongsToVenue } from '@/lib/hr/work-venues';
+import { loadVenueAttachment, loadMemberVenues, belongsToVenue, loadPunchedSince } from '@/lib/hr/work-venues';
 
 const MONTH_RE = /^\d{4}-\d{2}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -320,6 +320,26 @@ export async function GET(request: NextRequest) {
     .filter((s) => !scheduledUserIds.has(s.user_id))
     .map((s) => ({ user_id: s.user_id, name: s.full_name || s.name, position_name: s.position_name ?? null }));
 
+  // Rostered here but never actually clocks in — the other half of the same incident. Someone can be
+  // "attached" to this venue purely on the strength of a roster row (loadVenueAttachment above counts
+  // that as evidence too), while never once producing a KEPT punch — and that combination is exactly
+  // what turns every one of their rostered days into an absence the time engine cannot tell apart
+  // from someone simply not showing up (owner report: ten such staff docked ~20 days each, nothing on
+  // any screen saying so until a payslip was opened). Store scope only: company rosters are a legacy
+  // read path with no venue-attachment concept to hang this off.
+  let neverPunched: { user_id: string; name: string }[] = [];
+  if (scope.kind === 'store' && staff.length > 0) {
+    try {
+      const punched = await loadPunchedSince(service, first, last);
+      neverPunched = staff
+        .filter((s) => !punched.has(s.user_id))
+        .map((s) => ({ user_id: s.user_id, name: s.full_name || s.name }));
+    } catch {
+      // Evidence unavailable → no banner rather than a wrong one; a reload retries once it recovers.
+      neverPunched = [];
+    }
+  }
+
   // Names of the members held out of the grid, so the page can offer them back rather than just
   // quietly showing fewer people than last month.
   let inactive_here: { user_id: string; name: string }[] = [];
@@ -347,6 +367,7 @@ export async function GET(request: NextRequest) {
     balance,
     monthStatus,
     unscheduled,
+    never_punched: neverPunched,
     inactive_here,
     companies: companiesRes.data ?? [],
   });

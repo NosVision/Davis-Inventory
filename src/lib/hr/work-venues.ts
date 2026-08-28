@@ -101,6 +101,28 @@ export function belongsToVenue(params: {
   return workedStoreIds?.has(storeId) ?? false;
 }
 
+/**
+ * Every profile id with at least one KEPT punch anywhere, over `from`..`to` widened by
+ * {@link VENUE_ATTACHMENT_LOOKBACK_DAYS} (same window as {@link loadVenueAttachment}) — pure
+ * attendance evidence, unlike {@link loadWorkVenues} which also counts a bare roster row as
+ * "worked". A roster row is exactly what a rostered-but-never-punching employee has plenty of, so
+ * the roster∪punch union can never flag them; this is the punch-only half, for exactly that case
+ * (see migration 00197's comment for the incident this exists to catch). Callers intersect the
+ * result against their own candidate list — this returns org-wide ids, not a per-user lookup.
+ */
+export async function loadPunchedSince(
+  service: SupabaseClient,
+  from: string,
+  to: string
+): Promise<Set<string>> {
+  const { data, error } = await service.rpc('hr_punched_user_ids', {
+    p_from: shiftDays(from, -VENUE_ATTACHMENT_LOOKBACK_DAYS),
+    p_to: to,
+  });
+  if (error) throw new Error(`hr_punched_user_ids failed: ${error.message}`);
+  return new Set(((data ?? []) as { user_id: string }[]).map((r) => r.user_id));
+}
+
 /** profile id → their full user_stores set, for the given people. */
 export async function loadMemberVenues(
   service: SupabaseClient,
