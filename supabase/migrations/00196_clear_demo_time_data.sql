@@ -20,7 +20,9 @@ begin
     v_att, v_sch, v_ovr, v_run, v_slip;
 end $$;
 
--- Children first: only hr_payslips→payrun cascades are unverified, so be explicit everywhere.
+-- Children first, deletes kept explicit throughout: every one of these FKs is already declared
+-- ON DELETE CASCADE or ON DELETE SET NULL, but spelling each delete out here keeps the wipe's
+-- full scope readable in one place instead of leaving it implied by cascade behavior elsewhere.
 update public.hr_attendance_requests set target_attendance_id = null
   where target_attendance_id is not null;
 update public.hr_document_requests set payslip_id = null where payslip_id is not null;
@@ -50,18 +52,22 @@ where p.username = 'may' and s.store_code = 'OFFICE'
 on conflict do nothing;
 
 do $$
-declare v_att int; v_sch int; v_run int; v_may int;
+declare v_att int; v_sch int; v_ovr int; v_run int; v_slip int; v_may int;
 begin
-  select count(*) into v_att from public.hr_attendance;
-  select count(*) into v_sch from public.hr_schedule;
-  select count(*) into v_run from public.hr_payruns;
-  select count(*) into v_may from public.user_stores us
+  select count(*) into v_att  from public.hr_attendance;
+  select count(*) into v_sch  from public.hr_schedule;
+  select count(*) into v_ovr  from public.hr_timesheet_overrides;
+  select count(*) into v_run  from public.hr_payruns;
+  select count(*) into v_slip from public.hr_payslips;
+  select count(*) into v_may  from public.user_stores us
     join public.profiles p on p.id = us.user_id
     join public.stores s on s.id = us.store_id
     where p.username = 'may' and s.store_code = 'OFFICE';
-  raise notice 'after: attendance=% schedule=% payruns=% may_in_office=%', v_att, v_sch, v_run, v_may;
-  if v_att <> 0 or v_sch <> 0 or v_run <> 0 then
-    raise exception 'clear incomplete: attendance=% schedule=% payruns=%', v_att, v_sch, v_run;
+  raise notice 'after: attendance=% schedule=% overrides=% payruns=% payslips=% may_in_office=%',
+    v_att, v_sch, v_ovr, v_run, v_slip, v_may;
+  if v_att <> 0 or v_sch <> 0 or v_ovr <> 0 or v_run <> 0 or v_slip <> 0 then
+    raise exception 'clear incomplete: attendance=% schedule=% overrides=% payruns=% payslips=%',
+      v_att, v_sch, v_ovr, v_run, v_slip;
   end if;
   if v_may <> 1 then raise exception 'May was not added to OFFICE (got %)', v_may; end if;
 end $$;
