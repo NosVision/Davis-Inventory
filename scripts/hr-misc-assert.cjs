@@ -435,6 +435,40 @@ eq('search: whitespace-only query matches all', hit('   '), true);
 // A login with no full_name has the nickname as its name and nothing trailing — must still match.
 eq('search: person with no nickname', hit('tan5566', { name: 'tan5566', nickname: null }), true);
 
+// ── schedule-copy.ts: "use the same as last month" for rosters that repeat ──
+// Copies by WEEKDAY, not by date: the 1st of one month is a Tuesday and of the next a Friday, so
+// copying date-for-date would move everyone's day off.
+const sco = load('schedule-copy.ts');
+const T = 'tpl-day';
+const src = [
+  // Sep 2026: 1st = Tuesday. Two Mondays worked, one Monday off → Monday resolves to worked.
+  { user_id: 'u1', work_date: '2026-09-07', shift_template_id: T, is_day_off: false },
+  { user_id: 'u1', work_date: '2026-09-14', shift_template_id: T, is_day_off: false },
+  { user_id: 'u1', work_date: '2026-09-21', shift_template_id: null, is_day_off: true },
+  // Every Sunday off.
+  { user_id: 'u1', work_date: '2026-09-06', shift_template_id: null, is_day_off: true },
+  { user_id: 'u1', work_date: '2026-09-13', shift_template_id: null, is_day_off: true },
+];
+const plan = sco.buildCopyPlan(src, '2026-10', new Set());
+const on = (d) => plan.find((c) => c.work_date === d);
+
+eq('copy: October has 4 Mondays filled', plan.filter((c) => new Date(c.work_date + 'T00:00:00Z').getUTCDay() === 1).length, 4);
+eq('copy: Monday takes the majority pattern (worked)', on('2026-10-05').is_day_off, false);
+eq('copy: Sunday stays a day off', on('2026-10-04').is_day_off, true);
+eq('copy: a weekday never seen in the source is not invented', on('2026-10-06'), undefined);
+// Ties go to the later date — the most recent intention wins.
+const tie = sco.buildCopyPlan([
+  { user_id: 'u2', work_date: '2026-09-01', shift_template_id: T, is_day_off: false },
+  { user_id: 'u2', work_date: '2026-09-08', shift_template_id: null, is_day_off: true },
+], '2026-10', new Set());
+eq('copy: a tie takes the later source date', tie.find((c) => c.work_date === '2026-10-06').is_day_off, true);
+// Someone already rostered in the target month is skipped whole — copying must never overwrite.
+eq('copy: skips people who already have rows', sco.buildCopyPlan(src, '2026-10', new Set(['u1'])).length, 0);
+// Month lengths: February 2027 has 28 days, October 31.
+eq('copy: month length 31', sco.monthDates('2026-10').length, 31);
+eq('copy: month length 28', sco.monthDates('2027-02').length, 28);
+eq('copy: month length 29 in a leap year', sco.monthDates('2028-02').length, 29);
+
 const fail = R.filter((r) => !r.pass);
 for (const r of R) if (!r.pass) console.log(`FAIL ${r.name}: got=${JSON.stringify(r.got)} want=${JSON.stringify(r.want)}`);
 console.log(`\nHR_MISC_ASSERT = ${R.length - fail.length}/${R.length} ${fail.length ? 'FAILED' : 'ALL PASS'}`);
