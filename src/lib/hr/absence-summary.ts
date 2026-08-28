@@ -110,12 +110,16 @@ export interface AbsenceMember {
  * I/O wrapper: loads the cycle's schedule/attendance/overrides/leaves for `members` and reduces each
  * to a day count via {@link countUnauthorizedAbsentDays}.
  *
- * Row-cap note: only `type = 'in'` punches are read — `absent` depends solely on whether an in-punch
- * exists that day, never on out/break punches — which keeps this bounded to roughly one row per
- * member per worked day. Callers should still scope `members` to one payroll slice (company ×
- * payroll group) rather than a whole-company roster spanning many slices at once: PostgREST caps a
- * select at 1000 rows silently (see `hr_work_venues`'s doc comment for the same concern against
- * hr_schedule), and a slice is the granularity the payrun itself already reads at.
+ * Row-cap note: schedule and attendance are read through `hr_schedule_for_members` /
+ * `hr_attendance_for_members` (migration 00198) rather than a flat `.from(...).select(...)` — one
+ * row per MEMBER (with that member's days folded into a JSON array), not one row per member per
+ * day. A flat select over a whole slice's cycle is exactly what saturates PostgREST's silent
+ * 1000-row cap (32 rostered people × 31 days = 992; production runs 131 staff) — see
+ * `hr_work_venues`'s doc comment for the same concern against hr_schedule, and migration 00198's
+ * comment for the incident this reintroduced it once already. Callers should still scope `members`
+ * to one payroll slice (company × payroll group) rather than a whole-company roster spanning many
+ * slices at once: that keeps the bound at slice headcount, which is the granularity the payrun
+ * itself already reads at.
  */
 export async function loadUnauthorizedAbsentDays(
   service: SupabaseClient,
@@ -129,22 +133,12 @@ export async function loadUnauthorizedAbsentDays(
   if (userIds.length === 0) return result;
 
   const [scheduleRes, attendanceRes, overridesRes, leavesRes] = await Promise.all([
-    service
-      .from('hr_schedule')
-      .select('user_id, work_date, is_day_off, shift:hr_shift_templates(start_time, end_time)')
-      .in('user_id', userIds)
-      .gte('work_date', cycleStart)
-      .lte('work_date', cycleEnd),
-    service
-      .from('hr_attendance')
-      .select('user_id, business_date')
-      .eq('type', 'in')
-      .in('user_id', userIds)
-      .gte('business_date', cycleStart)
-      .lte('business_date', cycleEnd)
-      // Matches the payrun POST: a punch HR rejected (out-of-geofence / VPN-suspect) is not evidence
-      // of attendance; NULL review_status (an ordinary un-flagged punch) is kept.
-      .or('review_status.is.null,review_status.neq.rejected'),
+    // Bounded by MEMBER, not member × day — see this function's doc comment / migration 00198.
+    service.rpc('hr_schedule_for_members', { p_user_ids: userIds, p_from: cycleStart, p_to: cycleEnd }),
+    // Matches the payrun POST: a punch HR rejected (out-of-geofence / VPN-suspect) is not evidence
+    // of attendance; NULL review_status (an ordinary un-flagged punch) is kept — enforced inside the
+    // SQL function itself (00198), mirroring hr_punched_user_ids' (00197) filter exactly.
+    service.rpc('hr_attendance_for_members', { p_user_ids: userIds, p_from: cycleStart, p_to: cycleEnd }),
     service
       .from('hr_timesheet_overrides')
       .select('user_id, business_date, worked_min, late_min, ot_min, absent, reason')
@@ -159,23 +153,34 @@ export async function loadUnauthorizedAbsentDays(
       .lte('from_date', cycleEnd)
       .gte('to_date', cycleStart),
   ]);
+  // Any failure here — including the 00198 functions not existing yet on a database this migration
+  // hasn't reached — throws rather than guessing. The only caller (the coverage route's heavy-absence
+  // check) already treats a thrown error as "couldn't verify, warn about nothing" rather than a wrong
+  // number on screen; see its own comment for why that degrade is safe here specifically.
   if (scheduleRes.error || attendanceRes.error || overridesRes.error || leavesRes.error) {
     throw new Error('Failed to load attendance for absence summary');
   }
 
-  type ScheduleRow = { user_id: string; work_date: string; is_day_off: boolean; shift: { start_time: string; end_time: string } | null };
+  type ScheduleMemberRow = {
+    user_id: string;
+    cells: { work_date: string; is_day_off: boolean; start_time: string | null; end_time: string | null }[] | null;
+  };
   const scheduleByUser = new Map<string, Map<string, ScheduleDayInfo>>();
-  for (const s of (scheduleRes.data ?? []) as unknown as ScheduleRow[]) {
-    const m = scheduleByUser.get(s.user_id) ?? new Map<string, ScheduleDayInfo>();
-    m.set(s.work_date, { is_day_off: s.is_day_off, shift: s.shift });
-    scheduleByUser.set(s.user_id, m);
+  for (const row of (scheduleRes.data ?? []) as unknown as ScheduleMemberRow[]) {
+    const m = new Map<string, ScheduleDayInfo>();
+    for (const c of row.cells ?? []) {
+      m.set(c.work_date, {
+        is_day_off: c.is_day_off,
+        shift: c.start_time && c.end_time ? { start_time: c.start_time, end_time: c.end_time } : null,
+      });
+    }
+    scheduleByUser.set(row.user_id, m);
   }
 
+  type AttendanceMemberRow = { user_id: string; punched_dates: string[] | null };
   const punchedByUser = new Map<string, Set<string>>();
-  for (const a of (attendanceRes.data ?? []) as { user_id: string; business_date: string }[]) {
-    const set = punchedByUser.get(a.user_id) ?? new Set<string>();
-    set.add(a.business_date);
-    punchedByUser.set(a.user_id, set);
+  for (const row of (attendanceRes.data ?? []) as unknown as AttendanceMemberRow[]) {
+    punchedByUser.set(row.user_id, new Set(row.punched_dates ?? []));
   }
 
   const overrideByUser = new Map<string, Map<string, TimesheetOverride>>();

@@ -48,32 +48,41 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: FINALIZED_PERIOD_ERROR }, { status: 409 });
     }
   } catch {
-    return NextResponse.json({ error: 'Failed to verify pay period' }, { status: 500 });
+    return NextResponse.json({ error: 'ตรวจสอบงวดจ่ายไม่สำเร็จ' }, { status: 500 });
   }
 
-  const [srcRes, dstRes, empRes] = await Promise.all([
+  const [srcRes, dstRes] = await Promise.all([
     service
       .from('hr_schedule')
       .select('user_id, work_date, shift_template_id, is_day_off')
       .eq('store_id', storeId)
       .gte('work_date', fromDates[0])
       .lte('work_date', fromDates[fromDates.length - 1]),
-    // Skip-set check: hr_schedule is unique on (user_id, work_date) regardless of store.
-    // Remove store filter to catch rows at any store for the same person and date.
-    service
-      .from('hr_schedule')
-      .select('user_id')
-      .gte('work_date', toDates[0])
-      .lte('work_date', toDates[toDates.length - 1]),
-    // Load employee records to check for inactive status and employment end dates.
-    service.from('hr_employees').select('profile_id, status, end_date'),
+    // Skip-set check: hr_schedule is unique on (user_id, work_date) regardless of store, so this
+    // must catch rows at ANY store for the same person and date — a plain select with no store
+    // filter over a whole target month (one row per person per day) is exactly what saturates
+    // PostgREST's silent 1000-row cap; hr_scheduled_user_ids (migration 00198) returns the same
+    // answer bounded by headcount instead. See that migration's comment for the incident this was.
+    service.rpc('hr_scheduled_user_ids', { p_from: toDates[0], p_to: toDates[toDates.length - 1] }),
   ]);
-  if (srcRes.error || dstRes.error || empRes.error) {
-    return NextResponse.json({ error: 'Failed to read the roster' }, { status: 500 });
+  if (srcRes.error || dstRes.error) {
+    return NextResponse.json({ error: 'อ่านตารางกะไม่สำเร็จ' }, { status: 500 });
   }
 
-  const skip = new Set((dstRes.data ?? []).map((r) => r.user_id as string));
+  const skip = new Set(((dstRes.data ?? []) as { user_id: string }[]).map((r) => r.user_id));
   const plan = buildCopyPlan((srcRes.data ?? []) as CopySourceRow[], toMonth, skip);
+
+  // Load employee records to check for inactive status and employment end dates — narrowed to the
+  // people actually in the plan rather than every hr_employees row in the company (which, like the
+  // skip-set above, has no bound of its own and grows with headcount regardless of what this month
+  // needs).
+  const planProfileIds = [...new Set(plan.map((c) => c.user_id))];
+  const empRes = planProfileIds.length
+    ? await service.from('hr_employees').select('profile_id, status, end_date').in('profile_id', planProfileIds)
+    : { data: [] as { profile_id: string; status: string | null; end_date: string | null }[], error: null };
+  if (empRes.error) {
+    return NextResponse.json({ error: 'อ่านตารางกะไม่สำเร็จ' }, { status: 500 });
+  }
 
   // Filter plan: drop cells for inactive people or past their end_date.
   const empByProfile = new Map(
