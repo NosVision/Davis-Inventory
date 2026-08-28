@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
   }
   if (toMonth <= fromMonth) {
     return NextResponse.json(
-      { error: 'to_month must be after from_month' },
+      { error: 'เดือนปลายทางต้องอยู่หลังเดือนต้นทาง' },
       { status: 400 }
     );
   }
@@ -130,12 +130,12 @@ export async function POST(request: NextRequest) {
     // to reload and try again.
     if (insErr.code === '23505') {
       return NextResponse.json(
-        { error: 'Roster changed — reload and try again' },
+        { error: 'ตารางมีการเปลี่ยนแปลง — โหลดใหม่แล้วลองอีกครั้ง' },
         { status: 409 }
       );
     }
     // Generic insert error — hide raw Postgres text and return a Thai message.
-    return NextResponse.json({ error: 'Failed to save assignments' }, { status: 500 });
+    return NextResponse.json({ error: 'บันทึกตารางกะไม่สำเร็จ' }, { status: 500 });
   }
 
   const people = new Set(filtered.map((c) => c.user_id));

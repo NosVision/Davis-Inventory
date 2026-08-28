@@ -359,7 +359,15 @@ export async function POST(request: NextRequest) {
   const storeId = typeof body.store_id === 'string' ? body.store_id : '';
   const scope = parseScope(storeId, typeof body.company_id === 'string' ? body.company_id : '');
   if (!scope) return NextResponse.json({ error: 'store_id or company_id is required' }, { status: 400 });
-  const auth = await requireSchedulerForScope(scope.kind === 'store' ? scope.storeId : null);
+  // Rosters are per-store from 2026-08-28 (owner decision): the office is itself a store, so the
+  // company scope no longer has a population of its own. Reads still accept it for legacy rows.
+  if (scope.kind === 'company') {
+    return NextResponse.json(
+      { error: 'ตารางกะจัดเป็นรายสาขาเท่านั้น — เลือกสาขา (สำนักงานก็เป็นสาขาหนึ่ง)' },
+      { status: 400 }
+    );
+  }
+  const auth = await requireSchedulerForScope(scope.storeId);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const userId = typeof body.user_id === 'string' ? body.user_id : '';
@@ -382,28 +390,16 @@ export async function POST(request: NextRequest) {
 
   const service = createServiceClient();
 
-  // The employee must belong to this scope: store membership, or the company on their HR record.
-  if (scope.kind === 'store') {
-    const { data: member, error: memberErr } = await service
-      .from('user_stores')
-      .select('user_id')
-      .eq('store_id', scope.storeId)
-      .eq('user_id', userId)
-      .maybeSingle();
-    if (memberErr) return NextResponse.json({ error: 'Failed to verify staff' }, { status: 500 });
-    if (!member) {
-      return NextResponse.json({ error: 'Employee is not assigned to this store' }, { status: 400 });
-    }
-  } else {
-    const { data: emp, error: empErr } = await service
-      .from('hr_employees')
-      .select('company_id')
-      .eq('profile_id', userId)
-      .maybeSingle();
-    if (empErr) return NextResponse.json({ error: 'Failed to verify staff' }, { status: 500 });
-    if (!emp || (emp.company_id ?? null) !== scope.companyId) {
-      return NextResponse.json({ error: 'Employee is not in this company scope' }, { status: 400 });
-    }
+  // The employee must belong to this store.
+  const { data: member, error: memberErr } = await service
+    .from('user_stores')
+    .select('user_id')
+    .eq('store_id', scope.storeId)
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (memberErr) return NextResponse.json({ error: 'Failed to verify staff' }, { status: 500 });
+  if (!member) {
+    return NextResponse.json({ error: 'Employee is not assigned to this store' }, { status: 400 });
   }
 
   // A leaver stays visible on the roster for their final month, so cap edits at their
@@ -425,17 +421,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // A shift assignment must reference an active template of THIS scope.
+  // A shift assignment must reference an active template of THIS store.
   if (shiftTemplateId) {
-    let tplQ = service
+    const { data: tpl, error: tplErr } = await service
       .from('hr_shift_templates')
       .select('id')
       .eq('id', shiftTemplateId)
-      .eq('active', true);
-    if (scope.kind === 'store') tplQ = tplQ.eq('store_id', scope.storeId);
-    else if (scope.companyId) tplQ = tplQ.eq('company_id', scope.companyId);
-    else tplQ = tplQ.is('store_id', null).is('company_id', null);
-    const { data: tpl, error: tplErr } = await tplQ.maybeSingle();
+      .eq('active', true)
+      .eq('store_id', scope.storeId)
+      .maybeSingle();
     if (tplErr) return NextResponse.json({ error: 'Failed to verify shift' }, { status: 500 });
     if (!tpl) {
       return NextResponse.json({ error: 'Invalid shift template for this scope' }, { status: 400 });
@@ -446,7 +440,7 @@ export async function POST(request: NextRequest) {
   // hr_schedule is unique on (user_id, work_date), so the lock must span EVERY store the employee
   // works — not just this one — or an upsert here could overwrite another store's finalized row.
   try {
-    const storeIds = await employeeStoreIds(service, userId, scope.kind === 'store' ? scope.storeId : null);
+    const storeIds = await employeeStoreIds(service, userId, scope.storeId);
     if (await isDateInFinalizedPeriod(service, workDate, storeIds)) {
       return NextResponse.json({ error: FINALIZED_PERIOD_ERROR }, { status: 409 });
     }
@@ -458,8 +452,8 @@ export async function POST(request: NextRequest) {
     .from('hr_schedule')
     .upsert(
       {
-        store_id: scope.kind === 'store' ? scope.storeId : null,
-        company_id: scope.kind === 'company' ? scope.companyId : null,
+        store_id: scope.storeId,
+        company_id: null,
         user_id: userId,
         work_date: workDate,
         shift_template_id: isDayOff ? null : shiftTemplateId,
