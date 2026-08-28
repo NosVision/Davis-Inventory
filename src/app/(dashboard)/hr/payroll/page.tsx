@@ -7,8 +7,16 @@ import { Loader2, Wallet, Lock, LockOpen, Printer, Download, X, FileText, Settin
 import { Button, EmptyState, Modal, ModalFooter, PageHeader, KpiRow, StatTile, MoneyValue, StatusBadge, Skeleton, toast, useConfirm, usePromptDialog } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { formatBaht } from '@/lib/pos/money';
+import { todayBangkok } from '@/lib/utils/date';
 import { PayslipView, type PayslipDetailData } from '@/components/hr/payslip-view';
 import { PayslipFormPrint } from '@/components/hr/payslip-form-print';
+import { PeriodStrip } from '@/components/hr/period-strip';
+import type { DaySummary } from '@/components/hr/timesheet-parts';
+import {
+  TimesheetEditModal,
+  type EditTarget,
+  type LeaveTypeOption,
+} from '@/app/(dashboard)/hr/timesheet/_components/timesheet-edit-modal';
 import { RecurringModal } from './_components/recurring-modal';
 import { TaxAllowanceModal } from './_components/tax-allowance-modal';
 import { AdjustmentsPanel, type AdjustmentRow, type AdjustmentsPrevious } from './_components/adjustments-panel';
@@ -137,6 +145,7 @@ function dmy(d?: string | null): string {
 export default function HrPayrollPage() {
   const t = useTranslations('hr.payroll');
   const isTh = useLocale() === 'th';
+  const tt = (th: string, en: string) => (isTh ? th : en);
   // in-app replacements for window.confirm / window.prompt (finalize, reopen, announce-resend)
   const { confirm, dialog: confirmDialog } = useConfirm();
   const { prompt, dialog: promptDialog } = usePromptDialog();
@@ -238,6 +247,17 @@ export default function HrPayrollPage() {
     },
     [expandedData]
   );
+
+  // Attendance for the open payrun's period, by person — feeds the strip under each expanded
+  // register row. Company scope, since the payrun is a company's: this is the same call
+  // /hr/timesheet makes in company mode, so the numbers are the payrun's own people.
+  const [timesheetByUser, setTimesheetByUser] = useState<Map<string, DaySummary[]>>(new Map());
+  // hr_employees.ot_eligible per person — not on PayslipSummary, but the timesheet fetch above
+  // already carries it per employee, so the edit modal's EditTarget is built from that instead of
+  // a second request just for one flag.
+  const [otEligibleByUser, setOtEligibleByUser] = useState<Map<string, boolean>>(new Map());
+  const [leaveTypes, setLeaveTypes] = useState<LeaveTypeOption[]>([]);
+  const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
 
   // companies → default first
   useEffect(() => {
@@ -448,8 +468,13 @@ export default function HrPayrollPage() {
   // The slice used to be omitted from this POST, so recomputing a GROUP run rebuilt the company's
   // ungrouped run instead — the wrong run silently changed and the open one did not (fixed
   // 2026-08-18).
-  const regenerateCurrent = useCallback(async (silent = false) => {
-    if (!detail) return;
+  // Returns whether the recompute actually succeeded — callers that show their own follow-up
+  // toast (e.g. the attendance-edit flow below) need to know, so a failed recompute never gets
+  // reported as done while stale figures sit on screen looking authoritative. On every failure
+  // path this already toasts the error itself, so a caller that gets `false` back needs no
+  // second error toast — only to skip claiming success.
+  const regenerateCurrent = useCallback(async (silent = false): Promise<boolean> => {
+    if (!detail) return false;
     const { company_id, period_year, period_month, payroll_group_id } = detail.payrun;
     setRecomputing(true);
     try {
@@ -458,21 +483,71 @@ export default function HrPayrollPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ company_id, period_year, period_month, payroll_group_id: payroll_group_id ?? undefined }),
       });
-      if (res.status === 409) { toast({ type: 'error', title: t('finalizedLocked') }); return; }
+      if (res.status === 409) { toast({ type: 'error', title: t('finalizedLocked') }); return false; }
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
         toast({ type: 'error', title: t('generateFailed'), message: j?.error });
-        return;
+        return false;
       }
       await Promise.all([loadCoverage(), loadPayruns()]);
       await openPayrun(detail.payrun.id);
       if (!silent) toast({ type: 'success', title: t('recomputed') });
+      return true;
     } catch {
       toast({ type: 'error', title: t('generateFailed') });
+      return false;
     } finally {
       setRecomputing(false);
     }
   }, [detail, loadCoverage, loadPayruns, openPayrun, t]);
+
+  // Reloads the open payrun's attendance strip (+ the leave types / ot_eligible flags the edit
+  // modal needs) whenever the payrun on screen changes, and again after a day is saved. A failed
+  // load just hides the strip rather than blocking the register — the payslip figures it sits
+  // beside are the record of truth either way.
+  const reloadTimesheet = useCallback(async () => {
+    if (!detail) {
+      setTimesheetByUser(new Map());
+      setOtEligibleByUser(new Map());
+      setLeaveTypes([]);
+      return;
+    }
+    const { company_id, cycle_start, cycle_end } = detail.payrun;
+    try {
+      const res = await fetch(`/api/hr/timesheet?company_id=${company_id}&from=${cycle_start}&to=${cycle_end}`);
+      if (!res.ok) throw new Error();
+      const json = await res.json();
+      const rows = (json.employees ?? []) as { user_id: string; ot_eligible: boolean; days: DaySummary[] }[];
+      setTimesheetByUser(new Map(rows.map((r) => [r.user_id, r.days])));
+      setOtEligibleByUser(new Map(rows.map((r) => [r.user_id, r.ot_eligible])));
+      setLeaveTypes((json.leave_types ?? []) as LeaveTypeOption[]);
+    } catch {
+      setTimesheetByUser(new Map());
+      setOtEligibleByUser(new Map());
+    }
+  }, [detail]);
+
+  useEffect(() => {
+    reloadTimesheet();
+  }, [reloadTimesheet]);
+
+  // Editing here rewrites the employee's real attendance record, which they can see in their own
+  // app — not just a number on a slip. Said once per session, then trusted: warning on every cell
+  // would destroy the spreadsheet feel this screen exists to give back.
+  const [attendanceWarningSeen, setAttendanceWarningSeen] = useState(false);
+  const confirmAttendanceEdit = useCallback(async () => {
+    if (attendanceWarningSeen) return true;
+    const ok = await confirm({
+      title: tt('แก้เวลาทำงานจริง', 'Editing real attendance'),
+      message: tt(
+        'การแก้ตรงนี้เขียนทับเวลาทำงานจริงของพนักงาน และพนักงานจะเห็นในแอปของเขาด้วย · ทุกการแก้ถูกบันทึกในประวัติ',
+        'This rewrites the employee’s real attendance, visible in their own app. Every edit is audited.'
+      ),
+      confirmLabel: tt('เข้าใจแล้ว', 'Understood'),
+    });
+    if (ok) setAttendanceWarningSeen(true);
+    return ok;
+  }, [attendanceWarningSeen, confirm, tt]);
 
   // Free-form register remark (legacy Payment file Remark column) — annotation only, so it is
   // editable on finalized runs too.
@@ -1161,6 +1236,31 @@ export default function HrPayrollPage() {
                           {isOpen && (
                             <tr className="bg-gray-50/70 dark:bg-gray-900/30">
                               <td colSpan={13} className="px-4 py-3">
+                                {timesheetByUser.get(s.user_id) && (
+                                  <div className="mb-3 space-y-1.5">
+                                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                                      {tt('เวลาทำงานในงวดนี้ — คลิกวันเพื่อแก้', 'Attendance this period — click a day to edit')}
+                                    </p>
+                                    <PeriodStrip
+                                      days={timesheetByUser.get(s.user_id)!}
+                                      today={todayBangkok()}
+                                      disabled={isFinalized || !canManageRun}
+                                      onPickDay={async (businessDate) => {
+                                        if (!(await confirmAttendanceEdit())) return;
+                                        const day = timesheetByUser.get(s.user_id)?.find((d) => d.business_date === businessDate);
+                                        if (!day || !detail) return;
+                                        setEditTarget({
+                                          userId: s.user_id,
+                                          name: s.name,
+                                          companyId: detail.payrun.company_id,
+                                          otEligible: otEligibleByUser.get(s.user_id) ?? false,
+                                          payType: s.pay_type,
+                                          day,
+                                        });
+                                      }}
+                                    />
+                                  </div>
+                                )}
                                 {exp ? (
                                   <div className="max-w-2xl">
                                     <PayslipView data={exp} />
@@ -1412,6 +1512,35 @@ export default function HrPayrollPage() {
         </Modal>
       )}
 
+      {/* Attendance day edit, opened from the strip under an expanded register row. Company-scoped
+          screen with no store filter of its own, so storeId is sent empty — exactly what
+          /hr/timesheet's own company-mode view already sends to this same modal. The employee's
+          company is fixed (this payrun is one company's), and store_id on the written override /
+          leave is optional metadata used only to scope a store manager's queue view; the
+          finalized-period lock and the leave's company scope are both resolved from the
+          employee's own records server-side regardless of what is sent here. */}
+      <TimesheetEditModal
+        isOpen={!!editTarget}
+        target={editTarget}
+        storeId=""
+        leaveTypes={leaveTypes}
+        onClose={() => setEditTarget(null)}
+        onSaved={async () => {
+          setEditTarget(null);
+          // A finalized run is locked and the API refuses the edit anyway; only a draft is worth
+          // redoing. regenerateCurrent(true) suppresses its own generic "recomputed" toast — this
+          // is a more specific one — and its own error toast already fires on failure, so a failed
+          // recompute is never reported as done while stale figures sit on screen looking right.
+          if (detail && !isFinalized) {
+            const recomputed = await regenerateCurrent(true);
+            if (recomputed) {
+              toast({ type: 'success', title: tt('อัปเดตยอดงวดแล้ว', 'Payrun totals updated') });
+            }
+          }
+          await reloadTimesheet();
+        }}
+      />
+
       {recurringFor && (
         <RecurringModal
           employeeId={recurringFor.employeeId}
@@ -1419,7 +1548,7 @@ export default function HrPayrollPage() {
           payrunId={detail?.payrun.id}
           profileId={recurringFor.profileId}
           isDraft={detail?.payrun.status === 'draft'}
-          onAdjustChanged={() => regenerateCurrent(true)}
+          onAdjustChanged={() => void regenerateCurrent(true)}
           onChanged={() => setRecurringDirty(true)}
           onClose={() => {
             setRecurringFor(null);
@@ -1453,7 +1582,7 @@ export default function HrPayrollPage() {
             payrunId={detail.payrun.id}
             isDraft={detail.payrun.status === 'draft'}
             slips={detail.payslips.map((s) => ({ user_id: s.user_id, name: s.name }))}
-            onChanged={() => regenerateCurrent(true)}
+            onChanged={() => void regenerateCurrent(true)}
           />
         </Modal>
       )}
