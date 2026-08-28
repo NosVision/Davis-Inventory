@@ -27,6 +27,10 @@ interface EmployeeFormModalProps {
   employeeId: string | null;
   onClose: () => void;
   onSaved: () => void;
+  /** Opens the company-transfer dialog for this employee. The company field here is read-only on an
+   *  edit, and HR went looking for the move in this form first — so the way out lives here too,
+   *  rather than only behind a tooltip on an icon in the list (owner report 2026-08-28). */
+  onTransferCompany?: () => void;
 }
 
 interface RefOpt {
@@ -180,7 +184,7 @@ function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: EmployeeFormModalProps) {
+export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved, onTransferCompany }: EmployeeFormModalProps) {
   const { confirm, dialog } = useConfirm();
   const t = useTranslations('hr.employees.form');
   const tp = useTranslations('hr.employees');
@@ -1010,13 +1014,36 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved }: Empl
               />
             </>
           )}
-          <Select
-            label={t('company')}
-            value={form.company_id}
-            onChange={(e) => update('company_id', e.target.value)}
-            disabled={!isCreate}
-            options={refOptions(companies)}
-          />
+          <div>
+            <Select
+              label={t('company')}
+              value={form.company_id}
+              onChange={(e) => update('company_id', e.target.value)}
+              disabled={!isCreate}
+              options={refOptions(companies)}
+            />
+            {/* A greyed field that explains nothing is why HR concluded the move was impossible and
+                stopped looking. It is locked on purpose — changing company moves someone's tax,
+                social security and 50 ทวิ, so it goes through the transfer route that demands a
+                reason and audits it — but the form has to SAY that, and hand over the way to do it. */}
+            {!isCreate && (
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                ย้ายบริษัทต้องระบุเหตุผลและวันที่มีผล จึงแก้ตรงนี้ไม่ได้
+                {onTransferCompany && (
+                  <>
+                    {' — '}
+                    <button
+                      type="button"
+                      onClick={onTransferCompany}
+                      className="cursor-pointer font-medium text-indigo-600 underline underline-offset-2 hover:opacity-80 dark:text-indigo-400"
+                    >
+                      ย้ายบริษัทที่นี่
+                    </button>
+                  </>
+                )}
+              </p>
+            )}
+          </div>
           <Select
             label={t('position')}
             value={form.position_id}
