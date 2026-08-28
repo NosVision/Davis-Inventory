@@ -524,8 +524,20 @@ export default function HrPayrollPage() {
     } catch {
       setTimesheetByUser(new Map());
       setOtEligibleByUser(new Map());
+      // The payslip figures above are untouched by this — say so, so a blank strip reads as "failed
+      // to load" and not as "nobody has any attendance this period".
+      // (Reads `isTh` directly rather than through `tt` — `tt` is a plain function re-created every
+      // render, and putting it in this callback's deps would give `reloadTimesheet` a new identity
+      // every render, retriggering the effect below on every render — an unbounded refetch loop.)
+      toast({
+        type: 'warning',
+        title: isTh ? 'โหลดแถบเวลาทำงานไม่สำเร็จ' : 'Could not load the attendance strip',
+        message: isTh
+          ? 'ยอดเงินเดือนด้านบนยังถูกต้อง — เฉพาะแถบเวลาทำงานใต้แต่ละแถวที่โหลดไม่สำเร็จ'
+          : 'The payroll figures above are still correct — only the per-day attendance strip failed to load',
+      });
     }
-  }, [detail]);
+  }, [detail, isTh]);
 
   useEffect(() => {
     reloadTimesheet();
@@ -1548,7 +1560,7 @@ export default function HrPayrollPage() {
           payrunId={detail?.payrun.id}
           profileId={recurringFor.profileId}
           isDraft={detail?.payrun.status === 'draft'}
-          onAdjustChanged={() => void regenerateCurrent(true)}
+          onAdjustChanged={async () => { await regenerateCurrent(true); }}
           onChanged={() => setRecurringDirty(true)}
           onClose={() => {
             setRecurringFor(null);
@@ -1582,7 +1594,7 @@ export default function HrPayrollPage() {
             payrunId={detail.payrun.id}
             isDraft={detail.payrun.status === 'draft'}
             slips={detail.payslips.map((s) => ({ user_id: s.user_id, name: s.name }))}
-            onChanged={() => void regenerateCurrent(true)}
+            onChanged={async () => { await regenerateCurrent(true); }}
           />
         </Modal>
       )}
