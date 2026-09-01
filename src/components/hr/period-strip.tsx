@@ -2,6 +2,7 @@
 
 import { deriveDayStatus, STYLE } from '@/app/(dashboard)/hr/timesheet/_components/timesheet-views';
 import type { DaySummary } from '@/components/hr/timesheet-parts';
+import { formatDmy } from '@/lib/utils/format';
 
 /**
  * One person's period, day by day, sized to sit inside a payroll register row.
@@ -31,7 +32,7 @@ export function PeriodStrip({
             type="button"
             disabled={disabled}
             onClick={() => onPickDay(d.business_date)}
-            title={status === 'empty' ? `${d.business_date} · คลิกเพื่อลงเวลา` : `${d.business_date} · ${STYLE[status].label}${(d.late_min ?? 0) > 0 ? ` · สาย ${d.late_min} นาที` : ''}`}
+            title={status === 'empty' ? `${formatDmy(d.business_date)} · คลิกเพื่อลงเวลา` : `${formatDmy(d.business_date)} · ${STYLE[status].label}${(d.late_min ?? 0) > 0 ? ` · สาย ${d.late_min} นาที` : ''}`}
             className={`h-7 w-7 rounded text-[10px] font-medium tabular-nums transition-opacity ${
               disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:opacity-80'
             } ${status === 'empty' ? 'border border-dashed border-gray-300 text-gray-400 dark:border-gray-600' : STYLE[status].block}`}

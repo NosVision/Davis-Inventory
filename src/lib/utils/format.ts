@@ -42,6 +42,20 @@ export function formatThaiShortDate(date: string | Date | null | undefined): str
   return thaiShortDateFormatter.format(d);
 }
 
+/**
+ * 'YYYY-MM-DD' (or an ISO timestamp) → 'DD/MM/YYYY' — the date convention the HR screens read in
+ * (payroll register, payslip, pay window; owner ask 2026-07-10).
+ *
+ * Sliced as text rather than parsed into a Date: a business date is already a Bangkok calendar
+ * date, and re-parsing it only invites a timezone shifting it a day.
+ */
+export function formatDmy(date: string | null | undefined): string {
+  if (!date) return '—';
+  const s = String(date).slice(0, 10);
+  const [y, m, d] = s.split('-');
+  return y && m && d ? `${d}/${m}/${y}` : s;
+}
+
 export function formatNumber(num: number, decimals = 0): string {
   return num.toLocaleString('th-TH', {
     minimumFractionDigits: decimals,

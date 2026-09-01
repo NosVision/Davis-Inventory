@@ -5,6 +5,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { User } from 'lucide-react';
 import { Modal, ModalFooter, Input, Button, toast, usePromptDialog } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
+import { formatDmy } from '@/lib/utils/format';
 import type { DaySummary } from '@/components/hr/timesheet-parts';
 
 /** A leave type the HR user may assign from the day-edit modal. */
@@ -299,7 +300,7 @@ export function TimesheetEditModal({
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-gray-900 dark:text-white">{target.name}</p>
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              {t('editingLabel')} · {target.day.business_date}
+              {t('editingLabel')} · {formatDmy(target.day.business_date)}
             </p>
           </div>
         </div>
