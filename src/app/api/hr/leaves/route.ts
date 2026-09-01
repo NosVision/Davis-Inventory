@@ -150,11 +150,13 @@ export async function POST(request: NextRequest) {
   let quotaOverride: QuotaBreakdown | null = null;
   if (quotaCtx.effectiveQuota != null) {
     const pendingDays = quotaCtx.pending.reduce((sum, r) => sum + r.days, 0);
-    const total = Math.round((quotaCtx.approved + pendingDays + days) * 10) / 10;
+    const total =
+      Math.round((quotaCtx.approved + quotaCtx.usedBeforeSystem + pendingDays + days) * 10) / 10;
     if (total > quotaCtx.effectiveQuota) {
       const breakdown: QuotaBreakdown = {
         quota: quotaCtx.effectiveQuota,
         approved: quotaCtx.approved,
+        carried: quotaCtx.usedBeforeSystem,
         pending: Math.round(pendingDays * 10) / 10,
         requested: days,
         over: Math.round((total - quotaCtx.effectiveQuota) * 10) / 10,

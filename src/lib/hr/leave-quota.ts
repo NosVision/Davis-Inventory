@@ -21,6 +21,12 @@ export interface LeaveQuotaContext {
   effectiveQuota: number | null;
   /** Days of this type already approved in the year. */
   approved: number;
+  /**
+   * Days of this type already taken this year BEFORE the app recorded leave (00199) — the
+   * Jan–Jun 2026 figures from the imported payroll slips. They are spent just as surely as an
+   * approved request; leaving them out told sixteen people they still had their whole vacation.
+   */
+  usedBeforeSystem: number;
   /** Requests of this type still in the queue, named by their dates. */
   pending: PendingLeaveRef[];
 }
@@ -48,7 +54,7 @@ export async function loadLeaveQuotaContext(
   const [balanceRes, leavesRes] = await Promise.all([
     service
       .from('hr_leave_balances')
-      .select('quota_days')
+      .select('quota_days, used_before_system_days')
       .eq('employee_id', lookup.employeeId)
       .eq('leave_type_id', lookup.leaveTypeId)
       .eq('year', lookup.year)
@@ -63,8 +69,11 @@ export async function loadLeaveQuotaContext(
       .lte('from_date', to),
   ]);
 
-  const effectiveQuota =
-    balanceRes.data != null ? Number(balanceRes.data.quota_days) : lookup.typeQuotaDays;
+  // quota_days is NULLable since 00199: a row may exist only to carry used_before_system_days,
+  // and then the company default still applies.
+  const balance = balanceRes.data as { quota_days: number | null; used_before_system_days: number | null } | null;
+  const effectiveQuota = balance?.quota_days != null ? Number(balance.quota_days) : lookup.typeQuotaDays;
+  const usedBeforeSystem = Math.round(Number(balance?.used_before_system_days ?? 0) * 10) / 10;
 
   let approved = 0;
   const pending: PendingLeaveRef[] = [];
@@ -82,5 +91,5 @@ export async function loadLeaveQuotaContext(
   }
 
   pending.sort((a, b) => a.from_date.localeCompare(b.from_date));
-  return { effectiveQuota, approved: Math.round(approved * 10) / 10, pending };
+  return { effectiveQuota, approved: Math.round(approved * 10) / 10, usedBeforeSystem, pending };
 }

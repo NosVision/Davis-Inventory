@@ -186,6 +186,11 @@ export interface LeaveValidationInput {
   /** Days of this leave type already APPROVED this year (for quota checks). */
   usedDaysThisYear?: number;
   /**
+   * Days of this type already taken this year before the app recorded leave (00199) — imported
+   * from the payroll slips. Spent days, so they hold quota exactly like an approved request.
+   */
+  carriedDaysThisYear?: number;
+  /**
    * Still-pending requests of this type this year. They hold days just as firmly as approved ones:
    * counting only approvals let two requests that each fit be filed back to back and then both
    * approved, landing the person over quota with nothing having warned anybody.
@@ -204,6 +209,8 @@ export interface PendingLeaveRef {
 export interface QuotaBreakdown {
   quota: number;
   approved: number;
+  /** Days already spent before the app started recording leave (00199). */
+  carried: number;
   pending: number;
   requested: number;
   /** How far past the quota this request lands. Always > 0 when a refusal carries this. */
@@ -260,6 +267,9 @@ export function describeQuotaExceeded(typeName: string, q: QuotaBreakdown): stri
     `โควตา ${fmtDays(q.quota)} วัน`,
     `อนุมัติแล้ว ${fmtDays(q.approved)} วัน`,
   ];
+  // Named separately: "อนุมัติแล้ว 0 วัน · เกินโควตา" with an empty leave history is the version
+  // people report as a bug — the days were spent before the app existed.
+  if (q.carried > 0) parts.push(`ใช้ไปก่อนเข้าระบบ ${fmtDays(q.carried)} วัน`);
   if (q.pending > 0) {
     const refs = q.pendingRefs.map((r) => thaiRange(r.from_date, r.to_date)).join(', ');
     parts.push(`รออนุมัติ ${fmtDays(q.pending)} วัน${refs ? ` (${refs})` : ''}`);
@@ -334,13 +344,15 @@ export function validateLeaveRequest(input: LeaveValidationInput): LeaveValidati
   // A null quota means the type is unlimited — never refuse on it, however much has been taken.
   if (leaveType.annual_quota_days != null && input.usedDaysThisYear != null) {
     const approved = d1(input.usedDaysThisYear);
+    const carried = d1(input.carriedDaysThisYear ?? 0);
     const pendingRefs = [...(input.pendingThisYear ?? [])];
     const pending = d1(pendingRefs.reduce((sum, r) => sum + r.days, 0));
-    const total = d1(approved + pending + days);
+    const total = d1(approved + carried + pending + days);
     if (total > leaveType.annual_quota_days) {
       const quota: QuotaBreakdown = {
         quota: leaveType.annual_quota_days,
         approved,
+        carried,
         pending,
         requested: days,
         over: d1(total - leaveType.annual_quota_days),

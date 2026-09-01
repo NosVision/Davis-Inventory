@@ -175,6 +175,7 @@ export async function POST(request: NextRequest) {
     today,
     isProbation,
     usedDaysThisYear: quotaCtx.approved,
+    carriedDaysThisYear: quotaCtx.usedBeforeSystem,
     pendingThisYear: quotaCtx.pending,
   });
   if (!validation.ok) {

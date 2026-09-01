@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2, Inbox, FileText, CalendarRange, ListChecks, Search } from 'lucide-react';
-import { Button, Select, PageHeader, ViewToggle, useViewMode, DataList, DataCard, StatusBadge, SkeletonList, toast, usePromptDialog } from '@/components/ui';
+import { Button, Select, PageHeader, ViewToggle, useViewMode, DataList, DataCard, StatusBadge, SkeletonList, toast, usePromptDialog, Modal, ModalFooter } from '@/components/ui';
 import { matchesEmployeeSearch } from '@/lib/hr/employee-name';
 import { formatThaiDate } from '@/lib/utils/format';
 import { EmployeeName } from '@/components/hr/employee-name';
@@ -78,7 +78,10 @@ interface QuotaEmployee {
 interface QuotaBalance {
   employee_id: string;
   leave_type_id: string;
-  quota_days: number;
+  /** null = no per-person quota; the company default applies (00199). */
+  quota_days: number | null;
+  /** Days spent this year before the app recorded leave — imported from the payroll slips. */
+  used_before_system_days: number;
 }
 interface QuotaUsed {
   user_id: string;
@@ -131,6 +134,15 @@ export default function HrLeavesPage() {
   const [quota, setQuota] = useState<QuotaData | null>(null);
   const [quotaSearch, setQuotaSearch] = useState('');
   const [quotaLoading, setQuotaLoading] = useState(true);
+  // The cell editor holds TWO numbers now — the year's quota and the days already spent before
+  // the app recorded leave — so it is a small form, not a one-line prompt.
+  const [quotaEdit, setQuotaEdit] = useState<{
+    emp: QuotaEmployee;
+    ty: QuotaType;
+    quota: string;
+    carried: string;
+  } | null>(null);
+  const [quotaSaving, setQuotaSaving] = useState(false);
   const [mode, setMode] = useState<'requests' | 'quota'>('requests');
 
   const statusLabel = useCallback(
@@ -216,9 +228,21 @@ export default function HrLeavesPage() {
     (quota?.employees ?? []).forEach((e) => map.set(e.profile_id, e));
     return map;
   }, [quota]);
+  // Two independent facts share one row: the per-person quota (may be null → company default)
+  // and the days already spent before the app recorded leave.
   const balanceMap = useMemo(() => {
     const map = new Map<string, number>();
-    (quota?.balances ?? []).forEach((b) => map.set(`${b.employee_id}|${b.leave_type_id}`, b.quota_days));
+    (quota?.balances ?? []).forEach((b) => {
+      if (b.quota_days != null) map.set(`${b.employee_id}|${b.leave_type_id}`, b.quota_days);
+    });
+    return map;
+  }, [quota]);
+  const carriedMap = useMemo(() => {
+    const map = new Map<string, number>();
+    (quota?.balances ?? []).forEach((b) => {
+      const days = Number(b.used_before_system_days ?? 0);
+      if (days > 0) map.set(`${b.employee_id}|${b.leave_type_id}`, days);
+    });
     return map;
   }, [quota]);
   const usedByUserType = useMemo(() => {
@@ -315,64 +339,84 @@ export default function HrLeavesPage() {
       const override = emp ? balanceMap.get(`${emp.employee_id}|${leaveTypeId}`) : undefined;
       const effective = override ?? type.annual_quota_days;
       if (effective == null) return null;
-      const used = usedByUserType.get(`${profileId}|${leaveTypeId}`) ?? 0;
+      const carried = emp ? carriedMap.get(`${emp.employee_id}|${leaveTypeId}`) ?? 0 : 0;
+      // Days taken before the app existed are spent days — the approve decision is against what
+      // is genuinely left, not against what the app happens to have a request for.
+      const used = Math.round(((usedByUserType.get(`${profileId}|${leaveTypeId}`) ?? 0) + carried) * 10) / 10;
       const pending = pendingByUserType.get(`${profileId}|${leaveTypeId}`) ?? 0;
       return {
         quota: effective,
         used,
+        carried,
         pending,
         // What is genuinely left AFTER everything already claimed — the number the approve button
         // is really deciding against.
         remaining: Math.round((effective - used - pending) * 10) / 10,
       };
     },
-    [quota, employeeByProfile, balanceMap, usedByUserType, pendingByUserType]
+    [quota, employeeByProfile, balanceMap, carriedMap, usedByUserType, pendingByUserType]
   );
 
   const editQuota = useCallback(
-    async (emp: QuotaEmployee, ty: QuotaType) => {
+    (emp: QuotaEmployee, ty: QuotaType) => {
       if (!quota) return;
-      const current = balanceMap.get(`${emp.employee_id}|${ty.id}`);
-      // NOT required: submitting an empty value clears the override (falls back to the type default)
-      const input = await prompt({
-        title: t('setQuotaTitle'),
-        message: t('setQuotaPrompt', { name: emp.name, type: ty.name_th, year: String(quota.year) }),
-        inputType: 'number',
-        initialValue: current != null ? fmtDays(current) : '',
-        confirmLabel: t('save'),
-        cancelLabel: t('cancel'),
+      const currentQuota = balanceMap.get(`${emp.employee_id}|${ty.id}`);
+      const currentCarried = carriedMap.get(`${emp.employee_id}|${ty.id}`) ?? 0;
+      setQuotaEdit({
+        emp,
+        ty,
+        // Blank = no per-person quota; the company default applies.
+        quota: currentQuota != null ? fmtDays(currentQuota) : '',
+        carried: currentCarried > 0 ? fmtDays(currentCarried) : '',
       });
-      if (input === null) return;
-      const trimmed = input.trim();
-      let quotaDays: number | null = null;
-      if (trimmed !== '') {
-        const n = Number(trimmed);
-        if (!Number.isFinite(n) || n < 0 || n > MAX_QUOTA_DAYS) {
-          toast({ type: 'error', title: t('quotaInvalid') });
-          return;
-        }
-        quotaDays = n;
-      }
-      try {
-        const res = await fetch('/api/hr/leaves/quota', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            employee_id: emp.employee_id,
-            leave_type_id: ty.id,
-            year: quota.year,
-            quota_days: quotaDays,
-          }),
-        });
-        if (!res.ok) throw new Error();
-        toast({ type: 'success', title: t('quotaSaved') });
-        await loadQuota();
-      } catch {
-        toast({ type: 'error', title: t('quotaSaveFailed') });
-      }
     },
-    [quota, balanceMap, t, prompt, loadQuota]
+    [quota, balanceMap, carriedMap]
   );
+
+  /** 0–366 or blank; returns undefined when the text is neither. */
+  const parseDayField = (raw: string): number | null | undefined => {
+    const trimmed = raw.trim();
+    if (trimmed === '') return null;
+    const n = Number(trimmed);
+    if (!Number.isFinite(n) || n < 0 || n > MAX_QUOTA_DAYS) return undefined;
+    return Math.round(n * 10) / 10;
+  };
+
+  const saveQuotaEdit = useCallback(async () => {
+    if (!quota || !quotaEdit) return;
+    const quotaDays = parseDayField(quotaEdit.quota);
+    if (quotaDays === undefined) {
+      toast({ type: 'error', title: t('quotaInvalid') });
+      return;
+    }
+    const carriedDays = parseDayField(quotaEdit.carried);
+    if (carriedDays === undefined) {
+      toast({ type: 'error', title: t('carriedInvalid') });
+      return;
+    }
+    setQuotaSaving(true);
+    try {
+      const res = await fetch('/api/hr/leaves/quota', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employee_id: quotaEdit.emp.employee_id,
+          leave_type_id: quotaEdit.ty.id,
+          year: quota.year,
+          quota_days: quotaDays,
+          used_before_system_days: carriedDays ?? 0,
+        }),
+      });
+      if (!res.ok) throw new Error();
+      toast({ type: 'success', title: t('quotaSaved') });
+      setQuotaEdit(null);
+      await loadQuota();
+    } catch {
+      toast({ type: 'error', title: t('quotaSaveFailed') });
+    } finally {
+      setQuotaSaving(false);
+    }
+  }, [quota, quotaEdit, t, loadQuota]);
 
   const decide = useCallback(
     async (id: string, decision: 'approved' | 'rejected', note?: string) => {
@@ -513,7 +557,8 @@ export default function HrLeavesPage() {
             : 'border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-600 dark:bg-gray-700/60 dark:text-gray-300'
         }`}
       >
-        โควตา {fmtDays(info.quota)} · อนุมัติแล้ว {fmtDays(info.used)}
+        โควตา {fmtDays(info.quota)} · ใช้ไปแล้ว {fmtDays(info.used)}
+        {info.carried > 0 && <> (ก่อนเข้าระบบ {fmtDays(info.carried)})</>}
         {info.pending > 0 && <> · รออนุมัติ {fmtDays(info.pending)}</>} · คงเหลือ{' '}
         {fmtDays(remainingExcludingThis)} · ใบนี้ขอ {fmtDays(r.days)}
         {over && <> → เกิน {fmtDays(Math.round((r.days - remainingExcludingThis) * 10) / 10)} วัน</>}
@@ -636,19 +681,33 @@ export default function HrLeavesPage() {
                       }
                       const override = balanceMap.get(`${emp.employee_id}|${ty.id}`);
                       const effective = override ?? ty.annual_quota_days;
-                      const used = usedByUserType.get(`${emp.profile_id}|${ty.id}`) ?? 0;
+                      // Used = what the app recorded PLUS what was already spent before it did
+                      // (00199). Counting only app requests showed sixteen people their whole
+                      // vacation as untouched after they had taken it (owner report 2026-09-02).
+                      const carried = carriedMap.get(`${emp.employee_id}|${ty.id}`) ?? 0;
+                      const inApp = usedByUserType.get(`${emp.profile_id}|${ty.id}`) ?? 0;
+                      const used = Math.round((inApp + carried) * 10) / 10;
                       const remaining = effective == null ? null : Math.round((effective - used) * 10) / 10;
                       return (
                         <td key={g.code} className="px-2 py-1.5 text-center">
                           <button
                             type="button"
                             onClick={() => editQuota(emp, ty)}
-                            title={t('setQuotaTitle')}
+                            title={
+                              carried > 0
+                                ? `${t('setQuotaTitle')}\nใช้ไปก่อนเข้าระบบ ${fmtDays(carried)} วัน + ในระบบ ${fmtDays(inApp)} วัน`
+                                : t('setQuotaTitle')
+                            }
                             className={`font-medium tabular-nums hover:underline ${
                               remaining == null ? 'text-gray-400 dark:text-gray-500' : remainingClass(remaining)
                             }`}
                           >
                             {effective != null ? `${fmtDays(used)}/${fmtDays(effective)}` : '—'}
+                            {carried > 0 && (
+                              <span className="ml-0.5 align-super text-[9px] text-gray-400 dark:text-gray-500">
+                                ◦
+                              </span>
+                            )}
                           </button>
                         </td>
                       );
@@ -825,6 +884,70 @@ export default function HrLeavesPage() {
       )}
 
       {promptDialog}
+
+      {quotaEdit && quota && (
+        <Modal isOpen onClose={() => setQuotaEdit(null)} title={t('setQuotaTitle')} size="sm">
+          <p className="mb-3 text-sm text-gray-600 dark:text-gray-300">
+            {t('quotaEditSubject', {
+              name: quotaEdit.emp.name,
+              type: quotaEdit.ty.name_th,
+              year: String(quota.year),
+            })}
+          </p>
+          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400" htmlFor="quota-days">
+            {t('quotaFieldLabel')}
+          </label>
+          <input
+            id="quota-days"
+            type="number"
+            inputMode="decimal"
+            step="any"
+            autoFocus
+            value={quotaEdit.quota}
+            onChange={(e) => setQuotaEdit({ ...quotaEdit, quota: e.target.value })}
+            placeholder={quotaEdit.ty.annual_quota_days != null ? fmtDays(quotaEdit.ty.annual_quota_days) : '—'}
+            className="control mt-1 w-full"
+          />
+          <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">
+            {t('quotaFieldHint', {
+              default:
+                quotaEdit.ty.annual_quota_days != null ? fmtDays(quotaEdit.ty.annual_quota_days) : '—',
+            })}
+          </p>
+
+          <label
+            className="mt-4 block text-xs font-medium text-gray-500 dark:text-gray-400"
+            htmlFor="quota-carried"
+          >
+            {t('carriedFieldLabel')}
+          </label>
+          <input
+            id="quota-carried"
+            type="number"
+            inputMode="decimal"
+            step="any"
+            value={quotaEdit.carried}
+            onChange={(e) => setQuotaEdit({ ...quotaEdit, carried: e.target.value })}
+            placeholder="0"
+            className="control mt-1 w-full"
+          />
+          <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">{t('carriedFieldHint')}</p>
+          <p className="mt-3 text-[11px] text-gray-500 dark:text-gray-400">
+            {t('quotaEditUsage', {
+              inApp: fmtDays(usedByUserType.get(`${quotaEdit.emp.profile_id}|${quotaEdit.ty.id}`) ?? 0),
+            })}
+          </p>
+
+          <ModalFooter>
+            <Button variant="ghost" onClick={() => setQuotaEdit(null)} disabled={quotaSaving}>
+              {t('cancel')}
+            </Button>
+            <Button onClick={saveQuotaEdit} disabled={quotaSaving}>
+              {quotaSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : t('save')}
+            </Button>
+          </ModalFooter>
+        </Modal>
+      )}
     </div>
   );
 }

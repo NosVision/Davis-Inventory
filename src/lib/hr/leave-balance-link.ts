@@ -33,7 +33,9 @@ interface StagedRow {
   id: string;
   leave_type_code: string;
   year: number;
-  quota_days: number;
+  /** null since 00199 = no per-person quota, only the carried used-days below. */
+  quota_days: number | null;
+  used_before_system_days: number | null;
   note: string | null;
 }
 
@@ -51,7 +53,7 @@ export async function applyPendingLeaveBalances(
   try {
     const { data: stagedRows, error: stagedErr } = await service
       .from('hr_pending_leave_balances')
-      .select('id, leave_type_code, year, quota_days, note')
+      .select('id, leave_type_code, year, quota_days, used_before_system_days, note')
       .eq('pending_identity_id', pendingIdentityId)
       .is('consumed_at', null);
     if (stagedErr) {
@@ -99,6 +101,7 @@ export async function applyPendingLeaveBalances(
             leave_type_id: leaveTypeId,
             year: row.year,
             quota_days: row.quota_days,
+            used_before_system_days: row.used_before_system_days ?? 0,
             note: row.note,
           },
           { onConflict: 'employee_id,leave_type_id,year' }

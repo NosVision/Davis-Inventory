@@ -150,11 +150,13 @@ export async function POST(
       });
       if (ctx.effectiveQuota != null) {
         const pendingDays = ctx.pending.reduce((sum, r) => sum + r.days, 0);
-        const total = Math.round((ctx.approved + pendingDays + days) * 10) / 10;
+        const total =
+          Math.round((ctx.approved + ctx.usedBeforeSystem + pendingDays + days) * 10) / 10;
         if (total > ctx.effectiveQuota) {
           const breakdown: QuotaBreakdown = {
             quota: ctx.effectiveQuota,
             approved: ctx.approved,
+            carried: ctx.usedBeforeSystem,
             pending: Math.round(pendingDays * 10) / 10,
             requested: days,
             over: Math.round((total - ctx.effectiveQuota) * 10) / 10,

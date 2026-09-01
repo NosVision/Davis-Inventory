@@ -62,7 +62,8 @@ interface SummaryType {
   name_th: string;
   name_en: string;
   quota: number | null; // effective (override ?? type default); null = unlimited
-  used: number;
+  used: number; // approved requests + `carried` below
+  carried: number; // of `used`: days taken this year before the app recorded leave (00199)
   pending: number; // days sitting in the approval queue — already held against the quota
   remaining: number | null; // quota − used − pending
 }
@@ -287,6 +288,13 @@ export default function MyLeavesPage() {
                         used: fmtDays(ty.used),
                       })}
                     </p>
+                    {ty.carried > 0 && (
+                      // Otherwise the card says "ใช้ไป 6 วัน" over a leave history with nothing in
+                      // it — those days were taken before the app started recording requests.
+                      <p className="mt-0.5 text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
+                        รวมวันที่ใช้ไปก่อนเริ่มใช้ระบบ {fmtDays(ty.carried)} วัน
+                      </p>
+                    )}
                     {ty.pending > 0 && (
                       <p className="mt-0.5 text-[11px] tabular-nums text-amber-600 dark:text-amber-400">
                         รออนุมัติอีก {fmtDays(ty.pending)} วัน — กันยอดไว้แล้ว

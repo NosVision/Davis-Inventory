@@ -128,19 +128,27 @@ export async function GET(request: NextRequest) {
   const employeeIds = employees.map((e) => e.employee_id);
   const profileIds = employees.map((e) => e.profile_id);
 
-  // Per-employee quota overrides for the year (effective quota = balance ?? annual_quota_days).
-  let balances: Array<{ employee_id: string; leave_type_id: string; quota_days: number }> = [];
+  // Per-employee quota overrides for the year (effective quota = balance ?? annual_quota_days),
+  // plus the days already spent before the app recorded leave (00199). quota_days may be NULL:
+  // a row that carries only used_before_system_days leaves the company default in force.
+  let balances: Array<{
+    employee_id: string;
+    leave_type_id: string;
+    quota_days: number | null;
+    used_before_system_days: number;
+  }> = [];
   if (employeeIds.length) {
     const { data, error } = await service
       .from(TABLE)
-      .select('employee_id, leave_type_id, quota_days')
+      .select('employee_id, leave_type_id, quota_days, used_before_system_days')
       .in('employee_id', employeeIds)
       .eq('year', year);
     if (error) return NextResponse.json({ error: 'Failed to load quota overrides' }, { status: 500 });
     balances = (data ?? []).map((b) => ({
       employee_id: b.employee_id as string,
       leave_type_id: b.leave_type_id as string,
-      quota_days: Number(b.quota_days),
+      quota_days: b.quota_days == null ? null : Number(b.quota_days),
+      used_before_system_days: Math.round(Number(b.used_before_system_days ?? 0) * 10) / 10,
     }));
   }
 
@@ -221,19 +229,30 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid year' }, { status: 400 });
   }
 
-  // quota_days: null/'' clears the override; otherwise a number 0–366 (numeric(5,1) → 1 decimal).
-  const raw = body.quota_days;
-  const isClear = raw == null || raw === '';
-  let quotaDays: number | null = null;
-  if (!isClear) {
+  // Days 0–366 (numeric(5,1) → 1 decimal), or null when the field is cleared.
+  const parseDays = (raw: unknown, field: string): number | null | { error: string } => {
+    if (raw == null || raw === '') return null;
     const n = typeof raw === 'number' ? raw : Number(raw);
     if (!Number.isFinite(n) || n < 0 || n > MAX_QUOTA_DAYS) {
-      return NextResponse.json(
-        { error: `quota_days must be a number between 0 and ${MAX_QUOTA_DAYS}` },
-        { status: 400 }
-      );
+      return { error: `${field} must be a number between 0 and ${MAX_QUOTA_DAYS}` };
     }
-    quotaDays = Math.round(n * 10) / 10;
+    return Math.round(n * 10) / 10;
+  };
+
+  // quota_days: null/'' clears the override and the company default takes over again.
+  const quotaParsed = parseDays(body.quota_days, 'quota_days');
+  if (quotaParsed !== null && typeof quotaParsed === 'object') {
+    return NextResponse.json({ error: quotaParsed.error }, { status: 400 });
+  }
+  const quotaDays = quotaParsed;
+
+  // used_before_system_days (00199): days spent this year before the app recorded leave. Omitting
+  // the key leaves whatever is stored alone — the quota editor must not silently wipe the opening
+  // balance the backfill wrote.
+  const carriedGiven = Object.prototype.hasOwnProperty.call(body, 'used_before_system_days');
+  const carriedParsed = parseDays(body.used_before_system_days, 'used_before_system_days');
+  if (carriedParsed !== null && typeof carriedParsed === 'object') {
+    return NextResponse.json({ error: carriedParsed.error }, { status: 400 });
   }
 
   const service = createServiceClient();
@@ -274,7 +293,12 @@ export async function PUT(request: NextRequest) {
   if (beforeErr) return NextResponse.json({ error: 'Failed to load current quota' }, { status: 500 });
   const beforeRow = before as ({ id: string } & Record<string, unknown>) | null;
 
-  if (isClear) {
+  const carriedDays = carriedGiven
+    ? carriedParsed ?? 0
+    : Math.round(Number(beforeRow?.used_before_system_days ?? 0) * 10) / 10;
+
+  // Nothing left worth a row: no per-person quota AND no days carried in from before the system.
+  if (quotaDays == null && carriedDays === 0) {
     if (!beforeRow) return NextResponse.json({ data: null });
     const { error: delErr } = await service.from(TABLE).delete().eq('id', beforeRow.id);
     if (delErr) return NextResponse.json({ error: 'Failed to clear quota' }, { status: 500 });
@@ -298,7 +322,10 @@ export async function PUT(request: NextRequest) {
         leave_type_id: leaveTypeId,
         year,
         quota_days: quotaDays,
-        note,
+        used_before_system_days: carriedDays,
+        // No note in this request keeps the one already there — otherwise saving a quota erases
+        // the provenance the sheet import / backfill wrote ("sheet import: …", "backfill 00199: …").
+        note: note ?? ((beforeRow?.note as string | null) ?? null),
         updated_by: auth.userId,
         updated_at: new Date().toISOString(),
       },
@@ -322,7 +349,10 @@ export async function PUT(request: NextRequest) {
     recordId: savedRow.id,
     before: beforeRow,
     after: savedRow,
-    reason: note ?? `Set leave quota ${quotaDays} days (${year})`,
+    reason:
+      note ??
+      `Set leave quota ${quotaDays == null ? '(default)' : quotaDays} days, ` +
+        `used before system ${carriedDays} days (${year})`,
   });
 
   return NextResponse.json({ data: savedRow });
