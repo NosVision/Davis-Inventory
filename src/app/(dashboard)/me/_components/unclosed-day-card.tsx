@@ -4,7 +4,14 @@ import { useState } from 'react';
 import { AlertTriangle, Loader2, Send } from 'lucide-react';
 import { Button, toast } from '@/components/ui';
 import { formatTimeBangkok } from '@/lib/utils/date';
-import { businessDayInstant, BUSINESS_DAY_CUTOFF_HOUR } from '@/lib/hr/attendance-window';
+import { formatDmy } from '@/lib/utils/format';
+import {
+  closingInstantAfter,
+  isSpanTooLong,
+  BUSINESS_DAY_CUTOFF_HOUR,
+  CLOSING_PUNCH_TAIL_HOURS,
+  MAX_SHIFT_SPAN_HOURS,
+} from '@/lib/hr/attendance-window';
 
 /**
  * The blocking card shown on /me/checkin when an earlier day was never checked out.
@@ -28,11 +35,6 @@ export interface OpenDay {
   existing_request: { id: string; status: string } | null;
 }
 
-function dmy(date: string): string {
-  const [y, m, d] = date.slice(0, 10).split('-');
-  return y && m && d ? `${d}/${m}/${y}` : date;
-}
-
 /**
  * The Bangkok wall-clock 'HH:mm' of an instant — what `<input type="time">` wants.
  *
@@ -41,6 +43,20 @@ function dmy(date: string): string {
  */
 function toTimeInput(iso: string): string {
   return new Date(new Date(iso).getTime() + 7 * 3_600_000).toISOString().slice(11, 16);
+}
+
+/** The Bangkok calendar date an instant falls on — same arithmetic, same reason. */
+function toBangkokDate(iso: string): string {
+  return new Date(new Date(iso).getTime() + 7 * 3_600_000).toISOString().slice(0, 10);
+}
+
+/** "16 ชม. 30 น." — the span the employee is about to claim, so a wrong time is obvious. */
+function spanLabel(fromIso: string, toIso: string): string {
+  const min = Math.round((new Date(toIso).getTime() - new Date(fromIso).getTime()) / 60_000);
+  if (!Number.isFinite(min) || min <= 0) return '—';
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m ? `${h} ชม. ${m} น.` : `${h} ชม.`;
 }
 
 export function UnclosedDayCard({ days, onFiled }: { days: OpenDay[]; onFiled: () => void }) {
@@ -79,21 +95,46 @@ function DayCloseForm({
   );
   const [sending, setSending] = useState(false);
 
-  // A shift ending in the small hours belongs to this business day but the NEXT calendar one; say
-  // so, or "ออก 02:00 ของวันที่ 20" looks like a typo.
-  const spillsToNextDay = Number(outTime.slice(0, 2)) < BUSINESS_DAY_CUTOFF_HOUR;
+  // Which INSTANT the typed time means. A night shift ends on the next calendar day — after
+  // midnight (02:00) and sometimes after sunrise (10:30) — so a time that would land before the
+  // check-in is read as the next morning, not as an impossible earlier one. The resolved date is
+  // then shown below the field: the employee confirms it instead of the form deciding silently.
+  const proposedTs = closingInstantAfter(day.business_date, outTime, day.in_ts);
+  const spillsToNextDay = toBangkokDate(proposedTs) !== day.business_date;
+  const outHour = Number(outTime.slice(0, 2));
+  // Beyond this the punch stops belonging to that shift at all (server: OFF_BUSINESS_DATE_OUT).
+  const pastWindow =
+    spillsToNextDay && outHour >= BUSINESS_DAY_CUTOFF_HOUR + CLOSING_PUNCH_TAIL_HOURS;
+  // A time typed before a MORNING shift's own check-in resolves to the next day and would claim
+  // most of a day's work. Flag it here rather than let payroll pay it.
+  const tooLong = !pastWindow && isSpanTooLong(day.in_ts, proposedTs);
 
   const submit = async () => {
     if (!reason.trim()) {
       toast({ type: 'error', title: 'กรุณากรอกเหตุผล' });
       return;
     }
-    const proposedTs = businessDayInstant(day.business_date, outTime);
+    if (pastWindow) {
+      toast({
+        type: 'error',
+        title: 'เวลาออกงานเลยกะของวันนั้นไปแล้ว',
+        message: `กะของวันที่ ${formatDmy(day.business_date)} ออกงานได้ถึง 12:00 ของวันถัดไป — ถ้าออกช้ากว่านั้นจริง แจ้ง HR ให้แก้ให้`,
+      });
+      return;
+    }
     if (new Date(proposedTs).getTime() <= new Date(day.in_ts).getTime()) {
       toast({
         type: 'error',
         title: 'เวลาออกงานต้องอยู่หลังเวลาเข้างาน',
         message: `วันนั้นเข้างาน ${formatTimeBangkok(day.in_ts)}`,
+      });
+      return;
+    }
+    if (tooLong) {
+      toast({
+        type: 'error',
+        title: `ช่วงเวลาทำงานยาวเกิน ${MAX_SHIFT_SPAN_HOURS} ชั่วโมง`,
+        message: `วันนั้นเข้างาน ${formatTimeBangkok(day.in_ts)} — ตรวจเวลาที่กรอกอีกครั้ง`,
       });
       return;
     }
@@ -146,7 +187,7 @@ function DayCloseForm({
       <div className="rounded-xl bg-white px-3 py-2 text-sm dark:bg-gray-800">
         <div className="flex flex-wrap items-baseline justify-between gap-x-3">
           <span className="font-semibold tabular-nums text-gray-900 dark:text-white">
-            {dmy(day.business_date)}
+            {formatDmy(day.business_date)}
           </span>
           <span className="text-xs tabular-nums text-gray-500 dark:text-gray-400">
             เข้างาน {formatTimeBangkok(day.in_ts)}
@@ -165,7 +206,7 @@ function DayCloseForm({
           htmlFor="unclosed-out-time"
           className="block text-xs font-medium text-amber-900 dark:text-amber-200"
         >
-          ออกงานจริงกี่โมง — วันที่ {dmy(day.business_date)}
+          ออกงานจริงกี่โมง — กะของวันที่ {formatDmy(day.business_date)}
         </label>
         {/* `w-auto` on purpose: a time field sized to its own content stays inside the screen on a
             phone, where a full-width one stretched past the edge. */}
@@ -176,12 +217,23 @@ function DayCloseForm({
           onChange={(e) => setOutTime(e.target.value)}
           className="control mt-1 w-auto max-w-full text-base tabular-nums"
         />
-        <p className="mt-1 text-[11px] text-amber-700/80 dark:text-amber-400/80">
-          {spillsToNextDay
-            ? `นับเป็นกะของวันที่ ${dmy(day.business_date)} (เลิกหลังเที่ยงคืน)`
-            : day.suggested_out_ts
-              ? 'เติมเวลาเลิกกะตามตารางให้แล้ว — แก้ได้ถ้าออกจริงคนละเวลา'
-              : 'ใส่เวลาที่ออกงานจริงของวันนั้น'}
+        {/* What the typed time actually resolves to. A night shift's out lands on the next calendar
+            day, and "ออก 10:30" with no date beside it is exactly what made this look broken. */}
+        <p
+          className={`mt-1 text-[11px] tabular-nums ${
+            pastWindow || tooLong
+              ? 'font-medium text-red-600 dark:text-red-400'
+              : 'text-amber-800 dark:text-amber-300'
+          }`}
+        >
+          {pastWindow
+            ? `ออกงาน ${formatDmy(toBangkokDate(proposedTs))} ${outTime} — เลยกะของวันนั้นแล้ว (ได้ถึง 12:00 ของวันถัดไป)`
+            : `ออกงาน ${formatDmy(toBangkokDate(proposedTs))} ${outTime}${spillsToNextDay ? ' (วันถัดไป)' : ''} · รวม ${spanLabel(day.in_ts, proposedTs)}${tooLong ? ' — ยาวผิดปกติ ตรวจอีกครั้ง' : ''}`}
+        </p>
+        <p className="mt-0.5 text-[11px] text-amber-700/80 dark:text-amber-400/80">
+          {day.suggested_out_ts
+            ? 'เติมเวลาเลิกกะตามตารางให้แล้ว — แก้ได้ถ้าออกจริงคนละเวลา'
+            : 'ใส่เวลาที่ออกงานจริงของวันนั้น'}
         </p>
       </div>
 

@@ -5,8 +5,12 @@ import {
   isFutureAttendanceDate,
   FUTURE_ATTENDANCE_ERROR,
   isInstantOnBusinessDate,
+  isClosingPunchType,
+  isSpanTooLong,
   OFF_BUSINESS_DATE_ERROR,
+  OFF_BUSINESS_DATE_OUT_ERROR,
   OUT_BEFORE_IN_ERROR,
+  SHIFT_TOO_LONG_ERROR,
 } from '@/lib/hr/attendance-window';
 import { businessDateBangkok } from '@/lib/utils/date';
 
@@ -105,8 +109,13 @@ export async function POST(request: NextRequest) {
     // 20/07 19:00 check-OUT onto business dates 24/08 and 25/08 — an out a month BEFORE its own
     // check-in, which pairs with nothing, so the day stayed "ไม่ได้ลงเวลาออก" with no worked
     // minutes and the employee saw their filed, approved correction change nothing (May, 26/08).
-    if (!isInstantOnBusinessDate(proposedTs, businessDate)) {
-      return NextResponse.json({ error: OFF_BUSINESS_DATE_ERROR }, { status: 400 });
+    // A closing punch gets the wider tail: a night shift may end after the 06:00 cutoff.
+    const closing = isClosingPunchType(proposedType);
+    if (!isInstantOnBusinessDate(proposedTs, businessDate, { closingPunch: closing })) {
+      return NextResponse.json(
+        { error: closing ? OFF_BUSINESS_DATE_OUT_ERROR : OFF_BUSINESS_DATE_ERROR },
+        { status: 400 }
+      );
     }
   } else if (kind === 'wrong_time') {
     if (!targetAttendanceId) {
@@ -121,15 +130,13 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    if (!isInstantOnBusinessDate(proposedTs, businessDate)) {
-      return NextResponse.json({ error: OFF_BUSINESS_DATE_ERROR }, { status: 400 });
-    }
-
     // Authz-critical: the referenced punch must belong to the requesting user, or an
     // attacker could reference (and get corrected into) someone else's attendance row.
+    // Loaded BEFORE the window check because the punch's own type decides how wide that window
+    // is — correcting the time of an out may legitimately land after the 06:00 cutoff.
     const { data: target, error: targetErr } = await service
       .from('hr_attendance')
-      .select('id, user_id, store_id')
+      .select('id, user_id, store_id, type')
       .eq('id', targetAttendanceId)
       .maybeSingle();
     if (targetErr) {
@@ -140,6 +147,13 @@ export async function POST(request: NextRequest) {
     }
     if ((target.user_id as string) !== user.id) {
       return NextResponse.json({ error: 'not your attendance record' }, { status: 400 });
+    }
+    const closing = isClosingPunchType(target.type as string | null);
+    if (!isInstantOnBusinessDate(proposedTs, businessDate, { closingPunch: closing })) {
+      return NextResponse.json(
+        { error: closing ? OFF_BUSINESS_DATE_OUT_ERROR : OFF_BUSINESS_DATE_ERROR },
+        { status: 400 }
+      );
     }
     storeId = (target.store_id as string | null) ?? null;
   }
@@ -176,6 +190,11 @@ export async function POST(request: NextRequest) {
     const inTs = (firstIn as { ts: string } | null)?.ts;
     if (inTs && new Date(proposedTs).getTime() <= new Date(inTs).getTime()) {
       return NextResponse.json({ error: OUT_BEFORE_IN_ERROR }, { status: 400 });
+    }
+    // …and not absurdly after it either: the widened closing window is bounded by the clock, so a
+    // morning shift could otherwise claim into the next day's noon.
+    if (inTs && isSpanTooLong(inTs, proposedTs)) {
+      return NextResponse.json({ error: SHIFT_TOO_LONG_ERROR }, { status: 400 });
     }
   }
 
