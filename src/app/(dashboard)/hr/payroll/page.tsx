@@ -20,7 +20,6 @@ import {
 import { RecurringModal } from './_components/recurring-modal';
 import { TaxAllowanceModal } from './_components/tax-allowance-modal';
 import { AdjustmentsPanel, type AdjustmentRow, type AdjustmentsPrevious } from './_components/adjustments-panel';
-import { PayrunByStore, type StoreRef } from './_components/payrun-by-store';
 import { PeriodSlices, type CoverageData } from './_components/period-slices';
 import { RecurringGrid } from './recurring/_components/recurring-grid';
 
@@ -69,8 +68,6 @@ interface PayslipSummary {
   other_ded_satang?: number;
   has_tax_override?: boolean;
   remark?: string | null;
-  /** Venues this person is a member of — drives the per-store reading of the register. */
-  stores?: StoreRef[];
 }
 interface ReviewInfo {
   created_at: string;
@@ -198,10 +195,6 @@ export default function HrPayrollPage() {
   // draft payrun, recompute silently on close so ค่าเดินทาง ฯลฯ shows up without a hidden button.
   const [recurringDirty, setRecurringDirty] = useState(false);
   const [taxAllowFor, setTaxAllowFor] = useState<{ employeeId: string; name: string } | null>(null);
-
-  // How to read the register: by person (the original) or grouped by venue. Purely a presentation
-  // switch over slips already loaded — no refetch, no effect on the run.
-  const [registerView, setRegisterView] = useState<'list' | 'store'>('list');
 
   // The period's slices — what this company owes this period and which of it exists. Loaded here
   // rather than inside the panel because generating from a card has to refresh it immediately.
@@ -1171,40 +1164,16 @@ export default function HrPayrollPage() {
                     <StatTile label={t('colNet')} value={<MoneyValue satang={detail.totals.net} emphasis="hero" tone="good" />} icon={Coins} tone="good" />
                   </KpiRow>
 
-                  {/* Read the same slips by person or by venue. Presentation only — the run,
-                      its totals and every action are untouched by this switch. */}
-                  <div className="inline-flex items-center gap-0.5 rounded-lg bg-gray-100 p-0.5 dark:bg-gray-800">
-                    {([
-                      { key: 'list' as const, label: isTh ? 'รายชื่อ' : 'By person' },
-                      { key: 'store' as const, label: isTh ? 'รายสาขา' : 'By venue' },
-                    ]).map(({ key, label }) => (
-                      <button
-                        key={key}
-                        type="button"
-                        onClick={() => setRegisterView(key)}
-                        aria-pressed={registerView === key}
-                        className={cn(
-                          'rounded-md px-2.5 py-1 text-xs font-semibold transition-colors',
-                          registerView === key
-                            ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-700 dark:text-indigo-300'
-                            : 'text-gray-500 dark:text-gray-400'
-                        )}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
+                  {/* Capped height so the column headers pin: the register is 13 money columns wide
+                      and one row per employee deep, and scrolling past the header leaves a wall of
+                      unlabelled figures (owner ask 2026-08-17).
 
-                  {registerView === 'store' ? (
-                    <PayrunByStore
-                      payslips={detail.payslips}
-                      totals={{ gross: detail.totals.gross, net: detail.totals.net }}
-                      isTh={isTh}
-                    />
-                  ) : (
-                  // Capped height so the column headers pin: the register is 13 money columns wide
-                  // and one row per employee deep, and scrolling past the header leaves a wall of
-                  // unlabelled figures (owner ask 2026-08-17).
+                      There is deliberately no per-venue reading of this register. Payroll is run on
+                      (company × payroll group) and nothing else, so a venue axis here could only be
+                      inferred — from roster/punch evidence, which put the accounting team under the
+                      venue they happened to be scheduled at and dropped the four with no evidence at
+                      all into a no-venue bucket (owner report 2026-09-04). Read a venue on the
+                      timesheet, which is genuinely store-scoped; money is read by company. */}
                   <div className="max-h-[70vh] overflow-auto rounded-xl border border-gray-200 dark:border-gray-700">
                     <table className="w-full min-w-[64rem] text-sm">
                       <thead className="sticky top-0 z-10 bg-gray-50 text-left text-xs font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
@@ -1377,7 +1346,6 @@ export default function HrPayrollPage() {
                       </tfoot>
                     </table>
                   </div>
-                  )}
 
                   {/* ④ paper print queue: standing prefs + per-slip requests — collapsed by default */}
                   {printQueue.length > 0 && (
