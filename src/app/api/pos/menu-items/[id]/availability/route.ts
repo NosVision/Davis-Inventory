@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { isCrossVenueRole } from '@/types/roles';
 
 interface Body {
   available?: boolean;
@@ -29,9 +30,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const storeId = (mi as { store_id?: string } | null)?.store_id;
   if (!storeId) return NextResponse.json({ error: 'ไม่พบเมนู' }, { status: 404 });
 
-  // สิทธิ์: เจ้าของ หรือ เป็นสมาชิกของสาขานั้น
+  // สิทธิ์: role ข้ามสาขา (เจ้าของ/บัญชี/จัดซื้อ/HR) หรือ เป็นสมาชิกของสาขานั้น
   const { data: prof } = await supabase.from('profiles').select('role').eq('id', user.id).single();
-  if ((prof as { role?: string } | null)?.role !== 'owner') {
+  if (!isCrossVenueRole((prof as { role?: string } | null)?.role)) {
     const { data: us } = await supabase
       .from('user_stores')
       .select('store_id')

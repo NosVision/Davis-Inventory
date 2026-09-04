@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { isDesktopRole } from '@/lib/auth/permissions';
 import type { UserRole } from '@/types/roles';
 import type { Store, UserPermission } from '@/types/database';
-import type { Permission } from '@/types/roles';
+import { isCrossVenueRole, type Permission } from '@/types/roles';
 import { DashboardLayoutClient } from './layout-client';
 import { PasswordChangeBanner } from '@/components/layout/password-change-banner';
 import { IdentityClaimModal } from '@/components/hr/identity-claim-modal';
@@ -68,8 +68,9 @@ export default async function DashboardLayout({
   // venue sees, which is the behaviour asked for. HR's own pages query stores directly and still
   // list it (owner ask 2026-08-18).
   let stores: Store[] = [];
-  if (profile.role === 'owner' || profile.role === 'accountant' || profile.role === 'hq' || profile.role === 'hr') {
-    // เจ้าของ / บัญชี / คลังกลาง / ฝ่ายบุคคล เห็นทุกสาขา (hr เป็น role ข้ามสาขา ไม่ผูกกับ user_stores)
+  if (isCrossVenueRole(profile.role)) {
+    // เจ้าของ / บัญชี / คลังกลาง / ฝ่ายบุคคล เห็นทุกสาขา — role ข้ามสาขา ไม่ผูกกับ user_stores
+    // (CROSS_VENUE_ROLES มิเรอร์ SQL is_admin() ไว้ที่เดียว ดู src/types/roles.ts)
     const { data } = await supabase
       .from('stores')
       .select('*')

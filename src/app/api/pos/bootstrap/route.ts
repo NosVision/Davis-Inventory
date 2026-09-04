@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { isCrossVenueRole } from '@/types/roles';
 
 // GET /api/pos/bootstrap?storeId= — โหลดข้อมูลหน้าจอ POS (สาขา/โซน/โต๊ะ/เมนู/บิลที่เปิดอยู่)
 export async function GET(request: NextRequest) {
@@ -13,7 +14,8 @@ export async function GET(request: NextRequest) {
   const storeId = request.nextUrl.searchParams.get('storeId');
 
   const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
-  const isOwner = profile?.role === 'owner';
+  // Cross-venue roles see every venue's POS; everyone else only the venues they are a member of.
+  const seesEveryVenue = isCrossVenueRole(profile?.role as string | undefined);
 
   const { data: storesData } = await supabase
     .from('stores')
@@ -24,7 +26,7 @@ export async function GET(request: NextRequest) {
     id: s.id,
     name: s.store_name,
   }));
-  if (!isOwner) {
+  if (!seesEveryVenue) {
     const { data: us } = await supabase.from('user_stores').select('store_id').eq('user_id', user.id);
     const allowed = new Set(((us as { store_id: string }[]) ?? []).map((r) => r.store_id));
     stores = stores.filter((s) => allowed.has(s.id));
