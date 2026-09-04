@@ -318,13 +318,29 @@ export async function notifyUser(params: NotifyUserParams): Promise<void> {
 // ---------------------------------------------------------------------------
 
 /**
+ * Who a store notification reaches when the caller names no roles: the people who work the venue.
+ *
+ * Exported so a caller that needs ONE more role can append rather than restate the list — restating
+ * it is how a notification quietly stops reaching the venue staff it was written for.
+ */
+export const STORE_STAFF_ROLES = ['staff', 'bar', 'head_bar', 'manager'] as const;
+
+/**
  * Send a notification to all staff and bar members of a store.
+ *
+ * Recipients are the intersection of `roles` and the store's `user_stores` members — deliberately,
+ * because this is "tell the people at this venue", and a head-office role is not enumerated per
+ * venue (see CROSS_VENUE_ROLES in types/roles.ts, which governs ACCESS and must not be read as a
+ * notification list: there are 17 accountants, and unioning them in would put every venue's every
+ * event in all 17 inboxes). To reach head office, name their role AND make sure they are a member
+ * of the venue the message is about — which for the central warehouse is a true statement about
+ * where they work, not a workaround.
  *
  * @param params.excludeUserId - Skip this user (e.g. the person who triggered the action)
  */
 export async function notifyStoreStaff(params: NotifyGroupParams): Promise<void> {
   const { storeId, type, title, body, data, excludeUserId, roles } = params;
-  const targetRoles = roles || ['staff', 'bar', 'head_bar', 'manager'];
+  const targetRoles = roles || [...STORE_STAFF_ROLES];
 
   try {
     const supabase = createServiceClient();

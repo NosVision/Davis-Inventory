@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { getInvContext, isInvMgmt } from '@/lib/inventory/guard';
-import { notifyStoreStaff } from '@/lib/notifications/service';
+import { notifyStoreStaff, STORE_STAFF_ROLES } from '@/lib/notifications/service';
 import { sendBotMessage } from '@/lib/chat/bot';
 
 const PO_SELECT =
@@ -92,6 +92,8 @@ export async function POST(request: NextRequest) {
         body: `${poCode} · ${items.length} รายการ`,
         data: { poId: po.id, url: '/inventory' },
         excludeUserId: user.id,
+        // + จัดซื้อ (hq) — เจ้าของงาน PO ที่ role ปริยายของคลังกลางไม่เคยครอบถึง
+        roles: [...STORE_STAFF_ROLES, 'hq'],
       });
     } catch {
       // ignore
