@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
-import { notifyStoreStaff } from '@/lib/notifications/service';
+import { notifyStoreStaff, STORE_STAFF_ROLES } from '@/lib/notifications/service';
 import { sendBotMessage } from '@/lib/chat/bot';
 import { isCrossVenueRole } from '@/types/roles';
 
@@ -116,6 +116,8 @@ export async function POST(request: NextRequest) {
         body: `${reqCode} · ${items.length} รายการ`,
         data: { reqId: req.id, url: '/inventory/requisitions' },
         excludeUserId: user.id,
+        // + จัดซื้อ (hq) — คนที่อนุมัติใบเบิกจริง ๆ ซึ่งไม่เคยอยู่ใน role ปริยายของคลังกลาง
+        roles: [...STORE_STAFF_ROLES, 'hq'],
       });
     } catch {
       // ignore
