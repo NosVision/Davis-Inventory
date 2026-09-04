@@ -13,12 +13,14 @@ export interface SelectOption {
 export interface SelectProps extends Omit<React.SelectHTMLAttributes<HTMLSelectElement>, 'children'> {
   label?: string;
   error?: string;
+  /** Sub-label under the control, for a choice whose default needs explaining. Same as Input's. */
+  hint?: string;
   options: SelectOption[];
   placeholder?: string;
 }
 
 export const Select = forwardRef<HTMLSelectElement, SelectProps>(
-  ({ className, label, error, options, placeholder, id, ...props }, ref) => {
+  ({ className, label, error, hint, options, placeholder, id, ...props }, ref) => {
     const selectId = id || label?.toLowerCase().replace(/\s+/g, '-');
 
     return (
@@ -62,6 +64,9 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
         </div>
         {error && (
           <p className="mt-1 text-xs text-red-500 dark:text-red-400">{error}</p>
+        )}
+        {hint && !error && (
+          <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">{hint}</p>
         )}
       </div>
     );

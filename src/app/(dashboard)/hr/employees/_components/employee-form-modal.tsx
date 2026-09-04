@@ -72,6 +72,8 @@ interface FormState {
   position_id: string;
   department_id: string;
   payroll_group_id: string;
+  /** hr_employees.work_store_id — '' = infer from roster/punches. */
+  work_store_id: string;
   supervisor_id: string;
   employee_code: string;
   start_date: string;
@@ -140,6 +142,7 @@ function defaultForm(): FormState {
     position_id: '',
     department_id: '',
     payroll_group_id: '',
+    work_store_id: '',
     supervisor_id: '',
     employee_code: '',
     start_date: '',
@@ -420,6 +423,7 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved, onTran
         position_id: (d.position_id as string) ?? '',
         department_id: (d.department_id as string) ?? '',
         payroll_group_id: (d.payroll_group_id as string) ?? '',
+        work_store_id: (d.work_store_id as string) ?? '',
         supervisor_id: (d.supervisor_id as string) ?? '',
         employee_code: (d.employee_code as string) ?? '',
         start_date: (d.start_date as string) ?? '',
@@ -588,6 +592,7 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved, onTran
       position_id: form.position_id || null,
       department_id: form.department_id || null,
       payroll_group_id: form.payroll_group_id || null,
+      work_store_id: form.work_store_id || null,
       supervisor_id: form.supervisor_id || null,
       employee_code: form.employee_code.trim() || null,
       pay_type: form.pay_type,
@@ -1068,6 +1073,21 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved, onTran
               ...payrollGroups
                 .filter((g) => !form.company_id || g.companyId === form.company_id)
                 .map((g) => ({ value: g.id, label: g.name })),
+            ]}
+          />
+          {/* Where they WORK — which is not what the venue checkboxes below grant. Those write
+              user_stores, i.e. "may see this venue's data", and head office holds five of them.
+              Leave this empty for anyone who takes shifts: the roster and timesheet then read their
+              venue from the shifts themselves, which needs no upkeep. Set it only when that cannot
+              answer — office staff who never appear on any venue's roster (owner ask 2026-09-04). */}
+          <Select
+            label="สาขาที่ทำงาน"
+            hint="เว้นว่างไว้ = ดูจากตารางเวร/การสแกนเอง ตั้งค่าเฉพาะคนที่ทำงานสำนักงานหรือสังกัดหลายสาขา"
+            value={form.work_store_id}
+            onChange={(e) => update('work_store_id', e.target.value)}
+            options={[
+              { value: '', label: 'ดูจากตารางเวร/การสแกน (ค่าปกติ)' },
+              ...stores.map((s) => ({ value: s.id, label: s.name })),
             ]}
           />
           <Select

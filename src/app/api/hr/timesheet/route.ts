@@ -11,7 +11,13 @@ import {
   type TimesheetOverride,
 } from '@/lib/hr/time-engine';
 import { getHrPolicies } from '@/lib/hr/policy';
-import { loadVenueAttachment, loadMemberVenues, belongsToVenue } from '@/lib/hr/work-venues';
+import {
+  loadVenueAttachment,
+  loadMemberVenues,
+  belongsToVenue,
+  loadAssignedWorkStores,
+  loadAssignedToVenue,
+} from '@/lib/hr/work-venues';
 import { businessDateBangkok } from '@/lib/utils/date';
 
 // Last business day that has CLOSED. A rostered day after this is still ahead of us, so it must
@@ -187,23 +193,29 @@ export async function GET(request: NextRequest) {
     const attached = new Set((links ?? []).map((r) => r.user_id as string));
     userIds = [...eligible].filter((id) => !attached.has(id));
   } else {
-    const { data: members, error: membersErr } = await service
-      .from('user_stores')
-      .select('user_id')
-      .eq('store_id', storeId);
-    if (membersErr) return NextResponse.json({ error: 'Failed to load staff' }, { status: 500 });
-    userIds = (members ?? [])
-      .map((r: { user_id: string }) => r.user_id)
-      .filter((id) => eligible.has(id));
+    const [membersRes, assignedHere] = await Promise.all([
+      service.from('user_stores').select('user_id').eq('store_id', storeId),
+      // Anyone HR has ASSIGNED here (hr_employees.work_store_id) belongs on this sheet even if no
+      // user_stores row says so — that table is an access grant, not a staff list.
+      loadAssignedToVenue(service, storeId).catch(() => [] as string[]),
+    ]);
+    if (membersRes.error) return NextResponse.json({ error: 'Failed to load staff' }, { status: 500 });
+    userIds = [
+      ...new Set([
+        ...(membersRes.data ?? []).map((r: { user_id: string }) => r.user_id),
+        ...assignedHere,
+      ]),
+    ].filter((id) => eligible.has(id));
 
     // Split the venue's members on evidence of actually working here. Single-venue members always
     // stay — a new hire with nothing on record yet is exactly who HR opens this page to back-fill.
     try {
-      const [worked, memberOf] = await Promise.all([
+      const [worked, memberOf, assigned] = await Promise.all([
         // Attachment, not this window's activity: a fresh pay cycle starts empty, and that must not
         // detach a multi-venue employee from the venue they work every cycle.
         loadVenueAttachment(service, from, to),
         loadMemberVenues(service, userIds),
+        loadAssignedWorkStores(service, userIds),
       ]);
       const listed: string[] = [];
       for (const uid of userIds) {
@@ -211,6 +223,7 @@ export async function GET(request: NextRequest) {
           storeId,
           memberStoreIds: memberOf.get(uid) ?? [storeId],
           workedStoreIds: worked.get(uid),
+          assignedStoreId: assigned.get(uid) ?? null,
         });
         if (keep) listed.push(uid);
         else inactiveHere.push(uid);
