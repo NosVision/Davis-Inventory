@@ -157,3 +157,22 @@ export const ROLE_HOME_ROUTES: Record<UserRole, string> = {
   // ยังไม่ระบุ → หน้าของฉัน (ยังไม่มีเมนูปฏิบัติการ)
   not_assign: '/me',
 };
+
+/**
+ * Roles that are not tied to a venue — they act across all of them.
+ *
+ * Mirrors the SQL `is_admin()` (owner, accountant, hq, hr) exactly. If one changes, the other must:
+ * where the two disagree the app is stricter than RLS, which reads as a broken feature rather than
+ * a permission error — a request the database would have allowed is refused with no explanation.
+ *
+ * This answers WHICH VENUES, never WHAT ACTIONS. Every route keeps its own capability check; this
+ * only replaces the "…or is a member of that venue's user_stores" half of a scope test. `user_stores`
+ * is a per-venue grant table, and head office was never meant to be enumerated in it — the accounting
+ * and purchasing staff who were carry the whole reason `hr_employees.work_store_id` exists
+ * (migration 00200, owner report 2026-09-04).
+ */
+export const CROSS_VENUE_ROLES: readonly UserRole[] = ['owner', 'accountant', 'hq', 'hr'];
+
+export function isCrossVenueRole(role: string | null | undefined): boolean {
+  return !!role && (CROSS_VENUE_ROLES as readonly string[]).includes(role);
+}

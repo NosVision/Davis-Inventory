@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { notifyStoreStaff } from '@/lib/notifications/service';
 import { sendBotMessage } from '@/lib/chat/bot';
+import { isCrossVenueRole } from '@/types/roles';
 
 const REQ_SELECT =
   '*, items:inv_requisition_items(*, product:inv_products(id, sku, name, unit, kind)), store:stores(store_name, store_code)';
@@ -56,11 +57,11 @@ export async function POST(request: NextRequest) {
   const items = (body.items ?? []).filter((i) => i?.productId && Number(i.requestedQty) > 0);
   if (items.length === 0) return NextResponse.json({ error: 'ต้องมีรายการอย่างน้อย 1 รายการ' }, { status: 400 });
 
-  // สิทธิ์: เป็นสมาชิกของสาขานั้น หรือฝ่ายจัดการ
+  // สิทธิ์: เป็นสมาชิกของสาขานั้น หรือฝ่ายจัดการ หรือเป็น role ข้ามสาขา (จัดซื้อ/บัญชี/HR/เจ้าของ)
   const { data: prof } = await supabase.from('profiles').select('role').eq('id', user.id).single();
   const role = (prof as { role?: string } | null)?.role ?? '';
   const mgmt = ['owner', 'manager', 'accountant'].includes(role);
-  if (!mgmt) {
+  if (!mgmt && !isCrossVenueRole(role)) {
     const { data: us } = await supabase
       .from('user_stores')
       .select('store_id')

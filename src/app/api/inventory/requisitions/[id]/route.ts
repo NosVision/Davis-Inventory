@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { notifyStoreStaff } from '@/lib/notifications/service';
 import { sendBotMessage } from '@/lib/chat/bot';
+import { isCrossVenueRole } from '@/types/roles';
 
 const REQ_SELECT =
   '*, items:inv_requisition_items(*, product:inv_products(id, sku, name, unit, kind)), store:stores(store_name, store_code)';
@@ -55,7 +56,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   const { data: prof } = await supabase.from('profiles').select('role').eq('id', user.id).single();
   const role = (prof as { role?: string } | null)?.role ?? '';
-  const isMgmt = MGMT_ROLES.includes(role);
+  // ฝ่ายจัดการของสาขา หรือ role ข้ามสาขา (จัดซื้อ/บัญชี/HR/เจ้าของ) — ทั้งสองไม่ถูกจำกัดด้วย user_stores
+  const isMgmt = MGMT_ROLES.includes(role) || isCrossVenueRole(role);
 
   const svc = createServiceClient();
   const { data: reqRow } = await svc.from('inv_requisitions').select('*').eq('id', id).maybeSingle();
