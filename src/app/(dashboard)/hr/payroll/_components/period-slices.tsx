@@ -34,7 +34,7 @@ export interface CoverageBucket {
    *  refuse it, so the buttons say why instead of 403-ing on click. */
   can_manage: boolean;
   payrun: { id: string; status: string } | null;
-  missing: { user_id: string; name: string; stores: string[]; end_date: string | null }[];
+  missing: { user_id: string; name: string; end_date: string | null }[];
   /** Full-month staff with no start date on file — paid a whole cycle on an assumption. */
   no_start_date: { user_id: string; name: string; status: string | null }[];
   /** Staff at 5+ unauthorized-absence days this cycle — the SAME count the payslip would dock. */
@@ -294,9 +294,6 @@ export function PeriodSlices({
                     {b.missing.map((m) => (
                       <li key={m.user_id} className="flex flex-wrap items-center gap-x-2 text-gray-600 dark:text-gray-400">
                         <span className="font-medium text-gray-800 dark:text-gray-200">{m.name}</span>
-                        <span className="text-gray-400">
-                          {m.stores.length > 0 ? m.stores.join(', ') : tt('ไม่สังกัดสาขา', 'no venue')}
-                        </span>
                         {m.end_date && (
                           <span className="rounded-full bg-rose-50 px-1.5 py-0.5 text-[10px] font-medium text-rose-600 dark:bg-rose-900/30 dark:text-rose-400">
                             {tt('พ้นสภาพ', 'departed')} {m.end_date}
