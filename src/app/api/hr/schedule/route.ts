@@ -2,7 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireSchedulerForScope } from '@/lib/hr/route-auth';
 import { isDateInFinalizedPeriod, employeeStoreIds, FINALIZED_PERIOD_ERROR } from '@/lib/hr/period-lock';
-import { loadVenueAttachment, loadMemberVenues, belongsToVenue, loadPunchedInRange, neverPunchedWindow } from '@/lib/hr/work-venues';
+import {
+  loadVenueAttachment,
+  loadMemberVenues,
+  belongsToVenue,
+  loadPunchedInRange,
+  neverPunchedWindow,
+  loadAssignedWorkStores,
+  loadAssignedToVenue,
+} from '@/lib/hr/work-venues';
 import { todayBangkok } from '@/lib/utils/date';
 
 const MONTH_RE = /^\d{4}-\d{2}$/;
@@ -134,23 +142,28 @@ export async function GET(request: NextRequest) {
   let userIds: string[] = [];
   let employees: EmployeeRow[] = [];
   if (scope.kind === 'store') {
-    // Staff assigned to this store.
-    const { data: membersData, error: membersErr } = await service
-      .from('user_stores')
-      .select('user_id')
-      .eq('store_id', scope.storeId);
-    if (membersErr) return NextResponse.json({ error: 'Failed to load staff' }, { status: 500 });
-    userIds = (membersData as StoreMember[] | null)?.map((r) => r.user_id) ?? [];
+    // Staff assigned to this store — its user_stores members, plus anyone HR has explicitly placed
+    // here via hr_employees.work_store_id (that field must be able to put someone on a roster the
+    // access table has never heard of them for).
+    const [membersRes, assignedHere] = await Promise.all([
+      service.from('user_stores').select('user_id').eq('store_id', scope.storeId),
+      loadAssignedToVenue(service, scope.storeId).catch(() => [] as string[]),
+    ]);
+    if (membersRes.error) return NextResponse.json({ error: 'Failed to load staff' }, { status: 500 });
+    userIds = [
+      ...new Set([...((membersRes.data as StoreMember[] | null) ?? []).map((r) => r.user_id), ...assignedHere]),
+    ];
 
     // Split on evidence of working here. A single-venue member always stays: with nothing rostered
     // yet they are precisely who this page exists to schedule.
     if (userIds.length) {
       try {
-        const [worked, memberOf] = await Promise.all([
+        const [worked, memberOf, assigned] = await Promise.all([
           // Attachment, not this month's activity — otherwise building a fresh month is circular:
           // the page you would schedule someone on is the page that hid them for being unscheduled.
           loadVenueAttachment(service, first, last),
           loadMemberVenues(service, userIds),
+          loadAssignedWorkStores(service, userIds),
         ]);
         const listed: string[] = [];
         for (const uid of userIds) {
@@ -158,6 +171,7 @@ export async function GET(request: NextRequest) {
             storeId: scope.storeId,
             memberStoreIds: memberOf.get(uid) ?? [scope.storeId],
             workedStoreIds: worked.get(uid),
+            assignedStoreId: assigned.get(uid) ?? null,
           });
           if (keep) listed.push(uid);
           else inactiveHere.push(uid);
