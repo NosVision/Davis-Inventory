@@ -65,6 +65,8 @@ const styles = StyleSheet.create({
   page: {
     fontFamily: 'NotoSansThai',
     fontSize: 9,
+    // react-pdf-thai: lineHeight ≥ 1.5 keeps wrapped Thai glyphs from clipping.
+    lineHeight: 1.55,
     paddingTop: 28,
     paddingBottom: 40,
     paddingHorizontal: 28,
@@ -163,6 +165,68 @@ const styles = StyleSheet.create({
   cNet: { flex: 1, textAlign: 'right', color: '#047857' },
   cCashier: { flex: 1.1, paddingHorizontal: 2, textAlign: 'center' },
   cManager: { flex: 1.1, paddingHorizontal: 2, textAlign: 'center' },
+  // Cover sheet — who the row belongs to when AE and Bottle share one summary.
+  coverKind: { width: 56, textAlign: 'center', fontSize: 9, color: '#6b7280' },
+
+  // ── Bottle section — rose tint mirrors the app (AE = teal, Bottle = rose).
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: 700,
+    color: '#be123c',
+    borderBottomWidth: 2,
+    borderBottomColor: '#fb7185',
+    paddingBottom: 6,
+    marginBottom: 10,
+    marginTop: 4,
+  },
+  bottleHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#ffe4e6',
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    borderTopWidth: 0.5,
+    borderColor: '#fecdd3',
+  },
+  bottleName: { fontSize: 11, fontWeight: 700, color: '#881337' },
+  bottleMeta: { fontSize: 9, color: '#be123c' },
+  bottleTableHead: {
+    flexDirection: 'row',
+    backgroundColor: '#fff1f2',
+    fontWeight: 700,
+    paddingVertical: 4,
+    paddingHorizontal: 3,
+    borderTopWidth: 0.5,
+    borderBottomWidth: 0.5,
+    borderColor: '#fecdd3',
+    color: '#881337',
+  },
+  bottleTotalRow: {
+    flexDirection: 'row',
+    paddingVertical: 4,
+    paddingHorizontal: 3,
+    borderTopWidth: 0.5,
+    borderColor: '#fecdd3',
+    backgroundColor: '#fff1f2',
+    fontWeight: 700,
+  },
+  bottleGrandRow: {
+    flexDirection: 'row',
+    paddingVertical: 6,
+    paddingHorizontal: 3,
+    borderTopWidth: 1.5,
+    borderBottomWidth: 1.5,
+    borderColor: '#be123c',
+    backgroundColor: '#ffe4e6',
+    fontWeight: 700,
+    marginTop: 8,
+  },
+  // Bottle bill columns — date / receipt# / table / item / bottles / rate /
+  // net / cashier sig / manager sig. Same 9-slot rhythm as the AE grid.
+  bItem: { flex: 1.5 },
+  bBottles: { width: 48, textAlign: 'center' },
+  bRate: { flex: 1, textAlign: 'right' },
 
   // สรุปรายวัน — its own narrower grid. Deliberately not sharing the bill table's columns: it has
   // no receipt, table or signature, and stretching four numbers across nine slots reads as a bill
@@ -237,9 +301,15 @@ export interface CommissionPdfRow {
   commission_amount: number;
   net_amount: number;
   notes: string | null;    // แสดงเป็นบรรทัดย่อยใต้บิลเมื่อมี
+  /** Bottle-only — product name, bottle count and per-bottle rate. */
+  bottle_label?: string | null;
+  bottle_count?: number | null;
+  bottle_rate?: number | null;
 }
 
 export interface CommissionPdfAEGroup {
+  /** 'ae' by default. 'bottle' renders the ขวด/เรท grid instead of the SV/VAT one. */
+  kind?: 'ae' | 'bottle';
   ae_name: string;
   ae_nickname: string | null;
   bank_label: string | null;        // e.g. "กสิกร 123-4-56789 (สมชาย ใจดี)"
@@ -251,11 +321,14 @@ export interface CommissionPdfAEGroup {
     commission: number;
     net: number;
     bill_count: number;
+    /** Total bottles — 0 for AE groups. */
+    bottles: number;
   };
 }
 
 /** One line of the cover sheet — mirrors a row of the ค้างจ่าย tab. */
 export interface CommissionPdfCoverRow {
+  kind: 'ae' | 'bottle';
   ae_name: string;
   bill_count: number;
   net: number;
@@ -280,6 +353,8 @@ export interface CommissionReportData {
     commission: number;
     net: number;
     bill_count: number;
+    /** Total bottles across bottle groups — 0 for AE-only reports. */
+    bottles: number;
   };
 }
 
@@ -314,28 +389,123 @@ function fmtShortDate(iso: string): string {
  *
  * Derived from the same rows the bill table prints, so the two can never disagree.
  */
-function dailyTotals(rows: CommissionPdfRow[]) {
+export function dailyTotals(rows: CommissionPdfRow[]) {
   const byDay = new Map<
     string,
-    { date: string; bill_count: number; subtotal: number; commission: number; net: number }
+    { date: string; bill_count: number; subtotal: number; commission: number; net: number; bottles: number }
   >();
   for (const r of rows) {
     const cur =
       byDay.get(r.bill_date) ??
-      { date: r.bill_date, bill_count: 0, subtotal: 0, commission: 0, net: 0 };
+      { date: r.bill_date, bill_count: 0, subtotal: 0, commission: 0, net: 0, bottles: 0 };
     cur.bill_count += 1;
     cur.subtotal += r.subtotal;
     cur.commission += r.commission_amount;
     cur.net += r.net_amount;
+    cur.bottles += r.bottle_count ?? 0;
     byDay.set(r.bill_date, cur);
   }
   return Array.from(byDay.values()).sort((a, b) => a.date.localeCompare(b.date));
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// Bottle row mapping — pure helpers shared by the monthly export modal and the
+// single-payment receipt, so the two can never disagree on what a bottle bill
+// prints as. `rounded` is the same display-only whole-baht toggle the AE path
+// threads through (entries are stored exact).
+// ────────────────────────────────────────────────────────────────────────────
+export interface BottleSummaryEntry {
+  bill_date?: unknown;
+  receipt_no?: unknown;
+  table_no?: unknown;
+  bottle_count?: unknown;
+  bottle_product_name?: unknown;
+  bottle_rate?: unknown;
+  net_amount?: unknown;
+  notes?: unknown;
+  payment_id?: unknown;
+}
+
+export function toBottleRow(
+  e: BottleSummaryEntry,
+  netOf: (n: number | null | undefined) => number,
+): CommissionPdfRow {
+  return {
+    bill_date: String(e.bill_date || ''),
+    receipt_no: (e.receipt_no as string | null) ?? null,
+    table_no: (e.table_no as string | null) ?? null,
+    subtotal: 0,
+    commission_amount: 0,
+    net_amount: netOf(e.net_amount as number | null | undefined),
+    notes: (e.notes as string | null) ?? null,
+    bottle_label: (e.bottle_product_name as string | null) ?? null,
+    bottle_count: Number(e.bottle_count) || 0,
+    bottle_rate: Number(e.bottle_rate) || 0,
+  };
+}
+
+export function sumBottleRows(rows: CommissionPdfRow[]) {
+  return rows.reduce(
+    (acc, r) => ({
+      subtotal: 0,
+      commission: 0,
+      net: acc.net + r.net_amount,
+      bill_count: acc.bill_count + 1,
+      bottles: acc.bottles + (r.bottle_count ?? 0),
+    }),
+    { subtotal: 0, commission: 0, net: 0, bill_count: 0, bottles: 0 },
+  );
+}
+
+/** Settled portion of one staff member's bills — mirrors the AE cover math. */
+export function bottlePaid(
+  entries: BottleSummaryEntry[],
+  netOf: (n: number | null | undefined) => number,
+): number {
+  return entries
+    .filter((e) => e.payment_id)
+    .reduce((s, e) => s + netOf(e.net_amount as number | null | undefined), 0);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // Document
 // ────────────────────────────────────────────────────────────────────────────
 function ReportDocument({ data }: { data: CommissionReportData }) {
+  const aeGroups = data.groups.filter((g) => (g.kind ?? 'ae') === 'ae');
+  const bottleGroups = data.groups.filter((g) => g.kind === 'bottle');
+  const aeGrand = aeGroups.reduce(
+    (acc, g) => ({
+      subtotal: acc.subtotal + g.totals.subtotal,
+      commission: acc.commission + g.totals.commission,
+      net: acc.net + g.totals.net,
+      bill_count: acc.bill_count + g.totals.bill_count,
+    }),
+    { subtotal: 0, commission: 0, net: 0, bill_count: 0 },
+  );
+  const bottleGrand = bottleGroups.reduce(
+    (acc, g) => ({
+      net: acc.net + g.totals.net,
+      bill_count: acc.bill_count + g.totals.bill_count,
+      bottles: acc.bottles + g.totals.bottles,
+    }),
+    { net: 0, bill_count: 0, bottles: 0 },
+  );
+  // Titles/counts follow what the report actually holds, so an AE-only file
+  // reads exactly like it used to and a mixed one names both sides.
+  const scopeLabel =
+    aeGroups.length > 0 && bottleGroups.length > 0
+      ? ' (AE + Bottle)'
+      : bottleGroups.length > 0
+        ? ' (Bottle)'
+        : ' (AE)';
+  const whoLine = [
+    aeGroups.length > 0 ? `AE ${aeGroups.length} คน` : null,
+    bottleGroups.length > 0 ? `Bottle ${bottleGroups.length} คน` : null,
+    `${data.grand.bill_count} บิล`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
   return (
     <Document title={`รายงานค่าคอมมิชชั่น ${data.month_label}`}>
       {/* ── Cover sheet: the ค้างจ่าย summary, always page 1 ────────────────── */}
@@ -343,7 +513,7 @@ function ReportDocument({ data }: { data: CommissionReportData }) {
         <Page size="A4" orientation="landscape" style={styles.page}>
           <View style={styles.header}>
             <View>
-              <Text style={styles.title}>สรุปค่าคอมมิชชั่นค้างจ่าย (AE)</Text>
+              <Text style={styles.title}>สรุปค่าคอมมิชชั่นค้างจ่าย{scopeLabel}</Text>
               <Text style={styles.subTitle}>
                 {data.store_name} — เดือน {data.month_label}
               </Text>
@@ -354,14 +524,13 @@ function ReportDocument({ data }: { data: CommissionReportData }) {
               <Text style={styles.totalsBig}>
                 {fmtMoney(data.cover.reduce((s, r) => s + r.outstanding, 0))} บาท
               </Text>
-              <Text style={styles.totals}>
-                AE {data.cover.length} คน · {data.grand.bill_count} บิล
-              </Text>
+              <Text style={styles.totals}>{whoLine}</Text>
             </View>
           </View>
 
           <View style={styles.tableHead}>
-            <Text style={styles.coverName}>AE</Text>
+            <Text style={styles.coverKind}>ประเภท</Text>
+            <Text style={styles.coverName}>AE / พนักงาน</Text>
             <Text style={styles.coverBills}>บิล</Text>
             <Text style={styles.coverMoney}>สุทธิ</Text>
             <Text style={styles.coverMoney}>จ่ายแล้ว</Text>
@@ -370,7 +539,8 @@ function ReportDocument({ data }: { data: CommissionReportData }) {
           </View>
 
           {data.cover.map((r, idx) => (
-            <View key={r.ae_name} style={[styles.row, idx % 2 === 1 ? styles.rowAlt : {}]} wrap={false}>
+            <View key={`${r.kind}-${r.ae_name}`} style={[styles.row, idx % 2 === 1 ? styles.rowAlt : {}]} wrap={false}>
+              <Text style={styles.coverKind}>{r.kind === 'bottle' ? 'ขวด' : 'AE'}</Text>
               <Text style={styles.coverName}>{r.ae_name}</Text>
               <Text style={styles.coverBills}>{r.bill_count}</Text>
               <Text style={styles.coverMoney}>{fmtMoney(r.net)}</Text>
@@ -381,6 +551,7 @@ function ReportDocument({ data }: { data: CommissionReportData }) {
           ))}
 
           <View style={[styles.row, styles.coverTotalRow]} wrap={false}>
+            <Text style={styles.coverKind}> </Text>
             <Text style={styles.coverName}>รวม</Text>
             <Text style={styles.coverBills}>{data.cover.reduce((s, r) => s + r.bill_count, 0)}</Text>
             <Text style={styles.coverMoney}>{fmtMoney(data.cover.reduce((s, r) => s + r.net, 0))}</Text>
@@ -397,6 +568,7 @@ function ReportDocument({ data }: { data: CommissionReportData }) {
         </Page>
       )}
 
+      {aeGroups.length > 0 && (
       <Page size="A4" orientation="landscape" style={styles.page}>
         {/* Header */}
         <View style={styles.header} fixed>
@@ -409,15 +581,15 @@ function ReportDocument({ data }: { data: CommissionReportData }) {
           </View>
           <View>
             <Text style={styles.totals}>ยอดจ่ายรวม</Text>
-            <Text style={styles.totalsBig}>{fmtMoney(data.grand.net)} บาท</Text>
+            <Text style={styles.totalsBig}>{fmtMoney(aeGrand.net)} บาท</Text>
             <Text style={styles.totals}>
-              AE {data.groups.length} คน · {data.grand.bill_count} บิล
+              AE {aeGroups.length} คน · {aeGrand.bill_count} บิล
             </Text>
           </View>
         </View>
 
         {/* Per-AE blocks */}
-        {data.groups.map((g) => (
+        {aeGroups.map((g) => (
           <View key={g.ae_name} style={styles.aeBlock} wrap={true}>
             <View style={styles.aeHeader} wrap={false}>
               <Text style={styles.aeName}>
@@ -537,16 +709,16 @@ function ReportDocument({ data }: { data: CommissionReportData }) {
         {/* Grand total */}
         <View style={styles.grandRow} wrap={false}>
           <Text style={styles.cDate}>TOTAL</Text>
-          <Text style={styles.cReceipt}>{data.grand.bill_count} บิล</Text>
+          <Text style={styles.cReceipt}>{aeGrand.bill_count} บิล</Text>
           <Text style={styles.cTable}> </Text>
           <Text style={styles.cBill}>
-            {fmtMoney(data.grand.subtotal * GROSS_MULTIPLIER)}
+            {fmtMoney(aeGrand.subtotal * GROSS_MULTIPLIER)}
           </Text>
-          <Text style={styles.cSubtotal}>{fmtMoney(data.grand.subtotal)}</Text>
+          <Text style={styles.cSubtotal}>{fmtMoney(aeGrand.subtotal)}</Text>
           <Text style={styles.cCommission}>
-            {fmtMoney(data.grand.commission)}
+            {fmtMoney(aeGrand.commission)}
           </Text>
-          <Text style={styles.cNet}>{fmtMoney(data.grand.net)}</Text>
+          <Text style={styles.cNet}>{fmtMoney(aeGrand.net)}</Text>
           <Text style={styles.cCashier}> </Text>
           <Text style={styles.cManager}> </Text>
         </View>
@@ -579,6 +751,165 @@ function ReportDocument({ data }: { data: CommissionReportData }) {
           fixed
         />
       </Page>
+      )}
+
+      {/* ── Bottle section: same settle-from-cover structure, but the bill grid
+          carries รายการ/ขวด/เรท instead of the AE SV/VAT math, which does not
+          exist on bottle entries. ─────────────────────────────────────────── */}
+      {bottleGroups.length > 0 && (
+      <Page size="A4" orientation="landscape" style={styles.page}>
+        <View style={styles.header} fixed>
+          <View>
+            <Text style={styles.title}>รายงานค่าคอมขวด (พนักงาน)</Text>
+            <Text style={styles.subTitle}>
+              {data.store_name} — เดือน {data.month_label}
+            </Text>
+            <Text style={styles.subTitle}>ออกรายงานเมื่อ {data.generated_at_label}</Text>
+          </View>
+          <View>
+            <Text style={styles.totals}>ยอดจ่ายรวม</Text>
+            <Text style={styles.totalsBig}>{fmtMoney(bottleGrand.net)} บาท</Text>
+            <Text style={styles.totals}>
+              พนักงาน {bottleGroups.length} คน · {bottleGrand.bill_count} รายการ · {bottleGrand.bottles} ขวด
+            </Text>
+          </View>
+        </View>
+
+        {bottleGroups.map((g) => (
+          <View key={`bottle-${g.ae_name}`} style={styles.aeBlock} wrap={true}>
+            <View style={styles.bottleHeader} wrap={false}>
+              <Text style={styles.bottleName}>{g.ae_name}</Text>
+              <Text style={styles.bottleMeta}>
+                {g.totals.bill_count} รายการ · {g.totals.bottles} ขวด
+              </Text>
+            </View>
+
+            {g.rows.length > 0 && (
+              <View style={styles.aeBlock} wrap={false}>
+                <Text style={styles.dLabel}>แจกแจงรายวัน</Text>
+                <View style={styles.bottleTableHead}>
+                  <Text style={styles.dDate}>วันที่</Text>
+                  <Text style={styles.dBills}>รายการ</Text>
+                  <Text style={styles.dMoney}>ขวด</Text>
+                  <Text style={styles.dNet}>สุทธิ</Text>
+                </View>
+                {dailyTotals(g.rows).map((d, idx) => (
+                  <View
+                    key={`bottle-${g.ae_name}-day-${d.date}`}
+                    style={[styles.row, idx % 2 === 1 ? styles.rowAlt : {}]}
+                  >
+                    <Text style={styles.dDate}>{fmtShortDate(d.date)}</Text>
+                    <Text style={styles.dBills}>{d.bill_count}</Text>
+                    <Text style={styles.dMoney}>{d.bottles}</Text>
+                    <Text style={styles.dNet}>{fmtMoney(d.net)}</Text>
+                  </View>
+                ))}
+                <View style={styles.bottleTotalRow}>
+                  <Text style={styles.dDate}>รวม</Text>
+                  <Text style={styles.dBills}>{g.totals.bill_count}</Text>
+                  <Text style={styles.dMoney}>{g.totals.bottles}</Text>
+                  <Text style={styles.dNet}>{fmtMoney(g.totals.net)}</Text>
+                </View>
+              </View>
+            )}
+
+            {g.rows.length > 0 && <Text style={styles.dLabel}>รายละเอียดบิล</Text>}
+
+            <View style={styles.bottleTableHead}>
+              <Text style={styles.cDate}>วันที่</Text>
+              <Text style={styles.cReceipt}>เลขใบเสร็จ</Text>
+              <Text style={styles.cTable}>โต๊ะ</Text>
+              <Text style={styles.bItem}>รายการ</Text>
+              <Text style={styles.bBottles}>ขวด</Text>
+              <Text style={styles.bRate}>เรท/ขวด</Text>
+              <Text style={styles.cNet}>สุทธิ</Text>
+              <Text style={styles.cCashier}>Cashier</Text>
+              <Text style={styles.cManager}>Manager</Text>
+            </View>
+
+            {g.rows.map((r, idx) => (
+              <View key={`bottle-${g.ae_name}-${idx}`} wrap={false}>
+                <View style={[styles.row, idx % 2 === 1 ? styles.rowAlt : {}]}>
+                  <Text style={styles.cDate}>{fmtShortDate(r.bill_date)}</Text>
+                  <Text style={styles.cReceipt}>{r.receipt_no || '-'}</Text>
+                  <Text style={styles.cTable}>{r.table_no || '-'}</Text>
+                  <Text style={styles.bItem}>{r.bottle_label || '-'}</Text>
+                  <Text style={styles.bBottles}>{r.bottle_count ?? '-'}</Text>
+                  <Text style={styles.bRate}>
+                    {r.bottle_rate ? fmtMoney(r.bottle_rate) : '-'}
+                  </Text>
+                  <Text style={styles.cNet}>{fmtMoney(r.net_amount)}</Text>
+                  <View style={styles.cCashier}>
+                    <View style={styles.signatureSlot} />
+                  </View>
+                  <View style={styles.cManager}>
+                    <View style={styles.signatureSlot} />
+                  </View>
+                </View>
+                {r.notes ? (
+                  <View style={styles.noteRow}>
+                    <Text style={styles.noteText}>หมายเหตุ: {r.notes}</Text>
+                  </View>
+                ) : null}
+              </View>
+            ))}
+
+            <View style={styles.bottleTotalRow} wrap={false}>
+              <Text style={styles.cDate}>รวม</Text>
+              <Text style={styles.cReceipt}>
+                {g.totals.bill_count} รายการ
+              </Text>
+              <Text style={styles.cTable}> </Text>
+              <Text style={styles.bItem}> </Text>
+              <Text style={styles.bBottles}>{g.totals.bottles}</Text>
+              <Text style={styles.bRate}> </Text>
+              <Text style={styles.cNet}>{fmtMoney(g.totals.net)}</Text>
+              <Text style={styles.cCashier}> </Text>
+              <Text style={styles.cManager}> </Text>
+            </View>
+          </View>
+        ))}
+
+        <View style={styles.bottleGrandRow} wrap={false}>
+          <Text style={styles.cDate}>TOTAL</Text>
+          <Text style={styles.cReceipt}>{bottleGrand.bill_count} รายการ</Text>
+          <Text style={styles.cTable}> </Text>
+          <Text style={styles.bItem}> </Text>
+          <Text style={styles.bBottles}>{bottleGrand.bottles}</Text>
+          <Text style={styles.bRate}> </Text>
+          <Text style={styles.cNet}>{fmtMoney(bottleGrand.net)}</Text>
+          <Text style={styles.cCashier}> </Text>
+          <Text style={styles.cManager}> </Text>
+        </View>
+
+        <Text style={styles.footnote}>
+          * จำนวนขวด เรท/ขวด และยอดสุทธิตามที่บันทึกในแต่ละรายการ
+        </Text>
+
+        <View style={styles.signatures} wrap={false}>
+          <View style={styles.signatureCol}>
+            <View style={styles.signatureLine} />
+            <Text style={styles.signatureLabel}>ผู้จัดทำ</Text>
+          </View>
+          <View style={styles.signatureCol}>
+            <View style={styles.signatureLine} />
+            <Text style={styles.signatureLabel}>ผู้ตรวจสอบ</Text>
+          </View>
+          <View style={styles.signatureCol}>
+            <View style={styles.signatureLine} />
+            <Text style={styles.signatureLabel}>เจ้าของร้าน</Text>
+          </View>
+        </View>
+
+        <Text
+          style={styles.pageNum}
+          render={({ pageNumber, totalPages }) =>
+            `หน้า ${pageNumber} / ${totalPages}`
+          }
+          fixed
+        />
+      </Page>
+      )}
     </Document>
   );
 }

@@ -30,6 +30,15 @@ interface AEGroup {
   entries: Array<Record<string, unknown>>;
 }
 
+interface BottleGroup {
+  staff_id: string;
+  staff_name: string;
+  entry_count: number;
+  total_bottles: number;
+  total_net: number;
+  entries: Array<Record<string, unknown>>;
+}
+
 interface CommissionExportButtonProps {
   /** Initial month (YYYY-MM). For Pending tab this is fixed; for
    *  History tab the user can change it inside the modal. */
@@ -59,9 +68,11 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
   const [open, setOpen] = useState(false);
   const [exportMonth, setExportMonth] = useState(monthProp);
   const [groups, setGroups] = useState<AEGroup[]>([]);
+  const [bottleGroups, setBottleGroups] = useState<BottleGroup[]>([]);
   const [certStatus, setCertStatus] = useState<Record<string, string>>({});
   const [loadingGroups, setLoadingGroups] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectedBottleIds, setSelectedBottleIds] = useState<Set<string>>(new Set());
   const [exporting, setExporting] = useState(false);
   const [storeName, setStoreName] = useState('');
   const [mode, setMode] = useState<ExportMode>('all');
@@ -94,13 +105,21 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
       const res = await fetch(`/api/commission/summary?${params}`);
       if (!res.ok) {
         setGroups([]);
+        setBottleGroups([]);
         setSelectedIds(new Set());
+        setSelectedBottleIds(new Set());
         return;
       }
       const json = await res.json();
       const ae = (json.ae_summary as AEGroup[]) || [];
       setGroups(ae);
       setSelectedIds(new Set(ae.map((a) => a.ae_id)));
+      // Bottle staff for the same month — the summary API has always returned
+      // this alongside ae_summary; the modal just never read it (hence no
+      // Bottle PDF from the ค้างจ่าย tab).
+      const bottles = (json.bottle_summary as BottleGroup[]) || [];
+      setBottleGroups(bottles);
+      setSelectedBottleIds(new Set(bottles.map((b) => b.staff_id)));
 
       // ใบ 50 ทวิ marks for the same month — printed under each AE so the accountant can see
       // who asked without going back to the screen. Best-effort: the PDF is still valid without it.
@@ -118,17 +137,32 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
 
   useEffect(() => { fetchGroups(); }, [fetchGroups]);
 
-  const allChecked = useMemo(
+  const aeAllChecked = useMemo(
     () => groups.length > 0 && groups.every((g) => selectedIds.has(g.ae_id)),
     [groups, selectedIds],
   );
-  const someChecked = useMemo(
-    () => !allChecked && groups.some((g) => selectedIds.has(g.ae_id)),
-    [groups, allChecked, selectedIds],
+  const aeSomeChecked = useMemo(
+    () => !aeAllChecked && groups.some((g) => selectedIds.has(g.ae_id)),
+    [groups, aeAllChecked, selectedIds],
+  );
+  const bottleAllChecked = useMemo(
+    () => bottleGroups.length > 0 && bottleGroups.every((g) => selectedBottleIds.has(g.staff_id)),
+    [bottleGroups, selectedBottleIds],
+  );
+  const bottleSomeChecked = useMemo(
+    () => !bottleAllChecked && bottleGroups.some((g) => selectedBottleIds.has(g.staff_id)),
+    [bottleGroups, bottleAllChecked, selectedBottleIds],
+  );
+  const pickedCount = selectedIds.size + selectedBottleIds.size;
+  const pickedBottles = useMemo(
+    () => bottleGroups.filter((g) => selectedBottleIds.has(g.staff_id)).reduce((s, g) => s + (Number(g.total_bottles) || 0), 0),
+    [bottleGroups, selectedBottleIds],
   );
   const pickedTotal = useMemo(
-    () => groups.filter((g) => selectedIds.has(g.ae_id)).reduce((s, g) => s + (Number(g.total_net) || 0), 0),
-    [groups, selectedIds],
+    () =>
+      groups.filter((g) => selectedIds.has(g.ae_id)).reduce((s, g) => s + (Number(g.total_net) || 0), 0) +
+      bottleGroups.filter((g) => selectedBottleIds.has(g.staff_id)).reduce((s, g) => s + (Number(g.total_net) || 0), 0),
+    [groups, selectedIds, bottleGroups, selectedBottleIds],
   );
 
   function toggleAe(aeId: string, next: boolean) {
@@ -140,22 +174,37 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
     });
   }
 
-  function toggleAll(next: boolean) {
+  function toggleAllAe(next: boolean) {
     if (next) setSelectedIds(new Set(groups.map((g) => g.ae_id)));
     else setSelectedIds(new Set());
   }
 
+  function toggleBottle(staffId: string, next: boolean) {
+    setSelectedBottleIds((prev) => {
+      const set = new Set(prev);
+      if (next) set.add(staffId);
+      else set.delete(staffId);
+      return set;
+    });
+  }
+
+  function toggleAllBottle(next: boolean) {
+    if (next) setSelectedBottleIds(new Set(bottleGroups.map((b) => b.staff_id)));
+    else setSelectedBottleIds(new Set());
+  }
+
   async function handleExport() {
-    if (selectedIds.size === 0) {
-      toast({ type: 'error', title: 'กรุณาเลือกอย่างน้อย 1 AE' });
+    if (pickedCount === 0) {
+      toast({ type: 'error', title: 'กรุณาเลือกอย่างน้อย 1 คน' });
       return;
     }
     setExporting(true);
     try {
       const mod = await import('./commission-pdf');
+      const netOf = (n: number | null | undefined) => netDisplay(n, rounded);
       const picked = groups.filter((g) => selectedIds.has(g.ae_id));
 
-      const reportGroups = picked.map((g) => {
+      const aeReportGroups = picked.map((g) => {
         const sortedEntries = [...(g.entries || [])].sort((a, b) => {
           const da = String((a as Record<string, unknown>).bill_date || '');
           const db = String((b as Record<string, unknown>).bill_date || '');
@@ -179,8 +228,9 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
             commission: acc.commission + r.commission_amount,
             net: acc.net + r.net_amount,
             bill_count: acc.bill_count + 1,
+            bottles: 0,
           }),
-          { subtotal: 0, commission: 0, net: 0, bill_count: 0 },
+          { subtotal: 0, commission: 0, net: 0, bill_count: 0, bottles: 0 },
         );
         const bankLabel = g.bank_name
           ? `${g.bank_name} ${g.bank_account_no || ''}${g.bank_account_name ? ` (${g.bank_account_name})` : ''}`.trim()
@@ -195,6 +245,7 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
           .filter((e) => (e as Record<string, unknown>).payment_id)
           .reduce((s, e) => s + netDisplay((e as Record<string, unknown>).net_amount as number, rounded), 0);
         return {
+          kind: 'ae' as const,
           ae_name: g.ae_name,
           ae_nickname: g.ae_nickname,
           bank_label: bankLabel,
@@ -205,6 +256,34 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
           totals,
         };
       });
+
+      // Bottle staff — same settle-from-cover shape, but the bill grid renders
+      // รายการ/ขวด/เรท (mapped by the shared helpers in commission-pdf).
+      const bottleReportGroups = bottleGroups
+        .filter((b) => selectedBottleIds.has(b.staff_id))
+        .map((b) => {
+          const sortedEntries = [...(b.entries || [])].sort((a, b2) => {
+            const da = String((a as Record<string, unknown>).bill_date || '');
+            const db = String((b2 as Record<string, unknown>).bill_date || '');
+            return da.localeCompare(db);
+          });
+          const rows = sortedEntries.map((e) => mod.toBottleRow(e, netOf));
+          const totals = mod.sumBottleRows(rows);
+          const paid = mod.bottlePaid(b.entries || [], netOf);
+          return {
+            kind: 'bottle' as const,
+            ae_name: b.staff_name,
+            ae_nickname: null as string | null,
+            bank_label: null as string | null,
+            wht_label: null as string | null,
+            cover_wht_label: null as string | null,
+            paid,
+            rows,
+            totals,
+          };
+        });
+
+      const reportGroups = [...aeReportGroups, ...bottleReportGroups];
 
       const [y, m] = exportMonth.split('-').map(Number);
       const monthLabel = new Intl.DateTimeFormat('th-TH-u-ca-buddhist', {
@@ -229,6 +308,7 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
         // Page 1 — the ค้างจ่าย summary the accountant settles from, ahead of the bill detail
         // (owner ask 2026-08-07). Built from the same groups, so the two can never disagree.
         cover: rgs.map((g) => ({
+          kind: g.kind,
           ae_name: `${g.ae_name}${g.ae_nickname ? ` (${g.ae_nickname})` : ''}`,
           bill_count: g.totals.bill_count,
           net: g.totals.net,
@@ -243,15 +323,16 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
             commission: acc.commission + g.totals.commission,
             net: acc.net + g.totals.net,
             bill_count: acc.bill_count + g.totals.bill_count,
+            bottles: acc.bottles + g.totals.bottles,
           }),
-          { subtotal: 0, commission: 0, net: 0, bill_count: 0 },
+          { subtotal: 0, commission: 0, net: 0, bill_count: 0, bottles: 0 },
         ),
       });
 
       if (mode === 'per_ae') {
-        // One PDF per AE — what the accountant forwards to each of them individually. A single
-        // pick downloads bare; several are zipped, because browsers throttle (and users lose
-        // track of) a burst of separate downloads.
+        // One PDF per AE / staff member — what the accountant forwards to each of them
+        // individually. A single pick downloads bare; several are zipped, because browsers
+        // throttle (and users lose track of) a burst of separate downloads.
         const fileFor = (g: (typeof reportGroups)[number]) =>
           `คอมมิชชั่น-${safeFileName(g.ae_nickname || g.ae_name)}-${exportMonth}.pdf`;
         if (reportGroups.length === 1) {
@@ -294,7 +375,7 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
         isOpen={open}
         onClose={() => setOpen(false)}
         title="ดาวน์โหลดรายงาน PDF"
-        description="เลือก AE ที่ต้องการรวมในรายงาน"
+        description="เลือก AE / พนักงานที่ต้องการรวมในรายงาน"
         size="md"
       >
         <div className="space-y-3">
@@ -343,55 +424,102 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
             <div className="flex justify-center py-8">
               <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
             </div>
-          ) : groups.length === 0 ? (
-            <p className="py-4 text-center text-sm text-gray-400">ไม่มีข้อมูล AE ในเดือนนี้</p>
+          ) : groups.length === 0 && bottleGroups.length === 0 ? (
+            <p className="py-4 text-center text-sm text-gray-400">ไม่มีข้อมูลในเดือนนี้</p>
           ) : (
             <>
-              <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-gray-50 px-3 py-2 text-sm font-medium text-gray-700 dark:bg-gray-800/50 dark:text-gray-200">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                  checked={allChecked}
-                  ref={(el) => { if (el) el.indeterminate = someChecked; }}
-                  onChange={(ev) => toggleAll(ev.target.checked)}
-                />
-                เลือกทั้งหมด ({groups.length} AE)
-              </label>
-              <div className="max-h-72 divide-y divide-gray-100 overflow-y-auto rounded-lg ring-1 ring-gray-200 dark:divide-gray-700 dark:ring-gray-700">
-                {groups.map((g) => {
-                  const checked = selectedIds.has(g.ae_id);
-                  return (
-                    <label
-                      key={g.ae_id}
-                      className="flex cursor-pointer items-center justify-between gap-2 px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800/50"
-                    >
-                      <div className="flex min-w-0 flex-1 items-center gap-2">
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 shrink-0 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                          checked={checked}
-                          onChange={(ev) => toggleAe(g.ae_id, ev.target.checked)}
-                        />
-                        <div className="min-w-0">
-                          <p className="truncate font-medium text-gray-900 dark:text-white">
-                            {g.ae_name}
-                            {g.ae_nickname ? ` (${g.ae_nickname})` : ''}
-                          </p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">
-                            {g.entry_count} บิล · {formatCurrency(Number(g.total_net) || 0)} บาท
-                          </p>
-                        </div>
-                      </div>
-                    </label>
-                  );
-                })}
-              </div>
+              {groups.length > 0 && (
+                <>
+                  <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-gray-50 px-3 py-2 text-sm font-medium text-gray-700 dark:bg-gray-800/50 dark:text-gray-200">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                      checked={aeAllChecked}
+                      ref={(el) => { if (el) el.indeterminate = aeSomeChecked; }}
+                      onChange={(ev) => toggleAllAe(ev.target.checked)}
+                    />
+                    AE · เลือกทั้งหมด ({groups.length} คน)
+                  </label>
+                  <div className="max-h-56 divide-y divide-gray-100 overflow-y-auto rounded-lg ring-1 ring-gray-200 dark:divide-gray-700 dark:ring-gray-700">
+                    {groups.map((g) => {
+                      const checked = selectedIds.has(g.ae_id);
+                      return (
+                        <label
+                          key={g.ae_id}
+                          className="flex cursor-pointer items-center justify-between gap-2 px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                        >
+                          <div className="flex min-w-0 flex-1 items-center gap-2">
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 shrink-0 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                              checked={checked}
+                              onChange={(ev) => toggleAe(g.ae_id, ev.target.checked)}
+                            />
+                            <div className="min-w-0">
+                              <p className="truncate font-medium text-gray-900 dark:text-white">
+                                {g.ae_name}
+                                {g.ae_nickname ? ` (${g.ae_nickname})` : ''}
+                              </p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">
+                                {g.entry_count} บิล · {formatCurrency(Number(g.total_net) || 0)} บาท
+                              </p>
+                            </div>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+              {bottleGroups.length > 0 && (
+                <>
+                  <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-800 dark:bg-rose-900/20 dark:text-rose-200">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-gray-300 text-rose-600 focus:ring-rose-500"
+                      checked={bottleAllChecked}
+                      ref={(el) => { if (el) el.indeterminate = bottleSomeChecked; }}
+                      onChange={(ev) => toggleAllBottle(ev.target.checked)}
+                    />
+                    ค่าคอมขวด · เลือกทั้งหมด ({bottleGroups.length} คน)
+                  </label>
+                  <div className="max-h-56 divide-y divide-gray-100 overflow-y-auto rounded-lg ring-1 ring-gray-200 dark:divide-gray-700 dark:ring-gray-700">
+                    {bottleGroups.map((b) => {
+                      const checked = selectedBottleIds.has(b.staff_id);
+                      return (
+                        <label
+                          key={b.staff_id}
+                          className="flex cursor-pointer items-center justify-between gap-2 px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                        >
+                          <div className="flex min-w-0 flex-1 items-center gap-2">
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 shrink-0 rounded border-gray-300 text-rose-600 focus:ring-rose-500"
+                              checked={checked}
+                              onChange={(ev) => toggleBottle(b.staff_id, ev.target.checked)}
+                            />
+                            <div className="min-w-0">
+                              <p className="truncate font-medium text-gray-900 dark:text-white">
+                                {b.staff_name}
+                              </p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">
+                                {b.total_bottles} ขวด · {b.entry_count} รายการ · {formatCurrency(Number(b.total_net) || 0)} บาท
+                              </p>
+                            </div>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
               <div className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300">
-                เลือก {selectedIds.size} AE · ยอดสุทธิรวม {formatCurrency(pickedTotal)} บาท
+                เลือก {selectedIds.size} AE · {selectedBottleIds.size} พนักงาน
+                {pickedBottles > 0 && ` · ${pickedBottles} ขวด`} · ยอดสุทธิรวม {formatCurrency(pickedTotal)} บาท
                 <span className="block text-xs opacity-80">
                   {mode === 'per_ae'
-                    ? selectedIds.size > 1
-                      ? `จะได้ ${selectedIds.size} ไฟล์ (รวมอยู่ใน .zip 1 ไฟล์)`
+                    ? pickedCount > 1
+                      ? `จะได้ ${pickedCount} ไฟล์ (รวมอยู่ใน .zip 1 ไฟล์)`
                       : 'จะได้ 1 ไฟล์'
                     : 'จะได้ 1 ไฟล์ รวมทุกคน'}
                 </span>
@@ -404,10 +532,10 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
           <Button
             variant="primary"
             onClick={handleExport}
-            disabled={exporting || selectedIds.size === 0 || loadingGroups}
+            disabled={exporting || pickedCount === 0 || loadingGroups}
           >
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
-            {mode === 'per_ae' && selectedIds.size > 1 ? 'ดาวน์โหลด .zip' : 'ดาวน์โหลด PDF'}
+            {mode === 'per_ae' && pickedCount > 1 ? 'ดาวน์โหลด .zip' : 'ดาวน์โหลด PDF'}
           </Button>
         </ModalFooter>
       </Modal>

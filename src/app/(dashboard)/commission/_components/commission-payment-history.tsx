@@ -81,24 +81,31 @@ export function CommissionPaymentHistory({ month: monthProp, refreshKey, rounded
     setExportingPdf(true);
     try {
       const mod = await import('./commission-pdf');
-      const rows = (p.entries || []).map((e) => ({
-        bill_date: String(e.bill_date || ''),
-        receipt_no: (e.receipt_no as string | null) ?? null,
-        table_no: (e.table_no as string | null) ?? null,
-        subtotal: Number(e.subtotal_amount) || 0,
-        commission_amount: Number(e.commission_amount) || 0,
-        net_amount: netDisplay(e.net_amount as number, rounded),
-        notes: (e.notes as string | null) ?? null,
-      }));
-      const totals = rows.reduce(
-        (acc, r) => ({
-          subtotal: acc.subtotal + r.subtotal,
-          commission: acc.commission + r.commission_amount,
-          net: acc.net + r.net_amount,
-          bill_count: acc.bill_count + 1,
-        }),
-        { subtotal: 0, commission: 0, net: 0, bill_count: 0 },
-      );
+      const netOf = (n: number | null | undefined) => netDisplay(n, rounded);
+      const isBottle = p.type !== 'ae_commission';
+      const rows = isBottle
+        ? (p.entries || []).map((e) => mod.toBottleRow(e, netOf))
+        : (p.entries || []).map((e) => ({
+          bill_date: String(e.bill_date || ''),
+          receipt_no: (e.receipt_no as string | null) ?? null,
+          table_no: (e.table_no as string | null) ?? null,
+          subtotal: Number(e.subtotal_amount) || 0,
+          commission_amount: Number(e.commission_amount) || 0,
+          net_amount: netOf(e.net_amount as number),
+          notes: (e.notes as string | null) ?? null,
+        }));
+      const totals = isBottle
+        ? mod.sumBottleRows(rows)
+        : rows.reduce(
+          (acc, r) => ({
+            subtotal: acc.subtotal + r.subtotal,
+            commission: acc.commission + r.commission_amount,
+            net: acc.net + r.net_amount,
+            bill_count: acc.bill_count + 1,
+            bottles: 0,
+          }),
+          { subtotal: 0, commission: 0, net: 0, bill_count: 0, bottles: 0 },
+        );
       const ae = p.ae_profile as (PaymentRecord['ae_profile'] & { bank_name?: string | null; bank_account_no?: string | null; bank_account_name?: string | null }) | undefined;
       const name = p.type === 'ae_commission'
         ? ae?.name || '-'
@@ -109,9 +116,10 @@ export function CommissionPaymentHistory({ month: monthProp, refreshKey, rounded
         month_label: `${new Intl.DateTimeFormat('th-TH-u-ca-buddhist', { month: 'long', year: 'numeric' }).format(new Date(y, m - 1, 1))} · จ่ายเมื่อ ${formatThaiDate(p.paid_at)}${p.status === 'cancelled' ? ' (ยกเลิกแล้ว)' : ''}`,
         generated_at_label: new Intl.DateTimeFormat('th-TH-u-ca-buddhist', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date()),
         groups: [{
+          kind: isBottle ? 'bottle' : 'ae',
           ae_name: name,
           ae_nickname: ae?.nickname ?? null,
-          bank_label: ae?.bank_name
+          bank_label: !isBottle && ae?.bank_name
             ? `${ae.bank_name} ${ae.bank_account_no || ''}${ae.bank_account_name ? ` (${ae.bank_account_name})` : ''}`.trim()
             : null,
           // This PDF is the receipt for one transfer, not the monthly report — the ใบ 50 ทวิ
@@ -120,7 +128,7 @@ export function CommissionPaymentHistory({ month: monthProp, refreshKey, rounded
           rows,
           totals,
         }],
-        grand: totals,
+        grand: { ...totals, bottles: totals.bottles ?? 0 },
       });
       mod.downloadBlob(blob, `รอบจ่าย-${name}-${p.month}.pdf`);
     } catch (err) {
@@ -266,15 +274,28 @@ export function CommissionPaymentHistory({ month: monthProp, refreshKey, rounded
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
-                      <tr className="text-gray-500">
-                        <th className="py-1 text-left">{t('paymentHistory.date')}</th>
-                        <th className="py-1 text-left">{t('paymentHistory.receipt')}</th>
-                        <th className="py-1 text-left">โต๊ะ</th>
-                        <th className="py-1 text-right">ยอดบิล</th>
-                        <th className="py-1 text-right">คอม</th>
-                        <th className="py-1 text-right">{t('paymentHistory.amount')}</th>
-                        <th className="py-1 text-center">บิล</th>
-                      </tr>
+                      {detailModal.type === 'ae_commission' ? (
+                        <tr className="text-gray-500">
+                          <th className="py-1 text-left">{t('paymentHistory.date')}</th>
+                          <th className="py-1 text-left">{t('paymentHistory.receipt')}</th>
+                          <th className="py-1 text-left">โต๊ะ</th>
+                          <th className="py-1 text-right">ยอดบิล</th>
+                          <th className="py-1 text-right">คอม</th>
+                          <th className="py-1 text-right">{t('paymentHistory.amount')}</th>
+                          <th className="py-1 text-center">บิล</th>
+                        </tr>
+                      ) : (
+                        <tr className="text-gray-500">
+                          <th className="py-1 text-left">{t('paymentHistory.date')}</th>
+                          <th className="py-1 text-left">{t('paymentHistory.receipt')}</th>
+                          <th className="py-1 text-left">โต๊ะ</th>
+                          <th className="py-1 text-left">รายการ</th>
+                          <th className="py-1 text-right">ขวด</th>
+                          <th className="py-1 text-right">เรท/ขวด</th>
+                          <th className="py-1 text-right">{t('paymentHistory.amount')}</th>
+                          <th className="py-1 text-center">บิล</th>
+                        </tr>
+                      )}
                     </thead>
                     <tbody className="text-gray-700 dark:text-gray-300">
                       {detailModal.entries.map((e: Record<string, unknown>) => (
@@ -282,8 +303,18 @@ export function CommissionPaymentHistory({ month: monthProp, refreshKey, rounded
                           <td className="py-1 whitespace-nowrap">{formatThaiDate(e.bill_date as string)}</td>
                           <td className="py-1">{(e.receipt_no as string) || '-'}</td>
                           <td className="py-1">{(e.table_no as string) || '-'}</td>
-                          <td className="py-1 text-right">{e.subtotal_amount ? formatCurrency(Number(e.subtotal_amount)) : '-'}</td>
-                          <td className="py-1 text-right">{e.commission_amount ? formatCurrency(Number(e.commission_amount)) : '-'}</td>
+                          {detailModal.type === 'ae_commission' ? (
+                            <>
+                              <td className="py-1 text-right">{e.subtotal_amount ? formatCurrency(Number(e.subtotal_amount)) : '-'}</td>
+                              <td className="py-1 text-right">{e.commission_amount ? formatCurrency(Number(e.commission_amount)) : '-'}</td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="py-1">{(e.bottle_product_name as string) || '-'}</td>
+                              <td className="py-1 text-right">{Number(e.bottle_count) || '-'}</td>
+                              <td className="py-1 text-right">{e.bottle_rate ? formatCurrency(Number(e.bottle_rate)) : '-'}</td>
+                            </>
+                          )}
                           <td className="py-1 text-right font-medium">{formatCurrency(netDisplay(e.net_amount as number, rounded))}</td>
                           <td className="py-1 text-center">
                             {e.receipt_photo_url ? (
