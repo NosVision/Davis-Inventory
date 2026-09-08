@@ -6,6 +6,8 @@ interface Tab {
   id: string;
   label: string;
   count?: number;
+  /** 'urgent' paints the count pill solid red (pending queues); default stays neutral. */
+  countTone?: 'neutral' | 'urgent';
   icon?: React.ReactNode;
 }
 
@@ -41,9 +43,11 @@ export function Tabs({ tabs, activeTab, onChange, className }: TabsProps) {
             <span
               className={cn(
                 'rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
-                activeTab === tab.id
-                  ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400'
-                  : 'bg-gray-200 text-gray-600 dark:bg-gray-600 dark:text-gray-400'
+                tab.countTone === 'urgent'
+                  ? 'bg-red-600 text-white'
+                  : activeTab === tab.id
+                    ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400'
+                    : 'bg-gray-200 text-gray-600 dark:bg-gray-600 dark:text-gray-400'
               )}
             >
               {tab.count}

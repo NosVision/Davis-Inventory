@@ -319,11 +319,17 @@ export default function HrRequestsPage() {
       <Tabs
         tabs={[
           // Same convention as the hub strip: a queue with nothing pending shows no badge.
-          { id: 'ot', label: tOt('title'), count: counts && counts.ot > 0 ? counts.ot : undefined },
+          {
+            id: 'ot',
+            label: tOt('title'),
+            count: counts && counts.ot > 0 ? counts.ot : undefined,
+            countTone: 'urgent',
+          },
           {
             id: 'attendance',
             label: tAtt('title'),
             count: counts && counts.attendance > 0 ? counts.attendance : undefined,
+            countTone: 'urgent',
           },
         ]}
         activeTab={tab}
