@@ -74,6 +74,68 @@ export async function attachFullNames<T extends Record<string, unknown>>(
   });
 }
 
+/**
+ * Venue + company labels for a manager approval queue (OT / attendance corrections).
+ * The request tables carry only `store_id`/`user_id`, so without this the approver sees
+ * a bare name and must hunt store-by-store to learn which venue and company each pending
+ * request came from. Metadata only — never filters rows, never widens scope.
+ */
+export interface QueueMeta {
+  /** store id → venue display name. */
+  storeNameById: Map<string, string>;
+  /** requester profile id → employing-company name (via hr_employees.company_id). */
+  companyNameByUserId: Map<string, string>;
+}
+
+export async function buildQueueMetaMap(
+  service: SupabaseClient,
+  userIds: readonly string[],
+  storeIds: readonly string[]
+): Promise<QueueMeta> {
+  const users = [...new Set(userIds.filter(Boolean))];
+  const stores = [...new Set(storeIds.filter(Boolean))];
+  const storeNameById = new Map<string, string>();
+  const companyNameByUserId = new Map<string, string>();
+  if (users.length === 0 && stores.length === 0) return { storeNameById, companyNameByUserId };
+
+  const [storeRows, empRows] = await Promise.all([
+    stores.length > 0
+      ? service
+          .from('stores')
+          .select('id, store_name')
+          .in('id', stores)
+          .then((r) => (r.data ?? []) as { id: string; store_name: string | null }[])
+      : Promise.resolve([] as { id: string; store_name: string | null }[]),
+    users.length > 0
+      ? service
+          .from('hr_employees')
+          .select('profile_id, company_id')
+          .in('profile_id', users)
+          .then((r) => (r.data ?? []) as { profile_id: string; company_id: string | null }[])
+      : Promise.resolve([] as { profile_id: string; company_id: string | null }[]),
+  ]);
+
+  for (const s of storeRows) {
+    if (s.store_name) storeNameById.set(s.id, s.store_name);
+  }
+  // One profile can hold several employee rows (rehire/move) — first company wins, which is
+  // enough for a queue label; the decide routes still gate on the live row.
+  const companyIdByUser = new Map<string, string>();
+  for (const e of empRows) {
+    if (e.company_id && !companyIdByUser.has(e.profile_id)) companyIdByUser.set(e.profile_id, e.company_id);
+  }
+  const companyIds = [...new Set(companyIdByUser.values())];
+  if (companyIds.length > 0) {
+    const { data } = await service.from('hr_companies').select('id, name').in('id', companyIds);
+    const nameById = new Map(((data ?? []) as { id: string; name: string }[]).map((c) => [c.id, c.name] as const));
+    for (const [profileId, companyId] of companyIdByUser) {
+      const name = nameById.get(companyId);
+      if (name) companyNameByUserId.set(profileId, name);
+    }
+  }
+  return { storeNameById, companyNameByUserId };
+}
+
 /** profile id → full_name only, for routes that already hold their own profiles map. */
 export async function buildFullNameMap(
   service: SupabaseClient,

@@ -15,7 +15,12 @@ interface StoreOpt {
 type Status = 'pending' | 'approved' | 'rejected' | 'cancelled';
 type Kind = 'missing_in' | 'missing_out' | 'wrong_time' | 'other';
 
-interface OtRow {
+interface QueueMeta {
+  created_at: string;
+  store_name: string | null;
+  company_name: string | null;
+}
+interface OtRow extends QueueMeta {
   id: string;
   requester_name: string | null;
   requester_nickname: string | null;
@@ -25,7 +30,7 @@ interface OtRow {
   reason: string;
   status: Status;
 }
-interface AttRow {
+interface AttRow extends QueueMeta {
   id: string;
   requester_name: string | null;
   requester_nickname: string | null;
@@ -60,7 +65,11 @@ export default function HrRequestsPage() {
 
   const [tab, setTab] = useState<'ot' | 'attendance'>('ot');
   const [stores, setStores] = useState<StoreOpt[]>([]);
+  // '' = every manageable store. The badge on the HR hub counts the whole queue, so the page
+  // must open on the whole queue too — defaulting to the first store hid every other store's
+  // pending requests behind a hunt.
   const [storeId, setStoreId] = useState('');
+  const [storesReady, setStoresReady] = useState(false);
   const [status, setStatus] = useState<string>('pending');
   const [view, setView] = useViewMode('hr-requests');
 
@@ -129,17 +138,22 @@ export default function HrRequestsPage() {
       try {
         const res = await fetch('/api/hr/manageable-stores');
         const json = await res.json();
-        const list = (json.data ?? []) as StoreOpt[];
-        setStores(list);
-        setStoreId((prev) => prev || list[0]?.id || '');
+        setStores((json.data ?? []) as StoreOpt[]);
       } catch {
         setStores([]);
+      } finally {
+        setStoresReady(true);
       }
     })();
   }, []);
 
   const load = useCallback(async () => {
-    if (!storeId) {
+    if (!storesReady) return;
+    // One query per venue, merged newest-first. The list APIs stay single-store (their auth
+    // gate is per-store), so a store-scoped manager's "every store" is exactly their stores —
+    // the manageable-stores list above already enforces that.
+    const targets = storeId ? [storeId] : stores.map((s) => s.id);
+    if (targets.length === 0) {
       setOtRows([]);
       setAttRows([]);
       setLoading(false);
@@ -147,14 +161,21 @@ export default function HrRequestsPage() {
     }
     setLoading(true);
     try {
-      const params = new URLSearchParams({ store_id: storeId });
-      if (status !== 'all') params.set('status', status);
       const path = tab === 'ot' ? 'ot-requests' : 'attendance-requests';
-      const res = await fetch(`/api/hr/${path}?${params.toString()}`);
-      if (!res.ok) throw new Error();
-      const json = await res.json();
-      if (tab === 'ot') setOtRows((json.data ?? []) as OtRow[]);
-      else setAttRows((json.data ?? []) as AttRow[]);
+      const fetchOne = async (id: string) => {
+        const params = new URLSearchParams({ store_id: id });
+        if (status !== 'all') params.set('status', status);
+        const res = await fetch(`/api/hr/${path}?${params.toString()}`);
+        if (!res.ok) throw new Error();
+        const json = await res.json();
+        return (json.data ?? []) as (OtRow | AttRow)[];
+      };
+      const lists = await Promise.all(targets.map(fetchOne));
+      const merged = lists
+        .flat()
+        .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
+      if (tab === 'ot') setOtRows(merged as OtRow[]);
+      else setAttRows(merged as AttRow[]);
     } catch {
       if (tab === 'ot') setOtRows([]);
       else setAttRows([]);
@@ -163,7 +184,7 @@ export default function HrRequestsPage() {
       setRejectId(null);
       setRejectNote('');
     }
-  }, [storeId, status, tab]);
+  }, [storesReady, stores, storeId, status, tab]);
 
   useEffect(() => {
     load();
@@ -200,7 +221,18 @@ export default function HrRequestsPage() {
     [tab, tOt, load]
   );
 
-  const storeOptions = stores.map((s) => ({ value: s.id, label: s.store_name }));
+  const storeOptions = [
+    { value: '', label: tOt('allStores') },
+    ...stores.map((s) => ({ value: s.id, label: s.store_name })),
+  ];
+
+  const visibleRows = tab === 'ot' ? otRows : attRows;
+  const visibleStores = new Set(visibleRows.map((r) => r.store_name ?? '').filter(Boolean)).size;
+
+  const queueMeta = (r: OtRow | AttRow) => {
+    const parts = [r.store_name, r.company_name].filter(Boolean);
+    return parts.length > 0 ? parts.join(' · ') : undefined;
+  };
   const statusOptions = STATUS_FILTERS.map((s) => ({
     value: s,
     label: s === 'all' ? tOt('statusAll') : statusLabel(s as Status),
@@ -287,6 +319,12 @@ export default function HrRequestsPage() {
         />
       </div>
 
+      {!loading && visibleRows.length > 0 && (
+        <p className="text-xs opacity-70">
+          {tOt('queueSummary', { count: visibleRows.length, stores: visibleStores })}
+        </p>
+      )}
+
       {loading ? (
         <SkeletonList rows={5} />
       ) : tab === 'ot' ? (
@@ -307,6 +345,7 @@ export default function HrRequestsPage() {
                     {` · ${formatThaiDate(r.work_date)}`}
                   </>
                 }
+                subtitle={queueMeta(r)}
                 status={<StatusBadge tone={STATUS_TONE[r.status]} label={statusLabel(r.status)} />}
                 actions={renderDecideBar(r.id, r.status)}
               >
@@ -335,6 +374,7 @@ export default function HrRequestsPage() {
                   {` · ${formatThaiDate(r.business_date)} · ${kindLabel(r.kind)}`}
                 </>
               }
+              subtitle={queueMeta(r)}
               status={
                 <>
                   <StatusBadge tone={STATUS_TONE[r.status]} label={statusLabel(r.status)} />

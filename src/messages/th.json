@@ -4160,6 +4160,8 @@
       "noRequests": "ไม่มีคำขอโอที",
       "requester": "ผู้ขอ",
       "storeLabel": "สาขา",
+      "allStores": "ทุกสาขา",
+      "queueSummary": "พบ {count} รายการ · {stores} สาขา",
       "status": "สถานะ",
       "statusAll": "ทั้งหมด",
       "statusPending": "รออนุมัติ",

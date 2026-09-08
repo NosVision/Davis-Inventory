@@ -4159,6 +4159,8 @@
       "noRequests": "No OT requests",
       "requester": "Requester",
       "storeLabel": "Store",
+      "allStores": "All stores",
+      "queueSummary": "{count} requests · {stores} stores",
       "status": "Status",
       "statusAll": "All",
       "statusPending": "Pending",

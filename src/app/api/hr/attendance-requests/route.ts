@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireStoreManager } from '@/lib/hr/route-auth';
-import { buildEmployeeNameMap } from '@/lib/hr/employee-name-map';
+import { buildEmployeeNameMap, buildQueueMetaMap } from '@/lib/hr/employee-name-map';
 
 const STATUSES = ['pending', 'approved', 'rejected', 'cancelled'];
 
@@ -53,12 +53,21 @@ export async function GET(request: NextRequest) {
   const userIds = [...new Set(rows.map((r) => r.user_id))];
 
   // ชื่อจริง (ชื่อเล่น), same rule as /hr/payroll.
-  const nameById = await buildEmployeeNameMap(service, userIds);
+  const [nameById, meta] = await Promise.all([
+    buildEmployeeNameMap(service, userIds),
+    buildQueueMetaMap(
+      service,
+      userIds,
+      rows.map((r) => r.store_id)
+    ),
+  ]);
 
   const out = rows.map((r) => ({
     ...r,
     requester_name: nameById.get(r.user_id)?.name ?? null,
     requester_nickname: nameById.get(r.user_id)?.nickname ?? null,
+    store_name: meta.storeNameById.get(r.store_id) ?? null,
+    company_name: meta.companyNameByUserId.get(r.user_id) ?? null,
   }));
 
   return NextResponse.json({ data: out });
