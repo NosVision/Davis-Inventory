@@ -76,6 +76,9 @@ export default function HrRequestsPage() {
   const [otRows, setOtRows] = useState<OtRow[]>([]);
   const [attRows, setAttRows] = useState<AttRow[]>([]);
   const [loading, setLoading] = useState(true);
+  // Pending per queue over the current store scope — drives the tab badges so the approver
+  // sees which queue holds items without opening each tab. Independent of the status filter.
+  const [counts, setCounts] = useState<{ ot: number; attendance: number } | null>(null);
 
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState('');
@@ -190,6 +193,24 @@ export default function HrRequestsPage() {
     load();
   }, [load]);
 
+  // Tab badges follow the store scope, not the status filter or active tab.
+  const refreshCounts = useCallback(async () => {
+    if (!storesReady) return;
+    try {
+      const params = new URLSearchParams({ store_id: storeId || 'all' });
+      const res = await fetch(`/api/hr/requests/counts?${params.toString()}`);
+      if (!res.ok) throw new Error();
+      const json = await res.json();
+      setCounts((json.data ?? { ot: 0, attendance: 0 }) as { ot: number; attendance: number });
+    } catch {
+      setCounts(null);
+    }
+  }, [storesReady, storeId]);
+
+  useEffect(() => {
+    refreshCounts();
+  }, [refreshCounts]);
+
   const decide = useCallback(
     async (
       id: string,
@@ -214,11 +235,12 @@ export default function HrRequestsPage() {
         // The approval may have succeeded while its side-effect apply failed — surface it.
         if (json?.warning) toast({ type: 'warning', title: json.warning });
         await load();
+        await refreshCounts();
       } catch {
         toast({ type: 'error', title: tOt('actionFailed') });
       }
     },
-    [tab, tOt, load]
+    [tab, tOt, load, refreshCounts]
   );
 
   const storeOptions = [
@@ -296,8 +318,13 @@ export default function HrRequestsPage() {
 
       <Tabs
         tabs={[
-          { id: 'ot', label: tOt('title') },
-          { id: 'attendance', label: tAtt('title') },
+          // Same convention as the hub strip: a queue with nothing pending shows no badge.
+          { id: 'ot', label: tOt('title'), count: counts && counts.ot > 0 ? counts.ot : undefined },
+          {
+            id: 'attendance',
+            label: tAtt('title'),
+            count: counts && counts.attendance > 0 ? counts.attendance : undefined,
+          },
         ]}
         activeTab={tab}
         onChange={(id) => setTab(id as 'ot' | 'attendance')}
