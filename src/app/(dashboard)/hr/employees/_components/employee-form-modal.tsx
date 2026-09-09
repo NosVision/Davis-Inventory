@@ -66,6 +66,7 @@ interface FormState {
   username: string;
   password: string;
   display_name: string;
+  full_name: string;
   role: string;
   // employment
   company_id: string;
@@ -137,6 +138,7 @@ function defaultForm(): FormState {
     username: '',
     password: '123456',
     display_name: '',
+    full_name: '',
     role: 'staff',
     company_id: '',
     position_id: '',
@@ -348,6 +350,7 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved, onTran
     setForm((f) => ({
       ...f,
       display_name: row.full_name_th || f.display_name,
+      full_name: row.full_name_th || f.full_name,
       employee_code: row.employee_code ?? f.employee_code,
       company_id: row.company_id ?? '',
       position_id: posId,
@@ -418,6 +421,7 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved, onTran
         username: profile.username ?? '',
         password: '123456',
         display_name: profile.display_name ?? '',
+        full_name: (d.full_name as string | null) ?? '',
         role: profile.role ?? 'staff',
         company_id: (d.company_id as string) ?? '',
         position_id: (d.position_id as string) ?? '',
@@ -588,6 +592,7 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved, onTran
     }
 
     const common = {
+      full_name: form.full_name.trim() || null,
       display_name: form.display_name.trim() || null,
       position_id: form.position_id || null,
       department_id: form.department_id || null,
@@ -954,7 +959,7 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved, onTran
                     autoComplete="off"
                   />
                   <Input
-                    label={t('displayName')}
+                    label={isTh ? 'ชื่อแสดงผล / ชื่อเล่น' : 'Display name / nickname'}
                     value={form.display_name}
                     onChange={(e) => update('display_name', e.target.value)}
                   />
@@ -1006,7 +1011,7 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved, onTran
                 readOnly
                 hint={isTh ? 'ชื่อบัญชีเข้าระบบ — แก้ไขจากหน้านี้ไม่ได้' : 'Login account name — not editable here'}
               />
-              <Input label={t('displayName')} value={form.display_name} onChange={(e) => update('display_name', e.target.value)} />
+              <Input label={isTh ? 'ชื่อแสดงผล / ชื่อเล่น' : 'Display name / nickname'} value={form.display_name} onChange={(e) => update('display_name', e.target.value)} />
               {/* System role — show current + let HR change it (owner ask 2026-07-10). */}
               <Select
                 label={t('role')}
@@ -1019,6 +1024,13 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved, onTran
               />
             </>
           )}
+          <Input
+            label={isTh ? 'ชื่อ-นามสกุลจริง (รวมคำนำหน้า)' : 'Full name (including title)'}
+            hint={isTh ? 'ใช้ในรายชื่อพนักงานและเอกสาร เช่น นาย สมชาย ใจดี หรือ Mr. John Smith' : 'Used in the employee list and documents, e.g. Mr. John Smith'}
+            value={form.full_name}
+            onChange={(e) => update('full_name', e.target.value)}
+            maxLength={300}
+          />
           <div>
             <Select
               label={t('company')}

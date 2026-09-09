@@ -221,10 +221,14 @@ export async function PUT(
   }
 
   // optional profile display_name update (kept on profiles); null clears it
+  let displayNameFailed = false;
   if (hasDisplayName) {
     const dn = typeof body.display_name === 'string' ? body.display_name : null;
     const { error: dnErr } = await service.from('profiles').update({ display_name: dn }).eq('id', current.profile_id);
-    if (dnErr) console.error('hr employee update: display_name update failed', current.profile_id, dnErr.message);
+    if (dnErr) {
+      console.error('hr employee update: display_name update failed', current.profile_id, dnErr.message);
+      displayNameFailed = true;
+    }
   }
 
   // Access follows employment status (owner 2026-07-08): the moment HR marks someone
@@ -266,5 +270,10 @@ export async function PUT(
     reason: typeof body.reason === 'string' ? body.reason : null,
   });
 
+  // Finish status synchronization and audit for the committed employee edit before reporting
+  // a separate profile-name failure; never skip offboarding because a nickname write failed.
+  if (displayNameFailed) {
+    return NextResponse.json({ error: 'บันทึกข้อมูลพนักงานแล้ว แต่บันทึกชื่อแสดงผลไม่สำเร็จ กรุณาลองใหม่' }, { status: 500 });
+  }
   return NextResponse.json({ data: updated });
 }

@@ -29,6 +29,8 @@ export interface EmployeeDocument {
 
 /** Writable hr_employees columns (excludes id/profile_id/audit cols). */
 export interface EmployeeWritable {
+  /** Official name, including honorifics; separate from the account display name. */
+  full_name: string | null;
   company_id: string | null;
   position_id: string | null;
   department_id: string | null;
@@ -216,6 +218,14 @@ export function pickEmployeeFields(
     out[key] = v === null || v === '' ? null : String(v);
   };
 
+  if (has('full_name')) {
+    const name = body.full_name;
+    if (name !== null && (typeof name !== 'string' || name.trim().length > 300)) {
+      errors.push({ field: 'full_name', message: 'must be a string of at most 300 characters or null' });
+    } else {
+      out.full_name = typeof name === 'string' ? name.trim() || null : null;
+    }
+  }
   setEnum('pay_type', PAY_TYPES);
   setEnum('tax_mode', TAX_MODES);
   setEnum('status', EMPLOYEE_STATUSES);
