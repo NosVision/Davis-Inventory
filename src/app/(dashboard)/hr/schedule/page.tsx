@@ -324,6 +324,8 @@ export default function SchedulePage({
       });
       setDraft(new Map());
       await load();
+    } catch (error) {
+      toast({ type: 'error', title: t('saveFailed'), message: error instanceof Error ? error.message : undefined });
     } finally {
       setSaving(false);
     }
@@ -338,12 +340,13 @@ export default function SchedulePage({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ store_id: storeId, label: form.label.trim(), start_time: form.start, end_time: form.end, color: form.color }),
       });
-      if (!res.ok) throw new Error();
+      const j = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(j.error || t('saveFailed'));
       setForm({ label: '', start: '17:00', end: '01:00', color: '#6366f1' });
       setShowAdd(false);
       await load();
-    } catch {
-      toast({ type: 'error', title: t('saveFailed') });
+    } catch (error) {
+      toast({ type: 'error', title: t('saveFailed'), message: error instanceof Error ? error.message : undefined });
     }
   }, [form, storeId, load, t]);
 
