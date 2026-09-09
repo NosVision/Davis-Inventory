@@ -356,7 +356,7 @@ export function CommissionPayment({ month: monthProp, refreshKey, rounded = fals
         notes: payNotes,
       };
       if (selectedType === 'ae') payload.ae_id = selectedId;
-      else payload.staff_id = selectedId;
+      else payload.staff_id = selectedId === 'no_staff' ? null : selectedId;
       if (pickedIds.length > 0) payload.entry_ids = pickedIds;
 
       const res = await fetch('/api/commission/payment', {
@@ -878,7 +878,7 @@ export function CommissionPayment({ month: monthProp, refreshKey, rounded = fals
                       <span className="text-xs text-gray-400">{formatThaiDate(p.paid_at)}</span>
                     </div>
                     <p className="mt-0.5 text-sm font-medium text-gray-900 dark:text-white">
-                      {p.type === 'ae_commission' ? p.ae_profile?.name : p.staff_profile?.display_name || p.staff_profile?.username}
+                      {p.type === 'ae_commission' ? p.ae_profile?.name : p.staff_profile?.display_name || p.staff_profile?.username || t('entryList.unspecifiedStaff')}
                     </p>
                     <p className="text-xs text-gray-500">{p.total_entries} {t('payment.entries')}</p>
                   </div>
@@ -952,7 +952,7 @@ export function CommissionPayment({ month: monthProp, refreshKey, rounded = fals
         {detailModal && (
           <div className="space-y-3">
             <div className="rounded-lg bg-gray-50 p-3 dark:bg-gray-800/50">
-              <p className="text-sm"><span className="text-gray-500">{t('payment.name')}:</span> <span className="font-medium">{detailModal.type === 'ae_commission' ? detailModal.ae_profile?.name : detailModal.staff_profile?.display_name}</span></p>
+              <p className="text-sm"><span className="text-gray-500">{t('payment.name')}:</span> <span className="font-medium">{detailModal.type === 'ae_commission' ? detailModal.ae_profile?.name : detailModal.staff_profile?.display_name || detailModal.staff_profile?.username || t('entryList.unspecifiedStaff')}</span></p>
               <p className="text-sm"><span className="text-gray-500">{t('payment.month')}:</span> {detailModal.month}</p>
               <p className="text-sm"><span className="text-gray-500">{t('payment.count')}:</span> {detailModal.total_entries} {t('payment.entries')}</p>
               <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency(detailModal.total_amount)}</p>

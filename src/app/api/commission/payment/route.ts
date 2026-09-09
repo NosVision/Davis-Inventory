@@ -40,8 +40,8 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const { store_id, ae_id, staff_id, type, month, slip_photo_url, slip_photo_urls, notes, entry_ids } = body as {
     store_id: string;
-    ae_id?: string;
-    staff_id?: string;
+    ae_id?: string | null;
+    staff_id?: string | null;
     type: string;
     month: string;
     slip_photo_url?: string | null;
@@ -52,6 +52,21 @@ export async function POST(req: NextRequest) {
 
   if (!store_id || !type || !month) {
     return NextResponse.json({ error: 'store_id, type, month required' }, { status: 400 });
+  }
+
+  if (type !== 'ae_commission' && type !== 'bottle_commission') {
+    return NextResponse.json({ error: 'ประเภทค่าคอมมิชชันไม่ถูกต้อง' }, { status: 400 });
+  }
+  // no_staff is a summary grouping key, never a profiles UUID. Accept it from
+  // older open tabs too; a bottle payout may intentionally have no named staff.
+  const requestedStaffId = staff_id === 'no_staff' || staff_id === '' ? null : staff_id ?? null;
+  const requestedAeId = ae_id ?? null;
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if ([requestedStaffId, requestedAeId].some(id => id !== null && (typeof id !== 'string' || !uuid.test(id)))) {
+    return NextResponse.json({ error: 'รหัสผู้รับค่าคอมมิชชันไม่ถูกต้อง' }, { status: 400 });
+  }
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+    return NextResponse.json({ error: 'เดือนที่จ่ายไม่ถูกต้อง' }, { status: 400 });
   }
 
   // Accept multiple transfer slips (paying in several rounds). Fall back
@@ -76,10 +91,17 @@ export async function POST(req: NextRequest) {
     // Legacy "pay everything" path — narrow by ae/staff + month.
     entriesQuery = entriesQuery.gte('bill_date', `${month}-01`);
     const [y, m] = month.split('-').map(Number);
-    const endDate = new Date(y, m, 0).toISOString().split('T')[0];
+    const endDate = new Date(Date.UTC(y, m, 0)).toISOString().split('T')[0];
     entriesQuery = entriesQuery.lte('bill_date', endDate);
-    if (type === 'ae_commission' && ae_id) entriesQuery = entriesQuery.eq('ae_id', ae_id);
-    if (type === 'bottle_commission' && staff_id) entriesQuery = entriesQuery.eq('staff_id', staff_id);
+    if (type === 'ae_commission') {
+      if (!requestedAeId) return NextResponse.json({ error: 'กรุณาระบุ AE' }, { status: 400 });
+      entriesQuery = entriesQuery.eq('ae_id', requestedAeId);
+    }
+    if (type === 'bottle_commission') {
+      entriesQuery = requestedStaffId
+        ? entriesQuery.eq('staff_id', requestedStaffId)
+        : entriesQuery.is('staff_id', null);
+    }
   }
 
   const { data: entries, error: entriesErr } = await entriesQuery;
@@ -94,16 +116,22 @@ export async function POST(req: NextRequest) {
   // a single payment record. The summary UI only lets the user pick
   // within one group, but enforce on the server too.
   if (type === 'ae_commission') {
-    const aeIds = new Set(entries.map((e) => e.ae_id).filter(Boolean));
-    if (aeIds.size !== 1) return NextResponse.json({ error: 'รายการต้องเป็น AE เดียวกัน' }, { status: 400 });
+    const aeIds = new Set(entries.map((e) => e.ae_id ?? null));
+    if (aeIds.size !== 1 || aeIds.has(null) || (requestedAeId && !aeIds.has(requestedAeId))) {
+      return NextResponse.json({ error: 'รายการต้องเป็น AE เดียวกัน' }, { status: 400 });
+    }
   }
   if (type === 'bottle_commission') {
-    const staffIds = new Set(entries.map((e) => e.staff_id).filter(Boolean));
-    if (staffIds.size !== 1) return NextResponse.json({ error: 'รายการต้องเป็นพนักงานคนเดียวกัน' }, { status: 400 });
+    const staffIds = new Set(entries.map((e) => e.staff_id ?? null));
+    // null is its own recipient group: do not drop it and mix unnamed bills
+    // with somebody else's payout. Derive the saved recipient from the bills.
+    if (staffIds.size !== 1 || (staff_id !== undefined && !staffIds.has(requestedStaffId))) {
+      return NextResponse.json({ error: 'รายการต้องเป็นพนักงานคนเดียวกัน หรือเป็นรายการไม่ระบุพนักงานทั้งหมด' }, { status: 400 });
+    }
   }
 
-  const resolvedAeId = type === 'ae_commission' ? (ae_id ?? entries[0].ae_id ?? null) : null;
-  const resolvedStaffId = type === 'bottle_commission' ? (staff_id ?? entries[0].staff_id ?? null) : null;
+  const resolvedAeId = type === 'ae_commission' ? entries[0].ae_id : null;
+  const resolvedStaffId = type === 'bottle_commission' ? entries[0].staff_id ?? null : null;
   const totalAmount = entries.reduce((sum, e) => sum + (Number(e.net_amount) || 0), 0);
 
   const entryIds = entries.map((e) => e.id);
