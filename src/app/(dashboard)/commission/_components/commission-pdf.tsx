@@ -112,6 +112,7 @@ const styles = StyleSheet.create({
     color: '#134e4a',
   },
   row: {
+    flexShrink: 0,
     flexDirection: 'row',
     paddingVertical: 3,
     paddingHorizontal: 3,
@@ -124,7 +125,8 @@ const styles = StyleSheet.create({
   coverName: { flex: 1, fontSize: 10 },
   coverBills: { width: 50, textAlign: 'right', fontSize: 10 },
   coverMoney: { width: 95, textAlign: 'right', fontSize: 10 },
-  coverWht: { width: 90, textAlign: 'center', fontSize: 9 },
+  coverWht: { width: 78, textAlign: 'center', fontSize: 9 },
+  coverNote: { width: 130, fontSize: 8, paddingLeft: 4 },
   coverTotalRow: {
     backgroundColor: '#f0fdfa',
     fontWeight: 700,
@@ -261,7 +263,7 @@ const styles = StyleSheet.create({
   },
 
   signatures: {
-    marginTop: 28,
+    marginTop: 10,
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
@@ -271,7 +273,7 @@ const styles = StyleSheet.create({
     width: '100%',
     borderBottomWidth: 0.5,
     borderColor: '#9ca3af',
-    height: 24,
+    height: 18,
   },
   signatureLabel: { marginTop: 2, fontSize: 9, color: '#374151' },
 
@@ -283,8 +285,10 @@ const styles = StyleSheet.create({
 
   pageNum: {
     position: 'absolute',
-    bottom: 18,
+    top: 565,
     right: 28,
+    width: 120,
+    textAlign: 'right',
     fontSize: 8,
     color: '#9ca3af',
   },
@@ -312,6 +316,8 @@ export interface CommissionPdfAEGroup {
   kind?: 'ae' | 'bottle';
   ae_name: string;
   ae_nickname: string | null;
+  email?: string | null;
+  note?: string | null;
   bank_label: string | null;        // e.g. "กสิกร 123-4-56789 (สมชาย ใจดี)"
   /** ใบ 50 ทวิ status for the month, or null when this AE did not ask. */
   wht_label: string | null;
@@ -334,6 +340,7 @@ export interface CommissionPdfCoverRow {
   net: number;
   paid: number;
   outstanding: number;
+  note?: string | null;
   wht_label: string | null;
 }
 
@@ -342,9 +349,7 @@ export interface CommissionReportData {
   month_label: string;              // e.g. "เมษายน 2569"
   generated_at_label: string;       // e.g. "8 พ.ค. 2569 14:32"
   /**
-   * Page 1: who is owed what, before any of the per-AE bill detail. The accountant reads this to
-   * settle the month; the pages behind it are the backup (owner ask 2026-08-07). Omitted for the
-   * single-payment receipt PDF, which has nothing to summarise.
+   * Summary before the bill detail, in the same page flow. Also used by single-round receipts.
    */
   cover?: CommissionPdfCoverRow[];
   groups: CommissionPdfAEGroup[];
@@ -508,25 +513,22 @@ function ReportDocument({ data }: { data: CommissionReportData }) {
 
   return (
     <Document title={`รายงานค่าคอมมิชชั่น ${data.month_label}`}>
+      <Page size="A4" orientation="landscape" style={styles.page}>
+        <Text style={styles.pageNum} render={({ pageNumber, totalPages }) => `หน้า ${pageNumber} / ${totalPages}`} fixed />
+        <View style={styles.header} fixed>
+          <View>
+            <Text style={styles.title}>รายงานค่าคอมมิชชั่น{scopeLabel}</Text>
+            <Text style={styles.subTitle}>{data.store_name} — เดือน {data.month_label}</Text>
+            <Text style={styles.subTitle}>ออกรายงานเมื่อ {data.generated_at_label}</Text>
+          </View>
+          <View>
+            <Text style={styles.totalsBig}>{fmtMoney(data.grand.net)} บาท</Text>
+            <Text style={styles.totals}>{whoLine}</Text>
+          </View>
+        </View>
       {/* ── Cover sheet: the ค้างจ่าย summary, always page 1 ────────────────── */}
       {data.cover && data.cover.length > 0 && (
-        <Page size="A4" orientation="landscape" style={styles.page}>
-          <View style={styles.header}>
-            <View>
-              <Text style={styles.title}>สรุปค่าคอมมิชชั่นค้างจ่าย{scopeLabel}</Text>
-              <Text style={styles.subTitle}>
-                {data.store_name} — เดือน {data.month_label}
-              </Text>
-              <Text style={styles.subTitle}>ออกรายงานเมื่อ {data.generated_at_label}</Text>
-            </View>
-            <View>
-              <Text style={styles.totals}>ค้างจ่ายรวม</Text>
-              <Text style={styles.totalsBig}>
-                {fmtMoney(data.cover.reduce((s, r) => s + r.outstanding, 0))} บาท
-              </Text>
-              <Text style={styles.totals}>{whoLine}</Text>
-            </View>
-          </View>
+        <View>
 
           <View style={styles.tableHead}>
             <Text style={styles.coverKind}>ประเภท</Text>
@@ -536,6 +538,7 @@ function ReportDocument({ data }: { data: CommissionReportData }) {
             <Text style={styles.coverMoney}>จ่ายแล้ว</Text>
             <Text style={styles.coverMoney}>ค้างจ่าย</Text>
             <Text style={styles.coverWht}>ใบ 50 ทวิ</Text>
+            <Text style={styles.coverNote}>หมายเหตุ</Text>
           </View>
 
           {data.cover.map((r, idx) => (
@@ -547,6 +550,7 @@ function ReportDocument({ data }: { data: CommissionReportData }) {
               <Text style={styles.coverMoney}>{fmtMoney(r.paid)}</Text>
               <Text style={styles.coverMoney}>{r.outstanding > 0 ? fmtMoney(r.outstanding) : '-'}</Text>
               <Text style={styles.coverWht}>{r.wht_label ?? '-'}</Text>
+              <Text style={styles.coverNote}>{r.note || '-'}{' '}</Text>
             </View>
           ))}
 
@@ -560,33 +564,19 @@ function ReportDocument({ data }: { data: CommissionReportData }) {
             <Text style={styles.coverWht}>
               {data.cover.filter((r) => r.wht_label).length} คน
             </Text>
+            <Text style={styles.coverNote}> </Text>
           </View>
 
           <Text style={styles.coverFootnote}>
-            รายละเอียดบิลรายคนอยู่ในหน้าถัดไป
+            รายละเอียดบิลรายคนแสดงต่อจากตารางสรุป
           </Text>
-        </Page>
+        </View>
       )}
 
       {aeGroups.length > 0 && (
-      <Page size="A4" orientation="landscape" style={styles.page}>
+      <View>
         {/* Header */}
-        <View style={styles.header} fixed>
-          <View>
-            <Text style={styles.title}>รายงานค่าคอมมิชชั่น (AE)</Text>
-            <Text style={styles.subTitle}>
-              {data.store_name} — เดือน {data.month_label}
-            </Text>
-            <Text style={styles.subTitle}>ออกรายงานเมื่อ {data.generated_at_label}</Text>
-          </View>
-          <View>
-            <Text style={styles.totals}>ยอดจ่ายรวม</Text>
-            <Text style={styles.totalsBig}>{fmtMoney(aeGrand.net)} บาท</Text>
-            <Text style={styles.totals}>
-              AE {aeGroups.length} คน · {aeGrand.bill_count} บิล
-            </Text>
-          </View>
-        </View>
+        <Text style={styles.dLabel}>รายละเอียดค่าคอมมิชชั่น AE</Text>
 
         {/* Per-AE blocks */}
         {aeGroups.map((g) => (
@@ -602,10 +592,13 @@ function ReportDocument({ data }: { data: CommissionReportData }) {
               </Text>
             </View>
 
+            {g.email && <Text style={styles.aeBank}>อีเมล: {g.email}{' '}</Text>}
+            {g.note && <Text style={styles.noteText}>หมายเหตุ: {g.note}{' '}</Text>}
+
             {/* สรุปรายวัน — ahead of the bill list, because "how much on the 9th" is the
                 question that gets asked first and the bills below are the backup for it. */}
             {g.rows.length > 0 && (
-              <View style={styles.aeBlock} wrap={false}>
+              <View style={styles.aeBlock} wrap>
                 <Text style={styles.dLabel}>แจกแจงรายวัน</Text>
                 <View style={styles.tableHead}>
                   <Text style={styles.dDate}>วันที่</Text>
@@ -617,6 +610,7 @@ function ReportDocument({ data }: { data: CommissionReportData }) {
                 {dailyTotals(g.rows).map((d, idx) => (
                   <View
                     key={`${g.ae_name}-day-${d.date}`}
+                    wrap={false}
                     style={[styles.row, idx % 2 === 1 ? styles.rowAlt : {}]}
                   >
                     <Text style={styles.dDate}>{fmtShortDate(d.date)}</Text>
@@ -743,37 +737,15 @@ function ReportDocument({ data }: { data: CommissionReportData }) {
           </View>
         </View>
 
-        <Text
-          style={styles.pageNum}
-          render={({ pageNumber, totalPages }) =>
-            `หน้า ${pageNumber} / ${totalPages}`
-          }
-          fixed
-        />
-      </Page>
+      </View>
       )}
 
       {/* ── Bottle section: same settle-from-cover structure, but the bill grid
           carries รายการ/ขวด/เรท instead of the AE SV/VAT math, which does not
           exist on bottle entries. ─────────────────────────────────────────── */}
       {bottleGroups.length > 0 && (
-      <Page size="A4" orientation="landscape" style={styles.page}>
-        <View style={styles.header} fixed>
-          <View>
-            <Text style={styles.title}>รายงานค่าคอมขวด (พนักงาน)</Text>
-            <Text style={styles.subTitle}>
-              {data.store_name} — เดือน {data.month_label}
-            </Text>
-            <Text style={styles.subTitle}>ออกรายงานเมื่อ {data.generated_at_label}</Text>
-          </View>
-          <View>
-            <Text style={styles.totals}>ยอดจ่ายรวม</Text>
-            <Text style={styles.totalsBig}>{fmtMoney(bottleGrand.net)} บาท</Text>
-            <Text style={styles.totals}>
-              พนักงาน {bottleGroups.length} คน · {bottleGrand.bill_count} รายการ · {bottleGrand.bottles} ขวด
-            </Text>
-          </View>
-        </View>
+      <View>
+        <Text style={styles.sectionTitle}>รายละเอียดค่าคอมขวด</Text>
 
         {bottleGroups.map((g) => (
           <View key={`bottle-${g.ae_name}`} style={styles.aeBlock} wrap={true}>
@@ -785,7 +757,7 @@ function ReportDocument({ data }: { data: CommissionReportData }) {
             </View>
 
             {g.rows.length > 0 && (
-              <View style={styles.aeBlock} wrap={false}>
+              <View style={styles.aeBlock} wrap>
                 <Text style={styles.dLabel}>แจกแจงรายวัน</Text>
                 <View style={styles.bottleTableHead}>
                   <Text style={styles.dDate}>วันที่</Text>
@@ -796,6 +768,7 @@ function ReportDocument({ data }: { data: CommissionReportData }) {
                 {dailyTotals(g.rows).map((d, idx) => (
                   <View
                     key={`bottle-${g.ae_name}-day-${d.date}`}
+                    wrap={false}
                     style={[styles.row, idx % 2 === 1 ? styles.rowAlt : {}]}
                   >
                     <Text style={styles.dDate}>{fmtShortDate(d.date)}</Text>
@@ -901,15 +874,9 @@ function ReportDocument({ data }: { data: CommissionReportData }) {
           </View>
         </View>
 
-        <Text
-          style={styles.pageNum}
-          render={({ pageNumber, totalPages }) =>
-            `หน้า ${pageNumber} / ${totalPages}`
-          }
-          fixed
-        />
-      </Page>
+      </View>
       )}
+      </Page>
     </Document>
   );
 }

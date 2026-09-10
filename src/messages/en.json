@@ -4870,7 +4870,10 @@
       "reasonOptional": "Reason (optional)",
       "reasonRequired": "Reason for cancelling (required)",
       "dontCancel": "Don't Cancel",
-      "confirmCancelBtn": "Confirm Cancel"
+      "confirmCancelBtn": "Confirm Cancel",
+      "settledThisMonth": "Settled this month",
+      "viewPaidBills": "View the bills this payout covered",
+      "downloadPdf": "Download PDF"
     },
     "entryList": {
       "confirmDelete": "Confirm delete this entry?",

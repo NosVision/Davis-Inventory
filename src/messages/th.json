@@ -4871,7 +4871,10 @@
       "reasonOptional": "เหตุผล (ถ้ามี)",
       "reasonRequired": "เหตุผลที่ยกเลิก (ต้องระบุ)",
       "dontCancel": "ไม่ยกเลิก",
-      "confirmCancelBtn": "ยืนยันยกเลิก"
+      "confirmCancelBtn": "ยืนยันยกเลิก",
+      "settledThisMonth": "จ่ายแล้วเดือนนี้ — ดูบิลย้อนหลัง",
+      "viewPaidBills": "ดูบิลที่จ่ายไปแล้ว",
+      "downloadPdf": "ดาวน์โหลด PDF"
     },
     "entryList": {
       "confirmDelete": "ยืนยันลบรายการนี้?",

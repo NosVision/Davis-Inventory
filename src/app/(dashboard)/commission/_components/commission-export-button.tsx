@@ -22,6 +22,7 @@ interface AEGroup {
   ae_id: string;
   ae_name: string;
   ae_nickname: string | null;
+  email?: string | null;
   bank_name: string | null;
   bank_account_no: string | null;
   bank_account_name: string | null;
@@ -69,7 +70,7 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
   const [exportMonth, setExportMonth] = useState(monthProp);
   const [groups, setGroups] = useState<AEGroup[]>([]);
   const [bottleGroups, setBottleGroups] = useState<BottleGroup[]>([]);
-  const [certStatus, setCertStatus] = useState<Record<string, string>>({});
+  const [certs, setCerts] = useState<Record<string, { status: string; note: string | null }>>({});
   const [loadingGroups, setLoadingGroups] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectedBottleIds, setSelectedBottleIds] = useState<Set<string>>(new Set());
@@ -125,10 +126,10 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
       // who asked without going back to the screen. Best-effort: the PDF is still valid without it.
       const certRes = await fetch(`/api/commission/wht-certs?${params}`);
       if (certRes.ok) {
-        const rows = (await certRes.json()) as Array<{ ae_id: string; status: string }>;
-        setCertStatus(Object.fromEntries(rows.map((r) => [r.ae_id, r.status])));
+        const rows = (await certRes.json()) as Array<{ ae_id: string; status: string; note: string | null }>;
+        setCerts(Object.fromEntries(rows.map((r) => [r.ae_id, r])));
       } else {
-        setCertStatus({});
+        setCerts({});
       }
     } finally {
       setLoadingGroups(false);
@@ -235,7 +236,7 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
         const bankLabel = g.bank_name
           ? `${g.bank_name} ${g.bank_account_no || ''}${g.bank_account_name ? ` (${g.bank_account_name})` : ''}`.trim()
           : null;
-        const cert = certStatus[g.ae_id];
+        const cert = certs[g.ae_id]?.status;
         // A standing request counts as asked even with no monthly row (ae_profiles.wht_cert_standing).
         const standing = !!(g as { wht_cert_standing?: boolean }).wht_cert_standing;
         const certLabel =
@@ -249,6 +250,8 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
           ae_name: g.ae_name,
           ae_nickname: g.ae_nickname,
           bank_label: bankLabel,
+          email: g.email ?? null,
+          note: certs[g.ae_id]?.note ?? null,
           wht_label: certLabel ? `ใบ 50 ทวิ: ${certLabel}` : null,
           cover_wht_label: certLabel,
           paid,
@@ -275,6 +278,8 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
             ae_name: b.staff_name,
             ae_nickname: null as string | null,
             bank_label: null as string | null,
+            email: null,
+            note: null,
             wht_label: null as string | null,
             cover_wht_label: null as string | null,
             paid,
@@ -315,6 +320,7 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
           paid: g.paid,
           outstanding: g.totals.net - g.paid,
           wht_label: g.cover_wht_label,
+          note: g.note,
         })),
         groups: rgs,
         grand: rgs.reduce(

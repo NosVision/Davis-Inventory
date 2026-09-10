@@ -1,4 +1,5 @@
 'use client';
+import { exportPaymentRoundPdf } from './payment-round-pdf';
 
 import { useState, useEffect, useCallback } from 'react';
 import { Button, Card, CardContent, Badge, Modal, toast } from '@/components/ui';
@@ -80,57 +81,7 @@ export function CommissionPaymentHistory({ month: monthProp, refreshKey, rounded
   async function exportPaymentPdf(p: PaymentRecord) {
     setExportingPdf(true);
     try {
-      const mod = await import('./commission-pdf');
-      const netOf = (n: number | null | undefined) => netDisplay(n, rounded);
-      const isBottle = p.type !== 'ae_commission';
-      const rows = isBottle
-        ? (p.entries || []).map((e) => mod.toBottleRow(e, netOf))
-        : (p.entries || []).map((e) => ({
-          bill_date: String(e.bill_date || ''),
-          receipt_no: (e.receipt_no as string | null) ?? null,
-          table_no: (e.table_no as string | null) ?? null,
-          subtotal: Number(e.subtotal_amount) || 0,
-          commission_amount: Number(e.commission_amount) || 0,
-          net_amount: netOf(e.net_amount as number),
-          notes: (e.notes as string | null) ?? null,
-        }));
-      const totals = isBottle
-        ? mod.sumBottleRows(rows)
-        : rows.reduce(
-          (acc, r) => ({
-            subtotal: acc.subtotal + r.subtotal,
-            commission: acc.commission + r.commission_amount,
-            net: acc.net + r.net_amount,
-            bill_count: acc.bill_count + 1,
-            bottles: 0,
-          }),
-          { subtotal: 0, commission: 0, net: 0, bill_count: 0, bottles: 0 },
-        );
-      const ae = p.ae_profile as (PaymentRecord['ae_profile'] & { bank_name?: string | null; bank_account_no?: string | null; bank_account_name?: string | null }) | undefined;
-      const name = p.type === 'ae_commission'
-        ? ae?.name || '-'
-        : p.staff_profile?.display_name || p.staff_profile?.username || '-';
-      const [y, m] = p.month.split('-').map(Number);
-      const blob = await mod.buildCommissionPdf({
-        store_name: 'สาขา',
-        month_label: `${new Intl.DateTimeFormat('th-TH-u-ca-buddhist', { month: 'long', year: 'numeric' }).format(new Date(y, m - 1, 1))} · จ่ายเมื่อ ${formatThaiDate(p.paid_at)}${p.status === 'cancelled' ? ' (ยกเลิกแล้ว)' : ''}`,
-        generated_at_label: new Intl.DateTimeFormat('th-TH-u-ca-buddhist', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date()),
-        groups: [{
-          kind: isBottle ? 'bottle' : 'ae',
-          ae_name: name,
-          ae_nickname: ae?.nickname ?? null,
-          bank_label: !isBottle && ae?.bank_name
-            ? `${ae.bank_name} ${ae.bank_account_no || ''}${ae.bank_account_name ? ` (${ae.bank_account_name})` : ''}`.trim()
-            : null,
-          // This PDF is the receipt for one transfer, not the monthly report — the ใบ 50 ทวิ
-          // status belongs on the latter, so it is deliberately left off here.
-          wht_label: null,
-          rows,
-          totals,
-        }],
-        grand: { ...totals, bottles: totals.bottles ?? 0 },
-      });
-      mod.downloadBlob(blob, `รอบจ่าย-${name}-${p.month}.pdf`);
+      await exportPaymentRoundPdf(p, rounded);
     } catch (err) {
       console.error('Payment PDF export error:', err);
       toast({ type: 'error', title: 'สร้าง PDF ล้มเหลว' });

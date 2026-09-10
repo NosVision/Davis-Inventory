@@ -5,13 +5,14 @@ import { Button, Card, CardHeader, CardContent, Badge, Modal, ModalFooter, toast
 import { useAppStore } from '@/stores/app-store';
 import { useAuthStore } from '@/stores/auth-store';
 import { CommissionExportButton } from './commission-export-button';
-import { Loader2, Banknote, Clock, Search, CheckCircle2, XCircle, Eye, Image, ChevronDown, ChevronRight, RotateCcw, X, Receipt } from 'lucide-react';
+import { Loader2, Banknote, Clock, Search, CheckCircle2, XCircle, Eye, Image, ChevronDown, ChevronRight, RotateCcw, X, Receipt, FileDown } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/audit';
 import { useTranslations } from 'next-intl';
 import { formatThaiDate } from '@/lib/utils/format';
 import { netDisplay, type AEProfile } from '@/types/commission';
 import { hasCancelReason } from '@/lib/commission/cancel-reason';
+import { exportPaymentRoundPdf } from './payment-round-pdf';
 
 function formatCurrency(n: number) {
   return n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -145,6 +146,17 @@ interface SummaryData {
   };
 }
 
+/** One person's already-settled bills for the month — AE commission or ค่าคอมขวด. */
+interface SettledGroup {
+  key: string;
+  name: string;
+  isBottle: boolean;
+  entries: Array<Record<string, unknown>>;
+  /** Bills still owing. > 0 means this person is also still in the ค้างจ่าย list above. */
+  unpaidCount: number;
+  paidTotal: number;
+}
+
 interface PaymentRecord {
   id: string;
   ae_id: string | null;
@@ -158,7 +170,16 @@ interface PaymentRecord {
   notes: string | null;
   status: string;
   paid_at: string;
-  ae_profile?: { id: string; name: string; nickname: string | null };
+  // The detail endpoint joins the bank + email columns too; the payout PDF prints them.
+  ae_profile?: {
+    id: string;
+    name: string;
+    nickname: string | null;
+    email?: string | null;
+    bank_name?: string | null;
+    bank_account_no?: string | null;
+    bank_account_name?: string | null;
+  };
   staff_profile?: { id: string; display_name: string | null; username: string };
   entries?: Array<Record<string, unknown>>;
 }
@@ -178,8 +199,8 @@ export function CommissionPayment({ month: monthProp, refreshKey, rounded = fals
   // Payment form state
   const [selectedType, setSelectedType] = useState<'ae' | 'bottle' | null>(null);
   const [selectedId, setSelectedId] = useState<string>('');
-  // "จ่ายครบแล้วเดือนนี้" → the bills that transfer covered.
-  const [billsFor, setBillsFor] = useState<{ ae_name: string; entries: Array<Record<string, unknown>> } | null>(null);
+  // "จ่ายแล้วเดือนนี้" → the bills that transfer covered, for an AE or a bottle-commission staffer.
+  const [billsFor, setBillsFor] = useState<SettledGroup | null>(null);
   const [slipPhotos, setSlipPhotos] = useState<string[]>([]);
   const [payNotes, setPayNotes] = useState('');
   const [paying, setPaying] = useState(false);
@@ -191,6 +212,7 @@ export function CommissionPayment({ month: monthProp, refreshKey, rounded = fals
   // Detail modal
   const [detailModal, setDetailModal] = useState<PaymentRecord | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   // Cancel-payment modal (existing — cancels an entire payment record)
   const [cancelModal, setCancelModal] = useState<string | null>(null);
@@ -316,24 +338,44 @@ export function CommissionPayment({ month: monthProp, refreshKey, rounded = fals
     })
     .filter((b) => b.entry_count > 0);
 
-  // The mirror of unpaidAE: AEs with nothing left owing this month. They vanish from the list
-  // above once settled, so this keeps a route back to the bills the transfer actually covered.
-  const settledAE = (summary?.ae_summary || [])
-    .map((a) => {
-      const paidEntries = (a.entries || []).filter((e) => !!(e as { payment_id?: string | null }).payment_id);
-      const unpaidCount = (a.entries || []).length - paidEntries.length;
+  /**
+   * The mirror of the two ค้างจ่าย lists: everyone with bills already settled this month.
+   *
+   * A paid bill disappears from the lists above (they are the ค้างจ่าย lists), so without this
+   * there is no route back to what a transfer covered without digging through ประวัติ. It covers
+   * ค่าคอมขวด as well as AEs, and anyone who has been paid at all — a partially-settled AE stays
+   * in the ค้างจ่าย list with only their UNPAID bills showing, so their paid ones were invisible
+   * too (client ask 2026-09-04: "เมื่อกดจ่ายค่าคอมแล้ว ยังสามารถดูบิลเก่าได้อยู่").
+   */
+  const paidOf = (entries: Array<Record<string, unknown>> | undefined) =>
+    (entries || []).filter((e) => !!(e as { payment_id?: string | null }).payment_id);
+
+  const settled: SettledGroup[] = [
+    ...(summary?.ae_summary || []).map((a) => {
+      const paidEntries = paidOf(a.entries);
       return {
-        ae_id: a.ae_id,
-        ae_name: a.ae_name,
+        key: `ae_${a.ae_id}`,
+        name: a.ae_name,
+        isBottle: false,
         entries: paidEntries,
-        unpaidCount,
+        unpaidCount: (a.entries || []).length - paidEntries.length,
         paidTotal: paidEntries.reduce((s, e) => s + netDisplay((e as { net_amount?: number }).net_amount, rounded), 0),
       };
-    })
-    .filter((a) => a.entries.length > 0 && a.unpaidCount === 0);
+    }),
+    ...(summary?.bottle_summary || []).map((b) => {
+      const paidEntries = paidOf(b.entries);
+      return {
+        key: `bottle_${b.staff_id}`,
+        name: b.staff_name,
+        isBottle: true,
+        entries: paidEntries,
+        unpaidCount: (b.entries || []).length - paidEntries.length,
+        paidTotal: paidEntries.reduce((s, e) => s + netDisplay((e as { net_amount?: number }).net_amount, rounded), 0),
+      };
+    }),
+  ].filter((g) => g.entries.length > 0);
 
   const totalUnpaid = unpaidAE.reduce((s, a) => s + a.total_net, 0) + unpaidBottle.reduce((s, b) => s + b.total_net, 0);
-  const totalPaid = payments.filter(p => p.status === 'paid').reduce((s, p) => s + p.total_amount, 0);
 
   async function handlePay() {
     if (!currentStoreId || !selectedId) return;
@@ -437,6 +479,19 @@ export function CommissionPayment({ month: monthProp, refreshKey, rounded = fals
       }
     } finally {
       setCancelling(false);
+    }
+  }
+
+  /** Same file the ประวัติ tab produces — a round is a round wherever you download it from. */
+  async function handleExportPdf(payment: PaymentRecord) {
+    setExportingPdf(true);
+    try {
+      await exportPaymentRoundPdf(payment, rounded);
+    } catch (err) {
+      console.error('Payment PDF export error:', err);
+      toast({ type: 'error', title: 'สร้าง PDF ล้มเหลว' });
+    } finally {
+      setExportingPdf(false);
     }
   }
 
@@ -715,29 +770,39 @@ export function CommissionPayment({ month: monthProp, refreshKey, rounded = fals
         <p className="py-4 text-center text-sm text-gray-400">{t('payment.noUnpaid')}</p>
       )}
 
-      {/* จ่ายแล้วเดือนนี้ — a settled AE disappears from the list above (it is the ค้างจ่าย list),
-          which left no way back to the bills a transfer covered without knowing to dig through
-          ประวัติ. Each row opens the same bill list (owner ask 2026-08-07). */}
-      {settledAE.length > 0 && (
+      {/* จ่ายแล้วเดือนนี้ — a paid bill leaves the lists above (they are the ค้างจ่าย lists), which
+          left no way back to what a transfer covered without digging through ประวัติ. Each row
+          opens that bill list (owner ask 2026-08-07; widened 2026-09-04 to partially-settled
+          people and to ค่าคอมขวด, which had no such route at all). */}
+      {settled.length > 0 && (
         <Card>
           <CardContent className="p-3">
             <p className="mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
-              จ่ายครบแล้วเดือนนี้ · {settledAE.length} คน
+              {t('payment.settledThisMonth')} · {settled.length} คน
             </p>
             <div className="space-y-1">
-              {settledAE.map((a) => (
+              {settled.map((g) => (
                 <button
-                  key={a.ae_id}
+                  key={g.key}
                   type="button"
-                  onClick={() => setBillsFor(a)}
+                  onClick={() => setBillsFor(g)}
+                  title={t('payment.viewPaidBills')}
                   className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/50"
                 >
                   <span className="min-w-0 flex-1 truncate">
-                    <span className="font-medium text-gray-900 dark:text-white">{a.ae_name}</span>
-                    <span className="ml-1.5 text-xs text-gray-400">{a.entries.length} บิล</span>
+                    <span className="font-medium text-gray-900 dark:text-white">{g.name}</span>
+                    {g.isBottle && <Badge variant="default" size="sm" className="ml-1.5">Bottle</Badge>}
+                    <span className="ml-1.5 text-xs text-gray-400">{g.entries.length} บิล</span>
+                    {/* Still owing: this person is in the ค้างจ่าย list above as well, so say which
+                        of the two numbers this row is showing. */}
+                    {g.unpaidCount > 0 && (
+                      <span className="ml-1.5 text-xs text-amber-600 dark:text-amber-400">
+                        · ยังค้างอีก {g.unpaidCount} บิล
+                      </span>
+                    )}
                   </span>
                   <span className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
-                    {formatCurrency(a.paidTotal)}
+                    {formatCurrency(g.paidTotal)}
                     <Receipt className="h-3.5 w-3.5" />
                   </span>
                 </button>
@@ -751,7 +816,7 @@ export function CommissionPayment({ month: monthProp, refreshKey, rounded = fals
         isOpen={!!billsFor}
         onClose={() => setBillsFor(null)}
         title="บิลที่จ่ายไปแล้ว"
-        description={billsFor ? `${billsFor.ae_name} · ${month}` : undefined}
+        description={billsFor ? `${billsFor.name} · ${month}` : undefined}
         size="lg"
       >
         {billsFor && (
@@ -762,7 +827,8 @@ export function CommissionPayment({ month: monthProp, refreshKey, rounded = fals
                   <th className="px-2 py-1.5 text-left font-medium">วันที่</th>
                   <th className="px-2 py-1.5 text-left font-medium">เลขใบเสร็จ</th>
                   <th className="px-2 py-1.5 text-left font-medium">โต๊ะ</th>
-                  <th className="px-2 py-1.5 text-right font-medium">ยอดบิล</th>
+                  {/* ค่าคอมขวด has no bill subtotal — the count of bottles is what it is paid on. */}
+                  <th className="px-2 py-1.5 text-right font-medium">{billsFor.isBottle ? 'ขวด' : 'ยอดบิล'}</th>
                   <th className="px-2 py-1.5 text-right font-medium">สุทธิ</th>
                 </tr>
               </thead>
@@ -775,7 +841,9 @@ export function CommissionPayment({ month: monthProp, refreshKey, rounded = fals
                       <td className="px-2 py-1.5">{(r.receipt_no as string) || '—'}</td>
                       <td className="px-2 py-1.5">{(r.table_no as string) || '—'}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums">
-                        {formatCurrency(Number(r.subtotal_amount) || 0)}
+                        {billsFor.isBottle
+                          ? `${Number(r.bottle_count) || 0}`
+                          : formatCurrency(Number(r.subtotal_amount) || 0)}
                       </td>
                       <td className="px-2 py-1.5 text-right font-medium tabular-nums">
                         {formatCurrency(netDisplay(r.net_amount as number, rounded))}
@@ -784,6 +852,12 @@ export function CommissionPayment({ month: monthProp, refreshKey, rounded = fals
                   );
                 })}
               </tbody>
+              <tfoot className="border-t border-gray-200 font-semibold dark:border-gray-600">
+                <tr className="text-gray-900 dark:text-white">
+                  <td className="px-2 py-1.5" colSpan={4}>รวม {billsFor.entries.length} บิล</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{formatCurrency(billsFor.paidTotal)}</td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}
@@ -957,6 +1031,18 @@ export function CommissionPayment({ month: monthProp, refreshKey, rounded = fals
               <p className="text-sm"><span className="text-gray-500">{t('payment.count')}:</span> {detailModal.total_entries} {t('payment.entries')}</p>
               <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency(detailModal.total_amount)}</p>
               {detailModal.notes && <p className="text-xs text-gray-500">{t('payment.notes')}: {detailModal.notes}</p>}
+              {/* ค่าคอมขวด rounds could be settled on this tab but never downloaded from it
+                  (client ask 2026-09-04) — the only PDF button lived on the ประวัติ tab. */}
+              <Button
+                size="sm"
+                variant="ghost"
+                className="mt-2"
+                onClick={() => handleExportPdf(detailModal)}
+                disabled={exportingPdf}
+              >
+                {exportingPdf ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />}
+                {t('payment.downloadPdf')}
+              </Button>
             </div>
             {(() => {
               const slips = detailModal.slip_photo_urls ?? (detailModal.slip_photo_url ? [detailModal.slip_photo_url] : []);

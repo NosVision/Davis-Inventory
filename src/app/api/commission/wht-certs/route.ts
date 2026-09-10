@@ -4,9 +4,13 @@ import { createClient } from '@/lib/supabase/server';
 /**
  * ใบ 50 ทวิ (withholding-tax certificates) that AEs ask for, tracked per month.
  *
- * A row means "this AE asked for their certificate for this month"; `status` flips to 'issued'
- * once the accountant hands it over. Keyed by (store, ae, month) so the monthly report can just
- * tick a box — no separate request workflow to maintain.
+ * A row with status 'requested' means "this AE asked for their certificate for this month"; it
+ * flips to 'issued' once the accountant hands it over. Keyed by (store, ae, month) so the monthly
+ * report can just tick a box — no separate request workflow to maintain.
+ *
+ * Status 'none' is a row that carries only a หมายเหตุ: the report's remark
+ * column has to work for every AE on it, including the ones who never ask for a certificate, and
+ * (store, ae, month) is already the grain a monthly remark needs.
  */
 
 const TABLE = 'commission_wht_certs';
@@ -48,22 +52,29 @@ export async function POST(req: NextRequest) {
   if (!store_id || !ae_id || !month) {
     return NextResponse.json({ error: 'store_id, ae_id, month required' }, { status: 400 });
   }
-  if (status && status !== 'requested' && status !== 'issued') {
+  if (status !== undefined && status !== 'none' && status !== 'requested' && status !== 'issued') {
     return NextResponse.json({ error: 'invalid status' }, { status: 400 });
+  }
+  if (status === undefined && note === undefined) {
+    return NextResponse.json({ error: 'status or note required' }, { status: 400 });
   }
 
   // Read-then-write rather than a blind upsert: an upsert re-sends every column, which used to
   // overwrite requested_by with whoever flipped the row to 'issued' (losing who actually asked)
   // and wipe the note on any status change. Only the fields in this call are touched now.
-  const { data: existing } = await supabase
+  const { data: existing, error: readError } = await supabase
     .from(TABLE)
-    .select('id, status, note')
+    .select('id, status, note, issued_by, issued_at')
     .eq('store_id', store_id)
     .eq('ae_id', ae_id)
     .eq('month', month)
     .maybeSingle();
 
-  const nextStatus = status ?? existing?.status ?? 'requested';
+  if (readError) return NextResponse.json({ error: readError.message }, { status: 500 });
+
+  // A brand-new row created by the remark editor alone is not a certificate request — it exists
+  // only to hold the note, so it starts at 'none' rather than the table's 'requested' default.
+  const nextStatus = status ?? existing?.status ?? 'none';
   const isIssued = nextStatus === 'issued';
   // note omitted → keep what is there; note given → trim, and an empty string clears it.
   const nextNote = note === undefined ? (existing?.note ?? null) : (note?.trim() || null);
@@ -73,8 +84,12 @@ export async function POST(req: NextRequest) {
     note: nextNote,
     // Stamped only on the way to 'issued'; reverting to 'requested' clears it so the two
     // fields can never disagree.
-    issued_by: isIssued ? user.id : null,
-    issued_at: isIssued ? new Date().toISOString() : null,
+    issued_by: isIssued ? (existing?.status === 'issued' ? existing.issued_by : user.id) : null,
+    issued_at: isIssued ? (existing?.status === 'issued' ? existing.issued_at : new Date().toISOString()) : null,
+    // A note author is not the requester. Stamp the actor when the request is first made.
+    ...((!existing || existing.status === 'none') && nextStatus !== 'none'
+      ? { requested_by: user.id, requested_at: new Date().toISOString() }
+      : {}),
     updated_at: new Date().toISOString(),
   };
 
@@ -82,7 +97,7 @@ export async function POST(req: NextRequest) {
     ? await supabase.from(TABLE).update(stamps).eq('id', existing.id).select(SELECT_WITH_ACTORS).single()
     : await supabase
         .from(TABLE)
-        .insert({ store_id, ae_id, month, requested_by: user.id, ...stamps })
+        .insert({ store_id, ae_id, month, ...stamps })
         .select(SELECT_WITH_ACTORS)
         .single();
 
