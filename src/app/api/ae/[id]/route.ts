@@ -26,12 +26,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await req.json();
-  const { name, nickname, phone, bank_name, bank_account_no, bank_account_name, notes, is_active, wht_cert_standing } = body;
+  const { name, nickname, phone, email, bank_name, bank_account_no, bank_account_name, notes, is_active, wht_cert_standing } = body;
 
   const updates: Record<string, unknown> = {};
   if (name !== undefined) updates.name = name.trim();
   if (nickname !== undefined) updates.nickname = nickname?.trim() || null;
   if (phone !== undefined) updates.phone = phone?.trim() || null;
+  if (email !== undefined) updates.email = email?.trim() || null;
   if (bank_name !== undefined) updates.bank_name = bank_name?.trim() || null;
   if (bank_account_no !== undefined) updates.bank_account_no = bank_account_no?.trim() || null;
   if (bank_account_name !== undefined) updates.bank_account_name = bank_account_name?.trim() || null;

@@ -21,6 +21,7 @@ import {
   CreditCard,
   User,
   FileText,
+  Mail,
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/audit';
@@ -122,6 +123,11 @@ export function AEManagement() {
                           <Phone className="h-3 w-3" /> {ae.phone}
                         </span>
                       )}
+                      {ae.email && (
+                        <span className="flex items-center gap-1">
+                          <Mail className="h-3 w-3" /> {ae.email}
+                        </span>
+                      )}
                       {ae.bank_name && (
                         <span className="flex items-center gap-1">
                           <Building2 className="h-3 w-3" /> {ae.bank_name}
@@ -177,6 +183,8 @@ function AEFormModal({ ae, onClose, onSaved }: AEFormModalProps) {
   const [name, setName] = useState(ae?.name || '');
   const [nickname, setNickname] = useState(ae?.nickname || '');
   const [phone, setPhone] = useState(ae?.phone || '');
+  // อีเมลสำหรับส่งใบ 50 ทวิ (client ask 2026-09-04) — some AEs want the certificate emailed.
+  const [email, setEmail] = useState(ae?.email || '');
   const [bankName, setBankName] = useState(ae?.bank_name || '');
   const [bankAccountNo, setBankAccountNo] = useState(ae?.bank_account_no || '');
   const [bankAccountName, setBankAccountName] = useState(ae?.bank_account_name || '');
@@ -199,8 +207,8 @@ function AEFormModal({ ae, onClose, onSaved }: AEFormModalProps) {
     setSaving(true);
     try {
       const payload = isNew
-        ? { store_id: currentStoreId, name, nickname, phone, bank_name: bankName, bank_account_no: bankAccountNo, bank_account_name: bankAccountName, notes, is_active: isActive, wht_cert_standing: whtStanding }
-        : { name, nickname, phone, bank_name: bankName, bank_account_no: bankAccountNo, bank_account_name: bankAccountName, notes, is_active: isActive, wht_cert_standing: whtStanding };
+        ? { store_id: currentStoreId, name, nickname, phone, email, bank_name: bankName, bank_account_no: bankAccountNo, bank_account_name: bankAccountName, notes, is_active: isActive, wht_cert_standing: whtStanding }
+        : { name, nickname, phone, email, bank_name: bankName, bank_account_no: bankAccountNo, bank_account_name: bankAccountName, notes, is_active: isActive, wht_cert_standing: whtStanding };
       const url = isNew ? '/api/ae' : `/api/ae/${ae!.id}`;
       const method = isNew ? 'POST' : 'PUT';
 
@@ -236,7 +244,16 @@ function AEFormModal({ ae, onClose, onSaved }: AEFormModalProps) {
           <Input label={t('ae.aeName')} value={name} onChange={(e) => setName(e.target.value)} required />
           <Input label={t('ae.nickname')} value={nickname} onChange={(e) => setNickname(e.target.value)} />
         </div>
-        <Input label={t('ae.phone')} value={phone} onChange={(e) => setPhone(e.target.value)} />
+        <div className="grid grid-cols-2 gap-3">
+          <Input label={t('ae.phone')} value={phone} onChange={(e) => setPhone(e.target.value)} />
+          <Input
+            label={t('ae.email')}
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder={t('ae.emailPlaceholder')}
+          />
+        </div>
 
         <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{t('ae.bankInfo')}</p>
         <Input label={t('ae.bankName')} value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder={t('ae.bankNamePlaceholder')} />

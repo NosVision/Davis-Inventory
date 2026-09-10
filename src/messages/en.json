@@ -4940,7 +4940,9 @@
       "notes": "Notes",
       "active": "Active",
       "cancel": "Cancel",
-      "saveBtn": "Save"
+      "saveBtn": "Save",
+      "email": "Email (for 50 Tawi certificate)",
+      "emailPlaceholder": "e.g. ae@example.com"
     },
     "paymentHistory": {
       "year": "Year",

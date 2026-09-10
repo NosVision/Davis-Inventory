@@ -16,6 +16,7 @@ export interface AEProfile {
   name: string;
   nickname: string | null;
   phone: string | null;
+  email?: string | null;
   bank_name: string | null;
   bank_account_no: string | null;
   bank_account_name: string | null;

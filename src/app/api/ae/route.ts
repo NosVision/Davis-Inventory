@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
     .order('name');
 
   if (activeOnly) query = query.eq('is_active', true);
-  if (search) query = query.or(`name.ilike.%${search}%,nickname.ilike.%${search}%,phone.ilike.%${search}%`);
+  if (search) query = query.or(`name.ilike.%${search}%,nickname.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%`);
 
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await req.json();
-  const { store_id, name, nickname, phone, bank_name, bank_account_no, bank_account_name, notes, wht_cert_standing } = body;
+  const { store_id, name, nickname, phone, email, bank_name, bank_account_no, bank_account_name, notes, wht_cert_standing } = body;
 
   if (!store_id) {
     return NextResponse.json({ error: 'store_id is required' }, { status: 400 });
@@ -55,6 +55,8 @@ export async function POST(req: NextRequest) {
       name: name.trim(),
       nickname: nickname?.trim() || null,
       phone: phone?.trim() || null,
+      // อีเมลสำหรับส่งใบ 50 ทวิ — optional contact information; empty values are stored as null.
+      email: email?.trim() || null,
       bank_name: bank_name?.trim() || null,
       bank_account_no: bank_account_no?.trim() || null,
       bank_account_name: bank_account_name?.trim() || null,

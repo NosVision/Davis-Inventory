@@ -4941,7 +4941,9 @@
       "notes": "หมายเหตุ",
       "active": "เปิดใช้งาน",
       "cancel": "ยกเลิก",
-      "saveBtn": "บันทึก"
+      "saveBtn": "บันทึก",
+      "email": "อีเมล (สำหรับส่งใบ 50 ทวิ)",
+      "emailPlaceholder": "เช่น ae@example.com"
     },
     "paymentHistory": {
       "year": "ปี",
