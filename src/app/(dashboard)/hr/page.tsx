@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { createClient } from '@/lib/supabase/client';
 import { useAuthStore } from '@/stores/auth-store';
+import { useNotificationStore } from '@/stores/notification-store';
 import { cn } from '@/lib/utils/cn';
 import { Button } from '@/components/ui';
 import {
@@ -154,10 +155,23 @@ function actionHref(key: string): string | undefined {
 
 const COLLAPSE_KEY = 'hr-hub-collapsed-groups';
 
+/**
+ * Notifications in the store are newest-first. Keeping only this id as the effect dependency
+ * means other HR notifications do not refetch the hub badges.
+ */
+export function latestHrAttendanceReviewNotificationId(
+  notifications: Array<{ id: string; type: string | null }>
+): string | null {
+  return notifications.find((notification) => notification.type === 'hr_attendance_review')?.id ?? null;
+}
+
 export default function HrDashboardPage() {
   const t = useTranslations('hr');
   const isTh = useLocale() === 'th';
   const { user } = useAuthStore();
+  const attendanceReviewNotificationId = useNotificationStore((state) =>
+    latestHrAttendanceReviewNotificationId(state.notifications)
+  );
 
   // Per-account pinned tiles (owner ask 2026-07-27) — saved to user_ui_prefs.hr_tile_order and
   // auto-loaded here, so each account keeps its own default order. In จัดเรียง mode, tapping a
@@ -211,7 +225,7 @@ export default function HrDashboardPage() {
       clearInterval(id);
       window.removeEventListener('focus', onFocus);
     };
-  }, []);
+  }, [attendanceReviewNotificationId]);
 
   // Areas that currently need action, most-urgent first — drives the summary strip.
   const pending = useMemo(
