@@ -309,6 +309,22 @@ export default function CheckinPage() {
         // The server refuses a new check-in while a day hangs open. Surfacing the card is more use
         // than the message alone — it is the thing that clears the block.
         if (json?.code === 'unclosed_day') fetchOpenDays();
+        if (json?.code === 'outside_geofence_not_allowed') {
+          throw new Error(tx(
+            'สาขานี้ไม่อนุญาตให้ลงเวลานอกพื้นที่ กรุณาเข้าพื้นที่สาขาแล้วลองอีกครั้ง',
+            'This branch does not allow attendance outside its area. Move into the branch area and try again.',
+            'ဤဆိုင်ခွဲသည် သတ်မှတ်ဧရိယာပြင်ပမှ အလုပ်ချိန်မှတ်တမ်းတင်ခြင်းကို ခွင့်မပြုပါ။ ဆိုင်ခွဲဧရိယာအတွင်း ဝင်ပြီး ထပ်မံကြိုးစားပါ။',
+            'ສາຂານີ້ບໍ່ອະນຸຍາດໃຫ້ລົງເວລານອກພື້ນທີ່ ກະລຸນາເຂົ້າພື້ນທີ່ສາຂາແລ້ວລອງອີກຄັ້ງ'
+          ));
+        }
+        if (json?.code === 'outside_geofence_limit_exceeded') {
+          throw new Error(tx(
+            `อยู่นอกระยะที่สาขาอนุญาต: ห่าง ${json.distance_m} ม. อนุญาตไม่เกิน ${json.allowed_distance_m} ม. กรุณาเข้าใกล้สาขาแล้วลองอีกครั้ง`,
+            `You are beyond the branch limit: ${json.distance_m} m away, maximum ${json.allowed_distance_m} m. Move closer and try again.`,
+            `ဆိုင်ခွဲ၏ ခွင့်ပြုအကွာအဝေးကို ကျော်လွန်နေသည်။ အကွာအဝေး ${json.distance_m} မီတာ၊ အများဆုံး ${json.allowed_distance_m} မီတာ။ ဆိုင်ခွဲနှင့် ပိုမိုနီးကပ်စွာ ရွှေ့ပြီး ထပ်မံကြိုးစားပါ။`,
+            `ຢູ່ນອກໄລຍະທີ່ສາຂາອະນຸຍາດ: ຫ່າງ ${json.distance_m} ມ. ອະນຸຍາດບໍ່ເກີນ ${json.allowed_distance_m} ມ. ກະລຸນາເຂົ້າໃກ້ສາຂາແລ້ວລອງອີກຄັ້ງ`
+          ));
+        }
         throw new Error(json?.error || t('failed'));
       }
       const pending = json.review_status === 'pending';

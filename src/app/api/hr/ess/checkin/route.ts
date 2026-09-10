@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { getHrPolicies } from '@/lib/hr/policy';
 import { haversineMeters, isValidLat, isValidLng } from '@/lib/hr/geo';
+import { decideAttendanceGeofence } from '@/lib/hr/attendance-geofence-policy';
 import { assessIp } from '@/lib/hr/ip-geo';
 import { getClientIp } from '@/lib/hr/request-ip';
 import { findUnclosedDays, flagUnclosedDays, findBlockingOpenDays } from '@/lib/hr/open-attendance';
@@ -28,6 +29,8 @@ interface StoreLocation {
   lat: number | null;
   lng: number | null;
   radius_m: number | null;
+  allow_outside_geofence: boolean;
+  outside_max_distance_m: number;
 }
 
 // POST /api/hr/ess/checkin — employee GPS + selfie attendance punch (§F).
@@ -129,11 +132,14 @@ export async function POST(request: NextRequest) {
   let storeId: string | null = null;
   let distanceM: number | null = null;
   let inGeofence: boolean | null = null;
+  let selectedLocation: StoreLocation | null = null;
+  let selectedDistanceM: number | null = null;
+  let allowedDistanceM: number | null = null;
 
   if (hasGps && storeIds.length > 0) {
     const { data: locations } = await service
       .from('hr_locations')
-      .select('store_id, lat, lng, radius_m')
+      .select('store_id, lat, lng, radius_m, allow_outside_geofence, outside_max_distance_m')
       .in('store_id', storeIds)
       .not('lat', 'is', null)
       .not('lng', 'is', null);
@@ -142,26 +148,24 @@ export async function POST(request: NextRequest) {
     // inside of. The geofence decision is per-store (dist <= that store's radius), not
     // nearest-by-distance — otherwise a closer store with a tighter radius could
     // shadow a farther store the employee is legitimately standing inside of.
-    let nearest: { storeId: string; dist: number } | null = null;
-    let bestInside: { storeId: string; dist: number } | null = null;
+    let nearest: { location: StoreLocation; dist: number } | null = null;
+    let bestInside: { location: StoreLocation; dist: number } | null = null;
     for (const loc of (locations ?? []) as StoreLocation[]) {
       if (!isValidLat(loc.lat) || !isValidLng(loc.lng)) continue;
       const dist = haversineMeters(gpsLat as number, gpsLng as number, loc.lat, loc.lng);
-      if (!nearest || dist < nearest.dist) nearest = { storeId: loc.store_id, dist };
+      if (!nearest || dist < nearest.dist) nearest = { location: loc, dist };
       if (dist <= (loc.radius_m ?? 0) && (!bestInside || dist < bestInside.dist)) {
-        bestInside = { storeId: loc.store_id, dist };
+        bestInside = { location: loc, dist };
       }
     }
-    if (bestInside) {
-      // Inside at least one assigned store's radius → attribute to the nearest such store.
-      storeId = bestInside.storeId;
-      distanceM = Math.round(bestInside.dist);
-      inGeofence = true;
-    } else if (nearest) {
-      // Geofence(s) exist but the employee is outside all of them.
-      storeId = nearest.storeId;
-      distanceM = Math.round(nearest.dist);
-      inGeofence = false;
+    const selected = bestInside ?? nearest;
+    if (selected) {
+      // Prefer a containing branch; otherwise the nearest assigned branch owns the policy.
+      selectedLocation = selected.location;
+      selectedDistanceM = selected.dist;
+      storeId = selected.location.store_id;
+      distanceM = Math.round(selected.dist);
+      inGeofence = bestInside !== null;
     } else if (storeIds.length === 1) {
       // No geofence configured, but a single assignment is unambiguous — keep the
       // store attribution; leave distance/in_geofence null (undeterminable).
@@ -180,6 +184,32 @@ export async function POST(request: NextRequest) {
   // store so HR knows where it belongs (location stays null → this punch is held for review).
   if (!hasGps && storeId === null && storeIds.length === 1) {
     storeId = storeIds[0];
+  }
+
+  // Enforce the attributed branch's policy before IP assessment, photo upload or HR work.
+  // Compare the original distance: rounding must not admit a punch just beyond the limit.
+  if (selectedLocation && selectedDistanceM !== null) {
+    const allowOutside = selectedLocation.allow_outside_geofence === true;
+    const decision = decideAttendanceGeofence({
+      distanceM: selectedDistanceM,
+      radiusM: selectedLocation.radius_m ?? 0,
+      allowOutsideGeofence: allowOutside,
+      outsideMaxDistanceM: selectedLocation.outside_max_distance_m ?? 150,
+    });
+    allowedDistanceM = decision.allowedDistanceM;
+    if (decision.outcome === 'rejected') {
+      return NextResponse.json(
+        {
+          error: allowOutside
+            ? `อยู่นอกระยะที่สาขาอนุญาต (${distanceM} ม. / อนุญาตไม่เกิน ${allowedDistanceM} ม.)`
+            : 'สาขานี้ไม่อนุญาตให้ลงเวลานอกพื้นที่ กรุณาเข้าพื้นที่สาขาแล้วลองอีกครั้ง',
+          code: allowOutside ? 'outside_geofence_limit_exceeded' : 'outside_geofence_not_allowed',
+          distance_m: distanceM,
+          allowed_distance_m: allowedDistanceM,
+        },
+        { status: 403 }
+      );
+    }
   }
 
   // --- Server-side IP capture; ip_country / is_vpn_suspect are assessed below (§F, P2.1c).
@@ -220,9 +250,8 @@ export async function POST(request: NextRequest) {
   const ts = new Date().toISOString();
   const device = (typeof body.device === 'string' ? body.device : '').slice(0, 300);
 
-  // Geofence enforcement (owner 2026-07-08): a punch OUTSIDE every assigned geofence, or one
-  // flagged VPN/GPS-spoof suspect, is not silently accepted — it's held for HR review. A punch
-  // that's inside (true) or undeterminable (null, no geofence configured) needs no review.
+  // Permitted outside punches, missing GPS and VPN/GPS-spoof suspicion require HR review.
+  // Inside or undeterminable (GPS present, no configured geofence) punches need no review.
   const reviewStatus: 'pending' | null =
     !hasGps || inGeofence === false || isVpnSuspect ? 'pending' : null;
 
@@ -381,20 +410,27 @@ export async function POST(request: NextRequest) {
         .maybeSingle();
       const who = prof?.display_name || prof?.username || '—';
       const label = TYPE_TH[type] ?? type;
+      const outsideDetail = inGeofence === false && distanceM !== null && allowedDistanceM !== null
+        ? `นอกพื้นที่ ห่างจากสาขา ~${distanceM} ม. (อนุญาตไม่เกิน ${allowedDistanceM} ม.)`
+        : null;
       const reason = !hasGps
         ? 'ไม่มีตำแหน่ง GPS'
         : isVpnSuspect
-          ? 'ตำแหน่ง/เครือข่ายน่าสงสัย'
-          : distanceM != null
-            ? `นอกพื้นที่ ~${distanceM} ม.`
-            : 'นอกพื้นที่';
+          ? ['ตำแหน่ง/เครือข่ายน่าสงสัย', outsideDetail].filter(Boolean).join(' — ')
+          : outsideDetail ?? 'นอกพื้นที่';
       await Promise.allSettled([
         notifyHrManagers(service, {
           storeId,
           type: 'hr_attendance_review',
           title: 'ลงเวลารอตรวจสอบ',
           body: `${who} ${label} — ${reason}`,
-          data: { attendance_id: inserted.id, url: '/hr/attendance?review=pending' },
+          data: {
+            attendance_id: inserted.id,
+            store_id: storeId,
+            distance_m: distanceM,
+            allowed_distance_m: allowedDistanceM,
+            url: '/hr/attendance?review=pending',
+          },
           excludeUserId: user.id,
         }),
         notifyUser({
