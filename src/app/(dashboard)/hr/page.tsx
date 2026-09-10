@@ -6,6 +6,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { createClient } from '@/lib/supabase/client';
 import { useAuthStore } from '@/stores/auth-store';
 import { useNotificationStore } from '@/stores/notification-store';
+import { latestHrAttendanceReviewNotificationId } from '@/lib/hr/attendance-review-notifications';
 import { cn } from '@/lib/utils/cn';
 import { Button } from '@/components/ui';
 import {
@@ -154,16 +155,6 @@ function actionHref(key: string): string | undefined {
 }
 
 const COLLAPSE_KEY = 'hr-hub-collapsed-groups';
-
-/**
- * Notifications in the store are newest-first. Keeping only this id as the effect dependency
- * means other HR notifications do not refetch the hub badges.
- */
-export function latestHrAttendanceReviewNotificationId(
-  notifications: Array<{ id: string; type: string | null }>
-): string | null {
-  return notifications.find((notification) => notification.type === 'hr_attendance_review')?.id ?? null;
-}
 
 export default function HrDashboardPage() {
   const t = useTranslations('hr');

@@ -3936,11 +3936,11 @@
       "gettingLocation": "Getting location...",
       "geoFailed": "Could not get location",
       "allowOutsideGeofence": "Allow attendance outside the geofence",
-      "allowOutsideGeofenceHelp": "Outside attendance is sent to HR for review before it is accepted.",
+      "allowOutsideGeofenceHelp": "Accepted outside punches are held for HR review and notify HR immediately.",
       "outsideEnabled": "Outside attendance is enabled",
       "outsideDisabled": "Outside attendance is disabled",
-      "outsideMaxDistance": "Maximum outside distance (m)",
-      "outsideMaxDistanceHint": "Use a positive whole number; when enabled, it cannot be below the branch radius.",
+      "outsideMaxDistance": "Maximum distance from branch pin (m)",
+      "outsideMaxDistanceHint": "Total distance from the branch pin. Use a positive whole number; when enabled, it cannot be below the branch radius.",
       "empty": "No branches"
     },
     "checkin": {

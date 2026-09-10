@@ -120,10 +120,16 @@ export async function POST(request: NextRequest) {
   }
 
   // --- Resolve store + geofence against the user's assigned stores ---
-  const { data: userStores } = await service
+  const { data: userStores, error: userStoresError } = await service
     .from('user_stores')
     .select('store_id')
     .eq('user_id', user.id);
+  if (userStoresError) {
+    return NextResponse.json(
+      { error: 'ไม่สามารถตรวจสอบสาขาสำหรับลงเวลาได้ กรุณาลองใหม่อีกครั้ง', code: 'attendance_location_unavailable' },
+      { status: 503 }
+    );
+  }
   const storeIds = (userStores ?? []).map((r: { store_id: string }) => r.store_id);
 
   // Store attribution + geofence. `in_geofence` is null when it cannot be evaluated
@@ -137,12 +143,18 @@ export async function POST(request: NextRequest) {
   let allowedDistanceM: number | null = null;
 
   if (hasGps && storeIds.length > 0) {
-    const { data: locations } = await service
+    const { data: locations, error: locationsError } = await service
       .from('hr_locations')
       .select('store_id, lat, lng, radius_m, allow_outside_geofence, outside_max_distance_m')
       .in('store_id', storeIds)
       .not('lat', 'is', null)
       .not('lng', 'is', null);
+    if (locationsError) {
+      return NextResponse.json(
+        { error: 'ไม่สามารถตรวจสอบพื้นที่ลงเวลาได้ กรุณาลองใหม่อีกครั้ง', code: 'attendance_location_unavailable' },
+        { status: 503 }
+      );
+    }
 
     // Track the nearest store overall AND the nearest store the employee is actually
     // inside of. The geofence decision is per-store (dist <= that store's radius), not

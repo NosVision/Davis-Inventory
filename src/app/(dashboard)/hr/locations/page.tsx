@@ -259,6 +259,7 @@ export default function LocationsPage() {
                     type="number"
                     min={1}
                     step={1}
+                    id={`outside-max-distance-${row.store_id}`}
                     label={t('outsideMaxDistance')}
                     hint={t('outsideMaxDistanceHint')}
                     value={draft.outsideMaxDistance}

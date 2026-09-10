@@ -6,7 +6,7 @@ const ts = require('typescript');
 const { test } = require('node:test');
 
 function loadDashboardHelpers() {
-  const file = path.resolve('src/app/(dashboard)/hr/page.tsx');
+  const file = path.resolve('src/lib/hr/attendance-review-notifications.ts');
   const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
     compilerOptions: {
       module: ts.ModuleKind.CommonJS,

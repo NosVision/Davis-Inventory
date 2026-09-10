@@ -45,8 +45,11 @@ function setup(options = {}) {
       let inserted;
       let membership;
       const result = () => {
-        if (table === 'user_stores') return { data: (options.storeIds ?? ['branch-a']).map(store_id => ({ store_id })), error: null };
+        if (table === 'user_stores') return options.userStoresError
+          ? { data: null, error: options.userStoresError }
+          : { data: (options.storeIds ?? ['branch-a']).map(store_id => ({ store_id })), error: null };
         if (table === 'hr_locations') {
+          if (options.locationsError) return { data: null, error: options.locationsError };
           // Project the requested columns: omitting policy columns must not silently pass tests.
           const data = locations.filter(row => membership.includes(row.store_id)).map(row =>
             Object.fromEntries(columns.split(',').map(key => key.trim()).map(key => [key, row[key]])));
@@ -103,6 +106,16 @@ function setup(options = {}) {
 
 function assertNoPunchWork(effects) {
   assert.deepEqual(effects, { uploads: [], removed: [], attendance: [], hr: [], employee: [], ip: 0, openDays: 0, flags: 0 });
+}
+
+for (const lookup of ['userStoresError', 'locationsError']) {
+  test(`POST returns 503 on ${lookup} before IP assessment, upload, insert or notifications`, async () => {
+    const route = setup({ [lookup]: { code: '57014', message: 'database lookup failed' } });
+    const response = await route.POST(requestFor());
+    assert.equal(response.status, 503);
+    assert.equal((await response.json()).code, 'attendance_location_unavailable');
+    assertNoPunchWork(route.effects);
+  });
 }
 
 for (const [name, location, lng, code, distance, allowed] of [
