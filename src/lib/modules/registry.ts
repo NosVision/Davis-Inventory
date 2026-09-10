@@ -99,6 +99,16 @@ export const modules: ModuleConfig[] = [
     groupKey: 'moduleGroups.warehouse',
   },
   {
+    id: 'hq-deposit-history',
+    nameKey: 'modules.hqDepositHistory.name',
+    descriptionKey: 'modules.hqDepositHistory.description',
+    icon: 'shield-check',
+    color: 'cyan',
+    href: '/hq/deposit-history',
+    roles: ['hq'],
+    groupKey: 'moduleGroups.warehouse',
+  },
+  {
     id: 'inbox',
     nameKey: 'modules.inbox.name',
     descriptionKey: 'modules.inbox.description',
@@ -132,16 +142,6 @@ export const modules: ModuleConfig[] = [
     // Alcohol Deposit — owner, manager (ฝาก/เบิกด้วย), bar + staff (คงเดิม), hq.
     roles: ['owner', 'manager', 'bar', 'head_bar', 'staff', 'hq'],
     permission: 'can_manage_deposit',
-    groupKey: 'moduleGroups.warehouse',
-  },
-  {
-    id: 'hq-deposit-history',
-    nameKey: 'modules.hqDepositHistory.name',
-    descriptionKey: 'modules.hqDepositHistory.description',
-    icon: 'shield-check',
-    color: 'cyan',
-    href: '/hq/deposit-history',
-    roles: ['hq'],
     groupKey: 'moduleGroups.warehouse',
   },
   {

@@ -21,7 +21,14 @@ function userWithRole(role: UserRole): AuthUser {
   return { id: 'user', username: role, role, permissions: [], storeIds: [], managedStoreIds: [] };
 }
 
-assert.equal(getAccessibleModules(userWithRole('hq')).some((module) => module.id === 'hq-deposit-history'), true);
+const hqModuleIds = getAccessibleModules(userWithRole('hq')).map((module) => module.id);
+assert.equal(hqModuleIds.includes('hq-deposit-history'), true);
+const warehouseIndex = hqModuleIds.indexOf('hq-warehouse');
+assert.deepEqual(
+  hqModuleIds.slice(warehouseIndex, warehouseIndex + 2),
+  ['hq-warehouse', 'hq-deposit-history'],
+  'HQ deposit history must appear immediately after HQ warehouse',
+);
 for (const role of ['owner', 'hr', 'bar', 'manager', 'accountant'] as UserRole[]) {
   assert.equal(
     getAccessibleModules(userWithRole(role)).some((module) => module.id === 'hq-deposit-history'),
