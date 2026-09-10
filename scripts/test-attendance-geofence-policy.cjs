@@ -16,38 +16,39 @@ function loadPolicy() {
 }
 
 const { decideAttendanceGeofence } = loadPolicy();
+const decide = (input) => ({ ...decideAttendanceGeofence(input) });
 
 test('allows attendance inside the branch radius', () => {
   assert.deepEqual(
-    decideAttendanceGeofence({ distanceM: 100, radiusM: 150, allowOutsideGeofence: false, outsideMaxDistanceM: 500 }),
+    decide({ distanceM: 100, radiusM: 150, allowOutsideGeofence: false, outsideMaxDistanceM: 500 }),
     { outcome: 'inside', allowedDistanceM: 150 },
   );
 });
 
 test('rejects attendance outside the radius when outside attendance is disabled', () => {
   assert.deepEqual(
-    decideAttendanceGeofence({ distanceM: 151, radiusM: 150, allowOutsideGeofence: false, outsideMaxDistanceM: 500 }),
+    decide({ distanceM: 151, radiusM: 150, allowOutsideGeofence: false, outsideMaxDistanceM: 500 }),
     { outcome: 'rejected', allowedDistanceM: 150 },
   );
 });
 
 test('marks enabled outside attendance as pending within its maximum distance', () => {
   assert.deepEqual(
-    decideAttendanceGeofence({ distanceM: 300, radiusM: 150, allowOutsideGeofence: true, outsideMaxDistanceM: 500 }),
+    decide({ distanceM: 300, radiusM: 150, allowOutsideGeofence: true, outsideMaxDistanceM: 500 }),
     { outcome: 'outside_pending', allowedDistanceM: 500 },
   );
 });
 
 test('rejects enabled outside attendance beyond its maximum distance', () => {
   assert.deepEqual(
-    decideAttendanceGeofence({ distanceM: 501, radiusM: 150, allowOutsideGeofence: true, outsideMaxDistanceM: 500 }),
+    decide({ distanceM: 501, radiusM: 150, allowOutsideGeofence: true, outsideMaxDistanceM: 500 }),
     { outcome: 'rejected', allowedDistanceM: 500 },
   );
 });
 
 test('normalizes an enabled outside maximum below the radius to the radius', () => {
   assert.deepEqual(
-    decideAttendanceGeofence({ distanceM: 151, radiusM: 150, allowOutsideGeofence: true, outsideMaxDistanceM: 100 }),
+    decide({ distanceM: 151, radiusM: 150, allowOutsideGeofence: true, outsideMaxDistanceM: 100 }),
     { outcome: 'rejected', allowedDistanceM: 150 },
   );
 });
