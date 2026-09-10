@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
+import { DEPOSIT_HISTORY_ACTIONS } from '@/lib/deposit/history';
 
 export async function GET(request: NextRequest) {
   // Verify cron secret
@@ -43,6 +44,9 @@ export async function GET(request: NextRequest) {
         .from('audit_logs')
         .delete({ count: 'exact' })
         .eq('store_id', store.id)
+        // HQ needs a complete bottle-deposit trail. Store retention still applies
+        // to other modules, but never removes deposit/withdrawal/transfer events.
+        .not('action_type', 'in', `(${DEPOSIT_HISTORY_ACTIONS.join(',')})`)
         .lt('created_at', cutoffISO);
 
       if (error) {

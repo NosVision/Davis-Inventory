@@ -180,6 +180,10 @@
       "name": "ฝาก/เบิกเหล้า",
       "description": "จัดการฝากเหล้าและเบิกเหล้า"
     },
+    "hqDepositHistory": {
+      "name": "ประวัติฝากเหล้า",
+      "description": "ตรวจสอบประวัติและการแก้ไขทุกสาขา"
+    },
     "transfer": {
       "name": "โอนสต๊อก",
       "description": "โอนสต๊อกระหว่างสาขา"
@@ -876,15 +880,20 @@
       "DEPOSIT_STATUS_CHANGED": "เปลี่ยนสถานะรับฝาก",
       "DEPOSIT_BAR_CONFIRMED": "บาร์ยืนยันรับฝาก",
       "DEPOSIT_BAR_REJECTED": "บาร์ปฏิเสธรับฝาก",
+      "DEPOSIT_UPDATED": "แก้ไขข้อมูลฝากเหล้า",
+      "DEPOSIT_EXPIRY_EXTENDED": "ต่ออายุฝากเหล้า",
+      "DEPOSIT_VIP_CHANGED": "เปลี่ยนสถานะ VIP",
       "VIP_DEPOSIT_EXPIRED": "ทำเครื่องหมายหมดอายุ (VIP)",
       "WITHDRAWAL_COMPLETED": "เบิกเหล้าสำเร็จ",
       "WITHDRAWAL_REJECTED": "ปฏิเสธการเบิกเหล้า",
       "WITHDRAWAL_REQUESTED": "ขอเบิกเหล้า",
+      "WITHDRAWAL_CANCELLED": "ยกเลิกรายการเบิกเหล้า",
       "DEPOSIT_NO_DEPOSIT_CREATED": "สร้างรายการไม่ฝาก (รอโอน)",
       "TRANSFER_CREATED": "สร้างรายการโอนสินค้า",
       "TRANSFER_CONFIRMED": "ยืนยันรับโอนสินค้า",
       "TRANSFER_REJECTED": "ปฏิเสธการโอนสินค้า",
       "CUSTOMER_DEPOSIT_REQUEST": "ลูกค้าขอฝากเหล้า (LINE)",
+      "CUSTOMER_DEPOSIT_REQUEST_CANCELLED": "ลูกค้ายกเลิกคำขอฝากเหล้า",
       "CUSTOMER_WITHDRAWAL_REQUEST": "ลูกค้าขอเบิกเหล้า (LINE)",
       "CUSTOMER_INQUIRY": "ลูกค้าสอบถาม (LINE)",
       "CRON_DAILY_REMINDER_SENT": "ส่งแจ้งเตือนนับสต๊อก",

@@ -198,15 +198,20 @@ const ACTION_ICON_MAP: Record<string, LucideIcon> = {
   DEPOSIT_STATUS_CHANGED: RefreshCw,
   DEPOSIT_BAR_CONFIRMED: CheckCircle2,
   DEPOSIT_BAR_REJECTED: XCircle,
+  DEPOSIT_UPDATED: Pencil,
+  DEPOSIT_EXPIRY_EXTENDED: RefreshCw,
+  DEPOSIT_VIP_CHANGED: Wine,
   VIP_DEPOSIT_EXPIRED: AlertTriangle,
   WITHDRAWAL_COMPLETED: Package,
   WITHDRAWAL_REJECTED: XCircle,
   WITHDRAWAL_REQUESTED: Package,
+  WITHDRAWAL_CANCELLED: XCircle,
   DEPOSIT_NO_DEPOSIT_CREATED: Truck,
   TRANSFER_CREATED: Truck,
   TRANSFER_CONFIRMED: CheckCircle2,
   TRANSFER_REJECTED: XCircle,
   CUSTOMER_DEPOSIT_REQUEST: Wine,
+  CUSTOMER_DEPOSIT_REQUEST_CANCELLED: XCircle,
   CUSTOMER_WITHDRAWAL_REQUEST: Package,
   CUSTOMER_INQUIRY: MessageCircle,
   CRON_DAILY_REMINDER_SENT: Bell,
@@ -276,15 +281,20 @@ const ACTION_COLOR_MAP: Record<string, string> = {
   DEPOSIT_STATUS_CHANGED: 'text-blue-500',
   DEPOSIT_BAR_CONFIRMED: 'text-emerald-500',
   DEPOSIT_BAR_REJECTED: 'text-red-500',
+  DEPOSIT_UPDATED: 'text-amber-500',
+  DEPOSIT_EXPIRY_EXTENDED: 'text-amber-500',
+  DEPOSIT_VIP_CHANGED: 'text-violet-500',
   VIP_DEPOSIT_EXPIRED: 'text-orange-500',
   WITHDRAWAL_COMPLETED: 'text-emerald-500',
   WITHDRAWAL_REJECTED: 'text-red-500',
   WITHDRAWAL_REQUESTED: 'text-blue-500',
+  WITHDRAWAL_CANCELLED: 'text-red-500',
   DEPOSIT_NO_DEPOSIT_CREATED: 'text-orange-500',
   TRANSFER_CREATED: 'text-blue-500',
   TRANSFER_CONFIRMED: 'text-emerald-500',
   TRANSFER_REJECTED: 'text-red-500',
   CUSTOMER_DEPOSIT_REQUEST: 'text-green-500',
+  CUSTOMER_DEPOSIT_REQUEST_CANCELLED: 'text-red-500',
   CUSTOMER_WITHDRAWAL_REQUEST: 'text-green-500',
   CUSTOMER_INQUIRY: 'text-green-500',
   CRON_DAILY_REMINDER_SENT: 'text-gray-400',
@@ -338,10 +348,13 @@ const KNOWN_ACTION_TYPES = new Set([
   'PRODUCT_CREATED', 'PRODUCT_UPDATED', 'PRODUCT_TOGGLED', 'PRODUCT_DELETED',
   'DEPOSIT_CREATED', 'DEPOSIT_REQUEST_APPROVED', 'DEPOSIT_REQUEST_REJECTED',
   'DEPOSIT_STATUS_CHANGED', 'DEPOSIT_BAR_CONFIRMED', 'DEPOSIT_BAR_REJECTED',
+  'DEPOSIT_UPDATED', 'DEPOSIT_EXPIRY_EXTENDED', 'DEPOSIT_VIP_CHANGED',
   'WITHDRAWAL_COMPLETED', 'WITHDRAWAL_REJECTED', 'WITHDRAWAL_REQUESTED',
+  'WITHDRAWAL_CANCELLED',
   'VIP_DEPOSIT_EXPIRED',
   'DEPOSIT_NO_DEPOSIT_CREATED', 'TRANSFER_CREATED', 'TRANSFER_CONFIRMED',
-  'TRANSFER_REJECTED', 'CUSTOMER_DEPOSIT_REQUEST', 'CUSTOMER_WITHDRAWAL_REQUEST',
+  'TRANSFER_REJECTED', 'CUSTOMER_DEPOSIT_REQUEST', 'CUSTOMER_DEPOSIT_REQUEST_CANCELLED',
+  'CUSTOMER_WITHDRAWAL_REQUEST',
   'CUSTOMER_INQUIRY', 'CRON_DAILY_REMINDER_SENT', 'CRON_EXPIRY_CHECK',
   'CRON_DEPOSIT_EXPIRED', 'CRON_FOLLOW_UP_SENT', 'USER_CREATED', 'USER_UPDATED',
   'USER_DEACTIVATED', 'USER_LOGIN', 'BORROW_REQUESTED', 'BORROW_APPROVED',
@@ -401,14 +414,16 @@ function getActivityDetail(activity: AuditLogEntry): string | null {
 
     if (action_type === 'DEPOSIT_CREATED' || action_type === 'DEPOSIT_REQUEST_APPROVED' ||
         action_type === 'DEPOSIT_REQUEST_REJECTED' || action_type === 'DEPOSIT_STATUS_CHANGED' ||
-        action_type === 'DEPOSIT_BAR_CONFIRMED' || action_type === 'DEPOSIT_BAR_REJECTED') {
+        action_type === 'DEPOSIT_BAR_CONFIRMED' || action_type === 'DEPOSIT_BAR_REJECTED' ||
+        action_type === 'DEPOSIT_UPDATED' || action_type === 'DEPOSIT_EXPIRY_EXTENDED' ||
+        action_type === 'DEPOSIT_VIP_CHANGED' || action_type === 'CUSTOMER_DEPOSIT_REQUEST_CANCELLED') {
       const code = nv?.deposit_code || nv?.deposit_number || record_id.slice(0, 8);
       const customer = nv?.customer_name as string | undefined;
       return customer ? `#${code} — ${customer}` : `#${code}`;
     }
 
     if (action_type === 'WITHDRAWAL_COMPLETED' || action_type === 'WITHDRAWAL_REJECTED' ||
-        action_type === 'WITHDRAWAL_REQUESTED') {
+        action_type === 'WITHDRAWAL_REQUESTED' || action_type === 'WITHDRAWAL_CANCELLED') {
       const code = nv?.deposit_code || nv?.deposit_number || record_id.slice(0, 8);
       const customer = nv?.customer_name as string | undefined;
       return customer ? `#${code} — ${customer}` : `#${code}`;
@@ -481,6 +496,9 @@ function getActivityHref(actionType: string, tableName: string | null): string |
   if (actionType === 'DEPOSIT_CREATED' || actionType === 'DEPOSIT_REQUEST_APPROVED' ||
       actionType === 'DEPOSIT_REQUEST_REJECTED' || actionType === 'DEPOSIT_STATUS_CHANGED' ||
       actionType === 'DEPOSIT_BAR_CONFIRMED' || actionType === 'DEPOSIT_BAR_REJECTED' ||
+      actionType === 'DEPOSIT_UPDATED' || actionType === 'DEPOSIT_EXPIRY_EXTENDED' ||
+      actionType === 'DEPOSIT_VIP_CHANGED' ||
+      actionType === 'CUSTOMER_DEPOSIT_REQUEST_CANCELLED' ||
       actionType === 'DEPOSIT_NO_DEPOSIT_CREATED' || actionType === 'VIP_DEPOSIT_EXPIRED' ||
       (actionType === 'INSERT' && tableName === 'deposits')) {
     return '/deposit';
@@ -492,6 +510,7 @@ function getActivityHref(actionType: string, tableName: string | null): string |
   // Withdrawal
   if (actionType === 'WITHDRAWAL_COMPLETED' || actionType === 'WITHDRAWAL_REJECTED' ||
       actionType === 'WITHDRAWAL_REQUESTED' ||
+      actionType === 'WITHDRAWAL_CANCELLED' ||
       (actionType === 'INSERT' && tableName === 'withdrawals')) {
     return '/deposit/withdrawals';
   }

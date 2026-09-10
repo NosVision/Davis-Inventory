@@ -180,6 +180,10 @@
       "name": "Deposit/Withdraw",
       "description": "Manage bottle deposits and withdrawals"
     },
+    "hqDepositHistory": {
+      "name": "Deposit History",
+      "description": "Audit deposit changes across all branches"
+    },
     "transfer": {
       "name": "Transfer Stock",
       "description": "Transfer stock between branches"
@@ -876,15 +880,20 @@
       "DEPOSIT_STATUS_CHANGED": "Deposit status changed",
       "DEPOSIT_BAR_CONFIRMED": "Bar confirmed deposit",
       "DEPOSIT_BAR_REJECTED": "Bar rejected deposit",
+      "DEPOSIT_UPDATED": "Deposit details updated",
+      "DEPOSIT_EXPIRY_EXTENDED": "Deposit expiry extended",
+      "DEPOSIT_VIP_CHANGED": "Deposit VIP status changed",
       "VIP_DEPOSIT_EXPIRED": "Marked as expired (VIP)",
       "WITHDRAWAL_COMPLETED": "Withdrawal completed",
       "WITHDRAWAL_REJECTED": "Withdrawal rejected",
       "WITHDRAWAL_REQUESTED": "Withdrawal requested",
+      "WITHDRAWAL_CANCELLED": "Withdrawal cancelled",
       "DEPOSIT_NO_DEPOSIT_CREATED": "No-deposit item created (pending transfer)",
       "TRANSFER_CREATED": "Transfer created",
       "TRANSFER_CONFIRMED": "Transfer confirmed",
       "TRANSFER_REJECTED": "Transfer rejected",
       "CUSTOMER_DEPOSIT_REQUEST": "Customer deposit request (LINE)",
+      "CUSTOMER_DEPOSIT_REQUEST_CANCELLED": "Customer cancelled deposit request",
       "CUSTOMER_WITHDRAWAL_REQUEST": "Customer withdrawal request (LINE)",
       "CUSTOMER_INQUIRY": "Customer inquiry (LINE)",
       "CRON_DAILY_REMINDER_SENT": "Stock count reminder sent",

@@ -735,23 +735,32 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
     await supabase.from('deposit_bottles').insert(newBottleRows);
 
     await logAudit({
-      action_type: AUDIT_ACTIONS.DEPOSIT_STATUS_CHANGED,
+      action_type: AUDIT_ACTIONS.DEPOSIT_UPDATED,
       record_id: deposit.id,
       table_name: 'deposits',
       changed_by: user.id,
       store_id: currentStoreId,
+      old_value: {
+        deposit_code: deposit.deposit_code,
+        customer_name: deposit.customer_name,
+        product_name: deposit.product_name,
+        category: deposit.category,
+        quantity: deposit.quantity,
+        remaining_qty: deposit.remaining_qty,
+        remaining_percent: deposit.remaining_percent,
+        bottle_percents: bottles.map((bottle) => bottle.remaining_percent),
+        confirm_photo_url: deposit.confirm_photo_url,
+      },
       new_value: {
         deposit_code: deposit.deposit_code,
-        action: 'manual_edit',
+        customer_name: deposit.customer_name,
+        product_name: nameChanged ? trimmedProductName : deposit.product_name,
+        category: categoryChanged ? newCategory : deposit.category,
         bottle_percents: percents,
         quantity: qty,
+        remaining_qty: remainingQty,
         remaining_percent: avgPercent,
-        ...(nameChanged
-          ? { product_name: trimmedProductName, previous_product_name: deposit.product_name }
-          : {}),
-        ...(categoryChanged
-          ? { category: newCategory, previous_category: deposit.category }
-          : {}),
+        confirm_photo_url: editPhoto || deposit.confirm_photo_url,
       },
     });
 
@@ -952,16 +961,36 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
     setIsCancellingWithdrawal(true);
     try {
       const supabase = createClient();
-      await supabase
+      const { error: withdrawalError } = await supabase
         .from('withdrawals')
         .update({ status: 'rejected', processed_by: user.id, notes: '[ผู้ฝาก/พนักงานยกเลิก]' })
         .eq('deposit_id', deposit.id)
         .eq('status', 'pending');
-      await supabase
+      if (withdrawalError) throw withdrawalError;
+
+      const { error: depositError } = await supabase
         .from('deposits')
         .update({ status: 'in_store' })
         .eq('id', deposit.id)
         .eq('status', 'pending_withdrawal');
+      if (depositError) throw depositError;
+
+      await logAudit({
+        store_id: currentStoreId,
+        action_type: AUDIT_ACTIONS.WITHDRAWAL_CANCELLED,
+        table_name: 'withdrawals',
+        record_id: deposit.id,
+        old_value: { status: 'pending', deposit_status: 'pending_withdrawal' },
+        new_value: {
+          status: 'rejected',
+          deposit_status: 'in_store',
+          reason: 'ผู้ฝาก/พนักงานยกเลิก',
+          deposit_code: deposit.deposit_code,
+          customer_name: deposit.customer_name,
+          product_name: deposit.product_name,
+        },
+        changed_by: user.id,
+      });
 
       // Sync the chat action card so the "รายการงาน" tab doesn't keep
       // showing a phantom pending card after the request is gone.
@@ -977,6 +1006,12 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
       toast({ type: 'success', title: t('detail.withdrawalCancelled') });
       refreshDeposit();
       loadWithdrawals();
+    } catch (error) {
+      toast({
+        type: 'error',
+        title: t('detail.error'),
+        message: error instanceof Error ? error.message : 'ไม่สามารถยกเลิกรายการเบิกได้',
+      });
     } finally {
       setIsCancellingWithdrawal(false);
     }
@@ -1054,7 +1089,7 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
     } else {
       await logAudit({
         store_id: currentStoreId,
-        action_type: AUDIT_ACTIONS.DEPOSIT_STATUS_CHANGED,
+        action_type: AUDIT_ACTIONS.DEPOSIT_BAR_REJECTED,
         table_name: 'deposits',
         record_id: deposit.id,
         old_value: { status: 'pending_confirm' },
@@ -1107,7 +1142,7 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
     } else {
       await logAudit({
         store_id: currentStoreId,
-        action_type: AUDIT_ACTIONS.DEPOSIT_STATUS_CHANGED,
+        action_type: AUDIT_ACTIONS.DEPOSIT_VIP_CHANGED,
         table_name: 'deposits',
         record_id: deposit.id,
         old_value: { is_vip: deposit.is_vip, expiry_date: deposit.expiry_date, status: deposit.status },
@@ -1300,7 +1335,7 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
     } else {
       await logAudit({
         store_id: currentStoreId,
-        action_type: AUDIT_ACTIONS.DEPOSIT_STATUS_CHANGED,
+        action_type: AUDIT_ACTIONS.DEPOSIT_EXPIRY_EXTENDED,
         table_name: 'deposits',
         record_id: deposit.id,
         old_value: { expiry_date: oldExpiryDate },

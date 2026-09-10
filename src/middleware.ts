@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { canAccessDashboardPath } from '@/lib/auth/settings-access';
+import { canAccessDepositHistory } from '@/lib/deposit/history';
 
 // Routes that bypass the Supabase session check entirely.
 //
@@ -35,6 +36,11 @@ const PUBLIC_ROUTES = [
 const CUSTOMER_ROUTES = ['/customer'];
 // The 'hr' role is denied these route trees (pages + their APIs).
 const HR_BLOCKED_ROUTES = ['/deposit', '/stock', '/api/stock'];
+const HQ_DEPOSIT_HISTORY_ROUTES = ['/hq/deposit-history', '/api/hq/deposit-history'];
+
+function pathMatches(pathname: string, route: string): boolean {
+  return pathname === route || pathname.startsWith(`${route}/`);
+}
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -122,6 +128,17 @@ export async function middleware(request: NextRequest) {
     return pathname.startsWith('/api/')
       ? NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       : NextResponse.redirect(new URL('/hr', request.url));
+  }
+
+  // HQ deposit audit contains cross-branch staff activity and before/after values.
+  // It is intentionally narrower than the general HQ permissions.
+  if (
+    HQ_DEPOSIT_HISTORY_ROUTES.some((route) => pathMatches(pathname, route))
+    && !canAccessDepositHistory(role)
+  ) {
+    return pathname.startsWith('/api/')
+      ? NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      : NextResponse.redirect(new URL('/warehouse', request.url));
   }
 
   // System settings are restricted independently of menu visibility. Keep the

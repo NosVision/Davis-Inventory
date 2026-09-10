@@ -30,11 +30,15 @@ export const AUDIT_ACTIONS = {
   DEPOSIT_STATUS_CHANGED: 'DEPOSIT_STATUS_CHANGED',
   DEPOSIT_BAR_CONFIRMED: 'DEPOSIT_BAR_CONFIRMED',
   DEPOSIT_BAR_REJECTED: 'DEPOSIT_BAR_REJECTED',
+  DEPOSIT_UPDATED: 'DEPOSIT_UPDATED',
+  DEPOSIT_EXPIRY_EXTENDED: 'DEPOSIT_EXPIRY_EXTENDED',
+  DEPOSIT_VIP_CHANGED: 'DEPOSIT_VIP_CHANGED',
 
   // === Withdrawal Module ===
   WITHDRAWAL_COMPLETED: 'WITHDRAWAL_COMPLETED',
   WITHDRAWAL_REJECTED: 'WITHDRAWAL_REJECTED',
   WITHDRAWAL_REQUESTED: 'WITHDRAWAL_REQUESTED',
+  WITHDRAWAL_CANCELLED: 'WITHDRAWAL_CANCELLED',
 
   // === No-Deposit (ไม่ฝาก) ===
   DEPOSIT_NO_DEPOSIT_CREATED: 'DEPOSIT_NO_DEPOSIT_CREATED',
@@ -46,6 +50,7 @@ export const AUDIT_ACTIONS = {
 
   // === Customer (LINE) ===
   CUSTOMER_DEPOSIT_REQUEST: 'CUSTOMER_DEPOSIT_REQUEST',
+  CUSTOMER_DEPOSIT_REQUEST_CANCELLED: 'CUSTOMER_DEPOSIT_REQUEST_CANCELLED',
   CUSTOMER_WITHDRAWAL_REQUEST: 'CUSTOMER_WITHDRAWAL_REQUEST',
   CUSTOMER_INQUIRY: 'CUSTOMER_INQUIRY',
 
@@ -113,7 +118,7 @@ interface AuditLogParams {
  */
 export async function logAudit(params: AuditLogParams): Promise<void> {
   try {
-    fetch('/api/audit', {
+    const response = await fetch('/api/audit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -125,7 +130,12 @@ export async function logAudit(params: AuditLogParams): Promise<void> {
         new_value: params.new_value || null,
         changed_by: params.changed_by || null,
       }),
-    }).catch(() => {});
+    });
+
+    if (!response.ok) {
+      const message = await response.text().catch(() => '');
+      console.error(`[Audit] Failed to log (${response.status}):`, message);
+    }
   } catch (error) {
     // Audit logging should never break the main flow
     console.error('[Audit] Failed to log:', error);
@@ -166,11 +176,15 @@ export const AUDIT_ACTION_LABELS: Record<
   DEPOSIT_STATUS_CHANGED: { label: 'เปลี่ยนสถานะฝากเหล้า', color: 'blue', icon: 'refresh' },
   DEPOSIT_BAR_CONFIRMED: { label: 'บาร์ยืนยันรับฝากเหล้า', color: 'emerald', icon: 'check-circle' },
   DEPOSIT_BAR_REJECTED: { label: 'บาร์ปฏิเสธรับฝากเหล้า', color: 'red', icon: 'x-circle' },
+  DEPOSIT_UPDATED: { label: 'แก้ไขข้อมูลฝากเหล้า', color: 'amber', icon: 'edit' },
+  DEPOSIT_EXPIRY_EXTENDED: { label: 'ต่ออายุฝากเหล้า', color: 'amber', icon: 'calendar' },
+  DEPOSIT_VIP_CHANGED: { label: 'เปลี่ยนสถานะ VIP', color: 'violet', icon: 'star' },
 
   // Withdrawal
   WITHDRAWAL_COMPLETED: { label: 'เบิกเหล้าสำเร็จ', color: 'emerald', icon: 'package' },
   WITHDRAWAL_REJECTED: { label: 'ปฏิเสธการเบิกเหล้า', color: 'red', icon: 'x-circle' },
   WITHDRAWAL_REQUESTED: { label: 'ขอเบิกเหล้า', color: 'blue', icon: 'package' },
+  WITHDRAWAL_CANCELLED: { label: 'ยกเลิกรายการเบิกเหล้า', color: 'red', icon: 'x-circle' },
 
   // No-Deposit
   DEPOSIT_NO_DEPOSIT_CREATED: { label: 'สร้างรายการไม่ฝาก (รอโอน)', color: 'orange', icon: 'truck' },
@@ -182,6 +196,7 @@ export const AUDIT_ACTION_LABELS: Record<
 
   // Customer LINE
   CUSTOMER_DEPOSIT_REQUEST: { label: 'ลูกค้าขอฝากเหล้า (LINE)', color: 'green', icon: 'wine' },
+  CUSTOMER_DEPOSIT_REQUEST_CANCELLED: { label: 'ลูกค้ายกเลิกคำขอฝากเหล้า', color: 'red', icon: 'x-circle' },
   CUSTOMER_WITHDRAWAL_REQUEST: { label: 'ลูกค้าขอเบิกเหล้า (LINE)', color: 'green', icon: 'package' },
   CUSTOMER_INQUIRY: { label: 'ลูกค้าสอบถาม (LINE)', color: 'green', icon: 'message-circle' },
 

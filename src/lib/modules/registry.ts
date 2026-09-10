@@ -135,6 +135,16 @@ export const modules: ModuleConfig[] = [
     groupKey: 'moduleGroups.warehouse',
   },
   {
+    id: 'hq-deposit-history',
+    nameKey: 'modules.hqDepositHistory.name',
+    descriptionKey: 'modules.hqDepositHistory.description',
+    icon: 'shield-check',
+    color: 'cyan',
+    href: '/hq/deposit-history',
+    roles: ['hq'],
+    groupKey: 'moduleGroups.warehouse',
+  },
+  {
     id: 'transfer',
     nameKey: 'modules.transfer.name',
     descriptionKey: 'modules.transfer.description',
