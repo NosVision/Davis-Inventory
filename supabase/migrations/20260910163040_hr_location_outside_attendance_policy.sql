@@ -6,8 +6,8 @@ alter table public.hr_locations
 -- Make the existing-row migration explicit, including any pre-existing nullable values.
 update public.hr_locations
 set
-  allow_outside_geofence = coalesce(allow_outside_geofence, false),
-  outside_max_distance_m = greatest(coalesce(outside_max_distance_m, radius_m), radius_m);
+  allow_outside_geofence = false,
+  outside_max_distance_m = 150;
 
 alter table public.hr_locations
   add constraint hr_locations_radius_m_positive_check check (radius_m > 0),
