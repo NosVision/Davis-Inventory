@@ -107,6 +107,10 @@ export async function middleware(request: NextRequest) {
     role = profile.role;
   }
 
+  if (!role) {
+    return NextResponse.redirect(new URL('/login', request.url));
+  }
+
   // Customer can only access /customer routes
   if (role === 'customer' && !CUSTOMER_ROUTES.some((r) => pathname.startsWith(r))) {
     return NextResponse.redirect(new URL('/customer', request.url));
