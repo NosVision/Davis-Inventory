@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const ts = require('typescript');
 const { test } = require('node:test');
-const { NextResponse } = require('next/server');
+const { NextRequest, NextResponse } = require('next/server');
 
 function loadSource(file, imports = {}, bindings = {}) {
   const code = ts.transpileModule(fs.readFileSync(path.resolve(file), 'utf8'), {
@@ -35,6 +35,9 @@ const requestFor = (overrides = {}) => ({
     photo: 'data:image/jpeg;base64,/9j/', ...overrides,
   }),
 });
+const previewRequestFor = (lng = 0.002) => new NextRequest(
+  `https://example.test/api/hr/ess/checkin?gps_lat=0&gps_lng=${lng}`,
+);
 
 function setup(options = {}) {
   const effects = { uploads: [], removed: [], attendance: [], hr: [], employee: [], ip: 0, openDays: 0, flags: 0 };
@@ -69,6 +72,7 @@ function setup(options = {}) {
         in(_column, values) { membership = values; return query; },
         insert(value) { inserted = value; effects.attendance.push(value); return query; },
         maybeSingle() { return query; }, single() { return query; },
+        order() { return query; },
         then(resolve, reject) { return Promise.resolve(result()).then(resolve, reject); },
       };
       return query;
@@ -103,6 +107,55 @@ function setup(options = {}) {
   });
   return { ...route, effects };
 }
+
+test('GET preflight reports a strict outside location as blocked before punching', async () => {
+  const route = setup();
+  const response = await route.GET(previewRequestFor());
+  const json = await response.json();
+  assert.equal(response.status, 200);
+  assert.deepEqual(json.location_gate, {
+    status: 'blocked',
+    code: 'outside_geofence_not_allowed',
+    store_id: 'branch-a',
+    distance_m: 222,
+    allowed_distance_m: 150,
+  });
+  assertNoPunchWork(route.effects);
+});
+
+test('GET preflight reports permitted outside attendance as pending review', async () => {
+  const route = setup({ locations: [branch({ allow_outside_geofence: true })] });
+  const response = await route.GET(previewRequestFor());
+  const json = await response.json();
+  assert.deepEqual(json.location_gate, {
+    status: 'outside_pending',
+    code: null,
+    store_id: 'branch-a',
+    distance_m: 222,
+    allowed_distance_m: 300,
+  });
+});
+
+test('GET preflight reports an inside location as allowed', async () => {
+  const route = setup();
+  const response = await route.GET(previewRequestFor(0.001));
+  assert.equal((await response.json()).location_gate.status, 'inside');
+});
+
+test('GET preflight fails closed when location policy cannot be loaded', async () => {
+  const route = setup({ locationsError: { code: '57014', message: 'database lookup failed' } });
+  const response = await route.GET(previewRequestFor());
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).code, 'attendance_location_unavailable');
+});
+
+test('GET today list without coordinates does not invent a zero-zero GPS preflight', async () => {
+  const route = setup({ locationsError: { code: '57014', message: 'must not be queried' } });
+  const response = await route.GET(new NextRequest('https://example.test/api/hr/ess/checkin'));
+  const json = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(json.location_gate, null);
+});
 
 function assertNoPunchWork(effects) {
   assert.deepEqual(effects, { uploads: [], removed: [], attendance: [], hr: [], employee: [], ip: 0, openDays: 0, flags: 0 });

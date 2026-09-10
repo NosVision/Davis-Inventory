@@ -9,6 +9,11 @@ import { cn } from '@/lib/utils/cn';
 import { toBangkokISO, formatTimeBangkok } from '@/lib/utils/date';
 import { TileNotices } from '../_components/tile-notices';
 import { UnclosedDayCard, type OpenDay } from '../_components/unclosed-day-card';
+import {
+  areAttendanceControlsBlocked,
+  type AttendanceLocationGate,
+  type AttendanceLocationGateLoadStatus,
+} from '@/lib/hr/checkin-location-gate';
 
 type AttendanceType = 'in' | 'out' | 'break_start' | 'break_end';
 
@@ -54,6 +59,7 @@ interface Coords {
   lat: number;
   lng: number;
   accuracy: number;
+  capturedAt: number;
 }
 
 interface AttendanceRow {
@@ -76,6 +82,9 @@ export default function CheckinPage() {
   const [noGpsOpen, setNoGpsOpen] = useState(false);
   const [coords, setCoords] = useState<Coords | null>(null);
   const [locStatus, setLocStatus] = useState<LocStatus>('idle');
+  const [locationGate, setLocationGate] = useState<AttendanceLocationGate | null>(null);
+  const [locationGateStatus, setLocationGateStatus] = useState<AttendanceLocationGateLoadStatus>('idle');
+  const [locationNow, setLocationNow] = useState(() => Date.now());
   const [photo, setPhoto] = useState<string | null>(null);
   const [cameraOn, setCameraOn] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -87,30 +96,81 @@ export default function CheckinPage() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const locationWatchRef = useRef<number | null>(null);
 
   // Punch types already recorded today — those buttons are disabled so a type can't be double-tapped.
   const usedTypes = new Set(rows.map((r) => r.type));
 
   // --- Location ---
   const getLocation = useCallback(() => {
+    setCoords(null);
+    setLocationGate(null);
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
       setLocStatus('failed');
+      setLocationGateStatus('unavailable');
       return;
     }
+    if (locationWatchRef.current !== null) {
+      navigator.geolocation.clearWatch(locationWatchRef.current);
+      locationWatchRef.current = null;
+    }
     setLocStatus('loading');
-    navigator.geolocation.getCurrentPosition(
+    setLocationGateStatus('loading');
+    locationWatchRef.current = navigator.geolocation.watchPosition(
       (pos) => {
         setCoords({
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
           accuracy: pos.coords.accuracy,
+          capturedAt: Date.now(),
         });
+        setLocationNow(Date.now());
         setLocStatus('ready');
       },
-      () => setLocStatus('failed'),
+      () => {
+        setCoords(null);
+        setLocationGate(null);
+        setLocStatus('failed');
+        setLocationGateStatus('unavailable');
+      },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   }, []);
+
+  // Even with watchPosition, browsers may pause GPS updates in the background. Never keep controls
+  // unlocked forever from an old inside-area reading; stale positions require a fresh reading.
+  useEffect(() => {
+    if (!coords) return;
+    const timer = window.setInterval(() => setLocationNow(Date.now()), 5_000);
+    return () => window.clearInterval(timer);
+  }, [coords]);
+
+  // Resolve the employee's current coordinates against the same per-branch policy used by POST.
+  // Until this preflight completes, attendance controls stay locked so a known-outside punch is
+  // never presented as available and rejected only after upload.
+  useEffect(() => {
+    if (!coords) return;
+    const controller = new AbortController();
+    setLocationGateStatus('loading');
+    void (async () => {
+      try {
+        const params = new URLSearchParams({
+          gps_lat: String(coords.lat),
+          gps_lng: String(coords.lng),
+        });
+        const res = await fetch(`/api/hr/ess/checkin?${params}`, { signal: controller.signal });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || !json.location_gate) throw new Error('location preflight failed');
+        setLocationGate(json.location_gate as AttendanceLocationGate);
+        setLocationGateStatus('ready');
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        setLocationGate(null);
+        setLocationGateStatus('error');
+      }
+    })();
+    return () => controller.abort();
+  }, [coords]);
 
   // Days with a check-IN and no check-OUT that the employee has not filed for yet. While any
   // exists, the check-in controls are replaced by the card that closes it — the server refuses the
@@ -147,6 +207,12 @@ export default function CheckinPage() {
     getLocation();
     fetchToday();
     fetchOpenDays();
+    return () => {
+      if (locationWatchRef.current !== null && typeof navigator !== 'undefined' && navigator.geolocation) {
+        navigator.geolocation.clearWatch(locationWatchRef.current);
+        locationWatchRef.current = null;
+      }
+    };
   }, [getLocation, fetchToday, fetchOpenDays]);
 
   // If the selected punch type has already been recorded today, move to the next unused type.
@@ -354,6 +420,7 @@ export default function CheckinPage() {
   }, [coords, photo, type, t, tx, fetchToday, fetchOpenDays]);
 
   const submit = useCallback(() => {
+    if (areAttendanceControlsBlocked(locationGateStatus, locationGate)) return;
     if (!photo) {
       toast({ type: 'warning', title: t('needPhoto') });
       return;
@@ -364,12 +431,14 @@ export default function CheckinPage() {
       return;
     }
     void doSubmit();
-  }, [photo, coords, doSubmit, t]);
+  }, [photo, coords, doSubmit, t, locationGateStatus, locationGate]);
 
   // An unresolved open day blocks a new check-in server-side, so the button must not offer one.
   // Closing punches stay allowed: someone mid-shift must always be able to clock OUT.
   const blockedByOpenDay = openDays.length > 0 && type === 'in';
-  const canSubmit = photo !== null && !submitting && !usedTypes.has(type) && !blockedByOpenDay;
+  const locationIsStale = locStatus === 'ready' && coords !== null && locationNow - coords.capturedAt > 30_000;
+  const blockedByLocation = areAttendanceControlsBlocked(locationGateStatus, locationGate, !locationIsStale);
+  const canSubmit = photo !== null && !submitting && !usedTypes.has(type) && !blockedByOpenDay && !blockedByLocation;
 
   return (
     <div className="mx-auto max-w-md space-y-5 p-4">
@@ -403,11 +472,11 @@ export default function CheckinPage() {
               type="button"
               onClick={() => setType(opt.value)}
               aria-pressed={selected}
-              disabled={used}
+              disabled={used || blockedByLocation}
               className={cn(
                 'inline-flex items-center justify-center gap-1 rounded-xl border px-3 py-3 text-sm font-semibold transition-colors',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1',
-                used
+                used || blockedByLocation
                   ? 'cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-500'
                   : selected
                     ? TYPE_TONE[opt.value].selected
@@ -428,7 +497,11 @@ export default function CheckinPage() {
             <MapPin
               className={cn(
                 'h-5 w-5 shrink-0',
-                locStatus === 'ready'
+                locationGate?.status === 'blocked' || locationGateStatus === 'error' || locationIsStale
+                  ? 'text-red-500'
+                  : locationGate?.status === 'outside_pending'
+                    ? 'text-amber-500'
+                    : locStatus === 'ready' && locationGateStatus === 'ready'
                   ? 'text-emerald-500'
                   : locStatus === 'failed'
                     ? 'text-red-500'
@@ -437,8 +510,29 @@ export default function CheckinPage() {
             />
             <div className="min-w-0">
               <p className="truncate text-sm font-medium text-gray-900 dark:text-white">
-                {locStatus === 'loading'
+                {locStatus === 'loading' || locationGateStatus === 'loading'
                   ? t('gettingLocation')
+                  : locationIsStale
+                    ? tx(
+                        'ตำแหน่งหมดอายุ กรุณาตรวจใหม่',
+                        'Location expired; refresh it',
+                        'တည်နေရာ သက်တမ်းကုန်သွားပါပြီ။ ပြန်စစ်ပါ။',
+                        'ຕຳແໜ່ງໝົດອາຍຸ ກະລຸນາກວດໃໝ່'
+                      )
+                  : locationGate?.status === 'blocked'
+                    ? tx(
+                        'อยู่นอกรัศมีที่อนุญาต',
+                        'Outside the allowed radius',
+                        'ခွင့်ပြုအချင်းဝက်ပြင်ပတွင် ရှိနေသည်',
+                        'ຢູ່ນອກລັດສະໝີທີ່ອະນຸຍາດ'
+                      )
+                    : locationGateStatus === 'error'
+                      ? tx(
+                          'ตรวจสอบพื้นที่ลงเวลาไม่ได้',
+                          'Could not verify the attendance area',
+                          'အလုပ်ချိန်မှတ်တမ်းဧရိယာကို စစ်ဆေး၍မရပါ',
+                          'ບໍ່ສາມາດກວດສອບພື້ນທີ່ລົງເວລາໄດ້'
+                        )
                   : locStatus === 'ready'
                     ? t('locationReady')
                     : locStatus === 'failed'
@@ -475,6 +569,61 @@ export default function CheckinPage() {
             'No GPS — you can still save, but it will be sent to HR for review and you must explain it.',
             'GPS တည်နေရာ မတွေ့ပါ — သိမ်း၍ရသေးသည် သို့သော် HR စစ်ဆေးရန် ပို့မည်ဖြစ်ပြီး HR ကို အကြောင်းပြချက် ရှင်းပြရမည်',
             'ບໍ່ພົບຕຳແໜ່ງ GPS — ຍັງບັນທຶກໄດ້ ແຕ່ຈະຖືກສົ່ງໃຫ້ HR ກວດສອບ ແລະ ຕ້ອງຊີ້ແຈງເຫດຜົນກັບ HR'
+          )}
+        </p>
+      )}
+
+      {locationGateStatus === 'error' && (
+        <p className="-mt-3 flex items-start gap-1.5 px-1 text-xs text-red-600 dark:text-red-400">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          {tx(
+            'ยังไม่สามารถยืนยันพื้นที่ของคุณได้ ปุ่มลงเวลาถูกปิดไว้ กรุณากดตรวจตำแหน่งใหม่',
+            'Your area could not be verified. Attendance buttons are disabled; refresh your location.',
+            'သင့်ဧရိယာကို အတည်မပြုနိုင်သေးပါ။ အလုပ်ချိန်မှတ်တမ်းခလုတ်များကို ပိတ်ထားသည်။ တည်နေရာကို ပြန်စစ်ပါ။',
+            'ຍັງບໍ່ສາມາດຢືນຢັນພື້ນທີ່ຂອງທ່ານໄດ້ ປຸ່ມລົງເວລາຖືກປິດໄວ້ ກະລຸນາກວດຕຳແໜ່ງໃໝ່'
+          )}
+        </p>
+      )}
+
+      {locationIsStale && (
+        <p className="-mt-3 flex items-start gap-1.5 px-1 text-xs text-red-600 dark:text-red-400">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          {tx(
+            'ตำแหน่งล่าสุดเกิน 30 วินาทีแล้ว ปุ่มลงเวลาถูกปิดไว้ กรุณากดตรวจตำแหน่งใหม่',
+            'Your last location is over 30 seconds old. Attendance buttons are disabled; refresh your location.',
+            'နောက်ဆုံးတည်နေရာသည် စက္ကန့် ၃၀ ကျော်နေပါပြီ။ အလုပ်ချိန်မှတ်တမ်းခလုတ်များကို ပိတ်ထားသည်။ တည်နေရာကို ပြန်စစ်ပါ။',
+            'ຕຳແໜ່ງຫຼ້າສຸດເກີນ 30 ວິນາທີແລ້ວ ປຸ່ມລົງເວລາຖືກປິດໄວ້ ກະລຸນາກວດຕຳແໜ່ງໃໝ່'
+          )}
+        </p>
+      )}
+
+      {locationGateStatus === 'ready' && locationGate?.status === 'blocked' && (
+        <p className="-mt-3 flex items-start gap-1.5 rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700 dark:bg-red-950/30 dark:text-red-300">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          {locationGate.code === 'outside_geofence_limit_exceeded'
+            ? tx(
+                `คุณอยู่นอกพื้นที่อนุโลม ห่าง ${locationGate.distance_m} ม. (อนุญาตไม่เกิน ${locationGate.allowed_distance_m} ม.) จึงไม่สามารถเช็คอินหรือเช็คเอาต์ได้`,
+                `You are outside the allowed area at ${locationGate.distance_m} m (maximum ${locationGate.allowed_distance_m} m), so check-in and check-out are disabled.`,
+                `သင်သည် ခွင့်ပြုဧရိယာပြင်ပ ${locationGate.distance_m} မီတာတွင် ရှိနေသည် (အများဆုံး ${locationGate.allowed_distance_m} မီတာ) ထို့ကြောင့် အဝင်/အထွက်မှတ်တမ်းတင်၍ မရပါ။`,
+                `ທ່ານຢູ່ນອກພື້ນທີ່ອະນຸໂລມ ຫ່າງ ${locationGate.distance_m} ມ. (ສູງສຸດ ${locationGate.allowed_distance_m} ມ.) ຈຶ່ງບໍ່ສາມາດເຊັກອິນ ຫຼື ເຊັກເອົາໄດ້`
+              )
+            : tx(
+                `คุณอยู่นอกรัศมีสาขา ห่าง ${locationGate.distance_m} ม. สาขานี้ไม่อนุญาตให้ลงเวลานอกพื้นที่ จึงไม่สามารถเช็คอินหรือเช็คเอาต์ได้`,
+                `You are ${locationGate.distance_m} m outside the branch radius. This branch does not allow outside attendance, so check-in and check-out are disabled.`,
+                `သင်သည် ဆိုင်ခွဲအချင်းဝက်ပြင်ပ ${locationGate.distance_m} မီတာတွင် ရှိနေသည်။ ဤဆိုင်ခွဲသည် ပြင်ပမှတ်တမ်းတင်မှုကို ခွင့်မပြုသဖြင့် အဝင်/အထွက်မှတ်တမ်းတင်၍ မရပါ။`,
+                `ທ່ານຢູ່ນອກລັດສະໝີສາຂາ ຫ່າງ ${locationGate.distance_m} ມ. ສາຂານີ້ບໍ່ອະນຸຍາດໃຫ້ລົງເວລານອກພື້ນທີ່ ຈຶ່ງບໍ່ສາມາດເຊັກອິນ ຫຼື ເຊັກເອົາໄດ້`
+              )}
+        </p>
+      )}
+
+      {locationGateStatus === 'ready' && locationGate?.status === 'outside_pending' && (
+        <p className="-mt-3 flex items-start gap-1.5 px-1 text-xs text-amber-600 dark:text-amber-400">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          {tx(
+            `อยู่นอกสาขา ${locationGate.distance_m} ม. แต่ยังอยู่ในพื้นที่อนุโลม การลงเวลาจะส่งให้ HR ตรวจสอบทันที`,
+            `You are ${locationGate.distance_m} m outside the branch but within its allowance. HR will be notified immediately.`,
+            `သင်သည် ဆိုင်ခွဲပြင်ပ ${locationGate.distance_m} မီတာတွင် ရှိသော်လည်း ခွင့်ပြုဧရိယာအတွင်း ဖြစ်သည်။ HR ကို ချက်ချင်း အသိပေးမည်။`,
+            `ທ່ານຢູ່ນອກສາຂາ ${locationGate.distance_m} ມ. ແຕ່ຍັງຢູ່ໃນພື້ນທີ່ອະນຸໂລມ ລະບົບຈະແຈ້ງ HR ທັນທີ`
           )}
         </p>
       )}
