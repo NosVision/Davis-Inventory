@@ -30,6 +30,10 @@ const st = async (pr) => (await pr).status;
 
   // Snapshot HRTEST geofence for restore.
   const geo0 = ((await req(hr, 'GET', '/api/hr/locations')).json?.data || []).find((l) => l.store_id === HRTEST) || {};
+  const geoPolicy0 = {
+    allow_outside_geofence: geo0.allow_outside_geofence ?? false,
+    outside_max_distance_m: geo0.outside_max_distance_m ?? 150,
+  };
 
   try {
     // ── locations list ──
@@ -40,8 +44,8 @@ const st = async (pr) => (await pr).status;
     check('staff locations → 403', (await st(req(staff, 'GET', '/api/hr/locations'))) === 403, null);
 
     // ── locations PUT ──
-    check('mgr PUT geofence HRTEST → 200', (await st(req(mgr, 'PUT', '/api/hr/locations', { store_id: HRTEST, lat: 13.7, lng: 100.5, radius_m: 150 }))) === 200, null);
-    check('mgr PUT geofence storeB → 403', (await st(req(mgr, 'PUT', '/api/hr/locations', { store_id: STORE_B, lat: 13.7, lng: 100.5, radius_m: 150 }))) === 403, null);
+    check('mgr PUT geofence HRTEST → 200', (await st(req(mgr, 'PUT', '/api/hr/locations', { store_id: HRTEST, lat: 13.7, lng: 100.5, radius_m: 150, allow_outside_geofence: false, outside_max_distance_m: 150 }))) === 200, null);
+    check('mgr PUT geofence storeB → 403', (await st(req(mgr, 'PUT', '/api/hr/locations', { store_id: STORE_B, lat: 13.7, lng: 100.5, radius_m: 150, allow_outside_geofence: false, outside_max_distance_m: 150 }))) === 403, null);
 
     // ── assets list ──
     const mgrAssets = (await req(mgr, 'GET', '/api/hr/assets')).json?.data || [];
@@ -58,7 +62,13 @@ const st = async (pr) => (await pr).status;
   } finally {
     await svc.from('hr_assets').delete().ilike('name', 'e2e-scope-%');
     // Restore the HRTEST geofence if it had one.
-    if (geo0.lat != null) await req(hr, 'PUT', '/api/hr/locations', { store_id: HRTEST, lat: geo0.lat, lng: geo0.lng, radius_m: geo0.radius_m });
+    if (geo0.lat != null) await req(hr, 'PUT', '/api/hr/locations', {
+      store_id: HRTEST,
+      lat: geo0.lat,
+      lng: geo0.lng,
+      radius_m: geo0.radius_m,
+      ...geoPolicy0,
+    });
   }
 
   process.exit(summary('HR_E2E_SCOPE_ASSETS') ? 0 : 1);
