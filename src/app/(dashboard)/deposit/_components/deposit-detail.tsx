@@ -59,6 +59,7 @@ import { notifyChatWithdrawalCompleted, notifyChatWithdrawalRequest, sendChatBot
 import { notifyChatTransferBatch, notifyChatTransferSubmitted } from '@/lib/chat/transfer-bot-client';
 import { notifyStaff } from '@/lib/notifications/client';
 import { extendExpiryISO } from '@/lib/utils/date';
+import { canManageDepositExpiry } from '@/lib/deposit/expiry-access';
 import { generateTransferCode } from '@/lib/utils/transfer-code';
 import type { ReceiptSettings } from '@/types/database';
 import type { TransferCardItem } from '@/types/transfer-chat';
@@ -1082,7 +1083,7 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
   };
 
   const handleToggleVip = async () => {
-    if (!user || !currentStoreId) return;
+    if (!user || !currentStoreId || !canManageDepositExpiry(user.role)) return;
     setIsSubmitting(true);
     const supabase = createClient();
 
@@ -1276,7 +1277,7 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
   };
 
   const handleExtendExpiry = async () => {
-    if (!user || !currentStoreId) return;
+    if (!user || !currentStoreId || !canManageDepositExpiry(user.role)) return;
     const days = parseInt(extendDays);
     if (isNaN(days) || days <= 0) {
       toast({ type: 'error', title: t('detail.errorInvalidDays') });
@@ -1398,8 +1399,9 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
   const canMarkExpired = deposit.status === 'in_store' && !deposit.is_vip;
   const canTransfer = deposit.status === 'expired';
   const canTransferToHq = deposit.status === 'expired';
-  const canExtendExpiry = deposit.status === 'in_store' && !deposit.is_vip;
-  const canToggleVip = deposit.status === 'in_store';
+  const canManageExpiry = canManageDepositExpiry(user?.role);
+  const canExtendExpiry = canManageExpiry && deposit.status === 'in_store' && !deposit.is_vip;
+  const canToggleVip = canManageExpiry && deposit.status === 'in_store';
 
   return (
     <div className="space-y-6">
