@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { loadLeaveQuotaContext } from '@/lib/hr/leave-quota';
+import { checkLeaveOverlap } from '@/lib/hr/leave-overlap';
 import { logHrAudit } from '@/lib/hr/audit';
 import { notifyHrManagers } from '@/lib/hr/notify';
 import { todayBangkok } from '@/lib/utils/date';
@@ -92,6 +93,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'You are not registered as an employee' }, { status: 400 });
   }
   const companyId = emp.company_id as string;
+
+  try {
+    const overlap = await checkLeaveOverlap(service, { profileId: user.id, fromDate, toDate });
+    if (overlap) return NextResponse.json(overlap, { status: 409 });
+  } catch {
+    return NextResponse.json({ error: 'ตรวจสอบใบลาซ้ำไม่สำเร็จ กรุณาลองใหม่' }, { status: 500 });
+  }
 
   // Load the leave type. Types may be shared (company_id null) or company-scoped.
   const { data: leaveTypeRow, error: ltErr } = await service

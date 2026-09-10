@@ -8,6 +8,8 @@ const { execFileSync } = require('node:child_process');
 const path = require('path');
 
 const SUITES = [
+  'hr-leave-overlap-assert.cjs', // pending/approved overlap warning and date boundaries
+  'hr-leave-overlap-routes-assert.cjs', // ESS, HR entry, and approval reject overlaps before writes
   'hr-payroll-assert.cjs',   // P4.2/P4.4 payslip engine (S1-S7)
   'hr-eval-assert.cjs',      // P5.1 evaluation compute + payout + aggregation
   'hr-tax-reports-assert.cjs', // P5.2 ภงด.1/สปส/50ทวิ + P5.4 register/labor-cost

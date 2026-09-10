@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { checkLeaveOverlap } from '@/lib/hr/leave-overlap';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManager, requireStoreManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
@@ -122,6 +123,18 @@ export async function POST(
     );
 
     return NextResponse.json({ data: { id, status: 'rejected' } });
+  }
+
+  try {
+    const overlap = await checkLeaveOverlap(service, {
+      profileId: row.user_id as string,
+      fromDate: row.from_date as string,
+      toDate: row.to_date as string,
+      excludeLeaveId: id,
+    });
+    if (overlap) return NextResponse.json(overlap, { status: 409 });
+  } catch {
+    return NextResponse.json({ error: 'ตรวจสอบใบลาซ้ำไม่สำเร็จ กรุณาลองใหม่' }, { status: 500 });
   }
 
   // Approval is the moment the days are actually spent, and nothing checked the quota here at all.
