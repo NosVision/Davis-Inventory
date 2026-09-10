@@ -130,8 +130,8 @@ export async function middleware(request: NextRequest) {
       : NextResponse.redirect(new URL('/hr', request.url));
   }
 
-  // HQ deposit audit contains cross-branch staff activity and before/after values.
-  // It is intentionally narrower than the general HQ permissions.
+  // Deposit audit contains cross-branch staff activity and before/after values.
+  // Only Owner and HQ may access it, independently of broader permissions.
   if (
     HQ_DEPOSIT_HISTORY_ROUTES.some((route) => pathMatches(pathname, route))
     && !canAccessDepositHistory(role)

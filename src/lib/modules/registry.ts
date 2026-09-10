@@ -105,7 +105,7 @@ export const modules: ModuleConfig[] = [
     icon: 'shield-check',
     color: 'cyan',
     href: '/hq/deposit-history',
-    roles: ['hq'],
+    roles: ['owner', 'hq'],
     groupKey: 'moduleGroups.warehouse',
   },
   {

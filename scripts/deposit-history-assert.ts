@@ -13,7 +13,8 @@ import type { AuthUser } from '../src/lib/auth/permissions';
 import type { UserRole } from '../src/types/roles';
 
 assert.equal(canAccessDepositHistory('hq'), true);
-for (const role of ['owner', 'hr', 'bar', 'head_bar', 'manager', 'staff', 'accountant', null]) {
+assert.equal(canAccessDepositHistory('owner'), true);
+for (const role of ['hr', 'bar', 'head_bar', 'manager', 'staff', 'accountant', null]) {
   assert.equal(canAccessDepositHistory(role), false, `${role ?? 'null'} must not access HQ deposit history`);
 }
 
@@ -29,7 +30,9 @@ assert.deepEqual(
   ['hq-warehouse', 'hq-deposit-history'],
   'HQ deposit history must appear immediately after HQ warehouse',
 );
-for (const role of ['owner', 'hr', 'bar', 'manager', 'accountant'] as UserRole[]) {
+const ownerModuleIds = getAccessibleModules(userWithRole('owner')).map((module) => module.id);
+assert.equal(ownerModuleIds.includes('hq-deposit-history'), true);
+for (const role of ['hr', 'bar', 'manager', 'accountant'] as UserRole[]) {
   assert.equal(
     getAccessibleModules(userWithRole(role)).some((module) => module.id === 'hq-deposit-history'),
     false,

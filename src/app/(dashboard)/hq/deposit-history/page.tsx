@@ -260,7 +260,7 @@ export default function HqDepositHistoryPage() {
             <Archive className="h-5 w-5" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold uppercase tracking-wider text-cyan-700 dark:text-cyan-300">HQ Audit Register</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-cyan-700 dark:text-cyan-300">Deposit Audit Register</p>
             <p className="mt-0.5 text-2xl font-bold text-gray-950 dark:text-white">{formatNumber(total)} รายการ</p>
           </div>
           <div className="text-sm text-gray-600 dark:text-gray-300">

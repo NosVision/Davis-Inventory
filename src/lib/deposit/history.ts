@@ -58,7 +58,7 @@ export interface ChangedField {
 }
 
 export function canAccessDepositHistory(role: string | null | undefined): boolean {
-  return role === 'hq';
+  return role === 'hq' || role === 'owner';
 }
 
 function cleanParam(value: string | null, maxLength: number): string {
