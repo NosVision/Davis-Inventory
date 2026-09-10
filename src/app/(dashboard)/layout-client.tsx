@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -16,6 +16,7 @@ import { UserGuide } from '@/components/pwa/user-guide';
 import { Store, ArrowRight } from 'lucide-react';
 import type { AuthUser } from '@/lib/auth/permissions';
 import type { Store as StoreType } from '@/types/database';
+import { canAccessDashboardPath } from '@/lib/auth/settings-access';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -45,6 +46,7 @@ export function DashboardLayoutClient({
   const { setUser } = useAuthStore();
   const isLargeScreen = useMediaQuery('(min-width: 1024px)');
   const pathname = usePathname();
+  const router = useRouter();
   const t = useTranslations();
 
   useSessionRefresh();
@@ -53,13 +55,19 @@ export function DashboardLayoutClient({
     setUser(user);
   }, [user, setUser]);
 
+  const canAccessCurrentPath = canAccessDashboardPath(user.role, pathname);
+
+  useEffect(() => {
+    if (!canAccessCurrentPath) router.replace('/warehouse');
+  }, [canAccessCurrentPath, router]);
+
   const showDesktop = useDesktop && isLargeScreen;
 
   const needsStore =
     stores.length === 0 &&
     !NO_STORE_ALLOWED.some((p) => pathname.startsWith(p));
 
-  const content = needsStore ? (
+  const content = !canAccessCurrentPath ? null : needsStore ? (
     <div className="flex min-h-[60vh] items-center justify-center px-4">
       <div className="w-full max-w-md text-center">
         <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-100 dark:bg-blue-900/30">

@@ -7,6 +7,7 @@ import { Menu, ChevronDown, LogOut, User, Settings, Bell, MessageSquare, Downloa
 import Link from 'next/link';
 import { cn } from '@/lib/utils/cn';
 import { useAuthStore } from '@/stores/auth-store';
+import { canAccessDashboardPath } from '@/lib/auth/settings-access';
 import { useAppStore } from '@/stores/app-store';
 import { NotificationCenter } from '@/components/layout/notification-center';
 import { PrinterStatusIndicator } from '@/components/layout/printer-status-indicator';
@@ -209,17 +210,19 @@ export function TopBar({
                   <KeyRound className="h-4 w-4" />
                   <span>เปลี่ยนรหัสผ่าน</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setUserMenuOpen(false);
-                    router.push('/settings');
-                  }}
-                  className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
-                >
-                  <Settings className="h-4 w-4" />
-                  <span>{t('nav.settings')}</span>
-                </button>
+                {user && canAccessDashboardPath(user.role, '/settings') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUserMenuOpen(false);
+                      router.push('/settings');
+                    }}
+                    className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+                  >
+                    <Settings className="h-4 w-4" />
+                    <span>{t('nav.settings')}</span>
+                  </button>
+                )}
 
                 {/* ติดตั้งแอป */}
                 <button

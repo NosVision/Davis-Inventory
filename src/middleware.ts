@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
+import { canAccessDashboardPath } from '@/lib/auth/settings-access';
 
 // Routes that bypass the Supabase session check entirely.
 //
@@ -117,6 +118,12 @@ export async function middleware(request: NextRequest) {
     return pathname.startsWith('/api/')
       ? NextResponse.json({ error: 'Forbidden' }, { status: 403 })
       : NextResponse.redirect(new URL('/hr', request.url));
+  }
+
+  // System settings are restricted independently of menu visibility. Keep the
+  // personal password and notification pages available to every signed-in role.
+  if (!canAccessDashboardPath(role, pathname)) {
+    return NextResponse.redirect(new URL('/warehouse', request.url));
   }
 
   // Non-customer cannot access /customer routes
