@@ -1,83 +1,52 @@
-/**
- * One answer to "is this bottle expired?" for every screen.
- *
- * The rule the business runs on: a deposit is sold as 30 days, and 30 days is the date the
- * customer is told. But a shift runs past midnight, so someone who turns up on day 30 at 01:00 is
- * still inside the night they were counting on — the expiry-check cron knows this and extends the
- * real deadline to the store's closing hour (effectiveExpiryISO), which is why `status` stays
- * `in_store` into the small hours of day 31.
- *
- * The screens did not know it. They computed `daysUntil(expiry_date)` from the raw date, so at
- * 00:01 on day 31 the customer's app said "หมดอายุแล้ว" while the withdraw button — which reads
- * `status` — was still live. Staff read the label and turned people away; customers read it and
- * argued, because by their count the bottle had not expired (owner report 2026-08-11).
- *
- * Nothing here changes when a bottle actually dies. It only stops the label contradicting the
- * button: `status` is the authority, and the countdown is presentation.
- */
+import { effectiveExpiryISO } from '../utils/date';
 
-export type DepositExpiryState =
-  /** No expiry at all (VIP). */
-  | 'none'
-  /** Comfortably in date. */
-  | 'ok'
-  /** Within the warning window. */
-  | 'soon'
-  /**
-   * Past the printed date but still withdrawable — the grace hours of the final night.
-   * The customer was told 30 days and this is still, to them, that night.
-   */
-  | 'last_call'
-  /** Actually finished: the cron has flipped it. */
-  | 'expired';
-
+export type DepositExpiryState = 'none' | 'ok' | 'soon' | 'last_call' | 'expired';
 export interface DepositExpiryDisplay {
   state: DepositExpiryState;
-  /** Whole days left against the printed date. Negative once past it. null when there is no expiry. */
   days: number | null;
-  /** True while a withdrawal is still allowed. */
   withdrawable: boolean;
+  deadline: string | null;
 }
 
-const SOON_DAYS = 7;
-
-/**
- * `status` decides whether the bottle is dead; the date only decides how the countdown reads.
- * Deliberately NOT recomputing the grace client-side: the cron owns that decision with the store's
- * own closing hour and blocked days, and a second implementation would drift from it.
- */
+/** The persisted deadline is authoritative, even while cron status is stale. */
 export function depositExpiryDisplay(deposit: {
   expiry_date?: string | null;
+  collection_deadline_at?: string | null;
   status?: string | null;
 }): DepositExpiryDisplay {
-  const status = deposit.status ?? null;
-  const raw = deposit.expiry_date ?? null;
-
-  if (status === 'expired') return { state: 'expired', days: raw ? daysLeft(raw) : null, withdrawable: false };
-  if (!raw) return { state: 'none', days: null, withdrawable: true };
-
-  const days = daysLeft(raw);
-  if (days <= 0) return { state: 'last_call', days, withdrawable: true };
-  if (days <= SOON_DAYS) return { state: 'soon', days, withdrawable: true };
-  return { state: 'ok', days, withdrawable: true };
+  const raw = deposit.expiry_date;
+  const deadline = deposit.collection_deadline_at !== undefined
+    ? deposit.collection_deadline_at
+    : (raw ? effectiveExpiryISO(raw) : null);
+  const days = raw ? Math.ceil((new Date(raw).getTime() - Date.now()) / 86_400_000) : null;
+  const ended = deposit.status === 'expired' || (!!deadline && new Date(deadline).getTime() <= Date.now());
+  const withdrawable = !ended && (!deposit.status || deposit.status === 'in_store');
+  if (ended) return { state: 'expired', days, deadline, withdrawable: false };
+  if (!deadline) return { state: 'none', days: null, deadline, withdrawable };
+  if ((days ?? 0) <= 0) return { state: 'last_call', days, deadline, withdrawable };
+  return { state: (days ?? 0) <= 7 ? 'soon' : 'ok', days, deadline, withdrawable };
 }
 
-function daysLeft(expiry: string): number {
-  return Math.ceil((new Date(expiry).getTime() - Date.now()) / 86_400_000);
+export function depositExpiryLabel(d: DepositExpiryDisplay, locale = 'th'): string {
+  const th = locale.startsWith('th');
+  if (!d.deadline) return d.state === 'expired'
+    ? (th ? 'สิ้นสุดการฝากแล้ว' : 'Storage ended')
+    : (th ? 'ไม่มีวันหมดอายุ' : 'No expiry');
+  const date = new Intl.DateTimeFormat(th ? 'th-TH' : 'en-GB', {
+    timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).format(new Date(d.deadline));
+  return d.state === 'expired'
+    ? (th ? `สิ้นสุดสิทธิ์แล้ว: ${date} น.` : `Collection ended: ${date} (Bangkok)`)
+    : (th ? `รับเหล้าก่อน ${date} น.` : `Collect before ${date} (Bangkok)`);
 }
 
-/** Thai label for the countdown chip. Keeps the printed 30-day date honest on every surface. */
 export function depositExpiryLabelTH(d: DepositExpiryDisplay): string {
-  switch (d.state) {
-    case 'none':
-      return 'ไม่มีวันหมดอายุ';
-    case 'expired':
-      return 'หมดอายุแล้ว';
-    case 'last_call':
-      return 'วันสุดท้าย — เบิกได้ถึงร้านปิด';
-    case 'soon':
-      return d.days === 1 ? 'เหลือ 1 วัน' : `เหลือ ${d.days} วัน`;
-    default:
-      return `เหลือ ${d.days} วัน`;
-  }
+  return depositExpiryLabel(d, 'th');
+}
+
+export function depositStatusForDisplay(deposit: Parameters<typeof depositExpiryDisplay>[0]): string {
+  const status = deposit.status || '';
+  return ['in_store', 'pending_withdrawal'].includes(status) && depositExpiryDisplay(deposit).state === 'expired'
+    ? 'expired' : status;
 }

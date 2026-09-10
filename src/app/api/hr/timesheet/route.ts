@@ -36,7 +36,7 @@ interface OverrideRow {
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** store_id sentinel for "employees not attached to any venue" (see GET). */
-export const NO_STORE = 'none';
+const NO_STORE = 'none';
 const MAX_RANGE_DAYS = 62;
 const DEFAULT_WORK_HOURS = 9;
 

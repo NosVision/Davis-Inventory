@@ -1,5 +1,7 @@
 'use client';
 
+import { depositExpiryDisplay, depositExpiryLabelTH, depositStatusForDisplay } from '@/lib/deposit/expiry-display';
+
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
@@ -73,6 +75,7 @@ interface Deposit {
   table_number: string | null;
   status: string;
   expiry_date: string | null;
+  collection_deadline_at?: string | null;
   received_by: string | null;
   notes: string | null;
   photo_url: string | null;
@@ -1413,8 +1416,8 @@ export default function DepositPage() {
                           </td>
                           <td className="whitespace-nowrap px-5 py-4">
                             <div className="flex items-center gap-1.5">
-                              <Badge variant={statusVariantMap[deposit.status] || 'default'}>
-                                {DEPOSIT_STATUS_LABELS[deposit.status] || deposit.status}
+                              <Badge variant={statusVariantMap[depositStatusForDisplay(deposit)] || 'default'}>
+                                {DEPOSIT_STATUS_LABELS[depositStatusForDisplay(deposit)] || deposit.status}
                               </Badge>
                               {deposit.is_vip && (
                                 <Badge variant="warning" size="sm">
@@ -1450,7 +1453,7 @@ export default function DepositPage() {
                                   'text-sm',
                                   isExpiringSoon ? 'font-medium text-red-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-300'
                                 )}>
-                                  {formatThaiDate(deposit.expiry_date)}
+                                  {depositExpiryLabelTH(depositExpiryDisplay(deposit))}
                                 </p>
                                 {isExpiringSoon && (
                                   <p className="text-xs text-red-500 dark:text-red-400">
@@ -1536,8 +1539,8 @@ export default function DepositPage() {
                           <span className="font-mono text-sm font-medium text-indigo-600 dark:text-indigo-400">
                             {deposit.deposit_code}
                           </span>
-                          <Badge variant={statusVariantMap[deposit.status] || 'default'} size="sm">
-                            {DEPOSIT_STATUS_LABELS[deposit.status] || deposit.status}
+                          <Badge variant={statusVariantMap[depositStatusForDisplay(deposit)] || 'default'} size="sm">
+                            {DEPOSIT_STATUS_LABELS[depositStatusForDisplay(deposit)] || deposit.status}
                           </Badge>
                           {deposit.is_vip && (
                             <Badge variant="warning" size="sm">
@@ -1583,12 +1586,7 @@ export default function DepositPage() {
                         );
                       })() : deposit.expiry_date ? (
                         <span className={cn(isExpiringSoon && 'font-medium text-red-500 dark:text-red-400')}>
-                          {isExpiringSoon
-                            ? (expiryDays !== null && expiryDays > 0
-                                ? t('mobile.expiresIn', { days: expiryDays })
-                                : t('mobile.expiresToday'))
-                            : t('mobile.expiryLabel', { date: formatThaiDate(deposit.expiry_date) })
-                          }
+                          {depositExpiryLabelTH(depositExpiryDisplay(deposit))}
                         </span>
                       ) : null}
                     </div>

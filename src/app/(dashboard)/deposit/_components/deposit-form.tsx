@@ -523,6 +523,13 @@ export function DepositForm({ onBack, onSuccess, pendingDeposit }: DepositFormPr
     const supabase = createClient();
 
     try {
+      let consent = { terms_accepted_at: null as string | null, terms_version: null as string | null, terms_locale: null as string | null };
+      if (pendingDeposit) {
+        const { data, error } = await supabase.from('deposits')
+          .select('terms_accepted_at, terms_version, terms_locale').eq('id', pendingDeposit.id).single();
+        if (error) throw error;
+        consent = data;
+      }
       const depositCodes: string[] = [];
 
       for (let idx = 0; idx < items.length; idx++) {
@@ -594,6 +601,7 @@ export function DepositForm({ onBack, onSuccess, pendingDeposit }: DepositFormPr
         depositCodes.push(depositCode);
 
         const { error } = await supabase.from('deposits').insert({
+          ...consent,
           store_id: currentStoreId,
           deposit_code: depositCode,
           line_user_id: pendingDeposit?.line_user_id || null,

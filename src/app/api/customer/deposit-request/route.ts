@@ -1,3 +1,4 @@
+import { DEPOSIT_TERMS_VERSION, hasAcceptedDepositTerms } from '@/lib/deposit/terms';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyCustomerToken } from '@/lib/auth/customer-token';
 import { createServiceClient } from '@/lib/supabase/server';
@@ -20,7 +21,10 @@ import type { ActionCardMetadata } from '@/types/chat';
  *         customerPhotoUrl?, storeId, token?, accessToken? }
  */
 export async function POST(request: NextRequest) {
-  const body = await request.json();
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== 'object' || !hasAcceptedDepositTerms(body)) {
+    return NextResponse.json({ error: 'Please accept the current deposit terms / กรุณายอมรับเงื่อนไขการฝาก', code: 'TERMS_REQUIRED' }, { status: 400 });
+  }
   const {
     customerName,
     customerPhone,
@@ -100,6 +104,9 @@ export async function POST(request: NextRequest) {
       customer_photo_url: customerPhotoUrl || null,
       notes: notes || 'ลูกค้าฝากผ่าน LINE OA',
       status: 'pending_staff',
+      terms_accepted_at: new Date().toISOString(),
+      terms_version: DEPOSIT_TERMS_VERSION,
+      terms_locale: body.termsLocale,
     })
     .select('id, deposit_code')
     .single();
@@ -122,6 +129,8 @@ export async function POST(request: NextRequest) {
       deposit_code: inserted.deposit_code,
       customer_name: customerName || 'ลูกค้า',
       line_user_id: lineUserId,
+      terms_version: DEPOSIT_TERMS_VERSION,
+      terms_locale: body.termsLocale,
       table_number: tableNumber || null,
     },
     changed_by: null,

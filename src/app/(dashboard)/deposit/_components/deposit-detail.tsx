@@ -1,5 +1,7 @@
 'use client';
 
+import { depositExpiryDisplay, depositExpiryLabelTH, depositStatusForDisplay } from '@/lib/deposit/expiry-display';
+
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils/cn';
@@ -77,6 +79,7 @@ interface Deposit {
   table_number: string | null;
   status: string;
   expiry_date: string | null;
+  collection_deadline_at?: string | null;
   received_by: string | null;
   notes: string | null;
   photo_url: string | null;
@@ -374,11 +377,8 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
   }, [loadWithdrawals, loadReceiptSettings, loadStaffNames]);
 
   const expiryDays = deposit.expiry_date ? daysUntil(deposit.expiry_date) : null;
-  // "หมดอายุแล้ว" ตัดสินจาก status จริง (cron ใช้ effectiveExpiryISO ที่ขยาย
-  // grace ตาม endHour ของร้าน) ไม่ใช่จาก expiry_date ดิบ — กันเคสที่กะ
-  // ทำงานข้ามเที่ยงคืน (เช่น เปิด 10:00 ปิด 04:00) ทำให้ UI แปะ expired
-  // ทั้งที่ยังอยู่ในกะวันที่ฝาก
-  const isExpired = deposit.status === 'expired';
+  // Deadline is enforced independently of cron status.
+  const isExpired = depositExpiryDisplay(deposit).state === 'expired';
   const isExpiringSoon = expiryDays !== null && expiryDays <= 7 && deposit.status === 'in_store' && !isExpired;
   // Bottle-count ratio (e.g. 2 of 3 bottles still in store).
   const remainingPercent = deposit.quantity > 0
@@ -831,7 +831,7 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
     const { error: withdrawalError } = await supabase.from('withdrawals').insert(rows);
 
     if (withdrawalError) {
-      toast({ type: 'error', title: t('detail.error'), message: t('detail.errorCreateWithdrawal') });
+      toast({ type: 'error', title: t('detail.error'), message: withdrawalError.message.includes('DEPOSIT_EXPIRED') ? 'สิ้นสุดสิทธิ์การเบิกแล้ว / Collection deadline passed' : t('detail.errorCreateWithdrawal') });
       setIsSubmitting(false);
       return;
     }
@@ -896,55 +896,17 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
         return;
       }
 
-      const nowIso = new Date().toISOString();
-      let totalQty = 0;
-      for (const w of pending) {
-        const qty = Number(w.requested_qty) || 1;
-        totalQty += qty;
-        await supabase
-          .from('withdrawals')
-          .update({
-            status: 'completed',
-            actual_qty: qty,
-            processed_by: user.id,
-            photo_url: approveWithdrawalPhoto || w.photo_url,
-            notes: approveWithdrawalNotes
-              ? (w.notes ? `${w.notes}\n[บาร์ดำเนินการ] ${approveWithdrawalNotes}` : `[บาร์ดำเนินการ] ${approveWithdrawalNotes}`)
-              : w.notes,
-          })
-          .eq('id', w.id);
-        if (w.bottle_id) {
-          await supabase
-            .from('deposit_bottles')
-            .update({ status: 'consumed', remaining_percent: 0, consumed_at: nowIso, consumed_by: user.id })
-            .eq('id', w.bottle_id);
-        }
+      const { error: completeError } = await supabase.rpc('complete_deposit_withdrawals', {
+        p_rows: pending.map(w => ({ id: w.id, actual_qty: Number(w.requested_qty) || 1,
+          photo_url: approveWithdrawalPhoto || w.photo_url,
+          notes: approveWithdrawalNotes ? [w.notes, '[บาร์ดำเนินการ] ' + approveWithdrawalNotes].filter(Boolean).join('\n') : w.notes })),
+      });
+      if (completeError) {
+        toast({ type: 'error', title: t('detail.error'), message: completeError.message.includes('DEPOSIT_EXPIRED')
+          ? 'สิ้นสุดสิทธิ์การเบิกแล้ว / Collection deadline passed' : t('detail.errorCreateWithdrawal') });
+        return;
       }
-
-      // Decrement remaining_qty + flip status. Stay in pending_withdrawal
-      // only if a sibling is still pending (shouldn't happen here since
-      // we just approved them all, but guard anyway).
-      const { data: depositData } = await supabase
-        .from('deposits')
-        .select('remaining_qty, quantity, deposit_code')
-        .eq('id', deposit.id)
-        .single();
-      const { count: stillPending } = await supabase
-        .from('withdrawals')
-        .select('id', { count: 'exact', head: true })
-        .eq('deposit_id', deposit.id)
-        .eq('status', 'pending');
-      if (depositData) {
-        const newRemaining = Math.max(0, depositData.remaining_qty - totalQty);
-        const newPercent = depositData.quantity > 0 ? (newRemaining / depositData.quantity) * 100 : 0;
-        const newStatus = newRemaining <= 0
-          ? 'withdrawn'
-          : (stillPending && stillPending > 0 ? 'pending_withdrawal' : 'in_store');
-        await supabase
-          .from('deposits')
-          .update({ remaining_qty: newRemaining, remaining_percent: newPercent, status: newStatus })
-          .eq('id', deposit.id);
-      }
+      const totalQty = pending.reduce((sum, w) => sum + (Number(w.requested_qty) || 1), 0);
 
       // Notify chat + customer
       if (currentStoreId) {
@@ -1431,8 +1393,8 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
   // ระหว่าง pending_confirm = ขวดยังไม่ได้รับเข้าระบบ → ทั้ง mark-expired
   // และ toggle-VIP ไม่ make sense (จะ VIP/หมดอายุของอะไรในเมื่อยังไม่รับฝาก)
   // จึงตัด pending_confirm ออกจากเงื่อนไขทั้งสอง
-  const canApproveWithdrawal = deposit.status === 'pending_withdrawal' && user && ['bar', 'head_bar', 'manager', 'owner', 'hq'].includes(user.role);
-  const canWithdraw = deposit.status === 'in_store' && deposit.remaining_qty > 0;
+  const canApproveWithdrawal = !isExpired && deposit.status === 'pending_withdrawal' && user && ['bar', 'head_bar', 'manager', 'owner', 'hq'].includes(user.role);
+  const canWithdraw = deposit.status === 'in_store' && !isExpired && deposit.remaining_qty > 0;
   const canMarkExpired = deposit.status === 'in_store' && !deposit.is_vip;
   const canTransfer = deposit.status === 'expired';
   const canTransferToHq = deposit.status === 'expired';
@@ -1460,8 +1422,8 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
                   {deposit.deposit_code}
                 </h1>
-                <Badge variant={statusVariantMap[deposit.status] || 'default'}>
-                  {DEPOSIT_STATUS_LABELS[deposit.status] || deposit.status}
+                <Badge variant={statusVariantMap[depositStatusForDisplay(deposit)] || 'default'}>
+                  {DEPOSIT_STATUS_LABELS[depositStatusForDisplay(deposit)] || deposit.status}
                 </Badge>
                 {deposit.is_vip && (
                   <Badge variant="warning">
@@ -1729,7 +1691,7 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
                           ? 'text-red-600 dark:text-red-400'
                           : 'text-gray-900 dark:text-white'
                       )}>
-                        {formatThaiDate(deposit.expiry_date)}
+                        {depositExpiryLabelTH(depositExpiryDisplay(deposit))}
                         {expiryDays !== null && expiryDays > 0 && (
                           <span className="ml-1 text-xs text-gray-500 dark:text-gray-400">
                             {t("detail.daysLeft", { days: expiryDays })}
@@ -2696,7 +2658,7 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
               <div className="flex justify-between">
                 <span className="text-gray-500 dark:text-gray-400">{t("detail.currentExpiry")}</span>
                 <span className="font-medium text-gray-900 dark:text-white">
-                  {deposit.expiry_date ? formatThaiDate(deposit.expiry_date) : t('detail.unspecified')}
+                  {deposit.expiry_date ? depositExpiryLabelTH(depositExpiryDisplay(deposit)) : t('detail.unspecified')}
                 </span>
               </div>
             </div>
@@ -2777,7 +2739,7 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
               {deposit.expiry_date && (
                 <div className="flex justify-between">
                   <span className="text-gray-500 dark:text-gray-400">วันหมดอายุ</span>
-                  <span className="font-medium text-gray-900 dark:text-white">{formatThaiDate(deposit.expiry_date)}</span>
+                  <span className="font-medium text-gray-900 dark:text-white">{depositExpiryLabelTH(depositExpiryDisplay(deposit))}</span>
                 </div>
               )}
               {receivedByName && (

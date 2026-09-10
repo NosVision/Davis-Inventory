@@ -6,7 +6,7 @@ import { useTranslations, useLocale } from 'next-intl';
 import { useCustomerAuth } from './customer-provider';
 import { createClient } from '@/lib/supabase/client';
 import { formatNumber, daysUntil } from '@/lib/utils/format';
-import { depositExpiryDisplay } from '@/lib/deposit/expiry-display';
+import { depositExpiryDisplay, depositExpiryLabel } from '@/lib/deposit/expiry-display';
 import {
   Search,
   Wine,
@@ -35,6 +35,7 @@ interface DepositItem {
   remainingPercent: number;
   remainingQty: number;
   expiryDate: string | null;
+  collectionDeadline: string | null;
   status: string;
   storeName: string;
   depositDate: string;
@@ -58,6 +59,9 @@ export function MyBottlesView() {
   const locale = useLocale();
 
   const [isLoading, setIsLoading] = useState(true);
+  // Refresh deadline-dependent buttons even if the page stays open across 04:00.
+  const [, tick] = useState(0);
+  useEffect(() => { const id = setInterval(() => tick(n => n + 1), 1000); return () => clearInterval(id); }, []);
   const [searchQuery, setSearchQuery] = useState('');
   const [deposits, setDeposits] = useState<DepositItem[]>([]);
   const [requestingId, setRequestingId] = useState<string | null>(null);
@@ -234,6 +238,7 @@ export function MyBottlesView() {
         remainingPercent: d.remaining_percent ?? 0,
         remainingQty: d.remaining_qty ?? 0,
         expiryDate: d.expiry_date,
+        collectionDeadline: d.collection_deadline_at,
         status: d.status,
         storeName: d.store?.store_name || '',
         depositDate: d.created_at,
@@ -614,17 +619,16 @@ export function MyBottlesView() {
             const isRequesting = requestingId === deposit.id;
             const isPendingWithdrawal =
               deposit.status === 'pending_withdrawal';
-            const isExpired = deposit.status === 'expired';
+            const isExpired = depositExpiryDisplay({ expiry_date: deposit.expiryDate, collection_deadline_at: deposit.collectionDeadline, status: deposit.status }).state === 'expired';
             const canWithdraw =
-              deposit.status === 'in_store' && !isRequesting;
-            // `status` is the authority on whether the bottle is dead — the same source the
-            // withdraw button uses. The raw date only drives the countdown, so the two can't
-            // disagree the way they used to on the final night. See lib/deposit/expiry-display.
+              deposit.status === 'in_store' && !isExpired && !isRequesting;
+            // Deadline and status jointly control eligibility, including while cron is stale.
             const expiry = depositExpiryDisplay({
               expiry_date: deposit.expiryDate,
+              collection_deadline_at: deposit.collectionDeadline,
               status: deposit.status,
             });
-            const days = expiry.days;
+
             const daysColor = getDaysLeftColor(deposit.expiryDate);
 
             return (
@@ -638,7 +642,9 @@ export function MyBottlesView() {
                       <span className="customer-item-code">
                         {deposit.code}
                       </span>
-                      {isPendingWithdrawal ? (
+                      {isExpired ? (
+                        <span className="customer-status-badge badge-red">{t('expired')}</span>
+                      ) : isPendingWithdrawal ? (
                         <span className="customer-status-badge badge-blue">
                           <Clock className="h-2.5 w-2.5" />
                           {t('pendingWithdrawal')}
@@ -724,36 +730,28 @@ export function MyBottlesView() {
                   <div className="flex items-center justify-between">
                     <span className="flex items-center gap-1 text-[10px] text-[#888]">
                       <Calendar className="h-3 w-3" />
-                      {t('daysLeftLabel')}
+                      {locale === 'th' ? 'สิ้นสุดสิทธิ์การเบิก' : 'Collection deadline'}
                     </span>
                     <span
-                      className="text-[10px] font-bold"
+                      className="max-w-[72%] text-right text-[11px] font-bold"
                       style={{ color: daysColor }}
                     >
                       {/* 'expired' is checked first: a bottle the cron has retired reads as
                           expired even if it somehow carries no expiry date. */}
-                      {expiry.state === 'expired'
-                        ? t('expired')
-                        : expiry.state === 'none' || days === null
-                          ? t('noExpiry')
-                          : expiry.state === 'last_call'
-                            ? t('lastCall')
-                            : days === 1
-                              ? t('expiresTomorrow')
-                              : t('expiresInDays', { days })}
+                      {depositExpiryLabel(expiry, locale)}
                     </span>
                   </div>
                 </div>
 
-                {isPendingWithdrawal ? (
-                  <div className="customer-btn-pending">
-                    <Clock className="h-3.5 w-3.5" />
-                    {t('pendingWithdrawal')}
-                  </div>
-                ) : isExpired ? (
+                {isExpired ? (
                   <div className="customer-btn-expired">
                     <AlertCircle className="h-3.5 w-3.5" />
                     {t('expired')}
+                  </div>
+                ) : isPendingWithdrawal ? (
+                  <div className="customer-btn-pending">
+                    <Clock className="h-3.5 w-3.5" />
+                    {t('pendingWithdrawal')}
                   </div>
                 ) : (
                   <>
@@ -839,6 +837,8 @@ export function MyBottlesView() {
         const bottles = availableBottles(deposit);
         const isMultiBottle = bottles.length > 1;
         const isRequesting = requestingId === deposit.id;
+        const modalExpiry = depositExpiryDisplay({ expiry_date: deposit.expiryDate, collection_deadline_at: deposit.collectionDeadline, status: deposit.status });
+        const modalExpired = modalExpiry.state === 'expired';
         const inStoreBlocked = isStoreBlockedToday(deposit);
         const toggle = (id: string) => {
           setWithdrawModal((prev) => {
@@ -858,6 +858,7 @@ export function MyBottlesView() {
           if (tableError) setTableError(null);
         };
         const submit = () => {
+          if (modalExpired) return;
           const ids = Array.from(selected);
           if (isMultiBottle && ids.length === 0) return;
           if (withdrawalType === 'in_store' && !tableNumber.trim()) {
@@ -904,6 +905,9 @@ export function MyBottlesView() {
                 </button>
               </div>
 
+              <p role={modalExpired ? 'alert' : undefined} className="mb-3 text-xs font-semibold text-[#F8D794]">
+                {depositExpiryLabel(modalExpiry, locale)}
+              </p>
               {/* Withdrawal type — drink-here vs take-home */}
               <p className="mb-2 text-[10px] uppercase tracking-wider text-[rgba(248,215,148,0.6)]">
                 {t('withdrawalTypeLabel')}
@@ -1026,7 +1030,7 @@ export function MyBottlesView() {
                 <button
                   type="button"
                   onClick={submit}
-                  disabled={isRequesting || (isMultiBottle && selected.size === 0)}
+                  disabled={modalExpired || isRequesting || (isMultiBottle && selected.size === 0)}
                   className="customer-btn-withdraw !mt-0 flex-1 disabled:opacity-50"
                 >
                   {isRequesting ? (

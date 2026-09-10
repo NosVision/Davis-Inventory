@@ -1,5 +1,7 @@
 'use client';
 
+import { depositExpiryDisplay, depositExpiryLabelTH } from '@/lib/deposit/expiry-display';
+
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils/cn';
@@ -50,6 +52,7 @@ import { useActionCardClaims } from '@/hooks/use-action-card-claims';
 import { Hand } from 'lucide-react';
 
 interface Withdrawal {
+  deposit?: { expiry_date: string | null; collection_deadline_at: string | null; status: string } | null;
   id: string;
   deposit_id: string;
   store_id: string;
@@ -70,6 +73,8 @@ interface Withdrawal {
 }
 
 interface DepositForWithdraw {
+  expiry_date: string | null;
+  collection_deadline_at: string | null;
   id: string;
   deposit_code: string;
   customer_name: string;
@@ -251,7 +256,7 @@ export default function WithdrawalsPage() {
 
     const { data, error } = await supabase
       .from('withdrawals')
-      .select('*')
+      .select('*, deposit:deposits(expiry_date, collection_deadline_at, status)')
       .eq('store_id', currentStoreId)
       .order('created_at', { ascending: false });
 
@@ -356,7 +361,7 @@ export default function WithdrawalsPage() {
 
     const { data } = await supabase
       .from('deposits')
-      .select('id, deposit_code, customer_name, product_name, quantity, remaining_qty, line_user_id, status, category')
+      .select('id, deposit_code, customer_name, product_name, quantity, remaining_qty, line_user_id, status, category, expiry_date, collection_deadline_at')
       .eq('store_id', currentStoreId)
       .eq('status', 'in_store')
       .gt('remaining_qty', 0)
@@ -364,7 +369,7 @@ export default function WithdrawalsPage() {
       .order('created_at', { ascending: false })
       .limit(20);
 
-    setDepositResults((data as DepositForWithdraw[]) || []);
+    setDepositResults(((data as DepositForWithdraw[]) || []).filter(d => depositExpiryDisplay(d).withdrawable));
     setIsSearching(false);
   }, [currentStoreId]);
 
@@ -386,13 +391,13 @@ export default function WithdrawalsPage() {
         const supabase = createClient();
         const { data } = await supabase
           .from('deposits')
-          .select('id, deposit_code, customer_name, product_name, quantity, remaining_qty, line_user_id, status, category')
+          .select('id, deposit_code, customer_name, product_name, quantity, remaining_qty, line_user_id, status, category, expiry_date, collection_deadline_at')
           .eq('store_id', currentStoreId)
           .eq('status', 'in_store')
           .gt('remaining_qty', 0)
           .order('created_at', { ascending: false })
           .limit(30);
-        setDepositResults((data as DepositForWithdraw[]) || []);
+        setDepositResults(((data as DepositForWithdraw[]) || []).filter(d => depositExpiryDisplay(d).withdrawable));
         setIsSearching(false);
       };
       loadAll();
@@ -562,7 +567,7 @@ export default function WithdrawalsPage() {
       const { error: withdrawalError } = await supabase.from('withdrawals').insert(rows);
 
       if (withdrawalError) {
-        toast({ type: 'error', title: t('loadError'), message: t('withdrawals.manual.processError', { product: dep.product_name }) });
+        toast({ type: 'error', title: t('loadError'), message: withdrawalError.message.includes('DEPOSIT_EXPIRED') ? 'สิ้นสุดสิทธิ์การเบิกแล้ว / Collection deadline passed' : t('withdrawals.manual.processError', { product: dep.product_name }) });
         setIsManualSubmitting(false);
         return;
       }
@@ -737,6 +742,10 @@ export default function WithdrawalsPage() {
   };
 
   const openProcessModal = (group: WithdrawalGroup, action: 'complete' | 'reject') => {
+    if (action === 'complete' && group.rep.deposit && depositExpiryDisplay(group.rep.deposit).state === 'expired') {
+      toast({ type: 'error', title: depositExpiryLabelTH(depositExpiryDisplay(group.rep.deposit)) });
+      return;
+    }
     setSelectedGroup(group);
     setProcessAction(action);
     // Total requested qty across all sibling rows (1 per bottle for
@@ -760,9 +769,6 @@ export default function WithdrawalsPage() {
     const supabase = createClient();
     const rep = selectedGroup.rep;
     const rowIds = selectedGroup.rows.map((r) => r.id);
-    const bottleIds = selectedGroup.rows
-      .map((r) => r.bottle_id)
-      .filter((id): id is string => !!id);
 
     if (processAction === 'complete') {
       const qty = parseFloat(actualQty);
@@ -779,7 +785,15 @@ export default function WithdrawalsPage() {
       const rowQtys: number[] = selectedGroup.rows.map((r) =>
         Number(r.requested_qty) || 0,
       );
-      if (qty !== totalRequested) {
+      if (selectedGroup.rows.every(r => r.bottle_id)) {
+        if (!Number.isInteger(qty) || qty > rowQtys.length) {
+          toast({ type: 'error', title: t('withdrawals.invalidQty') });
+          setIsSubmitting(false);
+          return;
+        }
+        rowQtys.fill(0);
+        for (let i = 0; i < qty; i++) rowQtys[i] = 1;
+      } else if (qty !== totalRequested) {
         // Spread proportionally — keep the math simple, last row absorbs
         // the rounding remainder.
         let remaining = qty;
@@ -796,82 +810,20 @@ export default function WithdrawalsPage() {
         }
       }
 
-      // Update every sibling withdrawal in parallel.
-      const updateResults = await Promise.all(
-        selectedGroup.rows.map((row, idx) =>
-          supabase
-            .from('withdrawals')
-            .update({
-              status: 'completed',
-              actual_qty: rowQtys[idx],
-              processed_by: user.id,
-              notes: processNotes || null,
-              photo_url: withdrawalPhotoUrl,
-            })
-            .eq('id', row.id),
-        ),
-      );
-      const firstErr = updateResults.find((r) => r.error);
-      if (firstErr?.error) {
-        toast({ type: 'error', title: t('loadError'), message: t('withdrawals.processError') });
+      // One transaction: crossing 04:00 cannot leave half a group completed.
+      const { error: completeError } = await supabase.rpc('complete_deposit_withdrawals', {
+        p_rows: selectedGroup.rows.map((row, idx) => ({ id: row.id, actual_qty: rowQtys[idx] })),
+        p_notes: processNotes || null,
+        p_photo_url: withdrawalPhotoUrl,
+      });
+      if (completeError) {
+        toast({ type: 'error', title: t('loadError'), message: completeError.message.includes('DEPOSIT_EXPIRED')
+          ? 'สิ้นสุดสิทธิ์การเบิกแล้ว / Collection deadline passed' : t('withdrawals.processError') });
         setIsSubmitting(false);
         return;
       }
 
-      // Mark every targeted bottle consumed in one batch update.
-      if (bottleIds.length > 0) {
-        await supabase
-          .from('deposit_bottles')
-          .update({
-            status: 'consumed',
-            remaining_percent: 0,
-            consumed_at: new Date().toISOString(),
-            consumed_by: user.id,
-          })
-          .in('id', bottleIds);
-      }
-
-      // Re-derive deposit aggregates from bottles (source of truth) so we
-      // don't drift if any sibling was previously partial-completed.
-      const { data: deposit } = await supabase
-        .from('deposits')
-        .select('id, deposit_code, quantity')
-        .eq('id', rep.deposit_id)
-        .single();
-
-      const { count: stillPending } = await supabase
-        .from('withdrawals')
-        .select('id', { count: 'exact', head: true })
-        .eq('deposit_id', rep.deposit_id)
-        .eq('status', 'pending');
-
-      if (deposit) {
-        const { data: liveBottles } = await supabase
-          .from('deposit_bottles')
-          .select('status, remaining_percent')
-          .eq('deposit_id', deposit.id);
-        const remaining = (liveBottles || []).filter((b) => b.status !== 'consumed');
-        const newRemainingQty = remaining.length;
-        const newPercent =
-          remaining.length > 0
-            ? Math.round(
-                (remaining.reduce((s, b) => s + Number(b.remaining_percent), 0) / remaining.length) * 100,
-              ) / 100
-            : 0;
-        const newStatus = newRemainingQty <= 0
-          ? 'withdrawn'
-          : (stillPending && stillPending > 0 ? 'pending_withdrawal' : 'in_store');
-
-        await supabase
-          .from('deposits')
-          .update({
-            remaining_qty: newRemainingQty,
-            remaining_percent: newPercent,
-            status: newStatus,
-          })
-          .eq('id', deposit.id);
-      }
-
+      // Inventory was committed by the RPC with the withdrawal rows.
       toast({ type: 'success', title: t('withdrawals.processSuccess'), message: t('withdrawals.processSuccessMessage', { qty }) });
 
       // ONE Flex confirmation — totals + bottle labels are already on the
@@ -890,10 +842,11 @@ export default function WithdrawalsPage() {
         actual_qty: qty,
         processed_by_name: user.displayName || user.username || 'พนักงาน',
       });
-      if (deposit?.deposit_code) {
+      const depositCode = depositCodeMap.get(rep.deposit_id);
+      if (depositCode) {
         syncChatActionCardStatus({
           storeId: currentStoreId,
-          referenceId: deposit.deposit_code,
+          referenceId: depositCode,
           actionType: 'withdrawal_claim',
           newStatus: 'completed',
           completedBy: user.id,
@@ -1172,6 +1125,7 @@ export default function WithdrawalsPage() {
                         row. Multi-bottle rows render one chip per bottle. */}
                     <div className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-gray-700 dark:text-gray-200">
                       <span className="font-medium">{rep.product_name}</span>
+                      {rep.deposit && <p className="text-xs text-amber-700">{depositExpiryLabelTH(depositExpiryDisplay(rep.deposit))}</p>}
                       {group.rows.map((row) => {
                         const ctx = row.bottle_id ? bottleContext.get(row.bottle_id) : null;
                         if (!ctx) return null;
@@ -1552,6 +1506,7 @@ export default function WithdrawalsPage() {
                             </div>
                             <Wine className="h-4 w-4 shrink-0 text-indigo-500" />
                             <span className="font-medium text-gray-900 dark:text-white">{dep.product_name}</span>
+                            <p className="text-xs text-amber-700">{depositExpiryLabelTH(depositExpiryDisplay(dep))}</p>
                           </div>
                           <div className="ml-7 mt-1 flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
                             <span className="flex items-center gap-1">
@@ -1590,6 +1545,7 @@ export default function WithdrawalsPage() {
                         <div className="flex items-center gap-2">
                           <Wine className="h-4 w-4 shrink-0 text-indigo-500" />
                           <span className="text-sm font-medium text-gray-900 dark:text-white">{item.deposit.product_name}</span>
+                          <p className="text-xs text-amber-700">{depositExpiryLabelTH(depositExpiryDisplay(item.deposit))}</p>
                         </div>
                         <div className="ml-6 mt-0.5 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                           <span>{item.deposit.customer_name}</span>

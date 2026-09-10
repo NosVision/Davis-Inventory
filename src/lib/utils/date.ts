@@ -369,52 +369,18 @@ export function isWithdrawalBlocked(
   };
 }
 
-/**
- * Calculate the "effective" expiry date, accounting for:
- * 1. Blocked withdrawal days — ถ้าหมดอายุตรงวันห้ามเบิก ขยายไปวันถัดไปที่เบิกได้
- * 2. Store working hours — ขยายถึงเวลาปิดร้าน (เช่น ตี 6) ของวันที่เบิกได้
- *
- * storeEndHour = ชั่วโมงปิดร้าน (จาก print_server_working_hours.endHour, default 6)
- *
- * Example: expiry=Saturday 23:59, blockedDays=[Fri,Sat], endHour=6
- *          → effective expiry = Monday 06:00 (วันอาทิตย์ + grace ถึงตี 6 วันจันทร์)
- */
+/** Final collection deadline: 04:00 Bangkok after the next eligible night. */
 export function effectiveExpiryISO(
   expiryDate: string,
   blockedDays: string[] = ['Fri', 'Sat'],
-  storeEndHour: number = 6,
 ): string {
-  const expiry = new Date(expiryDate);
-
-  // Get the Bangkok day-of-week for the expiry date
-  const expiryBangkok = new Date(
-    expiry.getTime() + 7 * 60 * 60 * 1000, // Convert to Bangkok wall-clock
-  );
-
-  let dayIndex = expiryBangkok.getDay();
-  let daysAdded = 0;
-
-  // If expiry falls on a blocked day, keep adding days until we find a non-blocked day
-  while (blockedDays.includes(DAY_NAMES[dayIndex]) && daysAdded < 7) {
-    daysAdded++;
-    dayIndex = (dayIndex + 1) % 7;
+  const wallClock = new Date(new Date(expiryDate).getTime() + 7 * 3_600_000);
+  let date = Date.UTC(wallClock.getUTCFullYear(), wallClock.getUTCMonth(), wallClock.getUTCDate());
+  for (let i = 0; i < 7 && blockedDays.includes(DAY_NAMES[new Date(date).getUTCDay()]); i++) {
+    date += 86_400_000;
   }
-
-  if (daysAdded === 0) {
-    // Expiry is not on a blocked day — just add store closing grace
-    const graced = new Date(expiry.getTime());
-    graced.setTime(graced.getTime() + storeEndHour * 60 * 60 * 1000);
-    return graced.toISOString();
-  }
-
-  // Extend expiry by daysAdded to the next non-blocked day
-  const extended = new Date(expiry.getTime());
-  extended.setTime(extended.getTime() + daysAdded * 24 * 60 * 60 * 1000);
-
-  // Add store closing grace (e.g. until 6 AM of the following day)
-  extended.setTime(extended.getTime() + storeEndHour * 60 * 60 * 1000);
-
-  return extended.toISOString();
+  // Next day 04:00 Bangkok = eligible day 21:00 UTC; no seconds inherited from expiry_date.
+  return new Date(date + 21 * 3_600_000).toISOString();
 }
 
 // ---------------------------------------------------------------------------

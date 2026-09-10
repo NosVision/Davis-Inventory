@@ -1,5 +1,7 @@
 'use client';
 
+import { depositExpiryDisplay } from '@/lib/deposit/expiry-display';
+
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -51,12 +53,12 @@ function WithdrawContent() {
     const supabase = createClient();
     const { data } = await supabase
       .from('deposits')
-      .select('id, deposit_code, product_name, remaining_qty, store_id, store:stores(store_name)')
+      .select('id, deposit_code, product_name, remaining_qty, expiry_date, collection_deadline_at, store_id, store:stores(store_name)')
       .eq('id', id)
       .eq('status', 'in_store')
       .single();
 
-    if (data) {
+    if (data && depositExpiryDisplay(data).state !== 'expired') {
       setDeposit(data as unknown as DepositInfo);
       // Check if withdrawal is blocked today (ใช้วันปฏิทินจริง)
       const { data: settings } = await supabase

@@ -121,18 +121,16 @@ export async function GET(request: NextRequest) {
   }
 
   // Mark expired deposits (exclude VIP — VIP never expires)
-  // Fetch all store settings for blocked days + working hours (for grace period)
+  // Fetch all store settings for blocked days (04:00 deadline is fixed across stores)
   const { data: allStoreSettings } = await supabase
     .from('store_settings')
-    .select('store_id, withdrawal_blocked_days, print_server_working_hours');
+    .select('store_id, withdrawal_blocked_days');
 
-  const storeSettingsMap = new Map<string, { blockedDays: string[]; endHour: number }>();
+  const storeSettingsMap = new Map<string, { blockedDays: string[] }>();
   if (allStoreSettings) {
     for (const s of allStoreSettings) {
-      const wh = s.print_server_working_hours as { endHour?: number } | null;
       storeSettingsMap.set(s.store_id, {
         blockedDays: (s.withdrawal_blocked_days as string[] | null) ?? ['Fri', 'Sat'],
-        endHour: wh?.endHour ?? 6,
       });
     }
   }
@@ -140,7 +138,7 @@ export async function GET(request: NextRequest) {
   // Fetch candidates for expiry (past their nominal expiry date)
   const { data: expiryCandidates } = await supabase
     .from('deposits')
-    .select('id, deposit_code, store_id, expiry_date')
+    .select('id, deposit_code, store_id, expiry_date, collection_deadline_at')
     .eq('status', 'in_store')
     .eq('is_vip', false)
     .lte('expiry_date', new Date().toISOString());
@@ -151,11 +149,11 @@ export async function GET(request: NextRequest) {
     const now = new Date().toISOString();
 
     for (const deposit of expiryCandidates) {
-      // Check effective expiry (extended past blocked days + store closing grace)
+      // Check effective expiry (extended past blocked days + fixed 04:00 cutoff)
       const settings = storeSettingsMap.get(deposit.store_id);
       const blockedDays = settings?.blockedDays ?? ['Fri', 'Sat'];
-      const storeEndHour = settings?.endHour ?? 6;
-      const effExpiry = effectiveExpiryISO(deposit.expiry_date, blockedDays, storeEndHour);
+
+      const effExpiry = deposit.collection_deadline_at || effectiveExpiryISO(deposit.expiry_date, blockedDays);
 
       if (effExpiry <= now) {
         // Truly expired — mark it

@@ -117,6 +117,7 @@ const PRIORITY_STYLES: Record<string, string> = {
 };
 
 export const ActionCardMessage = memo(function ActionCardMessage({ message, currentUserId, currentUserName, currentUserRole, roomId, storeId, onStatusChange, hideActions = false }: ActionCardMessageProps) {
+  const [actionError, setActionError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   // Per-bottle % readings the bar enters at confirm time. Slot count
@@ -335,6 +336,7 @@ export const ActionCardMessage = memo(function ActionCardMessage({ message, curr
   // Generic action card handler (deposit, withdrawal, stock)
   // ==========================================
   const handleAction = async (action: 'claim' | 'release' | 'complete') => {
+    setActionError(null);
     setLoading(true);
     try {
       const supabase = createClient();
@@ -441,7 +443,7 @@ export const ActionCardMessage = memo(function ActionCardMessage({ message, curr
               .from('deposits')
               .update(update)
               .eq('deposit_code', meta.reference_id)
-              .select('id, store_id, customer_name, customer_phone, table_number, line_user_id, notes')
+              .select('id, store_id, customer_name, customer_phone, table_number, line_user_id, notes, terms_accepted_at, terms_version, terms_locale')
               .single();
 
             if (isFromCustomer && depositRow?.id) {
@@ -495,6 +497,9 @@ export const ActionCardMessage = memo(function ActionCardMessage({ message, curr
                     received_by: currentUserId,
                     received_photo_url: photoUrl || null,
                     notes: depositRow.notes,
+                    terms_accepted_at: depositRow.terms_accepted_at,
+                    terms_version: depositRow.terms_version,
+                    terms_locale: depositRow.terms_locale,
                   });
                   if (insertErr) continue;
 
@@ -621,6 +626,78 @@ export const ActionCardMessage = memo(function ActionCardMessage({ message, curr
             };
           }
         }
+
+          // Withdrawal completed → update withdrawal + deposit records.
+          // Multi-bottle deposits create N pending rows (one per bottle)
+          // so the action card has to drain them all, mark each
+          // referenced bottle consumed, and only flip the deposit
+          // status once nothing else is queued.
+          if (action === 'complete' && meta.action_type === 'withdrawal_claim' && meta.reference_id) {
+            try {
+              const { data: deposit } = await supabase
+                .from('deposits')
+                .select('id, remaining_qty, quantity')
+                .eq('deposit_code', meta.reference_id)
+                .single();
+
+              if (!deposit) throw new Error('ไม่พบรายการฝาก / Deposit not found');
+              if (deposit) {
+                const { data: pendingRows } = await supabase
+                  .from('withdrawals')
+                  .select('id, requested_qty, bottle_id, photo_url, notes')
+                  .eq('deposit_id', deposit.id)
+                  .in('status', ['pending', 'approved'])
+                  .order('created_at', { ascending: true });
+
+                const pending = pendingRows || [];
+                if (!pending.length) {
+                  const { data: saved } = await supabase.from('chat_messages').select('metadata').eq('id', message.id).single();
+                  if (saved?.metadata?.status === 'completed') {
+                    updateMessage({ ...message, metadata: saved.metadata });
+                    onStatusChange?.('complete');
+                    return;
+                  }
+                  throw new Error('ไม่มีคำขอเบิกรอดำเนินการ / No pending withdrawal');
+                }
+                if (pending.length > 0) {
+                  const { error: completeError } = await supabase.rpc('complete_deposit_withdrawals', {
+                    p_rows: pending.map(w => ({ id: w.id, actual_qty: Number(w.requested_qty) || 1, photo_url: photoUrl || w.photo_url })),
+                    p_chat_message_id: message.id,
+                  });
+                  if (completeError) throw new Error(completeError.message);
+                  // Withdrawal, bottles, deposit totals and card committed together.
+                  fetch('/api/line/notify-deposit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ type: 'withdrawal_completed', deposit_id: deposit.id,
+                      actual_qty: pending.reduce((sum, w) => sum + (Number(w.requested_qty) || 1), 0) }),
+                  }).catch(() => {});
+                }
+              }
+
+              if (storeId) {
+                sendChatBotMessage({
+                  storeId,
+                  type: 'system',
+                  content: `✅ ${currentUserName} เบิกเหล้า ${meta.summary.items || ''} (${meta.reference_id}) — ${meta.summary.customer || ''}`,
+                });
+
+                // Push notification: withdrawal approved
+                notifyStaff({
+                  storeId,
+                  type: 'withdrawal_request',
+                  title: 'อนุมัติเบิกเหล้าแล้ว',
+                  body: `${currentUserName} อนุมัติเบิก ${meta.summary.items || ''} — ${meta.summary.customer || ''} (${meta.reference_id})`,
+                  data: { deposit_code: meta.reference_id },
+                  excludeUserId: currentUserId,
+                });
+              }
+            } catch (error) {
+              const message = error instanceof Error ? error.message : 'ไม่สามารถดำเนินการเบิกได้ / Unable to complete withdrawal';
+              setActionError(message.includes('DEPOSIT_EXPIRED') ? 'สิ้นสุดสิทธิ์การเบิกแล้ว / Collection deadline passed' : message);
+              return;
+            }
+          }
 
         const { error } = await supabase
           .from('chat_messages')
@@ -787,97 +864,7 @@ export const ActionCardMessage = memo(function ActionCardMessage({ message, curr
             }).catch(() => {});
           }
 
-          // Withdrawal completed → update withdrawal + deposit records.
-          // Multi-bottle deposits create N pending rows (one per bottle)
-          // so the action card has to drain them all, mark each
-          // referenced bottle consumed, and only flip the deposit
-          // status once nothing else is queued.
-          if (action === 'complete' && meta.action_type === 'withdrawal_claim' && meta.reference_id) {
-            try {
-              const { data: deposit } = await supabase
-                .from('deposits')
-                .select('id, remaining_qty, quantity')
-                .eq('deposit_code', meta.reference_id)
-                .single();
 
-              if (deposit) {
-                const { data: pendingRows } = await supabase
-                  .from('withdrawals')
-                  .select('id, requested_qty, bottle_id, photo_url, notes')
-                  .eq('deposit_id', deposit.id)
-                  .in('status', ['pending', 'approved'])
-                  .order('created_at', { ascending: true });
-
-                const pending = pendingRows || [];
-                if (pending.length > 0) {
-                  const nowIso = new Date().toISOString();
-                  let totalQty = 0;
-                  for (const w of pending) {
-                    const qty = Number(w.requested_qty) || 1;
-                    totalQty += qty;
-                    await supabase
-                      .from('withdrawals')
-                      .update({
-                        status: 'completed',
-                        actual_qty: qty,
-                        processed_by: currentUserId,
-                        photo_url: photoUrl || w.photo_url,
-                      })
-                      .eq('id', w.id);
-                    if (w.bottle_id) {
-                      await supabase
-                        .from('deposit_bottles')
-                        .update({ status: 'consumed', remaining_percent: 0, consumed_at: nowIso, consumed_by: currentUserId })
-                        .eq('id', w.bottle_id);
-                    }
-                  }
-
-                  const newRemaining = Math.max(0, deposit.remaining_qty - totalQty);
-                  const newPercent = deposit.quantity > 0 ? (newRemaining / deposit.quantity) * 100 : 0;
-                  const newStatus = newRemaining <= 0 ? 'withdrawn' : 'in_store';
-
-                  await supabase
-                    .from('deposits')
-                    .update({
-                      remaining_qty: newRemaining,
-                      remaining_percent: newPercent,
-                      status: newStatus,
-                    })
-                    .eq('id', deposit.id);
-
-                  fetch('/api/line/notify-deposit', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      type: 'withdrawal_completed',
-                      deposit_id: deposit.id,
-                      actual_qty: totalQty,
-                    }),
-                  }).catch(() => {});
-                }
-              }
-
-              if (storeId) {
-                sendChatBotMessage({
-                  storeId,
-                  type: 'system',
-                  content: `✅ ${currentUserName} เบิกเหล้า ${meta.summary.items || ''} (${meta.reference_id}) — ${meta.summary.customer || ''}`,
-                });
-
-                // Push notification: withdrawal approved
-                notifyStaff({
-                  storeId,
-                  type: 'withdrawal_request',
-                  title: 'อนุมัติเบิกเหล้าแล้ว',
-                  body: `${currentUserName} อนุมัติเบิก ${meta.summary.items || ''} — ${meta.summary.customer || ''} (${meta.reference_id})`,
-                  data: { deposit_code: meta.reference_id },
-                  excludeUserId: currentUserId,
-                });
-              }
-            } catch {
-              // Non-blocking: withdrawal sync failure shouldn't break the UI
-            }
-          }
         }
       }
     } finally {
@@ -1278,6 +1265,7 @@ export const ActionCardMessage = memo(function ActionCardMessage({ message, curr
 
   return (
     <>
+      {actionError && <p role="alert" className="mb-2 rounded-lg bg-red-50 p-3 text-sm text-red-700">{actionError}</p>}
     <div className={cn('flex justify-center', isCompleted ? 'my-1' : 'my-2')}>
       <div
         className={cn(

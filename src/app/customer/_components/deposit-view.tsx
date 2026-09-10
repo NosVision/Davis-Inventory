@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import {
   Camera,
   CheckCircle2,
@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import { useCustomerAuth } from './customer-provider';
 import { compressImage } from '@/lib/utils/image-compress';
+
+import { DEPOSIT_TERMS, DEPOSIT_TERMS_VERSION } from '@/lib/deposit/terms';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
@@ -25,6 +27,9 @@ export function DepositView({ onSuccess }: DepositViewProps) {
   const searchParams = useSearchParams();
   const { displayName, mode, isLoading: authLoading, store } = useCustomerAuth();
   const t = useTranslations('customer.deposit');
+  const locale = useLocale() === 'th' ? 'th' : 'en';
+  const terms = DEPOSIT_TERMS[locale];
+  const [termsAccepted, setTermsAccepted] = useState(false);
 
   const storeId = store.id || searchParams.get('storeId');
   const token = searchParams.get('token');
@@ -204,12 +209,16 @@ export function DepositView({ onSuccess }: DepositViewProps) {
       return;
     }
 
+    if (!termsAccepted) { setError(terms.error); return; }
     setIsSubmitting(true);
     setError(null);
 
     try {
       const authParams = getAuthParams();
-      const body: Record<string, string | null | undefined> = {
+      const body: Record<string, string | boolean | null | undefined> = {
+        termsAccepted,
+        termsVersion: DEPOSIT_TERMS_VERSION,
+        termsLocale: locale,
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
         tableNumber: tableNumber.trim() || null,
@@ -238,6 +247,7 @@ export function DepositView({ onSuccess }: DepositViewProps) {
   }
 
   function resetForm() {
+    setTermsAccepted(false);
     setCustomerName(displayName || '');
     setCustomerPhone('');
     setTableNumber('');
@@ -409,9 +419,23 @@ export function DepositView({ onSuccess }: DepositViewProps) {
           />
         </div>
 
+        <fieldset className="rounded-xl border border-[rgba(248,215,148,0.3)] p-4 text-[12px] leading-relaxed text-[#F8D794]">
+          <legend className="px-1 font-bold">{terms.title}</legend>
+          <ol className="list-decimal space-y-2 pl-5">
+            {terms.items.map((item, index) => <li key={index}>{item}</li>)}
+          </ol>
+          <label className="mt-4 flex cursor-pointer items-start gap-3 border-t border-[rgba(248,215,148,0.2)] pt-4">
+            <input type="checkbox" required checked={termsAccepted}
+              onChange={(e) => setTermsAccepted(e.target.checked)}
+              className="mt-1 h-5 w-5 shrink-0 accent-[#F8D794]" />
+            <span>{terms.accept}</span>
+          </label>
+        </fieldset>
+
         <button
           type="submit"
           disabled={
+            !termsAccepted ||
             isSubmitting ||
             isUploading ||
             !customerName.trim() ||

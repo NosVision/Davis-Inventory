@@ -1,3 +1,4 @@
+import { depositExpiryDisplay } from '@/lib/deposit/expiry-display';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyCustomerToken } from '@/lib/auth/customer-token';
 import { createServiceClient } from '@/lib/supabase/server';
@@ -69,6 +70,10 @@ export async function POST(request: NextRequest) {
 
   if (!deposit) {
     return NextResponse.json({ error: 'Deposit not found' }, { status: 404 });
+  }
+
+  if (depositExpiryDisplay(deposit).state === 'expired') {
+    return NextResponse.json({ error: 'Collection deadline passed / สิ้นสุดสิทธิ์การเบิกแล้ว', code: 'DEPOSIT_EXPIRED' }, { status: 400 });
   }
 
   if (deposit.status !== 'in_store') {
@@ -154,6 +159,9 @@ export async function POST(request: NextRequest) {
   const { error: insertError } = await supabase.from('withdrawals').insert(insertRows);
 
   if (insertError) {
+    if (insertError.message.includes('DEPOSIT_EXPIRED')) {
+      return NextResponse.json({ error: 'Collection deadline passed / สิ้นสุดสิทธิ์การเบิกแล้ว', code: 'DEPOSIT_EXPIRED' }, { status: 400 });
+    }
     return NextResponse.json(
       { error: 'ไม่สามารถส่งคำขอเบิกได้' },
       { status: 500 },
