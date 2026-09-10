@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- Standalone Node CommonJS E2E harness. */
 // P5.5 Tier-4 per-store scope e2e for locations (per-store geofence) + assets (holder's stores).
 // locations: list→resolveHrScope filter, PUT→requireStoreManager. assets: list→holder-in-scope
 // filter, [id] PUT→holder's stores (unassigned=company-HR). Proves a manager scoped to HRTEST
