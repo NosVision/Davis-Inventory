@@ -3936,6 +3936,12 @@
       "useMyLocation": "ใช้ตำแหน่งของฉัน",
       "gettingLocation": "กำลังหาตำแหน่ง...",
       "geoFailed": "หาตำแหน่งไม่สำเร็จ",
+      "allowOutsideGeofence": "อนุญาตให้ลงเวลานอกรัศมี",
+      "allowOutsideGeofenceHelp": "รายการที่อยู่นอกรัศมีจะส่งให้ HR ตรวจสอบก่อน",
+      "outsideEnabled": "เปิดใช้งานการลงเวลานอกรัศมี",
+      "outsideDisabled": "ปิดการลงเวลานอกรัศมี",
+      "outsideMaxDistance": "ระยะสูงสุดนอกพื้นที่ (เมตร)",
+      "outsideMaxDistanceHint": "ต้องเป็นจำนวนเต็มบวก และเมื่อเปิดใช้งานต้องไม่น้อยกว่ารัศมีสาขา",
       "empty": "ไม่มีสาขา"
     },
     "checkin": {
@@ -3950,6 +3956,7 @@
       "locationFailed": "หาตำแหน่งไม่สำเร็จ — เปิด GPS",
       "inGeofence": "อยู่ในรัศมี",
       "outGeofence": "อยู่นอกรัศมี",
+      "outsideDistanceRejected": "อยู่นอกระยะที่สาขาอนุญาตให้ลงเวลา",
       "noGeofence": "ไม่มีพิกัดร้าน",
       "startCamera": "เปิดกล้อง",
       "capture": "ถ่ายเซลฟี่",

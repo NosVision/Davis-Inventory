@@ -16,6 +16,8 @@ interface LocationRow {
   lat: number | null;
   lng: number | null;
   radius_m: number | null;
+  allow_outside_geofence: boolean | null;
+  outside_max_distance_m: number | null;
 }
 
 // GET /api/hr/locations — one row per active branch, stitched with its geofence (if set).
@@ -34,7 +36,7 @@ export async function GET() {
   if (scope.storeIds) storesQuery = storesQuery.in('id', scope.storeIds);
   const [storesRes, locationsRes] = await Promise.all([
     storesQuery,
-    service.from(TABLE).select('store_id, lat, lng, radius_m'),
+    service.from(TABLE).select('store_id, lat, lng, radius_m, allow_outside_geofence, outside_max_distance_m'),
   ]);
 
   if (storesRes.error) return NextResponse.json({ error: storesRes.error.message }, { status: 500 });
@@ -52,6 +54,8 @@ export async function GET() {
       lat: loc?.lat ?? null,
       lng: loc?.lng ?? null,
       radius_m: loc?.radius_m ?? null,
+      allow_outside_geofence: loc?.allow_outside_geofence ?? false,
+      outside_max_distance_m: loc?.outside_max_distance_m ?? 150,
     };
   });
 
@@ -72,6 +76,8 @@ export async function PUT(request: NextRequest) {
   const lat = body.lat;
   const lng = body.lng;
   const radiusM = body.radius_m;
+  const allowOutsideGeofence = body.allow_outside_geofence;
+  const outsideMaxDistanceM = body.outside_max_distance_m;
 
   const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
@@ -84,12 +90,32 @@ export async function PUT(request: NextRequest) {
   if (!isFiniteNumber(radiusM) || !Number.isInteger(radiusM) || radiusM <= 0) {
     return NextResponse.json({ error: 'radius_m must be a positive integer' }, { status: 400 });
   }
+  if (typeof allowOutsideGeofence !== 'boolean') {
+    return NextResponse.json({ error: 'allow_outside_geofence must be a boolean' }, { status: 400 });
+  }
+  if (!isFiniteNumber(outsideMaxDistanceM) || !Number.isInteger(outsideMaxDistanceM) || outsideMaxDistanceM <= 0) {
+    return NextResponse.json({ error: 'outside_max_distance_m must be a positive integer' }, { status: 400 });
+  }
+  if (allowOutsideGeofence && outsideMaxDistanceM < radiusM) {
+    return NextResponse.json(
+      { error: 'outside_max_distance_m must be at least radius_m when outside attendance is enabled' },
+      { status: 400 }
+    );
+  }
 
   const service = createServiceClient();
   const { data, error } = await service
     .from(TABLE)
     .upsert(
-      { store_id: storeId, lat, lng, radius_m: radiusM, updated_by: auth.userId },
+      {
+        store_id: storeId,
+        lat,
+        lng,
+        radius_m: radiusM,
+        allow_outside_geofence: allowOutsideGeofence,
+        outside_max_distance_m: outsideMaxDistanceM,
+        updated_by: auth.userId,
+      },
       { onConflict: 'store_id' }
     )
     .select('*')

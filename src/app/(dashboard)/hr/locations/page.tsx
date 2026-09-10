@@ -12,12 +12,16 @@ interface BranchLocation {
   lat: number | null;
   lng: number | null;
   radius_m: number | null;
+  allow_outside_geofence: boolean;
+  outside_max_distance_m: number;
 }
 
 interface Draft {
   lat: string;
   lng: string;
   radius: string;
+  allowOutsideGeofence: boolean;
+  outsideMaxDistance: string;
 }
 
 const DEFAULT_RADIUS = 150;
@@ -27,6 +31,10 @@ function toDraft(row: BranchLocation): Draft {
     lat: row.lat != null ? String(row.lat) : '',
     lng: row.lng != null ? String(row.lng) : '',
     radius: row.radius_m != null ? String(row.radius_m) : String(DEFAULT_RADIUS),
+    allowOutsideGeofence: row.allow_outside_geofence ?? false,
+    outsideMaxDistance: row.outside_max_distance_m != null
+      ? String(row.outside_max_distance_m)
+      : String(DEFAULT_RADIUS),
   };
 }
 
@@ -71,11 +79,17 @@ export default function LocationsPage() {
   const updateDraft = (storeId: string, patch: Partial<Draft>) => {
     setDrafts((prev) => ({
       ...prev,
-      [storeId]: { ...(prev[storeId] ?? { lat: '', lng: '', radius: String(DEFAULT_RADIUS) }), ...patch },
+      [storeId]: {
+        ...(prev[storeId] ?? {
+          lat: '', lng: '', radius: String(DEFAULT_RADIUS),
+          allowOutsideGeofence: false, outsideMaxDistance: String(DEFAULT_RADIUS),
+        }),
+        ...patch,
+      },
     }));
   };
 
-  const useMyLocation = (storeId: string) => {
+  const fillWithMyLocation = (storeId: string) => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
       toast({ type: 'error', title: t('geoFailed') });
       return;
@@ -109,6 +123,8 @@ export default function LocationsPage() {
           lat: Number(draft.lat),
           lng: Number(draft.lng),
           radius_m: Number(draft.radius),
+          allow_outside_geofence: draft.allowOutsideGeofence,
+          outside_max_distance_m: Number(draft.outsideMaxDistance),
         }),
       });
       if (!res.ok) {
@@ -146,7 +162,10 @@ export default function LocationsPage() {
       ) : (
         <DataList compact={view === 'compact'}>
           {rows.map((row) => {
-            const draft = drafts[row.store_id] ?? { lat: '', lng: '', radius: String(DEFAULT_RADIUS) };
+            const draft = drafts[row.store_id] ?? {
+              lat: '', lng: '', radius: String(DEFAULT_RADIUS),
+              allowOutsideGeofence: false, outsideMaxDistance: String(DEFAULT_RADIUS),
+            };
             const isSet = row.lat != null && row.lng != null;
             const rowSaving = savingId === row.store_id;
             const rowLocating = geoId === row.store_id;
@@ -177,7 +196,7 @@ export default function LocationsPage() {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => useMyLocation(row.store_id)}
+                      onClick={() => fillWithMyLocation(row.store_id)}
                       isLoading={rowLocating}
                       disabled={rowSaving}
                       icon={<LocateFixed className="h-4 w-4" />}
@@ -215,6 +234,36 @@ export default function LocationsPage() {
                     label={t('radius')}
                     value={draft.radius}
                     onChange={(e) => updateDraft(row.store_id, { radius: e.target.value })}
+                    className="tabular-nums"
+                  />
+                </div>
+                <div className="mt-3 grid grid-cols-1 gap-3 border-t border-gray-100 pt-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] dark:border-gray-700">
+                  <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-gray-200 p-3 text-sm transition-colors hover:border-indigo-300 dark:border-gray-600 dark:hover:border-indigo-500">
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      checked={draft.allowOutsideGeofence}
+                      disabled={rowSaving || rowLocating}
+                      onChange={(e) => updateDraft(row.store_id, { allowOutsideGeofence: e.target.checked })}
+                      className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:cursor-not-allowed dark:border-gray-600 dark:bg-gray-800"
+                    />
+                    <span className="min-w-0">
+                      <span className="block font-medium text-gray-900 dark:text-white">{t('allowOutsideGeofence')}</span>
+                      <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                        {draft.allowOutsideGeofence ? t('outsideEnabled') : t('outsideDisabled')}
+                      </span>
+                      <span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">{t('allowOutsideGeofenceHelp')}</span>
+                    </span>
+                  </label>
+                  <Input
+                    type="number"
+                    min={1}
+                    step={1}
+                    label={t('outsideMaxDistance')}
+                    hint={t('outsideMaxDistanceHint')}
+                    value={draft.outsideMaxDistance}
+                    disabled={!draft.allowOutsideGeofence}
+                    onChange={(e) => updateDraft(row.store_id, { outsideMaxDistance: e.target.value })}
                     className="tabular-nums"
                   />
                 </div>

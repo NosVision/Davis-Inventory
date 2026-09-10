@@ -3935,6 +3935,12 @@
       "useMyLocation": "Use my location",
       "gettingLocation": "Getting location...",
       "geoFailed": "Could not get location",
+      "allowOutsideGeofence": "Allow attendance outside the geofence",
+      "allowOutsideGeofenceHelp": "Outside attendance is sent to HR for review before it is accepted.",
+      "outsideEnabled": "Outside attendance is enabled",
+      "outsideDisabled": "Outside attendance is disabled",
+      "outsideMaxDistance": "Maximum outside distance (m)",
+      "outsideMaxDistanceHint": "Use a positive whole number; when enabled, it cannot be below the branch radius.",
       "empty": "No branches"
     },
     "checkin": {
@@ -3949,6 +3955,7 @@
       "locationFailed": "Could not get location — enable GPS",
       "inGeofence": "In range",
       "outGeofence": "Out of range",
+      "outsideDistanceRejected": "You are beyond this branch's permitted attendance distance.",
       "noGeofence": "No geofence",
       "startCamera": "Open camera",
       "capture": "Take selfie",
