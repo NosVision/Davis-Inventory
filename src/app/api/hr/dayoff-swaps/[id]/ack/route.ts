@@ -1,17 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireHrManagerForRowStore } from '@/lib/hr/route-auth';
+import { requireHrManager } from '@/lib/hr/route-auth';
 
-// POST /api/hr/dayoff-swaps/[id]/ack — company HR acknowledges an already-approved
-// swap (§C, P2.3a). This is a payroll-side sign-off, NOT the approval, so it is
-// gated on company-wide HR (requireHrManager), not the store manager. Only approved
-// swaps can be acknowledged.
+// POST /api/hr/dayoff-swaps/[id]/ack — company HR acknowledges an already-approved swap (§C, P2.3a).
+// This is HR's step in the swap flow — the store decides, HR only acknowledges (client decision
+// 2026-07-20) — so it is company-wide HR only. It used to pass through requireHrManagerForRowStore,
+// which for a store's row falls to requireStoreManager(store, 'approve'): any store's leave approver
+// could sign off HR's step. Only approved swaps can be acknowledged.
 export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const auth = await requireHrManagerForRowStore('hr_dayoff_swaps', id);
+  const auth = await requireHrManager();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const service = createServiceClient();

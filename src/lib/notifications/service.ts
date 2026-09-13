@@ -37,6 +37,7 @@ export type NotificationType =
   | 'repair_completed'        // งานซ่อมเสร็จแล้ว (for reporter)
   | 'hr_swap_request'         // มีคำขอสลับวันหยุดใหม่ (for HR)
   | 'hr_swap_result'          // ผลอนุมัติสลับวันหยุด (for the two employees)
+  | 'hr_swap_approved'        // สาขาอนุมัติสลับวันหยุดแล้ว รอ HR รับทราบ (for HR)
   | 'hr_identity_claim'       // พนักงานยืนยันตัวตน รอ HR ตรวจ (for HR)
   | 'hr_identity_result'      // ผลการตรวจยืนยันตัวตน (for the employee)
   | 'hr_tax_submitted'        // สนง.บัญชีบันทึกภาษีผ่านลิงก์แล้ว (for HR)
@@ -162,6 +163,7 @@ const TYPE_TO_PREF: Record<NotificationType, keyof NotificationPreferences> = {
   repair_completed: 'notify_repair',
   hr_swap_request: 'notify_approval_request', // HR sees swap requests under approvals
   hr_swap_result: 'notify_approval_request',  // employees see the decision under approvals
+  hr_swap_approved: 'notify_approval_request', // HR acknowledges swaps the stores approved
   hr_identity_claim: 'notify_approval_request',
   hr_identity_result: 'notify_approval_request',
   hr_tax_submitted: 'notify_approval_request',

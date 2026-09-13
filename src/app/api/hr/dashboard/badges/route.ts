@@ -13,7 +13,6 @@ const SOURCES: { key: string; table: string; col: string; val: string; userCol: 
   { key: 'attendance', table: 'hr_attendance', col: 'review_status', val: 'pending', userCol: 'user_id' },
   { key: 'attendanceReq', table: 'hr_attendance_requests', col: 'status', val: 'pending', userCol: 'user_id' },
   { key: 'otReq', table: 'hr_ot_requests', col: 'status', val: 'pending', userCol: 'user_id' },
-  { key: 'swaps', table: 'hr_dayoff_swaps', col: 'status', val: 'pending', userCol: 'requester_id' },
   { key: 'claims', table: 'hr_claims', col: 'status', val: 'pending', userCol: 'user_id' },
   { key: 'profileRequests', table: 'hr_profile_change_requests', col: 'status', val: 'pending', userCol: 'user_id' },
   { key: 'documentRequests', table: 'hr_document_requests', col: 'status', val: 'requested', userCol: 'profile_id' },
@@ -31,6 +30,45 @@ async function countPending(
   return count ?? 0;
 }
 
+// Day-off swaps are decided at the store — by its manager or captain — and company HR only
+// acknowledges them afterwards (client decision 2026-07-20), deciding itself only for a store with
+// nobody set up. So what needs company HR is approved swaps not yet acknowledged, plus pending ones
+// at stores no one else can decide. A scoped caller's number is the pending swaps at the stores whose
+// roster they own — the can_schedule grant the decide route checks. A swap belongs to the store its
+// roster row is in, not to wherever the requester happens to be a member.
+async function countSwaps(service: SB, scopedUserId: string | null): Promise<number> {
+  const table = 'hr_dayoff_swaps';
+  if (scopedUserId) {
+    const { data: own } = await service
+      .from('hr_manager_scopes')
+      .select('store_id')
+      .eq('user_id', scopedUserId)
+      .eq('can_schedule', true);
+    const storeIds = [...new Set((own ?? []).map((s) => s.store_id as string))];
+    if (storeIds.length === 0) return 0;
+    const { count } = await service
+      .from(table)
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending')
+      .in('store_id', storeIds);
+    return count ?? 0;
+  }
+
+  const [{ count: unacked }, { data: scopes }] = await Promise.all([
+    service
+      .from(table)
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'approved')
+      .is('hr_acked_at', null),
+    service.from('hr_manager_scopes').select('store_id').eq('can_schedule', true),
+  ]);
+  const covered = [...new Set((scopes ?? []).map((s) => s.store_id as string))];
+  let uncovered = service.from(table).select('id', { count: 'exact', head: true }).eq('status', 'pending');
+  if (covered.length) uncovered = uncovered.not('store_id', 'in', `(${covered.join(',')})`);
+  const { count: pendingUncovered } = await uncovered;
+  return (unacked ?? 0) + (pendingUncovered ?? 0);
+}
+
 export async function GET() {
   const scope = await resolveHrScope();
   if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status });
@@ -44,7 +82,10 @@ export async function GET() {
     userIds = [...new Set((data ?? []).map((r) => r.user_id as string))];
   }
 
-  const results = await Promise.all(SOURCES.map((s) => countPending(service, s, userIds)));
+  const [results, swaps] = await Promise.all([
+    Promise.all(SOURCES.map((s) => countPending(service, s, userIds))),
+    countSwaps(service, scope.storeIds ? scope.userId : null),
+  ]);
   const byKey: Record<string, number> = {};
   SOURCES.forEach((s, i) => { byKey[s.key] = results[i]; });
 
@@ -53,7 +94,7 @@ export async function GET() {
     leave: byKey.leave,
     attendance: byKey.attendance,
     requests: byKey.attendanceReq + byKey.otReq,
-    swaps: byKey.swaps,
+    swaps,
     claims: byKey.claims,
     profileRequests: byKey.profileRequests,
     documentRequests: byKey.documentRequests,

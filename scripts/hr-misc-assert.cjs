@@ -386,6 +386,52 @@ const plvAllHidden = plv.partitionPoolAllocations([{ user_id: 'h', allocated_sat
 eq('pool entirely hidden lists nobody', plvAllHidden.allocations.length, 0);
 eq('pool entirely hidden totals zero', plvAllHidden.totals, { allocated: 0, deducted: 0, net: 0 });
 
+// ── dayoff-swap.ts: what approving a day-off swap does (mirror of SQL hr_approve_dayoff_swap, 00202) ──
+// The House of Savoy case, 11/09/2026: the requester, off on the 9th, wants the 12th; the coworker
+// works both days. 00088 handed the 12th off to the coworker instead.
+const dsw = load('dayoff-swap.ts');
+const DSW_STORE = 'store-savoy';
+const dswWork = { store_id: DSW_STORE, is_day_off: false };
+const dswOff = { store_id: DSW_STORE, is_day_off: true };
+const dswCells = (requesterFrom, requesterTo, counterpartFrom, counterpartTo) => ({ requesterFrom, requesterTo, counterpartFrom, counterpartTo });
+eq('swap: requester moves their own day off, a covering coworker stays put',
+  dsw.planDayoffSwap('2026-09-09', '2026-09-12', DSW_STORE, dswCells(dswOff, dswWork, dswWork, dswWork)),
+  { ok: true, kind: 'own_days', counterpartTrades: false });
+eq('swap: a real trade moves both days off',
+  dsw.planDayoffSwap('2026-09-09', '2026-09-12', DSW_STORE, dswCells(dswOff, dswWork, dswWork, dswOff)),
+  { ok: true, kind: 'own_days', counterpartTrades: true });
+// Both off on the 9th: the coworker is not trading, so moving them too would be a second request nobody made.
+eq('swap: coworker off on the same day is not a trade',
+  dsw.planDayoffSwap('2026-09-09', '2026-09-12', DSW_STORE, dswCells(dswOff, dswWork, dswOff, dswWork)),
+  { ok: true, kind: 'own_days', counterpartTrades: false });
+eq('swap: requester not off on the day they give up is refused',
+  dsw.planDayoffSwap('2026-09-09', '2026-09-12', DSW_STORE, dswCells(dswWork, dswWork, dswWork, dswOff)),
+  { ok: false, reason: 'requester_not_off' });
+eq('swap: requester already off on the day they want is refused',
+  dsw.planDayoffSwap('2026-09-09', '2026-09-12', DSW_STORE, dswCells(dswOff, dswOff, dswWork, dswWork)),
+  { ok: false, reason: 'requester_already_off' });
+eq('swap: coworker with no roster on one day is refused',
+  dsw.planDayoffSwap('2026-09-09', '2026-09-12', DSW_STORE, dswCells(dswOff, dswWork, null, dswOff)),
+  { ok: false, reason: 'counterpart_missing' });
+eq('swap: a row at another store does not count',
+  dsw.planDayoffSwap('2026-09-09', '2026-09-12', DSW_STORE, dswCells(dswOff, { store_id: 'other-store', is_day_off: false }, dswWork, dswWork)),
+  { ok: false, reason: 'requester_missing' });
+eq('swap: the same day is a shift trade between the two people',
+  dsw.planDayoffSwap('2026-09-09', '2026-09-09', DSW_STORE, dswCells(dswWork, null, null, dswOff)),
+  { ok: true, kind: 'same_day' });
+const dswPicked = dsw.swapCellsFrom(
+  [
+    { user_id: 'wut', work_date: '2026-09-09', store_id: DSW_STORE, is_day_off: true },
+    { user_id: 'wut', work_date: '2026-09-12', store_id: DSW_STORE, is_day_off: false },
+    { user_id: 'pai', work_date: '2026-09-12', store_id: DSW_STORE, is_day_off: false },
+  ],
+  { requester_id: 'wut', requester_date: '2026-09-09', counterpart_id: 'pai', counterpart_date: '2026-09-12' }
+);
+eq('swap cells: requester on their day off', dswPicked.requesterFrom.is_day_off, true);
+eq('swap cells: requester on the wanted day', dswPicked.requesterTo.is_day_off, false);
+eq('swap cells: coworker missing on the first day', dswPicked.counterpartFrom, null);
+eq('swap cells: coworker on the wanted day', dswPicked.counterpartTo.is_day_off, false);
+
 // ── issuer-label.ts: how the company-document issuers read on the payroll-groups screen ──
 // The wrong version of this list shipped once — guessed from role in the client, it named an HR
 // user who could not issue anything. Owners collapse to one word so a break-glass login is not

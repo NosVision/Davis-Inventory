@@ -122,10 +122,16 @@ const COMMON_NOTI_TYPES = [
   'error',
 ];
 
+// Day-off swaps reach front-line roles directly: a captain (role staff/bar/head_bar with a roster
+// grant) is asked to decide one, and both employees in a swap hear the outcome. Both are sent only to
+// the people concerned, so letting the role see the type shows nobody anything that is not theirs —
+// hiding it left captains with a request they were never shown (owner report 2026-09-13).
+const SWAP_NOTI_TYPES = ['hr_swap_request', 'hr_swap_result'];
+
 const ROLE_NOTIFICATION_TYPES: Partial<Record<UserRole, readonly string[]>> = {
-  staff: [...COMMON_NOTI_TYPES, ...DEPOSIT_NOTI_TYPES, ...WITHDRAWAL_NOTI_TYPES, ...REPAIR_NOTI_TYPES],
-  bar:   [...COMMON_NOTI_TYPES, ...DEPOSIT_NOTI_TYPES, ...WITHDRAWAL_NOTI_TYPES, ...REPAIR_NOTI_TYPES],
-  head_bar: [...COMMON_NOTI_TYPES, ...DEPOSIT_NOTI_TYPES, ...WITHDRAWAL_NOTI_TYPES, ...REPAIR_NOTI_TYPES],
+  staff: [...COMMON_NOTI_TYPES, ...DEPOSIT_NOTI_TYPES, ...WITHDRAWAL_NOTI_TYPES, ...REPAIR_NOTI_TYPES, ...SWAP_NOTI_TYPES],
+  bar:   [...COMMON_NOTI_TYPES, ...DEPOSIT_NOTI_TYPES, ...WITHDRAWAL_NOTI_TYPES, ...REPAIR_NOTI_TYPES, ...SWAP_NOTI_TYPES],
+  head_bar: [...COMMON_NOTI_TYPES, ...DEPOSIT_NOTI_TYPES, ...WITHDRAWAL_NOTI_TYPES, ...REPAIR_NOTI_TYPES, ...SWAP_NOTI_TYPES],
   accountant: [...COMMON_NOTI_TYPES, ...STOCK_NOTI_TYPES],
   customer: [...COMMON_NOTI_TYPES, 'promotion'],
   // owner / manager / hq → see all
