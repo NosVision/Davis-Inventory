@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManagerForStore } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
+import { refusePayrunIfHidden } from '@/lib/hr/payrun-access';
 
 // PUT /api/hr/payslips/[id]/bonus { amount_satang, label? } — HR one-time bonus for this employee
 // on this payrun. Keyed by (payrun, profile) so a draft regenerate re-applies it via the engine
@@ -17,6 +18,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   if (!pr) return NextResponse.json({ error: 'Payrun not found' }, { status: 404 });
   const auth = await requireHrManagerForStore((pr.store_id as string | null | undefined) ?? null);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  // A bonus moves this person's gross and net — a payrun action, under the "can you see everyone in
+  // the run" rule every other one follows (payrun-access.ts).
+  const refusal = await refusePayrunIfHidden(service, auth.userId, slip.payrun_id as string);
+  if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
   if (pr.status !== 'draft') {
     return NextResponse.json({ error: 'Payrun is finalized — reopen it before changing bonus' }, { status: 409 });
   }

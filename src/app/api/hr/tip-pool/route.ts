@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireStoreManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
+import { payHiddenProfileIds } from '@/lib/hr/pay-visibility';
+import { partitionPoolAllocations } from '@/lib/hr/pool-visibility';
+import { refusePoolIfHidden } from '@/lib/hr/pool-access';
 
 // Tip pool = same manual pool/allocation/deduction mechanism as Service Charge (00109 mirrors
 // 00103). Net tip per person feeds the payslip 'tip' earning line (P4.4). All lines are manual
@@ -23,7 +26,8 @@ function netTip(allocatedSatang: number, deductions: { amount_satang: number }[]
 }
 
 // GET /api/hr/tip-pool?store_id&period_month=YYYY-MM-01 — the tip pool for a store/month plus
-// its per-person allocations, each with deduction lines and computed net tip.
+// its per-person allocations, each with deduction lines and computed net tip. Allocations of people
+// whose pay the caller may not see are withheld (pool-visibility.ts).
 export async function GET(request: NextRequest) {
   const sp = request.nextUrl.searchParams;
   const storeId = sp.get('store_id') ?? '';
@@ -57,19 +61,29 @@ export async function GET(request: NextRequest) {
     .order('created_at', { ascending: true });
   if (allocErr) return NextResponse.json({ error: allocErr.message }, { status: 500 });
 
-  let allocated = 0;
-  let net = 0;
   const allocations = (rows ?? []).map((row: Record<string, unknown>) => {
     const deductions = (row.deductions ?? []) as { amount_satang: number }[];
     const allocatedSatang = (row.allocated_satang as number) ?? 0;
-    const netSatang = netTip(allocatedSatang, deductions);
-    allocated += allocatedSatang;
-    net += netSatang;
-    return { ...row, deductions, net_satang: netSatang };
+    return {
+      ...row,
+      user_id: row.user_id as string,
+      allocated_satang: allocatedSatang,
+      deductions,
+      net_satang: netTip(allocatedSatang, deductions),
+    };
   });
+  const view = partitionPoolAllocations(allocations, await payHiddenProfileIds(service, auth.userId));
 
   return NextResponse.json({
-    data: { pool, allocations, totals: { allocated, deducted: allocated - net, net } },
+    data: {
+      // Same reasons as the SC pool: the total is a subtraction away from the hidden allocations, the
+      // page must label partial figures, and one hidden person disables every action.
+      pool: view.hiddenCount > 0 ? { ...pool, total_satang: null } : pool,
+      allocations: view.allocations,
+      totals: view.totals,
+      hidden_count: view.hiddenCount,
+      can_manage: view.hiddenCount === 0,
+    },
   });
 }
 
@@ -105,6 +119,10 @@ export async function PUT(request: NextRequest) {
     .eq('store_id', storeId)
     .eq('period_month', periodMonth)
     .maybeSingle();
+  if (existing) {
+    const refusal = await refusePoolIfHidden(service, auth.userId, 'tip', [existing.id as string]);
+    if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
+  }
   if (existing && existing.status === 'finalized') {
     return NextResponse.json({ error: 'pool is finalized' }, { status: 409 });
   }

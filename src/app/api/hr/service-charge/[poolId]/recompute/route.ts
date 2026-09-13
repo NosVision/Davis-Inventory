@@ -4,6 +4,7 @@ import { requireStoreManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import { computeNetSc } from '@/lib/hr/service-charge';
 import { recomputePoolDeductions } from '@/lib/hr/sc-recompute';
+import { refusePoolIfHidden } from '@/lib/hr/pool-access';
 
 const POOL = 'hr_sc_pools';
 const ALLOC = 'hr_sc_allocations';
@@ -29,6 +30,8 @@ export async function POST(_request: Request, { params }: { params: Promise<{ po
   // §P5.5: gate on the pool's store.
   const auth = await requireStoreManager(pool.store_id as string);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  const refusal = await refusePoolIfHidden(service, auth.userId, 'sc', [poolId]);
+  if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
   if ((pool.status as string) === 'finalized') {
     return NextResponse.json({ error: 'Pool is finalized' }, { status: 409 });
   }

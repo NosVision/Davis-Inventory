@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireStoreManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
+import { refusePoolIfHidden } from '@/lib/hr/pool-access';
 
 const POOLS = 'hr_tip_pools';
 
@@ -24,6 +25,8 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
   // §P5.5: gate on the pool's store.
   const auth = await requireStoreManager(before.store_id as string);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  const refusal = await refusePoolIfHidden(service, auth.userId, 'tip', [poolId]);
+  if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
 
   const payDate = payDateFor(before.period_month as string);
 

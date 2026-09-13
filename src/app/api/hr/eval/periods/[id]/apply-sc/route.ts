@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import { computeEvalScDeduction } from '@/lib/hr/service-charge';
+import { refusePoolIfHidden } from '@/lib/hr/pool-access';
 
 const PERIODS = 'hr_eval_periods';
 const RESULTS = 'hr_eval_results';
@@ -73,6 +74,11 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
     .in('pool_id', [...poolById.keys()]);
   if (aErr) return NextResponse.json({ error: aErr.message }, { status: 500 });
   const allocByUser = new Map((allocs ?? []).map((a) => [a.user_id as string, a]));
+
+  // Clearing and re-applying reaches every SC allocation of the month in every store, so one person
+  // whose pay is hidden from this caller refuses the whole apply (pool-access.ts).
+  const refusal = await refusePoolIfHidden(service, auth.userId, 'sc', [...poolById.keys()]);
+  if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
 
   // Idempotent: clear prior AUTO eval deductions on these allocations before re-applying.
   const allocIds = (allocs ?? []).map((a) => a.id as string);

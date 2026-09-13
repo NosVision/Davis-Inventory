@@ -27,7 +27,8 @@ export function ScPrintView({ data, rows, storeName, periodMonth }: ScPrintViewP
         {storeName} · {periodMonth}
       </p>
       <p className="mt-0.5 text-sm">
-        {t('poolTotalLabel')}: {formatBaht(data.pool.total_satang)} ฿
+        {t('poolTotalLabel')}:{' '}
+        {data.pool.total_satang != null ? `${formatBaht(data.pool.total_satang)} ฿` : '—'}
         {data.pool.pay_date ? ` · ${t('payDateLabel')}: ${data.pool.pay_date}` : ''}
       </p>
 

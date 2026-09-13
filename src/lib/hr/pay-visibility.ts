@@ -102,26 +102,51 @@ export async function loadPayVisibility(
   return { canViewAll: false, managedGroupIds, restrictedGroupIds };
 }
 
+/**
+ * The employee rows whose pay is hidden from this caller. Throws when the lookup fails: an empty
+ * result has to mean "nothing to hide", never "could not tell", or one database blip would open every
+ * salary to every HR user.
+ */
+async function loadPayHiddenEmployees(
+  service: SupabaseClient,
+  userId: string
+): Promise<{ id: string; profile_id: string | null }[]> {
+  const visibility = await loadPayVisibility(service, userId);
+  if (visibility.canViewAll) return [];
+
+  const { data, error } = await service
+    .from('hr_employees')
+    .select('id, profile_id, pay_confidential, payroll_group_id');
+  if (error) throw new Error(`pay visibility lookup failed: ${error.message}`);
+  return (
+    (data ?? []) as {
+      id: string;
+      profile_id: string | null;
+      pay_confidential: boolean | null;
+      payroll_group_id: string | null;
+    }[]
+  ).filter((e) => isPayHiddenFrom(e, visibility));
+}
+
 /** profiles.id of every employee whose pay is hidden from this caller. Empty = nothing to hide. */
 export async function payHiddenProfileIds(
   service: SupabaseClient,
   userId: string
 ): Promise<Set<string>> {
-  const visibility = await loadPayVisibility(service, userId);
-  if (visibility.canViewAll) return new Set();
+  const hidden = await loadPayHiddenEmployees(service, userId);
+  return new Set(hidden.flatMap((e) => (e.profile_id ? [e.profile_id] : [])));
+}
 
-  const { data } = await service
-    .from('hr_employees')
-    .select('profile_id, pay_confidential, payroll_group_id');
-  const hidden = new Set<string>();
-  for (const e of (data ?? []) as {
-    profile_id: string | null;
-    pay_confidential: boolean | null;
-    payroll_group_id: string | null;
-  }[]) {
-    if (e.profile_id && isPayHiddenFrom(e, visibility)) hidden.add(e.profile_id);
-  }
-  return hidden;
+/**
+ * hr_employees.id of every employee whose pay is hidden from this caller — for tables keyed by the
+ * employee row rather than the login (the imported legacy payslips).
+ */
+export async function payHiddenEmployeeIds(
+  service: SupabaseClient,
+  userId: string
+): Promise<Set<string>> {
+  const hidden = await loadPayHiddenEmployees(service, userId);
+  return new Set(hidden.map((e) => e.id));
 }
 
 /** Money fields stripped from an employee row the caller may not see the pay of. */

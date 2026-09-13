@@ -5,6 +5,7 @@ import { requireStoreManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import { notifyUser } from '@/lib/notifications/service';
 import { formatBaht } from '@/lib/pos/money';
+import { refusePoolIfHidden } from '@/lib/hr/pool-access';
 
 const POOLS = 'hr_sc_pools';
 const MAX_MESSAGE_LEN = 500;
@@ -55,6 +56,7 @@ function fillTemplate(template: string, vars: { period: string; amount: string; 
 }
 
 // GET — the announce panel's state: saved template (null = default), the default, last-sent stamp.
+// Carries no amounts, so it is not gated on pay visibility; every write below is.
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ poolId: string }> }) {
   const { poolId } = await params;
   const service = createServiceClient();
@@ -82,6 +84,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   if (!pool) return NextResponse.json({ error: 'Pool not found' }, { status: 404 });
   const auth = await requireStoreManager(pool.store_id);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  const refusal = await refusePoolIfHidden(service, auth.userId, 'sc', [poolId]);
+  if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
 
   const body = (await request.json().catch(() => ({}))) as { message?: unknown };
   const raw = typeof body.message === 'string' ? body.message.trim() : '';
@@ -117,6 +121,8 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
   if (!pool) return NextResponse.json({ error: 'Pool not found' }, { status: 404 });
   const auth = await requireStoreManager(pool.store_id);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  const refusal = await refusePoolIfHidden(service, auth.userId, 'sc', [poolId]);
+  if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
 
   const { error } = await service
     .from(POOLS)
@@ -147,6 +153,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!pool) return NextResponse.json({ error: 'Pool not found' }, { status: 404 });
   const auth = await requireStoreManager(pool.store_id);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  const refusal = await refusePoolIfHidden(service, auth.userId, 'sc', [poolId]);
+  if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
 
   if (pool.status !== 'finalized') {
     return NextResponse.json({ error: 'Finalize the pool before announcing' }, { status: 409 });

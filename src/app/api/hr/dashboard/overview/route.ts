@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { resolveHrScope } from '@/lib/hr/route-auth';
+import { payHiddenProfileIds } from '@/lib/hr/pay-visibility';
 import { openBusinessDateBangkok } from '@/lib/utils/date';
 import { computeDaySummary, applyOverride, type Punch, type TimesheetOverride } from '@/lib/hr/time-engine';
 import { businessDateBangkok } from '@/lib/utils/date';
@@ -337,18 +338,23 @@ export async function GET(request: NextRequest) {
   if (payruns && payruns.length > 0) {
     const { data: slipRows } = await service
       .from('hr_payslips')
-      .select('net_satang, payrun_id')
+      .select('user_id, net_satang, payrun_id')
       .in('payrun_id', payruns.map((r) => r.id as string));
     const slips = slipRows ?? [];
     const netTotal = slips.reduce((sum, s) => sum + ((s.net_satang as number) ?? 0), 0);
     // k-anonymity floor: a store's net-pay SUM over 1–2 slips would reveal an individual's salary.
     // Company-HR can already open the payslips themselves, so the floor only applies to scoped mgrs.
     const MIN_PAYROLL_COHORT = 3;
+    // A total that includes people whose pay this caller may not see is a subtraction away from
+    // their figures, and one that quietly leaves them out reads as the real total — so withhold it.
+    const hiddenFromCaller = await payHiddenProfileIds(service, scope.userId);
+    const includesHidden = slips.some((s) => hiddenFromCaller.has(s.user_id as string));
     payroll = {
       runs: payruns.length,
       finalized: payruns.filter((r) => r.status === 'finalized').length,
       slips: slips.length,
-      net_total_satang: !companyWide && slips.length < MIN_PAYROLL_COHORT ? null : netTotal,
+      net_total_satang:
+        includesHidden || (!companyWide && slips.length < MIN_PAYROLL_COHORT) ? null : netTotal,
     };
   }
 
