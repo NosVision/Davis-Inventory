@@ -275,7 +275,10 @@ const styles = StyleSheet.create({
     borderColor: '#9ca3af',
     height: 18,
   },
-  signatureLabel: { marginTop: 2, fontSize: 9, color: '#374151' },
+  // Full column width + centred, not shrink-to-fit: react-pdf under-measures a Thai word ending in
+  // ◌ำ (SARA AM), wraps that last glyph onto a line it never draws, and "ผู้จัดทำ" printed as
+  // "ผู้จัดท". The labels also carry a trailing space (react-pdf-thai) as a width buffer.
+  signatureLabel: { marginTop: 2, fontSize: 9, color: '#374151', width: '100%', textAlign: 'center' },
 
   footnote: {
     marginTop: 6,
@@ -725,7 +728,7 @@ function ReportDocument({ data }: { data: CommissionReportData }) {
         <View style={styles.signatures} wrap={false}>
           <View style={styles.signatureCol}>
             <View style={styles.signatureLine} />
-            <Text style={styles.signatureLabel}>ผู้จัดทำ</Text>
+            <Text style={styles.signatureLabel}>{'ผู้จัดทำ '}</Text>
           </View>
           <View style={styles.signatureCol}>
             <View style={styles.signatureLine} />
@@ -862,7 +865,7 @@ function ReportDocument({ data }: { data: CommissionReportData }) {
         <View style={styles.signatures} wrap={false}>
           <View style={styles.signatureCol}>
             <View style={styles.signatureLine} />
-            <Text style={styles.signatureLabel}>ผู้จัดทำ</Text>
+            <Text style={styles.signatureLabel}>{'ผู้จัดทำ '}</Text>
           </View>
           <View style={styles.signatureCol}>
             <View style={styles.signatureLine} />
