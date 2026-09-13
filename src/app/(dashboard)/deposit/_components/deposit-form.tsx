@@ -588,7 +588,9 @@ export function DepositForm({ onBack, onSuccess, pendingDeposit }: DepositFormPr
                 deposit_id: pendingDeposit.id,
                 bottle_no: b,
                 remaining_percent: 100,
-                status: 'in_store',
+                // deposit_bottles.status is sealed | opened | consumed — 'in_store' is a DEPOSIT
+                // status, and the check constraint rejected every one of these rows.
+                status: 'sealed',
               });
             }
             await supabase.from('deposit_bottles').insert(bottleRows);
