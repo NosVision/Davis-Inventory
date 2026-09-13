@@ -328,7 +328,9 @@ export default function MyTasksPage() {
           deposit_id: selectedItem.id,
           bottle_no: i,
           remaining_percent: 100,
-          status: 'in_store',
+          // deposit_bottles.status is sealed | opened | consumed — 'in_store' is a DEPOSIT status,
+          // and the check constraint rejected every one of these rows.
+          status: 'sealed',
         });
       }
       if (bottleRows.length > 0) {
