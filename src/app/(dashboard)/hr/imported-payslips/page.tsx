@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocale } from 'next-intl';
-import { Loader2, Archive, X } from 'lucide-react';
+import { Loader2, Archive, Lock, X } from 'lucide-react';
 import { Button, Select, EmptyState, Modal, ModalFooter, PageHeader, DataList, DataCard, MoneyValue } from '@/components/ui';
 import { ImportedPayslipView, periodLabel, type ImportedSlip } from '@/components/hr/imported-payslip-view';
 
@@ -14,13 +14,15 @@ interface Facets {
 export default function ImportedPayslipsPage() {
   const isTh = useLocale() === 'th';
   const L = isTh
-    ? { title: 'สลิปย้อนหลัง (นำเข้า)', subtitle: 'ข้อมูลเงินเดือนเก่าที่นำเข้าจากไฟล์ Payment', branch: 'สาขา', month: 'เดือน', empty: 'ไม่มีข้อมูลในเดือนนี้', people: 'คน', close: 'ปิด', unlinked: 'ยังไม่จับคู่พนักงาน' }
-    : { title: 'Imported payslips', subtitle: 'Legacy pay figures imported from the Payment files', branch: 'Branch', month: 'Month', empty: 'No data for this month', people: 'people', close: 'Close', unlinked: 'Not linked to an employee' };
+    ? { title: 'สลิปย้อนหลัง (นำเข้า)', subtitle: 'ข้อมูลเงินเดือนเก่าที่นำเข้าจากไฟล์ Payment', branch: 'สาขา', month: 'เดือน', empty: 'ไม่มีข้อมูลในเดือนนี้', people: 'คน', close: 'ปิด', unlinked: 'ยังไม่จับคู่พนักงาน', hidden: (n: number) => `ซ่อน ${n} คนที่คุณไม่มีสิทธิ์ดูเงินเดือน` }
+    : { title: 'Imported payslips', subtitle: 'Legacy pay figures imported from the Payment files', branch: 'Branch', month: 'Month', empty: 'No data for this month', people: 'people', close: 'Close', unlinked: 'Not linked to an employee', hidden: (n: number) => `${n} hidden — you may not see their pay` };
 
   const [facets, setFacets] = useState<Facets>({ companies: [], months: [] });
   const [companyId, setCompanyId] = useState('');
   const [ym, setYm] = useState('');
   const [rows, setRows] = useState<ImportedSlip[]>([]);
+  // People this viewer may not see the pay of — withheld by the route, counted so the page can say so.
+  const [hiddenCount, setHiddenCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [slip, setSlip] = useState<ImportedSlip | null>(null);
 
@@ -46,8 +48,10 @@ export default function ImportedPayslipsPage() {
       const res = await fetch(`/api/hr/imported-payslips?company_id=${companyId}&year=${year}&month=${Number(month)}`);
       const json = await res.json();
       setRows((json.data ?? []) as ImportedSlip[]);
+      setHiddenCount(Number(json.hidden_count) || 0);
     } catch {
       setRows([]);
+      setHiddenCount(0);
     } finally {
       setLoading(false);
     }
@@ -85,10 +89,13 @@ export default function ImportedPayslipsPage() {
       {loading ? (
         <div className="flex justify-center py-10 text-gray-400"><Loader2 className="h-5 w-5 animate-spin" /></div>
       ) : rows.length === 0 ? (
-        <EmptyState icon={Archive} title={L.empty} />
+        <EmptyState icon={hiddenCount > 0 ? Lock : Archive} title={hiddenCount > 0 ? L.hidden(hiddenCount) : L.empty} />
       ) : (
         <>
-          <div className="px-1 text-xs text-gray-400">{rows.length} {L.people}</div>
+          <div className="flex flex-wrap gap-x-2 px-1 text-xs text-gray-400">
+            <span>{rows.length} {L.people}</span>
+            {hiddenCount > 0 && <span className="text-amber-600 dark:text-amber-400">· {L.hidden(hiddenCount)}</span>}
+          </div>
           <DataList>
             {rows.map((r) => (
               <DataCard

@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManagerForStore } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import { isUniqueViolation } from '@/lib/hr/db-errors';
+import { refusePayrunIfHidden } from '@/lib/hr/payrun-access';
 
 const TABLE = 'hr_payrun_adjustments';
 
@@ -22,6 +23,8 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
   if (!payrun) return NextResponse.json({ error: 'Payrun not found' }, { status: 404 });
   const auth = await requireHrManagerForStore(payrun.store_id as string | null);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  const refusal = await refusePayrunIfHidden(service, auth.userId, id);
+  if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
   if (payrun.status !== 'draft') {
     return NextResponse.json({ error: 'Payrun is finalized' }, { status: 409 });
   }

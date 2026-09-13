@@ -363,6 +363,29 @@ eq('pv redact does not mark a visible row', redacted[1].pay_hidden, undefined);
 // The employee form round-trips the real flag, so redaction must not forge it to true.
 eq('pv redact does not forge pay_confidential', redacted[0].pay_confidential, false);
 
+// ── pool-visibility.ts: SC / tip pools follow the payrun rule (owner call 2026-09-13) ──
+// The pool read withholds hidden people and totals only what is left — a full total beside a partial
+// list is a subtraction away from the figures being hidden.
+const plv = load('pool-visibility.ts');
+const plvMixed = plv.partitionPoolAllocations(
+  [
+    { user_id: 'visible-1', allocated_satang: 1_150_000, net_satang: 1_111_667 },
+    { user_id: 'hidden-1', allocated_satang: 1_150_000, net_satang: 1_150_000 },
+    { user_id: 'visible-2', allocated_satang: 500_000, net_satang: 500_000 },
+  ],
+  new Set(['hidden-1'])
+);
+eq('pool drops the hidden allocation', plvMixed.allocations.map((a) => a.user_id), ['visible-1', 'visible-2']);
+eq('pool counts what it withheld', plvMixed.hiddenCount, 1);
+eq('pool totals only the visible rows', plvMixed.totals, { allocated: 1_650_000, deducted: 38_333, net: 1_611_667 });
+const plvOpen = plv.partitionPoolAllocations([{ user_id: 'a', allocated_satang: 100, net_satang: 80 }], new Set());
+eq('pool with nothing hidden reports nothing withheld', plvOpen.hiddenCount, 0);
+eq('pool with nothing hidden keeps its totals', plvOpen.totals, { allocated: 100, deducted: 20, net: 80 });
+// The back-office pool as the second HR user sees it: everyone withheld, nothing to add up.
+const plvAllHidden = plv.partitionPoolAllocations([{ user_id: 'h', allocated_satang: 1_150_000, net_satang: 1_150_000 }], new Set(['h']));
+eq('pool entirely hidden lists nobody', plvAllHidden.allocations.length, 0);
+eq('pool entirely hidden totals zero', plvAllHidden.totals, { allocated: 0, deducted: 0, net: 0 });
+
 // ── issuer-label.ts: how the company-document issuers read on the payroll-groups screen ──
 // The wrong version of this list shipped once — guessed from role in the client, it named an HR
 // user who could not issue anything. Owners collapse to one word so a break-glass login is not

@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManagerForEmployeeId } from '@/lib/hr/route-auth';
+import { isPayHiddenFrom, loadPayVisibility } from '@/lib/hr/pay-visibility';
 
 // GET /api/hr/employees/[id]/history — the salary / position / status edit history for one
 // employee (P1.5), read from hr_audit_log's before/after snapshots. Company-HR or a manager whose
 // scope covers this employee. Returns only audit rows that actually changed a tracked field, each
 // with old→new pairs and position/department ids resolved to names. Read-only.
+//
+// Salary changes follow the pay-visibility rule (pay-visibility.ts): a caller who may not see this
+// person's pay still gets the position and status history, but not the money — "hide the NUMBERS,
+// not the PERSON". `pay_hidden` tells the modal to say so.
 const TRACKED = ['rate_satang', 'position_id', 'department_id', 'pay_type', 'status', 'start_date', 'sso_enrolled'] as const;
+type TrackedField = (typeof TRACKED)[number];
+const PAY_FIELDS: ReadonlySet<TrackedField> = new Set<TrackedField>(['rate_satang']);
 
 interface AuditRow {
   id: string;
@@ -24,15 +31,26 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const service = createServiceClient();
-  const { data, error } = await service
-    .from('hr_audit_log')
-    .select('id, action, created_at, reason, before, after, actor:profiles!hr_audit_log_actor_id_fkey(display_name, username)')
-    .eq('table_name', 'hr_employees')
-    .eq('record_id', id)
-    .order('created_at', { ascending: false });
-  if (error) return NextResponse.json({ error: 'Failed to load history' }, { status: 500 });
+  const [historyRes, employeeRes, visibility] = await Promise.all([
+    service
+      .from('hr_audit_log')
+      .select('id, action, created_at, reason, before, after, actor:profiles!hr_audit_log_actor_id_fkey(display_name, username)')
+      .eq('table_name', 'hr_employees')
+      .eq('record_id', id)
+      .order('created_at', { ascending: false }),
+    service.from('hr_employees').select('pay_confidential, payroll_group_id').eq('id', id).maybeSingle(),
+    loadPayVisibility(service, auth.userId),
+  ]);
+  if (historyRes.error || employeeRes.error) {
+    return NextResponse.json({ error: 'Failed to load history' }, { status: 500 });
+  }
 
-  const rows = (data ?? []) as unknown as AuditRow[];
+  // With no employee row there is no flag to test — withhold the money rather than guess.
+  const payHidden =
+    !visibility.canViewAll && (!employeeRes.data || isPayHiddenFrom(employeeRes.data, visibility));
+  const fields = payHidden ? TRACKED.filter((f) => !PAY_FIELDS.has(f)) : [...TRACKED];
+
+  const rows = (historyRes.data ?? []) as unknown as AuditRow[];
 
   // Collect every position/department id referenced (old or new) → resolve to names once.
   const refIds = new Set<string>();
@@ -64,7 +82,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     .map((r) => {
       const before = r.before ?? {};
       const after = r.after ?? {};
-      const changes = TRACKED.flatMap((f) => {
+      const changes = fields.flatMap((f) => {
         const ov = (before as Record<string, unknown>)[f];
         const nv = (after as Record<string, unknown>)[f];
         // On create, `before` is null → surface the initial values (skip empties).
@@ -83,5 +101,5 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     })
     .filter((e) => e.changes.length > 0);
 
-  return NextResponse.json({ data: events });
+  return NextResponse.json({ data: events, pay_hidden: payHidden });
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireStoreManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
+import { refusePoolIfHidden } from '@/lib/hr/pool-access';
 
 const POOLS = 'hr_sc_pools';
 const ALLOCS = 'hr_sc_allocations';
@@ -36,6 +37,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!pool) return NextResponse.json({ error: 'Pool not found' }, { status: 404 });
   const auth = await requireStoreManager(pool.store_id as string);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+  const refusal = await refusePoolIfHidden(service, auth.userId, 'sc', [pool.id as string]);
+  if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
 
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const label = typeof body.label === 'string' ? body.label.trim() : '';

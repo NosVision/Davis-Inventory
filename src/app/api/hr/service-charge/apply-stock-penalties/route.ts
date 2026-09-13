@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { requireStoreManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import { computeStockPenaltyScDeduction } from '@/lib/hr/service-charge';
+import { refusePoolIfHidden } from '@/lib/hr/pool-access';
 import { cycleDates, scPoolMonthForEvent } from '@/lib/hr/pay-cycle';
 
 const SC_POOLS = 'hr_sc_pools';
@@ -52,6 +53,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'กอง SC เดือนนี้ปิดรอบแล้ว แก้ไขไม่ได้' }, { status: 409 });
   }
   const poolId = (pool as { id: string }).id;
+  const refusal = await refusePoolIfHidden(service, auth.userId, 'sc', [poolId]);
+  if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
 
   const { data: allocs } = await service
     .from(SC_ALLOCS)

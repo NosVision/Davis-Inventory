@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useLocale } from 'next-intl';
-import { Loader2, History } from 'lucide-react';
+import { Loader2, History, Lock } from 'lucide-react';
 import { Modal, EmptyState, toast } from '@/components/ui';
 
 // Per-employee salary / position / status edit history (P1.5), read from the audit log via
 // /api/hr/employees/[id]/history. Self-contained locale strings. Read-only timeline.
+// The route withholds salary changes from a viewer who may not see this person's pay.
 interface Change { field: string; from: string | null; to: string | null }
 interface Event { id: string; action: string; created_at: string; reason: string | null; actor_name: string; changes: Change[] }
 
@@ -17,10 +18,11 @@ const baht = (v: string | null) => (v == null ? '—' : (Number(v) / 100).toLoca
 export function EmployeeHistoryModal({ employeeId, employeeName, onClose }: Props) {
   const isTh = useLocale() === 'th';
   const L = isTh
-    ? { title: 'ประวัติการปรับ', empty: 'ยังไม่มีประวัติการแก้ไข', loadFailed: 'โหลดไม่สำเร็จ', by: 'โดย', reason: 'เหตุผล', created: 'สร้างข้อมูล', fields: { rate_satang: 'เงินเดือน (บาท)', position_id: 'ตำแหน่ง', department_id: 'แผนก', pay_type: 'ประเภทค่าจ้าง', status: 'สถานะ', start_date: 'วันเริ่มงาน', sso_enrolled: 'ประกันสังคม' } as Record<string, string> }
-    : { title: 'Change history', empty: 'No edit history yet', loadFailed: 'Load failed', by: 'by', reason: 'Reason', created: 'Created', fields: { rate_satang: 'Salary (THB)', position_id: 'Position', department_id: 'Department', pay_type: 'Pay type', status: 'Status', start_date: 'Start date', sso_enrolled: 'SSO' } as Record<string, string> };
+    ? { title: 'ประวัติการปรับ', empty: 'ยังไม่มีประวัติการแก้ไข', loadFailed: 'โหลดไม่สำเร็จ', by: 'โดย', reason: 'เหตุผล', created: 'สร้างข้อมูล', payHidden: 'ซ่อนการปรับเงินเดือนไว้ — คุณไม่มีสิทธิ์ดูเงินเดือนของพนักงานคนนี้', fields: { rate_satang: 'เงินเดือน (บาท)', position_id: 'ตำแหน่ง', department_id: 'แผนก', pay_type: 'ประเภทค่าจ้าง', status: 'สถานะ', start_date: 'วันเริ่มงาน', sso_enrolled: 'ประกันสังคม' } as Record<string, string> }
+    : { title: 'Change history', empty: 'No edit history yet', loadFailed: 'Load failed', by: 'by', reason: 'Reason', created: 'Created', payHidden: 'Salary changes are withheld — you may not see the pay of this employee', fields: { rate_satang: 'Salary (THB)', position_id: 'Position', department_id: 'Department', pay_type: 'Pay type', status: 'Status', start_date: 'Start date', sso_enrolled: 'SSO' } as Record<string, string> };
 
   const [events, setEvents] = useState<Event[]>([]);
+  const [payHidden, setPayHidden] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const load = useCallback(async (id: string) => {
@@ -28,8 +30,9 @@ export function EmployeeHistoryModal({ employeeId, employeeName, onClose }: Prop
     try {
       const res = await fetch(`/api/hr/employees/${id}/history`);
       const json = await res.json();
-      if (!res.ok) { toast({ type: 'error', title: json?.error || L.loadFailed }); setEvents([]); return; }
+      if (!res.ok) { toast({ type: 'error', title: json?.error || L.loadFailed }); setEvents([]); setPayHidden(false); return; }
       setEvents((json.data ?? []) as Event[]);
+      setPayHidden(json.pay_hidden === true);
     } catch { toast({ type: 'error', title: L.loadFailed }); }
     finally { setLoading(false); }
   }, [L.loadFailed]);
@@ -47,36 +50,46 @@ export function EmployeeHistoryModal({ employeeId, employeeName, onClose }: Prop
     <Modal isOpen={!!employeeId} onClose={onClose} title={`${L.title} · ${employeeName}`} size="lg">
       {loading ? (
         <div className="flex items-center justify-center py-10 text-gray-400"><Loader2 className="h-6 w-6 animate-spin" /></div>
-      ) : events.length === 0 ? (
-        <EmptyState icon={History} title={L.empty} />
       ) : (
-        <ol className="space-y-3">
-          {events.map((e) => (
-            <li key={e.id} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-              <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
-                <span className="tabular-nums">{fmtDate(e.created_at)}</span>
-                <span>{e.action === 'create' ? L.created : `${L.by} ${e.actor_name}`}</span>
-              </div>
-              <ul className="space-y-1">
-                {e.changes.map((c, i) => (
-                  <li key={i} className="flex flex-wrap items-center gap-2 text-sm">
-                    <span className="min-w-[7rem] font-medium text-gray-700 dark:text-gray-200">{L.fields[c.field] ?? c.field}</span>
-                    {e.action === 'create' ? (
-                      <span className="tabular-nums text-gray-900 dark:text-white">{fmtVal(c.field, c.to)}</span>
-                    ) : (
-                      <span className="flex items-center gap-1.5 tabular-nums">
-                        <span className="text-gray-400 line-through">{fmtVal(c.field, c.from)}</span>
-                        <span className="text-gray-400">→</span>
-                        <span className="font-semibold text-emerald-600 dark:text-emerald-400">{fmtVal(c.field, c.to)}</span>
-                      </span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-              {e.reason ? <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{L.reason}: {e.reason}</p> : null}
-            </li>
-          ))}
-        </ol>
+        <>
+          {payHidden && (
+            <p className="mb-3 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+              <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{L.payHidden}</span>
+            </p>
+          )}
+          {events.length === 0 ? (
+            <EmptyState icon={History} title={L.empty} />
+          ) : (
+            <ol className="space-y-3">
+              {events.map((e) => (
+                <li key={e.id} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
+                    <span className="tabular-nums">{fmtDate(e.created_at)}</span>
+                    <span>{e.action === 'create' ? L.created : `${L.by} ${e.actor_name}`}</span>
+                  </div>
+                  <ul className="space-y-1">
+                    {e.changes.map((c, i) => (
+                      <li key={i} className="flex flex-wrap items-center gap-2 text-sm">
+                        <span className="min-w-[7rem] font-medium text-gray-700 dark:text-gray-200">{L.fields[c.field] ?? c.field}</span>
+                        {e.action === 'create' ? (
+                          <span className="tabular-nums text-gray-900 dark:text-white">{fmtVal(c.field, c.to)}</span>
+                        ) : (
+                          <span className="flex items-center gap-1.5 tabular-nums">
+                            <span className="text-gray-400 line-through">{fmtVal(c.field, c.from)}</span>
+                            <span className="text-gray-400">→</span>
+                            <span className="font-semibold text-emerald-600 dark:text-emerald-400">{fmtVal(c.field, c.to)}</span>
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                  {e.reason ? <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{L.reason}: {e.reason}</p> : null}
+                </li>
+              ))}
+            </ol>
+          )}
+        </>
       )}
     </Modal>
   );

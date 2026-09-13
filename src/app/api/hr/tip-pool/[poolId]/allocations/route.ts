@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireStoreManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
+import { refusePoolIfHidden } from '@/lib/hr/pool-access';
 
 const POOLS = 'hr_tip_pools';
 const ALLOCS = 'hr_tip_allocations';
@@ -50,6 +51,16 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     }
     allocations.push({ user_id: userId, allocated_satang: a.allocated_satang });
   }
+
+  // Includes the people being written: a save must not start paying someone hidden from this caller.
+  const refusal = await refusePoolIfHidden(
+    service,
+    auth.userId,
+    'tip',
+    [poolId],
+    allocations.map((a) => a.user_id)
+  );
+  if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
 
   if (pool.status === 'finalized') {
     return NextResponse.json({ error: 'pool is finalized' }, { status: 409 });

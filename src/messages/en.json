@@ -3396,6 +3396,7 @@
       "manualNotePlaceholder": "Note (optional)",
       "addDeduction": "Add deduction",
       "cancel": "Cancel",
+      "hiddenNotice": "{hidden} people in this pool have pay you may not see — showing {shown} only, so the totals cover only those shown and the pool total is withheld · Every action on this pool is off (save · recompute · print · finalize · announce) because each one reaches the whole pool; someone who can see all pay has to do it",
       "srcWarning": "Warning",
       "srcWarningCarry": "Warning (carried)",
       "srcLeave": "Leave",

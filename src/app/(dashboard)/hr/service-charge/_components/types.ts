@@ -13,7 +13,8 @@ export interface ScPool {
   id: string;
   store_id: string;
   period_month: string;
-  total_satang: number;
+  /** null when part of the pool is withheld from this viewer — see ScData.hidden_count */
+  total_satang: number | null;
   status: ScStatus;
   pay_date: string | null;
   notes: string | null;
@@ -82,6 +83,11 @@ export interface ScData {
     closed: number;
     state: 'missing' | 'open' | 'closed';
   };
+  /** Allocations withheld because this viewer may not see those people's pay (pool-visibility.ts).
+   *  > 0 → every figure on the page is partial. */
+  hidden_count?: number;
+  /** false → every action on this pool is refused server-side, because each reaches the whole pool. */
+  can_manage?: boolean;
 }
 
 /** One rendered table row: an employee at the store merged with any existing allocation. */

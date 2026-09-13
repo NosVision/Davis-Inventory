@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManager } from '@/lib/hr/route-auth';
+import { payHiddenEmployeeIds } from '@/lib/hr/pay-visibility';
 
 // GET /api/hr/imported-payslips — HR-only read of the legacy payslip archive
 // (hr_imported_payslips). Three modes:
 //   ?facets=1                         → companies + available months that have data
 //   ?company_id=&year=&month=         → all rows for one branch/month (browse)
 //   ?employee_id=                     → one employee's full history, newest first
+//
+// Every row here is a salary, so the archive follows the live payroll's rule (pay-visibility.ts):
+// rows of an employee whose pay the caller may not see are withheld, and the response says how many.
+// A row not yet matched to an employee has no ลับ flag to test and stays visible. The facet counts
+// are headcounts, not money, and are left whole.
 const COLS =
   'id, company_id, employee_id, pending_identity_id, period_year, period_month, sheet_ref,' +
   ' name_th, name_en, nickname, position_text, rate_satang, worked_days, off_days, period_days,' +
@@ -40,8 +46,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ companies: facetCompanies, months });
   }
 
+  const hidden = await payHiddenEmployeeIds(service, auth.userId);
+
   const employeeId = sp.get('employee_id');
   if (employeeId) {
+    if (hidden.has(employeeId)) return NextResponse.json({ data: [], pay_hidden: true });
     const { data, error } = await service
       .from('hr_imported_payslips')
       .select(COLS)
@@ -49,7 +58,7 @@ export async function GET(req: NextRequest) {
       .order('period_year', { ascending: false })
       .order('period_month', { ascending: false });
     if (error) return NextResponse.json({ error: 'Failed to load history' }, { status: 500 });
-    return NextResponse.json({ data: data ?? [] });
+    return NextResponse.json({ data: data ?? [], pay_hidden: false });
   }
 
   const companyId = sp.get('company_id');
@@ -66,5 +75,7 @@ export async function GET(req: NextRequest) {
     .eq('period_month', month)
     .order('net_satang', { ascending: false, nullsFirst: false });
   if (error) return NextResponse.json({ error: 'Failed to load payslips' }, { status: 500 });
-  return NextResponse.json({ data: data ?? [] });
+  const rows = (data ?? []) as unknown as { employee_id: string | null }[];
+  const visible = rows.filter((r) => !r.employee_id || !hidden.has(r.employee_id));
+  return NextResponse.json({ data: visible, hidden_count: rows.length - visible.length });
 }

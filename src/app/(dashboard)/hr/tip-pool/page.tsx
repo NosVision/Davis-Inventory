@@ -27,8 +27,9 @@ import { svPayDate } from '@/lib/hr/pay-cycle';
 interface StoreOpt { id: string; store_name: string }
 interface TipDeduction { id: string; source_type: string; label: string; amount_satang: number; carry_satang: number; note: string | null; auto: boolean }
 interface TipAllocation { id: string; user_id: string; allocated_satang: number; net_satang: number; deductions: TipDeduction[]; employee?: { display_name: string | null; username: string | null } | null }
-interface TipPool { id: string; status: string; total_satang: number; pay_date: string | null; notes: string | null }
-interface TipData { pool: TipPool | null; allocations: TipAllocation[]; totals: { allocated: number; deducted: number; net: number } }
+// total_satang is null when part of the pool is withheld from this viewer (pool-visibility.ts).
+interface TipPool { id: string; status: string; total_satang: number | null; pay_date: string | null; notes: string | null }
+interface TipData { pool: TipPool | null; allocations: TipAllocation[]; totals: { allocated: number; deducted: number; net: number }; hidden_count?: number; can_manage?: boolean }
 interface EmployeeRef { id: string; full_name?: string | null; display_name: string | null; username: string | null }
 interface TipRow { userId: string; name: string; allocation: TipAllocation | null }
 
@@ -49,8 +50,8 @@ function dmy(d?: string | null): string {
 export default function HrTipPoolPage() {
   const isTh = useLocale() === 'th';
   const L = isTh
-    ? { title: 'กองทุนทิป', subtitle: 'จัดสรรทิปต่อคนต่อเดือน (กรอกยอดเอง)', store: 'สาขา', month: 'งวด', monthMeaning: (pd: string) => `โอนให้พนักงาน ${pd}`, noStores: 'ไม่มีสาขาที่จัดการได้', loadFailed: 'โหลดไม่สำเร็จ', poolTotal: 'ยอดทิปรวม', payDate: 'วันจ่าย', notes: 'หมายเหตุ', notesPh: 'หมายเหตุ (ถ้ามี)', draft: 'ร่าง', finalized: 'ปิดงวดแล้ว', createPool: 'สร้างกองทิป', savePool: 'บันทึกยอด', allocations: 'การจัดสรร', saveAllocations: 'บันทึกการจัดสรร', print: 'พิมพ์', finalize: 'ปิดงวด', colEmployee: 'พนักงาน', colAllocated: 'จัดสรร', colDeductions: 'หัก', colNet: 'สุทธิ', totals: 'รวม', noEmployees: 'ไม่มีพนักงาน', noDeductions: 'ไม่มีรายการหัก', addDeduction: 'เพิ่มรายการหัก', delete: 'ลบ', dedLabelPh: 'เหตุผล', savePoolFirst: 'บันทึกยอดกองก่อน', saveAllocHint: 'บันทึกการจัดสรรก่อนจึงเพิ่มรายการหักได้', finalizeConfirm: 'ปิดงวดกองทิปนี้? จะแก้ไขไม่ได้อีก', saved: 'บันทึกแล้ว', finalizedMsg: 'ปิดงวดแล้ว', locked: 'ปิดงวดแล้ว แก้ไขไม่ได้', invalid: 'กรอกจำนวนให้ถูกต้อง', add: 'เพิ่ม' }
-    : { title: 'Tip pool', subtitle: 'Allocate tips per person per month (manual)', store: 'Store', month: 'Period', monthMeaning: (pd: string) => `Transferred to staff ${pd}`, noStores: 'No manageable stores', loadFailed: 'Load failed', poolTotal: 'Total tips', payDate: 'Pay date', notes: 'Notes', notesPh: 'Notes (optional)', draft: 'Draft', finalized: 'Finalized', createPool: 'Create pool', savePool: 'Save total', allocations: 'Allocations', saveAllocations: 'Save allocations', print: 'Print', finalize: 'Finalize', colEmployee: 'Employee', colAllocated: 'Allocated', colDeductions: 'Deductions', colNet: 'Net', totals: 'Total', noEmployees: 'No employees', noDeductions: 'No deductions', addDeduction: 'Add deduction', delete: 'Delete', dedLabelPh: 'Reason', savePoolFirst: 'Save the pool total first', saveAllocHint: 'Save allocations before adding a deduction', finalizeConfirm: 'Finalize this tip pool? It cannot be edited afterwards.', saved: 'Saved', finalizedMsg: 'Finalized', locked: 'Finalized — locked', invalid: 'Enter a valid amount', add: 'Add' };
+    ? { title: 'กองทุนทิป', subtitle: 'จัดสรรทิปต่อคนต่อเดือน (กรอกยอดเอง)', store: 'สาขา', month: 'งวด', monthMeaning: (pd: string) => `โอนให้พนักงาน ${pd}`, noStores: 'ไม่มีสาขาที่จัดการได้', loadFailed: 'โหลดไม่สำเร็จ', poolTotal: 'ยอดทิปรวม', payDate: 'วันจ่าย', notes: 'หมายเหตุ', notesPh: 'หมายเหตุ (ถ้ามี)', draft: 'ร่าง', finalized: 'ปิดงวดแล้ว', createPool: 'สร้างกองทิป', savePool: 'บันทึกยอด', allocations: 'การจัดสรร', saveAllocations: 'บันทึกการจัดสรร', print: 'พิมพ์', finalize: 'ปิดงวด', colEmployee: 'พนักงาน', colAllocated: 'จัดสรร', colDeductions: 'หัก', colNet: 'สุทธิ', totals: 'รวม', noEmployees: 'ไม่มีพนักงาน', noDeductions: 'ไม่มีรายการหัก', addDeduction: 'เพิ่มรายการหัก', delete: 'ลบ', dedLabelPh: 'เหตุผล', savePoolFirst: 'บันทึกยอดกองก่อน', saveAllocHint: 'บันทึกการจัดสรรก่อนจึงเพิ่มรายการหักได้', finalizeConfirm: 'ปิดงวดกองทิปนี้? จะแก้ไขไม่ได้อีก', saved: 'บันทึกแล้ว', finalizedMsg: 'ปิดงวดแล้ว', locked: 'ปิดงวดแล้ว แก้ไขไม่ได้', invalid: 'กรอกจำนวนให้ถูกต้อง', add: 'เพิ่ม', hiddenNotice: (hidden: number, shown: number) => `กองนี้มีพนักงาน ${hidden} คนที่คุณไม่มีสิทธิ์ดูเงินเดือน — แสดงเฉพาะ ${shown} คน ยอดรวมจึงเป็นยอดเฉพาะที่แสดง และซ่อนยอดทิปรวมไว้ · ปุ่มจัดการกองนี้ถูกปิดไว้ทั้งหมด (บันทึก · พิมพ์ · ปิดงวด · รายการหัก) เพราะทุกปุ่มทำงานกับทั้งกอง ต้องให้ผู้ที่ดูเงินเดือนได้ทุกคนเป็นผู้ทำ` }
+    : { title: 'Tip pool', subtitle: 'Allocate tips per person per month (manual)', store: 'Store', month: 'Period', monthMeaning: (pd: string) => `Transferred to staff ${pd}`, noStores: 'No manageable stores', loadFailed: 'Load failed', poolTotal: 'Total tips', payDate: 'Pay date', notes: 'Notes', notesPh: 'Notes (optional)', draft: 'Draft', finalized: 'Finalized', createPool: 'Create pool', savePool: 'Save total', allocations: 'Allocations', saveAllocations: 'Save allocations', print: 'Print', finalize: 'Finalize', colEmployee: 'Employee', colAllocated: 'Allocated', colDeductions: 'Deductions', colNet: 'Net', totals: 'Total', noEmployees: 'No employees', noDeductions: 'No deductions', addDeduction: 'Add deduction', delete: 'Delete', dedLabelPh: 'Reason', savePoolFirst: 'Save the pool total first', saveAllocHint: 'Save allocations before adding a deduction', finalizeConfirm: 'Finalize this tip pool? It cannot be edited afterwards.', saved: 'Saved', finalizedMsg: 'Finalized', locked: 'Finalized — locked', invalid: 'Enter a valid amount', add: 'Add', hiddenNotice: (hidden: number, shown: number) => `${hidden} people in this pool have pay you may not see — showing ${shown} only, so the totals cover only those shown and the pool total is withheld · Every action on this pool is off (save · print · finalize · deductions) because each one reaches the whole pool; someone who can see all pay has to do it` };
 
   const { confirm, dialog } = useConfirm();
 
@@ -74,6 +75,10 @@ export default function HrTipPoolPage() {
   const periodMonth = `${month}-01`;
   const pool = data?.pool ?? null;
   const isFinalized = pool?.status === 'finalized';
+  // Part of this pool is withheld from this viewer — same lock as the SC page (pool-visibility.ts).
+  const hiddenCount = data?.hidden_count ?? 0;
+  const canManage = data?.can_manage !== false;
+  const locked = isFinalized || !canManage;
 
   useEffect(() => {
     (async () => {
@@ -100,11 +105,12 @@ export default function HrTipPoolPage() {
       const empJson = await empRes.json();
       setData((tipJson.data ?? null) as TipData | null);
       // full_name sits on the employee row, not the nested profile — carry it across so the pool
-      // names people the way their payslip does.
-      const emps = (empJson.data ?? []) as { full_name: string | null; profile: EmployeeRef | null }[];
+      // names people the way their payslip does. Nobody whose pay this viewer may not see becomes a
+      // row: saving the table would write an allocation for them, which the server refuses.
+      const emps = (empJson.data ?? []) as { full_name: string | null; pay_hidden?: boolean | null; profile: EmployeeRef | null }[];
       setEmployees(
         emps
-          .filter((e): e is { full_name: string | null; profile: EmployeeRef } => !!e.profile)
+          .filter((e): e is { full_name: string | null; pay_hidden?: boolean | null; profile: EmployeeRef } => !!e.profile && !e.pay_hidden)
           .map((e) => ({ ...e.profile, full_name: e.full_name }))
       );
     } catch {
@@ -128,7 +134,7 @@ export default function HrTipPoolPage() {
   }, [employees, data]);
 
   useEffect(() => {
-    setPoolTotalBaht(pool ? String(pool.total_satang / 100) : '');
+    setPoolTotalBaht(pool?.total_satang != null ? String(pool.total_satang / 100) : '');
     setNotes(pool?.notes ?? '');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
@@ -233,7 +239,7 @@ export default function HrTipPoolPage() {
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{L.poolTotal}</label>
                 <div className="flex items-center gap-1">
-                  <input type="number" inputMode="decimal" min={0} step={0.01} value={poolTotalBaht} disabled={isFinalized} onChange={(e) => setPoolTotalBaht(e.target.value)} placeholder="0.00" className={cn('control w-40', isFinalized && 'opacity-60')} />
+                  <input type="number" inputMode="decimal" min={0} step={0.01} value={poolTotalBaht} disabled={locked} onChange={(e) => setPoolTotalBaht(e.target.value)} placeholder="0.00" className={cn('control w-40', locked && 'opacity-60')} />
                   <span className="text-sm text-gray-500 dark:text-gray-400">฿</span>
                 </div>
               </div>
@@ -243,14 +249,23 @@ export default function HrTipPoolPage() {
               </div>
               <div className="min-w-[12rem] flex-1">
                 <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{L.notes}</label>
-                <input type="text" value={notes} disabled={isFinalized} onChange={(e) => setNotes(e.target.value)} placeholder={L.notesPh} className={cn('control w-full', isFinalized && 'opacity-60')} />
+                <input type="text" value={notes} disabled={locked} onChange={(e) => setNotes(e.target.value)} placeholder={L.notesPh} className={cn('control w-full', locked && 'opacity-60')} />
               </div>
               <div className="flex items-center gap-2 self-end pb-0.5">
                 <StatusBadge tone={isFinalized ? 'good' : 'warn'} label={isFinalized ? L.finalized : L.draft} icon={isFinalized ? Lock : undefined} />
-                {!isFinalized && (<Button onClick={savePool} isLoading={savingPool} disabled={busy} type="button">{pool ? L.savePool : L.createPool}</Button>)}
+                {!locked && (<Button onClick={savePool} isLoading={savingPool} disabled={busy} type="button">{pool ? L.savePool : L.createPool}</Button>)}
               </div>
             </div>
           </section>
+
+          {/* Part of this pool is withheld from this viewer — an unlabelled partial total reads as the
+              pool's real total, and an empty table as a pool nobody has allocated yet. */}
+          {hiddenCount > 0 && (
+            <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50/70 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-800/60 dark:bg-amber-900/15 dark:text-amber-300 tip-noprint">
+              <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>{L.hiddenNotice(hiddenCount, data?.allocations.length ?? 0)}</p>
+            </div>
+          )}
 
           {data && (
             <KpiRow cols={3} className="tip-noprint">
@@ -265,15 +280,16 @@ export default function HrTipPoolPage() {
             className="tip-noprint"
             extra={
               <div className="flex flex-wrap gap-2">
-                {!isFinalized && (<Button size="sm" type="button" onClick={saveAllocations} isLoading={savingAlloc} disabled={!pool || busy}>{L.saveAllocations}</Button>)}
-                <Button variant="outline" size="sm" type="button" icon={<Printer className="h-4 w-4" />} onClick={() => window.print()} disabled={!data}>{L.print}</Button>
-                {!isFinalized && (<Button variant="danger" size="sm" type="button" icon={<Lock className="h-4 w-4" />} onClick={finalize} isLoading={finalizing} disabled={!pool || busy}>{L.finalize}</Button>)}
+                {!locked && (<Button size="sm" type="button" onClick={saveAllocations} isLoading={savingAlloc} disabled={!pool || busy}>{L.saveAllocations}</Button>)}
+                <Button variant="outline" size="sm" type="button" icon={<Printer className="h-4 w-4" />} onClick={() => window.print()} disabled={!data || !canManage}>{L.print}</Button>
+                {!locked && (<Button variant="danger" size="sm" type="button" icon={<Lock className="h-4 w-4" />} onClick={finalize} isLoading={finalizing} disabled={!pool || busy}>{L.finalize}</Button>)}
               </div>
             }
           />
 
           {rows.length === 0 ? (
-            <EmptyState icon={Coins} title={L.noEmployees} />
+            // Everyone withheld is not an empty store — the notice above already says why.
+            hiddenCount > 0 ? null : <EmptyState icon={Coins} title={L.noEmployees} />
           ) : (
             <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
               <table className="w-full min-w-[40rem] text-sm">
@@ -304,7 +320,7 @@ export default function HrTipPoolPage() {
                           </td>
                           <td className="px-3 py-2 text-right">
                             <div className="flex items-center justify-end gap-1">
-                              <input type="number" inputMode="decimal" min={0} step={0.01} value={allocInputs[r.userId] ?? ''} disabled={isFinalized} onChange={(e) => setAllocInputs((prev) => ({ ...prev, [r.userId]: e.target.value }))} placeholder="0.00" className={cn('control w-28 text-right', isFinalized && 'opacity-60')} />
+                              <input type="number" inputMode="decimal" min={0} step={0.01} value={allocInputs[r.userId] ?? ''} disabled={locked} onChange={(e) => setAllocInputs((prev) => ({ ...prev, [r.userId]: e.target.value }))} placeholder="0.00" className={cn('control w-28 text-right', locked && 'opacity-60')} />
                               <span className="text-xs text-gray-400">฿</span>
                             </div>
                           </td>
@@ -323,7 +339,7 @@ export default function HrTipPoolPage() {
                                       <span className="text-gray-700 dark:text-gray-200">{d.label}</span>
                                       <span className="font-medium text-red-600 dark:text-red-400">−{formatBaht(d.amount_satang)} ฿</span>
                                       {d.note && <span className="text-gray-400">· {d.note}</span>}
-                                      {!isFinalized && (
+                                      {!locked && (
                                         <button type="button" onClick={() => deleteDeduction(d.id)} aria-label={L.delete} title={L.delete} className="rounded p-0.5 text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 tip-noprint">
                                           <X className="h-3.5 w-3.5" />
                                         </button>
@@ -332,7 +348,7 @@ export default function HrTipPoolPage() {
                                   ))}
                                 </ul>
                               ) : (<p className="text-xs text-gray-400">{L.noDeductions}</p>)}
-                              {a && !isFinalized && (
+                              {a && !locked && (
                                 <div className="mt-2 flex flex-wrap items-center gap-2 tip-noprint">
                                   <input type="text" value={draft.label} onChange={(e) => setDedDraft((p) => ({ ...p, [r.userId]: { ...draft, label: e.target.value } }))} placeholder={L.dedLabelPh} className="control w-40" />
                                   <input type="number" inputMode="decimal" min={0} step={0.01} value={draft.amount} onChange={(e) => setDedDraft((p) => ({ ...p, [r.userId]: { ...draft, amount: e.target.value } }))} placeholder="0.00" className="control w-28" />

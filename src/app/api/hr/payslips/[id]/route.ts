@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { requireHrManagerForStore } from '@/lib/hr/route-auth';
 import { svPeriodMonth } from '@/lib/hr/pay-cycle';
+import { payHiddenProfileIds } from '@/lib/hr/pay-visibility';
 
 // GET /api/hr/payslips/[id] — one payslip with its itemized earning + deduction lines.
 // Readable by the employee it belongs to (own slip), by company-wide HR, or by a manager scoped
@@ -34,6 +35,11 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     const { data: pr } = await service.from('hr_payruns').select('store_id').eq('id', slip.payrun_id).maybeSingle();
     const auth = await requireHrManagerForStore((pr?.store_id as string | null | undefined) ?? null);
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+    // The payrun detail withholds this slip from a caller who may not see the person's pay; asking
+    // for it by id must not be the way around that (pay-visibility.ts).
+    if ((await payHiddenProfileIds(service, auth.userId)).has(slip.user_id as string)) {
+      return NextResponse.json({ error: 'คุณไม่มีสิทธิ์ดูเงินเดือนของพนักงานคนนี้' }, { status: 403 });
+    }
   }
 
   const [earnRes, dedRes, payrunRes, profRes, ovrRes, empRes, bonusRes, remarkRes] = await Promise.all([

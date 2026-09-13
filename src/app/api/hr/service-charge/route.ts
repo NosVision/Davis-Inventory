@@ -3,6 +3,9 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { requireStoreManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import { computeNetSc } from '@/lib/hr/service-charge';
+import { payHiddenProfileIds } from '@/lib/hr/pay-visibility';
+import { partitionPoolAllocations } from '@/lib/hr/pool-visibility';
+import { refusePoolIfHidden } from '@/lib/hr/pool-access';
 
 const POOLS = 'hr_sc_pools';
 import { scPoolMonthForEvent, scEventMonthForPool } from '@/lib/hr/pay-cycle';
@@ -18,6 +21,7 @@ function isNonNegInt(v: unknown): v is number {
 
 // GET /api/hr/service-charge?store_id&period_month=YYYY-MM-01 — the pool for a store/month
 // plus its per-person allocations, each with its deduction lines and computed net SC (§H).
+// Allocations of people whose pay the caller may not see are withheld (pool-visibility.ts).
 export async function GET(request: NextRequest) {
   const sp = request.nextUrl.searchParams;
   const storeId = sp.get('store_id') ?? '';
@@ -51,16 +55,18 @@ export async function GET(request: NextRequest) {
     .order('created_at', { ascending: true });
   if (allocErr) return NextResponse.json({ error: allocErr.message }, { status: 500 });
 
-  let allocated = 0;
-  let net = 0;
   const allocations = (rows ?? []).map((row: Record<string, unknown>) => {
     const deductions = (row.deductions ?? []) as { amount_satang: number }[];
     const allocatedSatang = (row.allocated_satang as number) ?? 0;
-    const netSatang = computeNetSc(allocatedSatang, deductions);
-    allocated += allocatedSatang;
-    net += netSatang;
-    return { ...row, deductions, net_satang: netSatang };
+    return {
+      ...row,
+      user_id: row.user_id as string,
+      allocated_satang: allocatedSatang,
+      deductions,
+      net_satang: computeNetSc(allocatedSatang, deductions),
+    };
   });
+  const view = partitionPoolAllocations(allocations, await payHiddenProfileIds(service, auth.userId));
 
   // Which evaluation feeds this pool, and whether it has happened yet.
   //
@@ -87,10 +93,16 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     data: {
-      pool,
-      allocations,
-      totals: { allocated, deducted: allocated - net, net },
+      // The allocations add up to the pool total, so beside a partial list it would hand back the
+      // hidden sum by subtraction.
+      pool: view.hiddenCount > 0 ? { ...pool, total_satang: null } : pool,
+      allocations: view.allocations,
+      totals: view.totals,
       evaluation,
+      // > 0 → the page must say its figures are partial.
+      hidden_count: view.hiddenCount,
+      // Every action on a pool reaches every allocation in it, so one hidden person disables the lot.
+      can_manage: view.hiddenCount === 0,
     },
   });
 }
@@ -128,6 +140,10 @@ export async function PUT(request: NextRequest) {
     .eq('store_id', storeId)
     .eq('period_month', periodMonth)
     .maybeSingle();
+  if (existing) {
+    const refusal = await refusePoolIfHidden(service, auth.userId, 'sc', [existing.id as string]);
+    if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
+  }
   if (existing && existing.status === 'finalized') {
     return NextResponse.json({ error: 'pool is finalized' }, { status: 409 });
   }

@@ -111,6 +111,11 @@ export default function HrServiceChargePage() {
   const periodMonth = `${month}-01`;
   const pool = data?.pool ?? null;
   const isFinalized = pool?.status === 'finalized';
+  // Part of this pool is withheld from this viewer (pool-visibility.ts): every figure on the page is
+  // partial and every action is refused server-side, so the page locks itself and says why.
+  const hiddenCount = data?.hidden_count ?? 0;
+  const canManage = data?.can_manage !== false;
+  const locked = isFinalized || !canManage;
   const storeName = stores.find((s) => s.id === storeId)?.store_name ?? '';
 
   // manageable stores → default to first
@@ -151,12 +156,15 @@ export default function HrServiceChargePage() {
       const emps = (empJson.data ?? []) as {
         full_name: string | null;
         start_date: string | null;
+        pay_hidden?: boolean | null;
         position: { name: string | null } | null;
         profile: { id: string; display_name: string | null; username: string | null } | null;
       }[];
       setEmployees(
         emps
-          .filter((e) => !!e.profile)
+          // Nobody whose pay this viewer may not see becomes a row: saving the table would write an
+          // allocation for them, which the server refuses.
+          .filter((e) => !!e.profile && !e.pay_hidden)
           .map((e) => ({
             id: e.profile!.id,
             nickname: e.profile!.display_name || e.profile!.username || null,
@@ -214,7 +222,7 @@ export default function HrServiceChargePage() {
 
   // Seed pool form + allocation inputs whenever the loaded data changes.
   useEffect(() => {
-    setPoolTotalBaht(pool ? String(pool.total_satang / 100) : '');
+    setPoolTotalBaht(pool?.total_satang != null ? String(pool.total_satang / 100) : '');
     setNotes(pool?.notes ?? '');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
@@ -549,10 +557,10 @@ export default function HrServiceChargePage() {
                       min={0}
                       step={0.01}
                       value={poolTotalBaht}
-                      disabled={isFinalized}
+                      disabled={locked}
                       onChange={(e) => setPoolTotalBaht(e.target.value)}
                       placeholder="0.00"
-                      className={cn('control w-40', isFinalized && 'opacity-60')}
+                      className={cn('control w-40', locked && 'opacity-60')}
                     />
                     <span className="text-sm text-gray-500 dark:text-gray-400">฿</span>
                   </div>
@@ -577,10 +585,10 @@ export default function HrServiceChargePage() {
                   <input
                     type="text"
                     value={notes}
-                    disabled={isFinalized}
+                    disabled={locked}
                     onChange={(e) => setNotes(e.target.value)}
                     placeholder={t('notesPlaceholder')}
-                    className={cn('control w-full', isFinalized && 'opacity-60')}
+                    className={cn('control w-full', locked && 'opacity-60')}
                   />
                 </div>
 
@@ -590,7 +598,7 @@ export default function HrServiceChargePage() {
                     label={isFinalized ? t('statusFinalized') : t('statusDraft')}
                     icon={isFinalized ? Lock : undefined}
                   />
-                  {!isFinalized && (
+                  {!locked && (
                     <Button onClick={savePool} isLoading={savingPool} disabled={busy} type="button">
                       {pool ? t('savePool') : t('createPool')}
                     </Button>
@@ -598,6 +606,16 @@ export default function HrServiceChargePage() {
                 </div>
               </div>
             </section>
+
+            {/* Part of this pool is withheld from this viewer. Saying so is not optional: an
+                unlabelled partial total reads as the pool's real total, and an empty table reads as
+                a pool nobody has allocated yet. */}
+            {hiddenCount > 0 && (
+              <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50/70 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-800/60 dark:bg-amber-900/15 dark:text-amber-300">
+                <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+                <p>{t('hiddenNotice', { hidden: hiddenCount, shown: data?.allocations.length ?? 0 })}</p>
+              </div>
+            )}
 
             {/* An evaluation is closed around the 10th and docks the pool transferred on the 15th, so
                 THIS pool is fed by the PREVIOUS month's evaluation. Finalize before that period is
@@ -647,11 +665,11 @@ export default function HrServiceChargePage() {
                     icon={<RefreshCw className="h-4 w-4" />}
                     onClick={recompute}
                     isLoading={recomputing}
-                    disabled={!pool || busy}
+                    disabled={!pool || busy || !canManage}
                   >
                     {t('recompute')}
                   </Button>
-                  {!isFinalized && (
+                  {!locked && (
                     <Button
                       size="sm"
                       type="button"
@@ -668,11 +686,11 @@ export default function HrServiceChargePage() {
                     type="button"
                     icon={<Printer className="h-4 w-4" />}
                     onClick={() => window.print()}
-                    disabled={!data}
+                    disabled={!data || !canManage}
                   >
                     {t('print')}
                   </Button>
-                  {!isFinalized && (
+                  {!locked && (
                     <Button
                       variant="danger"
                       size="sm"
@@ -685,7 +703,7 @@ export default function HrServiceChargePage() {
                       {t('finalize')}
                     </Button>
                   )}
-                  {isFinalized && (
+                  {isFinalized && canManage && (
                     <Button
                       size="sm"
                       type="button"
@@ -701,7 +719,8 @@ export default function HrServiceChargePage() {
             />
 
             {rows.length === 0 ? (
-              <EmptyState icon={Wallet} title={t('noEmployees')} />
+              // Everyone withheld is not an empty store — the notice above already says why.
+              hiddenCount > 0 ? null : <EmptyState icon={Wallet} title={t('noEmployees')} />
             ) : (
               <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
                 <table className="w-full min-w-[40rem] text-sm">
@@ -759,7 +778,7 @@ export default function HrServiceChargePage() {
                                   min={0}
                                   step={0.01}
                                   value={allocInputs[r.userId] ?? ''}
-                                  disabled={isFinalized}
+                                  disabled={locked}
                                   onChange={(e) =>
                                     setAllocInputs((prev) => ({
                                       ...prev,
@@ -767,7 +786,7 @@ export default function HrServiceChargePage() {
                                     }))
                                   }
                                   placeholder="0.00"
-                                  className={cn('control w-28 text-right', isFinalized && 'opacity-60')}
+                                  className={cn('control w-28 text-right', locked && 'opacity-60')}
                                 />
                                 <span className="text-xs text-gray-400">฿</span>
                               </div>
@@ -817,7 +836,7 @@ export default function HrServiceChargePage() {
                                         {d.note && (
                                           <span className="text-gray-400">· {d.note}</span>
                                         )}
-                                        {!d.auto && !isFinalized && (
+                                        {!d.auto && !locked && (
                                           <button
                                             type="button"
                                             onClick={() => deleteDeduction(d.id)}
@@ -834,7 +853,7 @@ export default function HrServiceChargePage() {
                                 ) : (
                                   <p className="text-xs text-gray-400">{t('noDeductions')}</p>
                                 )}
-                                {a && !isFinalized && (
+                                {a && !locked && (
                                   <Button
                                     variant="ghost"
                                     size="sm"

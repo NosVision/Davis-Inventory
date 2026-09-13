@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useLocale } from 'next-intl';
-import { Loader2, ChevronLeft, Archive } from 'lucide-react';
+import { Loader2, ChevronLeft, Archive, Lock } from 'lucide-react';
 import { Modal, EmptyState, DataList, DataCard, MoneyValue, Button, toast } from '@/components/ui';
 import { ImportedPayslipView, periodLabel, type ImportedSlip } from '@/components/hr/imported-payslip-view';
 
 // Per-employee historical (imported) payslips — the legacy monthly figures matched to
 // this person. Read-only: list of months → one slip. Self-contained locale strings.
+// The route returns nothing (pay_hidden) for a viewer who may not see this person's pay.
 interface Props {
   employeeId: string | null;
   employeeName: string;
@@ -17,10 +18,11 @@ interface Props {
 export function EmployeePayHistoryModal({ employeeId, employeeName, onClose }: Props) {
   const isTh = useLocale() === 'th';
   const L = isTh
-    ? { title: 'ประวัติเงินเดือน (นำเข้า)', empty: 'ไม่มีสลิปย้อนหลัง', loadFailed: 'โหลดไม่สำเร็จ', back: 'ย้อนกลับ' }
-    : { title: 'Pay history (imported)', empty: 'No historical payslips', loadFailed: 'Load failed', back: 'Back' };
+    ? { title: 'ประวัติเงินเดือน (นำเข้า)', empty: 'ไม่มีสลิปย้อนหลัง', loadFailed: 'โหลดไม่สำเร็จ', back: 'ย้อนกลับ', hidden: 'คุณไม่มีสิทธิ์ดูเงินเดือนของพนักงานคนนี้' }
+    : { title: 'Pay history (imported)', empty: 'No historical payslips', loadFailed: 'Load failed', back: 'Back', hidden: 'You may not see the pay of this employee' };
 
   const [rows, setRows] = useState<ImportedSlip[]>([]);
+  const [payHidden, setPayHidden] = useState(false);
   const [loading, setLoading] = useState(false);
   const [slip, setSlip] = useState<ImportedSlip | null>(null);
 
@@ -29,8 +31,9 @@ export function EmployeePayHistoryModal({ employeeId, employeeName, onClose }: P
     try {
       const res = await fetch(`/api/hr/imported-payslips?employee_id=${id}`);
       const json = await res.json();
-      if (!res.ok) { toast({ type: 'error', title: json?.error || L.loadFailed }); setRows([]); return; }
+      if (!res.ok) { toast({ type: 'error', title: json?.error || L.loadFailed }); setRows([]); setPayHidden(false); return; }
       setRows((json.data ?? []) as ImportedSlip[]);
+      setPayHidden(json.pay_hidden === true);
     } catch {
       toast({ type: 'error', title: L.loadFailed });
     } finally {
@@ -47,6 +50,8 @@ export function EmployeePayHistoryModal({ employeeId, employeeName, onClose }: P
       <div className="max-h-[70vh] overflow-y-auto">
         {loading ? (
           <div className="flex justify-center py-10 text-gray-400"><Loader2 className="h-5 w-5 animate-spin" /></div>
+        ) : payHidden ? (
+          <EmptyState icon={Lock} title={L.hidden} />
         ) : slip ? (
           <div className="space-y-3">
             <Button variant="ghost" size="sm" onClick={() => setSlip(null)} icon={<ChevronLeft className="h-4 w-4" />}>{L.back}</Button>
