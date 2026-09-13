@@ -19,6 +19,8 @@ export async function notifyHrManagers(
     data?: Record<string, unknown>;
     /** don't notify this user (e.g. the actor themselves) */
     excludeUserId?: string;
+    /** don't notify these users either (e.g. everyone a request is about) */
+    excludeUserIds?: readonly string[];
   }
 ): Promise<void> {
   const [{ data: managers }, { data: grants }] = await Promise.all([
@@ -30,6 +32,7 @@ export async function notifyHrManagers(
   for (const m of managers ?? []) ids.add(m.id as string);
   for (const g of grants ?? []) ids.add(g.user_id as string);
   if (params.excludeUserId) ids.delete(params.excludeUserId);
+  for (const id of params.excludeUserIds ?? []) ids.delete(id);
   if (ids.size === 0) return;
 
   await Promise.allSettled(
@@ -47,4 +50,67 @@ export async function notifyHrManagers(
       })
     )
   );
+}
+
+/**
+ * Tell the people who own a store's roster — its manager or captain, any `hr_manager_scopes` row with
+ * `can_schedule` — that something waits on them. Day-off swaps are theirs to decide (client decision
+ * 2026-07-20; captains 2026-08-14), yet the request used to reach HR only, so the captains it was
+ * built for never heard of it (owner report 2026-09-13).
+ *
+ * A store with nobody else to decide — no scope rows, or only the people the request is about —
+ * falls back to company HR, so a request never waits on no one. Returns who was told.
+ */
+export async function notifyStoreSchedulers(
+  service: SupabaseClient,
+  params: {
+    storeId: string;
+    type: NotificationType;
+    title: string;
+    body: string;
+    data?: Record<string, unknown>;
+    /** where a store manager / captain lands */
+    storeUrl: string;
+    /** where HR lands when it is the fallback */
+    hrUrl: string;
+    /** the people the request is about — never asked to decide it */
+    excludeUserIds?: readonly string[];
+  }
+): Promise<'store' | 'hr'> {
+  const { data: scopes, error } = await service
+    .from('hr_manager_scopes')
+    .select('user_id')
+    .eq('store_id', params.storeId)
+    .eq('can_schedule', true);
+  const excluded = new Set(params.excludeUserIds ?? []);
+  const ids = [...new Set(((scopes ?? []) as { user_id: string }[]).map((s) => s.user_id))].filter(
+    (id) => !excluded.has(id)
+  );
+
+  // Not knowing who runs the store is treated like nobody running it: HR hears about it instead.
+  if (error || ids.length === 0) {
+    await notifyHrManagers(service, {
+      storeId: params.storeId,
+      type: params.type,
+      title: params.title,
+      body: params.body,
+      data: { ...params.data, url: params.hrUrl },
+      excludeUserIds: params.excludeUserIds,
+    });
+    return 'hr';
+  }
+
+  await Promise.allSettled(
+    ids.map((userId) =>
+      notifyUser({
+        userId,
+        storeId: params.storeId,
+        type: params.type,
+        title: params.title,
+        body: params.body,
+        data: { ...params.data, url: params.storeUrl },
+      })
+    )
+  );
+  return 'store';
 }

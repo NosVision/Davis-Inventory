@@ -76,8 +76,10 @@ export function resolveNotificationUrl(
     case 'repair_completed':
       return '/repairs';
 
-    // สลับวันหยุด (HR queue / ผลของพนักงาน)
+    // สลับวันหยุด — the store's approver queue (HR opens it too) / HR acknowledgement / the employees
     case 'hr_swap_request':
+      return '/schedule/swaps';
+    case 'hr_swap_approved':
       return '/hr/swaps';
     case 'hr_swap_result':
       return '/me/swaps';

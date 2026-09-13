@@ -29,6 +29,12 @@ const STATUS_TONE: Record<Swap['status'], 'warn' | 'good' | 'critical' | 'neutra
   cancelled: 'neutral',
 };
 
+/** 'YYYY-MM-DD' → 'DD/MM/YYYY' */
+function dmy(d: string): string {
+  const [y, m, dd] = String(d).slice(0, 10).split('-');
+  return y && m && dd ? `${dd}/${m}/${y}` : String(d);
+}
+
 export default function MySwapsPage() {
   const t = useTranslations('hr.swaps');
 
@@ -37,6 +43,7 @@ export default function MySwapsPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
+  // myDate = the day I am off now · theirDate = the day I want off instead (same day = shift trade)
   const [myDate, setMyDate] = useState('');
   const [counterpartId, setCounterpartId] = useState('');
   const [theirDate, setTheirDate] = useState('');
@@ -139,7 +146,10 @@ export default function MySwapsPage() {
 
       {/* File form */}
       <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-        <h2 className="text-sm font-semibold text-gray-900 dark:text-white">{t('fileHeading')}</h2>
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-white">{t('fileHeading')}</h2>
+          <p className="mt-1 text-xs leading-relaxed text-gray-500 dark:text-gray-400">{t('formHint')}</p>
+        </div>
 
         <div className="grid grid-cols-2 gap-3">
           <label className="flex flex-col text-xs font-medium text-gray-600 dark:text-gray-400">
@@ -223,11 +233,19 @@ export default function MySwapsPage() {
                 key={s.id}
                 accent={STATUS_TONE[s.status]}
                 title={
-                  <span>
-                    {s.requester_name} ({s.requester_date}){' '}
-                    <ArrowLeftRight className="inline h-3.5 w-3.5 align-middle text-gray-400" />{' '}
-                    {s.counterpart_name} ({s.counterpart_date})
-                  </span>
+                  s.requester_date === s.counterpart_date ? (
+                    <span>
+                      {s.requester_name}{' '}
+                      <ArrowLeftRight className="inline h-3.5 w-3.5 align-middle text-gray-400" />{' '}
+                      {s.counterpart_name} · {t('cardSameDay', { date: dmy(s.requester_date) })}
+                    </span>
+                  ) : (
+                    <span>
+                      {s.requester_name} ·{' '}
+                      {t('cardMove', { from: dmy(s.requester_date), to: dmy(s.counterpart_date) })} ·{' '}
+                      {t('withCoworker', { name: s.counterpart_name })}
+                    </span>
+                  )
                 }
                 status={<StatusBadge tone={STATUS_TONE[s.status]} label={statusLabel(s.status)} />}
                 actions={

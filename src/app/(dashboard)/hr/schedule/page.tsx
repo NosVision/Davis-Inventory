@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { Loader2, Plus, Pencil, Save, Undo2, AlertTriangle } from 'lucide-react';
+import { SwapQueueLink } from '@/components/hr/swap-queue-link';
 import { Button, Modal, ModalFooter, PageHeader, StatusBadge, type StatusTone, toast, useConfirm } from '@/components/ui';
 import { PayrollScopeChips, dominantCompany, type PayrollScopeInfo } from '@/components/hr/payroll-scope-chips';
 import { todayBangkok } from '@/lib/utils/date';
@@ -451,6 +452,7 @@ export default function SchedulePage({
               {t('filterMonth')}
               <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="control mt-1" />
             </label>
+            <SwapQueueLink storeId={storeId} />
             <Button
               size="sm"
               variant="outline"

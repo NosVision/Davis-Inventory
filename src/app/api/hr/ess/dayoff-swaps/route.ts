@@ -1,9 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
-import { notifyHrManagers } from '@/lib/hr/notify';
+import { notifyStoreSchedulers } from '@/lib/hr/notify';
+import { planDayoffSwap, swapCellsFrom, type SwapBlockReason } from '@/lib/hr/dayoff-swap';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_OPEN_SWAPS = 20;
+
+// Said to the requester, who can fix each of these before filing again.
+const BLOCK_MESSAGE: Record<SwapBlockReason, string> = {
+  requester_missing: 'คุณยังไม่มีตารางงานครบทั้งสองวันที่เลือก (ต้องเป็นสาขาเดียวกัน)',
+  counterpart_missing: 'เพื่อนร่วมงานยังไม่มีตารางงานครบทั้งสองวันนี้ที่สาขาของคุณ',
+  requester_not_off: 'วันหยุดเดิมที่เลือก ในตารางงานคุณไม่ได้หยุดวันนั้น',
+  requester_already_off: 'วันที่อยากหยุดแทน ในตารางงานคุณหยุดวันนั้นอยู่แล้ว',
+};
 
 // A real calendar date, not just the shape — rejects '2026-02-30' before it reaches
 // the DB (which would otherwise 500 on a date-out-of-range cast).
@@ -11,6 +20,12 @@ function isCalendarDate(d: string): boolean {
   if (!DATE_RE.test(d)) return false;
   const dt = new Date(`${d}T00:00:00Z`);
   return !Number.isNaN(dt.getTime()) && dt.toISOString().slice(0, 10) === d;
+}
+
+/** 'YYYY-MM-DD' → 'DD/MM/YYYY' */
+function dmy(d: string): string {
+  const [y, m, dd] = d.split('-');
+  return `${dd}/${m}/${y}`;
 }
 
 interface ProfileRow {
@@ -28,6 +43,12 @@ interface SwapRow {
   status: string;
   note: string | null;
   created_at: string;
+}
+interface CellRow {
+  user_id: string;
+  work_date: string;
+  store_id: string | null;
+  is_day_off: boolean;
 }
 
 type ServiceClient = ReturnType<typeof createServiceClient>;
@@ -50,9 +71,10 @@ async function loadNames(
 }
 
 // POST /api/hr/ess/dayoff-swaps — a requester files a day-off swap (§C, P2.3a).
-// Auth-any: the caller is always the requester. We derive the store from the
-// caller's own schedule cell so a swap can only ever be filed within one store,
-// and confirm the counterpart is genuinely scheduled there on the target date.
+// Auth-any: the caller is always the requester. `requester_date` is their current day off and
+// `counterpart_date` the day they want off instead (or the same day, for a shift trade). The request
+// is checked against today's roster with the same rule approval applies (src/lib/hr/dayoff-swap.ts),
+// so what gets filed is something an approval can actually carry out.
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const {
@@ -75,33 +97,37 @@ export async function POST(request: NextRequest) {
 
   const service = createServiceClient();
 
-  // The requester must be scheduled on requester_date — that row fixes the store.
-  const { data: mine, error: mineErr } = await service
+  // Every roster row the swap touches: both people, both days.
+  const { data: cellRows, error: cellErr } = await service
     .from('hr_schedule')
-    .select('store_id')
-    .eq('user_id', user.id)
-    .eq('work_date', requesterDate)
-    .maybeSingle();
-  if (mineErr) return NextResponse.json({ error: 'Failed to verify schedule' }, { status: 500 });
-  if (!mine) {
-    return NextResponse.json({ error: 'you are not scheduled on that date' }, { status: 400 });
-  }
-  const storeId = mine.store_id as string;
+    .select('user_id, work_date, store_id, is_day_off')
+    .in('user_id', [user.id, counterpartId])
+    .in('work_date', [requesterDate, counterpartDate]);
+  if (cellErr) return NextResponse.json({ error: 'Failed to verify schedule' }, { status: 500 });
+  const rows = (cellRows ?? []) as CellRow[];
 
-  // The counterpart must be scheduled on counterpart_date at the SAME store.
-  const { data: theirs, error: theirsErr } = await service
-    .from('hr_schedule')
-    .select('store_id')
-    .eq('user_id', counterpartId)
-    .eq('work_date', counterpartDate)
-    .maybeSingle();
-  if (theirsErr) return NextResponse.json({ error: 'Failed to verify schedule' }, { status: 500 });
-  if (!theirs || (theirs.store_id as string) !== storeId) {
+  // The requester's row on their current day off fixes the store — a swap never crosses stores.
+  const storeId =
+    rows.find((r) => r.user_id === user.id && r.work_date === requesterDate)?.store_id ?? null;
+  if (!storeId) {
     return NextResponse.json(
-      { error: 'coworker is not scheduled on that date at your store' },
+      { error: 'คุณยังไม่มีตารางงานของสาขาในวันหยุดเดิมที่เลือก' },
       { status: 400 }
     );
   }
+
+  const plan = planDayoffSwap(
+    requesterDate,
+    counterpartDate,
+    storeId,
+    swapCellsFrom(rows, {
+      requester_id: user.id,
+      requester_date: requesterDate,
+      counterpart_id: counterpartId,
+      counterpart_date: counterpartDate,
+    })
+  );
+  if (!plan.ok) return NextResponse.json({ error: BLOCK_MESSAGE[plan.reason] }, { status: 400 });
 
   // And the counterpart must belong to that store.
   const { data: member, error: memberErr } = await service
@@ -112,7 +138,7 @@ export async function POST(request: NextRequest) {
     .maybeSingle();
   if (memberErr) return NextResponse.json({ error: 'Failed to verify coworker' }, { status: 500 });
   if (!member) {
-    return NextResponse.json({ error: 'coworker is not assigned to your store' }, { status: 400 });
+    return NextResponse.json({ error: 'เพื่อนร่วมงานไม่ได้อยู่สาขาเดียวกับคุณ' }, { status: 400 });
   }
 
   // Abuse / duplicate guard: cap open requests, and reject an identical still-pending
@@ -125,7 +151,7 @@ export async function POST(request: NextRequest) {
     .eq('status', 'pending');
   const open = pendings ?? [];
   if (open.length >= MAX_OPEN_SWAPS) {
-    return NextResponse.json({ error: 'Too many open swap requests' }, { status: 429 });
+    return NextResponse.json({ error: 'มีคำขอค้างอยู่มากเกินไป' }, { status: 429 });
   }
   if (
     open.some(
@@ -135,7 +161,7 @@ export async function POST(request: NextRequest) {
         p.counterpart_date === counterpartDate
     )
   ) {
-    return NextResponse.json({ error: 'You already have a pending swap for this' }, { status: 409 });
+    return NextResponse.json({ error: 'มีคำขอแบบนี้รออนุมัติอยู่แล้ว' }, { status: 409 });
   }
 
   const { data, error } = await service
@@ -156,32 +182,34 @@ export async function POST(request: NextRequest) {
   if (error) {
     // 23505 = the partial-unique index caught a concurrent duplicate.
     if ((error as { code?: string }).code === '23505') {
-      return NextResponse.json({ error: 'You already have a pending swap for this' }, { status: 409 });
+      return NextResponse.json({ error: 'มีคำขอแบบนี้รออนุมัติอยู่แล้ว' }, { status: 409 });
     }
     return NextResponse.json({ error: 'Failed to file swap' }, { status: 500 });
   }
 
-  // Notify HR that a swap awaits approval (§Q5 flow: file → notify HR → HR approves).
+  // The store's roster owners decide (its manager or captain); HR only acknowledges afterwards, and
+  // hears about the request itself only when the store has nobody else to decide it.
   // Best-effort — a notification failure must never fail the filing itself.
   try {
-    const { data: names } = await service
-      .from('profiles')
-      .select('id, display_name, username')
-      .in('id', [user.id, counterpartId]);
-    const nameOf = (id: string) => {
-      const p = (names ?? []).find((x) => x.id === id);
-      return p?.display_name || p?.username || '—';
-    };
-    await notifyHrManagers(service, {
+    const names = await loadNames(service, [user.id, counterpartId]);
+    const me = names.get(user.id) ?? '—';
+    const them = names.get(counterpartId) ?? '—';
+    const summary =
+      plan.kind === 'same_day'
+        ? `${me} ขอแลกกะกับ ${them} วันที่ ${dmy(requesterDate)}`
+        : `${me} ขอย้ายวันหยุด ${dmy(requesterDate)} → ${dmy(counterpartDate)} (สลับกับ ${them})`;
+    await notifyStoreSchedulers(service, {
       storeId,
       type: 'hr_swap_request',
       title: 'คำขอสลับวันหยุดใหม่',
-      body: `${nameOf(user.id)} ขอสลับวันหยุด ${requesterDate} ↔ ${nameOf(counterpartId)} (${counterpartDate}) — รออนุมัติ`,
-      data: { swap_id: data.id, url: '/hr/swaps' },
-      excludeUserId: user.id,
+      body: `${summary} — รออนุมัติ`,
+      data: { swap_id: data.id },
+      storeUrl: '/schedule/swaps',
+      hrUrl: '/hr/swaps',
+      excludeUserIds: [user.id, counterpartId],
     });
   } catch (e) {
-    console.error('[hr/ess/dayoff-swaps] notify HR failed:', e);
+    console.error('[hr/ess/dayoff-swaps] notify approvers failed:', e);
   }
 
   return NextResponse.json({ data }, { status: 201 });
