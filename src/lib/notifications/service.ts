@@ -12,6 +12,7 @@
 
 import { createServiceClient } from '@/lib/supabase/server';
 import { sendPushToUser, type PushPayload } from '@/lib/notifications/push';
+import { selectStoreRecipients, type StoreMemberRow } from '@/lib/notifications/recipients';
 import { sendLinePush, pushMessage, type LineMessage } from '@/lib/line/messaging';
 
 // ---------------------------------------------------------------------------
@@ -361,7 +362,7 @@ export async function notifyStoreStaff(params: NotifyGroupParams): Promise<void>
     const [usersRes, storeRes] = await Promise.all([
       supabase
         .from('user_stores')
-        .select('user_id, profiles!inner(id, role, line_user_id)')
+        .select('user_id, profiles!inner(id, role, line_user_id, active, is_system, last_sign_in_at, created_at)')
         .eq('store_id', storeId)
         .in('profiles.role', targetRoles),
       supabase.from('stores').select('line_token').eq('id', storeId).single(),
@@ -378,8 +379,14 @@ export async function notifyStoreStaff(params: NotifyGroupParams): Promise<void>
       return;
     }
 
-    const notifyPromises = (userStores as unknown as UserStoreRow[])
-      .filter((us) => us.user_id !== excludeUserId)
+    // Membership says who MAY be told; the recipient rule says who is actually there to read it
+    // (active, not a system login, signed in within 30 days). Without it a deposit wrote 21–49
+    // rows per venue, most to people who had not opened the app in a month (2026-09-19).
+    const recipients = selectStoreRecipients(userStores as unknown as StoreMemberRow[], {
+      now: Date.now(),
+      excludeUserId,
+    });
+    const notifyPromises = recipients
       .map((us) =>
         notifyUser({
           userId: us.user_id,

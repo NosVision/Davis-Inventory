@@ -499,6 +499,9 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
     });
 
     // Push notification
+    // "Bar confirmed the deposit" is news for the bar lead and the manager, not for every server
+    // on the roster — the whole floor being told twice per deposit is how notifications reached
+    // 645k rows (2026-09-19). The claiming server already sees the card flip to completed in chat.
     notifyStaff({
       storeId: currentStoreId,
       type: 'deposit_confirmed',
@@ -506,6 +509,7 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
       body: `${displayName} ยืนยันรับฝาก ${deposit.product_name} — ${deposit.customer_name} (${deposit.deposit_code})`,
       data: { deposit_code: deposit.deposit_code },
       excludeUserId: user.id,
+      roles: ['bar', 'head_bar', 'manager'],
     });
 
     // Sync action card ในแชทให้เป็น completed
