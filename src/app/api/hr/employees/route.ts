@@ -16,8 +16,12 @@ import { applyPendingLeaveBalances } from '@/lib/hr/leave-balance-link';
 import {
   type EmployeeDocument,
 } from '@/lib/hr/employees';
+import { normalizeFullName } from '@/lib/hr/employee-name';
+import { resolveRoster } from '@/lib/hr/roster';
+import { todayBangkok } from '@/lib/utils/date';
 
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * Consume an imported (unclaimed) roster row for a just-created employee record: flip it to
@@ -51,8 +55,9 @@ async function consumePendingIdentity(
   }
 
   // Formal payroll name (slips/accountant review print this) — only fill a blank, never
-  // overwrite a name HR already maintains.
-  const fullName = (flipped[0].full_name_th as string | null)?.trim();
+  // overwrite a name HR already maintains. Normalised like every other full_name writer so the
+  // sheet's spelling and HR's cannot differ by an honorific space (client report 2026-09-07/09).
+  const fullName = normalizeFullName(flipped[0].full_name_th as string | null);
   if (fullName) {
     await service
       .from('hr_employees')
@@ -93,6 +98,8 @@ const LIST_SELECT =
   'position:hr_positions(id, name), department:hr_departments(id, name), company:hr_companies(id, name)';
 
 // GET /api/hr/employees — list with filters: q, store_id, position_id, department_id, company_id, pay_type, status, limit, offset
+// store_id is answered by lib/hr/roster.ts (the roster's and timesheet's rule) over an optional
+// from/to window (default: today) — `include_inactive=true` adds the venue's evidence-elsewhere members.
 export async function GET(request: NextRequest) {
   // §P5.5: company-wide HR sees all employees; a store-scoped manager sees only employees whose
   // user_stores intersect their scope.
@@ -129,12 +136,27 @@ export async function GET(request: NextRequest) {
     idSets.push([...set]);
   }
   if (storeId) {
-    const { data: us, error: usErr } = await service
-      .from('user_stores')
-      .select('user_id')
-      .eq('store_id', storeId);
-    if (usErr) return NextResponse.json({ error: 'Store filter failed' }, { status: 500 });
-    idSets.push((us ?? []).map((r) => r.user_id as string));
+    // "Who works at this venue" — the SAME answer the roster and the timesheet give, not the raw
+    // user_stores grant table this used to read (which listed leavers, system accounts and
+    // people who merely oversee the venue; the service-charge pool was built from it, so it
+    // disagreed with the roster — HR report 2026-09-19). Window defaults to today; the SC page
+    // passes its month so a leaver's final month still lists them.
+    const today = todayBangkok();
+    const fromParam = sp.get('from') ?? '';
+    const toParam = sp.get('to') ?? '';
+    const from = DATE_RE.test(fromParam) ? fromParam : today;
+    const to = DATE_RE.test(toParam) && toParam >= from ? toParam : from;
+    try {
+      const { members } = await resolveRoster(service, {
+        scope: { kind: 'store', storeId },
+        from,
+        to,
+        includeInactive: sp.get('include_inactive') === 'true',
+      });
+      idSets.push(members.map((m) => m.profile_id));
+    } catch {
+      return NextResponse.json({ error: 'Store filter failed' }, { status: 500 });
+    }
   }
   // §P5.5: constrain a scoped manager to employees in their stores (company-wide HR → storeIds null).
   if (scope.storeIds) {

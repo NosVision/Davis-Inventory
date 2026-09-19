@@ -14,6 +14,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { logHrAudit } from './audit';
 import { computeProbationEnd } from './employees';
+import { normalizeFullName } from './employee-name';
 import { getHrPolicies } from './policy';
 import { applyPendingLeaveBalances } from './leave-balance-link';
 
@@ -69,7 +70,9 @@ export async function linkPendingIdentity(
     .insert({
       profile_id: profileId,
       company_id: identity.company_id,
-      full_name: identity.full_name_th, // formal payroll name (slips/accountant review print this)
+      // Formal payroll name (slips/accountant review print this), in the one canonical spelling
+      // every full_name writer uses — the sheet's "นาย สมชาย" must not become a second person.
+      full_name: normalizeFullName(identity.full_name_th as string | null),
       employee_code: identity.employee_code ?? null,
       bank_name: identity.bank_name ?? null,
       bank_account_no: identity.bank_account_no ?? null,

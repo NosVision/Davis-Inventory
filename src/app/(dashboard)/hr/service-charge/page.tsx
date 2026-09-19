@@ -143,9 +143,14 @@ export default function HrServiceChargePage() {
     setLoading(true);
     setError(false);
     try {
+      // Candidates = who this venue's roster lists for THIS month (same resolver as the roster and
+      // the timesheet), so a leaver's final month still lists them and a fresh month lists the
+      // same people the roster does (HR report 2026-09-19).
+      const [y, m] = month.split('-').map(Number);
+      const lastDay = String(new Date(y, m, 0).getDate()).padStart(2, '0');
       const [scRes, empRes] = await Promise.all([
         fetch(`/api/hr/service-charge?store_id=${storeId}&period_month=${month}-01`),
-        fetch(`/api/hr/employees?store_id=${storeId}`),
+        fetch(`/api/hr/employees?store_id=${storeId}&from=${month}-01&to=${month}-${lastDay}&limit=200`),
       ]);
       if (!scRes.ok || !empRes.ok) throw new Error('load failed');
       const scJson = await scRes.json();

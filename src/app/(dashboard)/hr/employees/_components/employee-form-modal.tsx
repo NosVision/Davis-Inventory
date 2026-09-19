@@ -9,7 +9,18 @@ import { createClient } from '@/lib/supabase/client';
 import { ROLE_LABELS } from '@/types/roles';
 import type { UserRole } from '@/types/roles';
 import { THAI_BANK_OPTIONS } from '@/lib/hr/bank-transfer';
+import { matchesEmployeeSearch } from '@/lib/hr/employee-name';
 import { CredentialShare } from './credential-share';
+
+/**
+ * Fired on `window` after any successful save from this form (create, link, edit). The accounts
+ * tab keeps its own profile → full_name map and had no way to learn that a name changed unless it
+ * was the one that opened the modal ("แก้ชื่อแล้วลิสต์ไม่เปลี่ยน", HR report 2026-09-09).
+ */
+export const HR_EMPLOYEE_SAVED_EVENT = 'hr:employee-saved';
+
+/** Above this many colleagues the supervisor picker grows a search box. */
+const SUPERVISOR_SEARCH_THRESHOLD = 12;
 import {
   PAY_TYPES,
   TAX_MODES,
@@ -241,6 +252,7 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved, onTran
   const [payrollGroups, setPayrollGroups] = useState<RefOpt[]>([]);
   const [stores, setStores] = useState<RefOpt[]>([]);
   const [supervisors, setSupervisors] = useState<RefOpt[]>([]);
+  const [supervisorQuery, setSupervisorQuery] = useState('');
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -254,18 +266,17 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved, onTran
   // field empty, so it read as "saving the group does not work" rather than "the list is stale",
   // and the group got created and deleted four times over (owner report 2026-08-14).
   //
-  // Six small reads on open, only when it opens.
+  // Five small reads on open, only when it opens (the supervisor list has its own effect below).
   useEffect(() => {
     if (!isOpen) return;
     const supabase = createClient();
     (async () => {
-      const [co, pos, dep, pg, st, sup] = await Promise.all([
+      const [co, pos, dep, pg, st] = await Promise.all([
         supabase.from('hr_companies').select('id,name').eq('active', true),
         supabase.from('hr_positions').select('id,name').eq('active', true).order('sort_order'),
         supabase.from('hr_departments').select('id,name').eq('active', true),
         supabase.from('hr_payroll_groups').select('id,name,company_id'),
         supabase.from('stores').select('id,store_name').eq('active', true),
-        supabase.from('profiles').select('id,display_name,username').eq('active', true),
       ]);
       setCompanies((co.data ?? []).map((r) => ({ id: r.id as string, name: r.name as string })));
       setPositions((pos.data ?? []).map((r) => ({ id: r.id as string, name: r.name as string })));
@@ -278,13 +289,38 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved, onTran
         }))
       );
       setStores((st.data ?? []).map((r) => ({ id: r.id as string, name: r.store_name as string })));
-      setSupervisors(
-        (sup.data ?? []).map((r) => ({
-          id: r.id as string,
-          name: (r.display_name as string) || (r.username as string) || '—',
-        }))
-      );
     })();
+  }, [isOpen]);
+
+  // Supervisor candidates: colleagues at the SAME company, by real name, never the person being
+  // edited and never a system account (HR ask 2026-09-16). Re-fetched when the company changes so
+  // the list follows the form; with no company chosen yet it lists everyone, so the field is never
+  // dead. Server-side (/api/hr/employees/picker) rather than a browser read of `profiles`, which
+  // is what used to list every login in the org under its account label.
+  useEffect(() => {
+    if (!isOpen) return;
+    let alive = true;
+    (async () => {
+      try {
+        const qs = new URLSearchParams();
+        if (form.company_id) qs.set('company_id', form.company_id);
+        if (employeeId) qs.set('exclude', employeeId);
+        const res = await fetch(`/api/hr/employees/picker?${qs.toString()}`);
+        const json = await res.json().catch(() => ({}));
+        if (!alive || !res.ok) return;
+        setSupervisors(
+          ((json.data ?? []) as { id: string; label: string }[]).map((r) => ({ id: r.id, name: r.label }))
+        );
+      } catch {
+        if (alive) setSupervisors([]);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [isOpen, form.company_id, employeeId]);
+  useEffect(() => {
+    if (!isOpen) setSupervisorQuery('');
   }, [isOpen]);
 
   // Linkable accounts (create mode): users without an employee record yet (incl. disabled ones,
@@ -722,6 +758,9 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved, onTran
         setSubmitting(false);
         return;
       }
+      // Whoever else on the page keeps a name map (the accounts tab) refreshes on this, not only
+      // the tab that opened the modal.
+      window.dispatchEvent(new Event(HR_EMPLOYEE_SAVED_EVENT));
       if (isCreate && json.linked) {
         // Linked an existing account — no temp password to hand over.
         toast({ type: 'success', title: t('linkedOk') });
@@ -732,6 +771,12 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved, onTran
         setCreatedWarnings(Array.isArray(json.warnings) ? (json.warnings as string[]) : []);
         setCreatedPassword(pwd);
         setSubmitting(false);
+      } else if (json.warning && typeof json.warning.message === 'string') {
+        // The row saved, but the pay fields were dropped because this HR may not see this
+        // employee's pay. A green "saved" here is how HR came to believe a salary had changed
+        // when it had not (2026-09-15) — say what was kept out.
+        toast({ type: 'warning', title: t('savedOk'), message: json.warning.message });
+        onSaved();
       } else {
         toast({ type: 'success', title: t('savedOk') });
         onSaved();
@@ -1102,12 +1147,34 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved, onTran
               ...stores.map((s) => ({ value: s.id, label: s.name })),
             ]}
           />
-          <Select
-            label={t('supervisor')}
-            value={form.supervisor_id}
-            onChange={(e) => update('supervisor_id', e.target.value)}
-            options={refOptions(supervisors)}
-          />
+          <div className="space-y-1.5">
+            {supervisors.length > SUPERVISOR_SEARCH_THRESHOLD && (
+              <Input
+                label={t('supervisor')}
+                value={supervisorQuery}
+                onChange={(e) => setSupervisorQuery(e.target.value)}
+                placeholder={isTh ? 'ค้นหาชื่อหัวหน้า…' : 'Search supervisor…'}
+              />
+            )}
+            <Select
+              label={supervisors.length > SUPERVISOR_SEARCH_THRESHOLD ? undefined : t('supervisor')}
+              hint={
+                form.company_id
+                  ? undefined
+                  : isTh
+                    ? 'เลือกบริษัทก่อนเพื่อแสดงเฉพาะคนในบริษัทเดียวกัน'
+                    : 'Pick a company to list only its own people'
+              }
+              value={form.supervisor_id}
+              onChange={(e) => update('supervisor_id', e.target.value)}
+              options={refOptions(
+                // The current value always stays selectable, or filtering would blank the field.
+                supervisors.filter(
+                  (s) => s.id === form.supervisor_id || matchesEmployeeSearch({ name: s.name }, supervisorQuery)
+                )
+              )}
+            />
+          </div>
           <Input
             label={t('employeeCode')}
             value={form.employee_code}

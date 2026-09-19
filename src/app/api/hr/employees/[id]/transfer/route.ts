@@ -2,10 +2,21 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
+import { loadPayVisibility, redactEmployeePay } from '@/lib/hr/pay-visibility';
 
 // POST /api/hr/employees/[id]/transfer  — move an employee to another company (§A).
 // Body: { company_id, effective_date, reason }. reason is REQUIRED (sensitive change, §B).
 // v1: transfer is immediate; effective_date + reason are recorded in hr_audit_log.
+//
+// What moves with the person, and what does not (2026-09-19):
+//   • payroll_group_id is CLEARED. Groups belong to a company (00185), so a group from the old
+//     company is meaningless at the new one — and worse than meaningless: the old company's runs
+//     filter by company, and the new company's default run takes only the ungrouped, so a moved
+//     person still carrying the old group dropped out of every payrun. They land in the new
+//     company's default run until HR files them into a group there.
+//   • work_store_id is KEPT. A venue is not a company: the person still works where they work.
+//   • The old company's roster/timesheet stop listing them on their next load, because company
+//     scope in lib/hr/roster.ts reads the live company_id; store scope never looked at company.
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -31,7 +42,7 @@ export async function POST(
 
   const { data: current, error: fetchErr } = await service
     .from('hr_employees')
-    .select('id, company_id')
+    .select('id, company_id, payroll_group_id, work_store_id')
     .eq('id', id)
     .single();
   if (fetchErr || !current) {
@@ -53,21 +64,46 @@ export async function POST(
 
   const { data: updated, error: updErr } = await service
     .from('hr_employees')
-    .update({ company_id: body.company_id, updated_by: auth.userId })
+    .update({ company_id: body.company_id, payroll_group_id: null, updated_by: auth.userId })
     .eq('id', id)
-    .select('id, company_id')
+    .select('*')
     .single();
   if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
 
+  const reason = body.reason.trim();
   await logHrAudit(service, {
     actorId: auth.userId,
     action: 'update',
     table: 'hr_employees',
     recordId: id,
-    before: { company_id: current.company_id },
-    after: { company_id: body.company_id, effective_date: body.effective_date ?? null },
-    reason: body.reason.trim(),
+    before: { company_id: current.company_id, payroll_group_id: current.payroll_group_id },
+    after: {
+      company_id: body.company_id,
+      payroll_group_id: null,
+      work_store_id: current.work_store_id,
+      effective_date: body.effective_date ?? null,
+    },
+    reason,
   });
+  // The group clearing gets its own line so the pay-group history reads as a consequence of the
+  // transfer, not as an unexplained edit sitting next to HR's stated reason.
+  if (current.payroll_group_id) {
+    await logHrAudit(service, {
+      actorId: auth.userId,
+      action: 'update',
+      table: 'hr_employees',
+      recordId: id,
+      before: { payroll_group_id: current.payroll_group_id },
+      after: { payroll_group_id: null },
+      reason: 'company_transfer',
+    });
+  }
 
-  return NextResponse.json({ success: true, employee: updated });
+  // Same redaction as the list/detail reads: the caller gets the row back, minus any pay figures
+  // they may not see for this person.
+  const [employee] = redactEmployeePay(
+    [updated as Record<string, unknown>],
+    await loadPayVisibility(service, auth.userId)
+  );
+  return NextResponse.json({ success: true, employee });
 }

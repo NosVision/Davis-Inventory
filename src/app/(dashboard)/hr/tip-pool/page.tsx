@@ -96,9 +96,13 @@ export default function HrTipPoolPage() {
     if (!storeId || !month) { setData(null); setEmployees([]); setLoading(false); return; }
     setLoading(true); setError(false);
     try {
+      // Same month window as the service-charge page: the venue's roster for THIS month, through
+      // the shared roster resolver, so the pool lists exactly who the roster and timesheet list.
+      const [y, m] = month.split('-').map(Number);
+      const lastDay = String(new Date(y, m, 0).getDate()).padStart(2, '0');
       const [tipRes, empRes] = await Promise.all([
         fetch(`/api/hr/tip-pool?store_id=${storeId}&period_month=${month}-01`),
-        fetch(`/api/hr/employees?store_id=${storeId}`),
+        fetch(`/api/hr/employees?store_id=${storeId}&from=${month}-01&to=${month}-${lastDay}&limit=200`),
       ]);
       if (!tipRes.ok || !empRes.ok) throw new Error('load failed');
       const tipJson = await tipRes.json();

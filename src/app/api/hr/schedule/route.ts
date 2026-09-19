@@ -2,15 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireSchedulerForScope } from '@/lib/hr/route-auth';
 import { isDateInFinalizedPeriod, employeeStoreIds, FINALIZED_PERIOD_ERROR } from '@/lib/hr/period-lock';
+import { loadPunchedInRange, neverPunchedWindow } from '@/lib/hr/work-venues';
 import {
-  loadVenueAttachment,
-  loadMemberVenues,
-  belongsToVenue,
-  loadPunchedInRange,
-  neverPunchedWindow,
-  loadAssignedWorkStores,
-  loadAssignedToVenue,
-} from '@/lib/hr/work-venues';
+  resolveRoster,
+  rosterMemberName,
+  loadSchedulableProfileIds,
+  findNotSchedulable,
+  type RosterMember,
+} from '@/lib/hr/roster';
 import { todayBangkok } from '@/lib/utils/date';
 
 const MONTH_RE = /^\d{4}-\d{2}$/;
@@ -24,42 +23,12 @@ const NEVER_PUNCHED_POLICY_START = '2026-09-01';
 const DEFAULT_WORK_HOURS = 9;
 const DEFAULT_DAYS_OFF = 6;
 
-interface StoreMember {
-  user_id: string;
-}
-interface ProfileRow {
-  id: string;
-  username: string | null;
-  display_name: string | null;
-  is_system: boolean | null;
-}
-/** A PostgREST to-one embed arrives as an object, but the generated types widen it to an array. */
-type NamedRef = { name: string | null } | { name: string | null }[] | null;
-function refName(r: NamedRef | undefined): string | null {
-  if (!r) return null;
-  return (Array.isArray(r) ? r[0]?.name : r.name) ?? null;
-}
-
-interface EmployeeRow {
-  profile_id: string;
-  full_name: string | null;
-  work_hours_per_day: number | null;
-  standard_days_off: number | null;
-  status: string | null;
-  end_date: string | null;
-  company_id: string | null;
-  position?: { name: string | null; sort_order: number | null } | { name: string | null; sort_order: number | null }[] | null;
-  // Why a store roster and that store's payrun list different people: the roster is keyed on store
-  // membership, a payrun on company + payroll group. Sent along so the row can say so itself.
-  company?: NamedRef;
-  payroll_group?: NamedRef;
-}
-
-// Roster scope (owner ask 2026-07-27): a month is scheduled per STORE (user_stores members,
-// the original mode) or per COMPANY (every hr_employees of that company — reaches housekeepers/
-// technicians with no store membership). company_id may be the literal 'none' = employees with
-// no company yet. Row storage: store rows keep store_id; company rows have store_id NULL and
-// company_id set (NULL for the none-bucket).
+// Roster scope (owner ask 2026-07-27): a month is scheduled per STORE (user_stores members ∪
+// work_store_id assignees, the original mode) or per COMPANY (every hr_employees of that company —
+// reaches housekeepers/technicians with no store membership). company_id may be the literal
+// 'none' = employees with no company yet. Row storage: store rows keep store_id; company rows
+// have store_id NULL and company_id set (NULL for the none-bucket). WHO is listed for either
+// scope is decided by lib/hr/roster.ts — the same answer the timesheet and the SC pool get.
 type Scope =
   | { kind: 'store'; storeId: string }
   | { kind: 'company'; companyId: string | null };
@@ -68,12 +37,6 @@ function parseScope(storeId: string, companyParam: string): Scope | null {
   if (companyParam) return { kind: 'company', companyId: companyParam === 'none' ? null : companyParam };
   if (storeId) return { kind: 'store', storeId };
   return null;
-}
-
-function positionOf(e: EmployeeRow): { name: string | null; sort_order: number | null } | null {
-  const p = e.position;
-  if (!p) return null;
-  return Array.isArray(p) ? p[0] ?? null : p;
 }
 interface TemplateRow {
   id: string;
@@ -128,76 +91,25 @@ export async function GET(request: NextRequest) {
 
   const service = createServiceClient();
 
-  const EMP_SELECT =
-    'profile_id, full_name, work_hours_per_day, standard_days_off, status, end_date, company_id, ' +
-    'position:hr_positions(name, sort_order), company:hr_companies(name), payroll_group:hr_payroll_groups(name)';
-
   // Members listed here only on the strength of a user_stores row — no roster row and no punch at
   // this venue this month. `user_stores` came from the deposit module and can mean "oversees this
   // venue" rather than "works here", so an HR/accounting user overseeing five venues was appearing
   // on five rosters (owner report 2026-08-17). Reported separately; nobody vanishes silently.
   const includeInactive = sp.get('include_inactive') === 'true';
-  let inactiveHere: string[] = [];
 
-  let userIds: string[] = [];
-  let employees: EmployeeRow[] = [];
-  if (scope.kind === 'store') {
-    // Staff assigned to this store — its user_stores members, plus anyone HR has explicitly placed
-    // here via hr_employees.work_store_id (that field must be able to put someone on a roster the
-    // access table has never heard of them for).
-    const [membersRes, assignedHere] = await Promise.all([
-      service.from('user_stores').select('user_id').eq('store_id', scope.storeId),
-      loadAssignedToVenue(service, scope.storeId).catch(() => [] as string[]),
-    ]);
-    if (membersRes.error) return NextResponse.json({ error: 'Failed to load staff' }, { status: 500 });
-    userIds = [
-      ...new Set([...((membersRes.data as StoreMember[] | null) ?? []).map((r) => r.user_id), ...assignedHere]),
-    ];
-
-    // Split on evidence of working here. A single-venue member always stays: with nothing rostered
-    // yet they are precisely who this page exists to schedule.
-    if (userIds.length) {
-      try {
-        const [worked, memberOf, assigned] = await Promise.all([
-          // Attachment, not this month's activity — otherwise building a fresh month is circular:
-          // the page you would schedule someone on is the page that hid them for being unscheduled.
-          loadVenueAttachment(service, first, last),
-          loadMemberVenues(service, userIds),
-          loadAssignedWorkStores(service, userIds),
-        ]);
-        const listed: string[] = [];
-        for (const uid of userIds) {
-          const keep = belongsToVenue({
-            storeId: scope.storeId,
-            memberStoreIds: memberOf.get(uid) ?? [scope.storeId],
-            workedStoreIds: worked.get(uid),
-            assignedStoreId: assigned.get(uid) ?? null,
-          });
-          if (keep) listed.push(uid);
-          else inactiveHere.push(uid);
-        }
-        if (!includeInactive) userIds = listed;
-      } catch {
-        // Evidence unavailable → list every member, the pre-2026-08-17 behaviour. Showing too many
-        // is recoverable; dropping someone off a roster they are meant to be on is not.
-        inactiveHere = [];
-      }
-    }
-
-    if (userIds.length) {
-      const { data, error } = await service.from('hr_employees').select(EMP_SELECT).in('profile_id', userIds);
-      if (error) return NextResponse.json({ error: 'Failed to load staff' }, { status: 500 });
-      employees = (data ?? []) as unknown as EmployeeRow[];
-    }
-  } else {
-    // Every employee of the company (or of no company yet), store membership irrelevant.
-    let q = service.from('hr_employees').select(EMP_SELECT);
-    q = scope.companyId ? q.eq('company_id', scope.companyId) : q.is('company_id', null);
-    const { data, error } = await q;
-    if (error) return NextResponse.json({ error: 'Failed to load staff' }, { status: 500 });
-    employees = (data ?? []) as unknown as EmployeeRow[];
-    userIds = employees.map((e) => e.profile_id);
+  // The month's people, by the one rule every venue surface shares (lib/hr/roster.ts): a linked
+  // hr_employees record, not a system account, employed at some point in the month; store scope
+  // additionally split on venue evidence. Sorted by name; company scope re-sorts by position below.
+  let members: RosterMember[];
+  let inactiveMembers: RosterMember[];
+  try {
+    const roster = await resolveRoster(service, { scope, from: first, to: last, includeInactive });
+    members = roster.members;
+    inactiveMembers = roster.inactiveHere;
+  } catch {
+    return NextResponse.json({ error: 'Failed to load staff' }, { status: 500 });
   }
+  const userIds = members.map((m) => m.profile_id);
 
   // Templates belong to the scope: a store's set, a company's set, or the global none-bucket.
   let tplQuery = service
@@ -219,71 +131,37 @@ export async function GET(request: NextRequest) {
   if (scope.kind === 'store') entryQuery = entryQuery.eq('store_id', scope.storeId);
   else entryQuery = userIds.length ? entryQuery.in('user_id', userIds) : entryQuery.eq('user_id', NIL_UUID);
 
-  const [profilesRes, templatesRes, entriesRes] = await Promise.all([
-    userIds.length
-      ? service.from('profiles').select('id, username, display_name, is_system').in('id', userIds)
-      : Promise.resolve({ data: [], error: null }),
-    tplQuery,
-    entryQuery,
-  ]);
+  const [templatesRes, entriesRes] = await Promise.all([tplQuery, entryQuery]);
 
-  if (profilesRes.error || templatesRes.error || entriesRes.error) {
+  if (templatesRes.error || entriesRes.error) {
     return NextResponse.json({ error: 'Failed to load schedule' }, { status: 500 });
   }
 
-  const profiles = (profilesRes.data ?? []) as ProfileRow[];
   const templates = (templatesRes.data ?? []) as TemplateRow[];
   const entries = (entriesRes.data ?? []) as ScheduleRow[];
 
-  const empByProfile = new Map(employees.map((e) => [e.profile_id, e]));
-  // A store member is on the roster unless they had already left before this month began:
-  // a leaver stays visible for any month overlapping their employment (end_date >= month
-  // start), mirroring the payroll leaver-window, then drops off in later months. This
-  // keeps a just-offboarded person's final-month roster viewable (client ask 2026-07-22).
-  const staff = profiles
-    // System accounts (print servers, test fixtures) are store members so the print server can
-    // authenticate — they are not people, so they stay off the roster. profiles.is_system now,
-    // rather than sniffing the username (2026-08-11).
-    .filter((p) => !p.is_system)
-    .filter((p) => {
-      const e = empByProfile.get(p.id);
-      // No HR record, no row — in either scope.
-      //
-      // Store scope used to list every store member regardless, on the theory that someone can be
-      // working before their employee record is filled in. In practice it listed dead accounts:
-      // the sweep (00183) switched off every login with no payroll name behind it and left
-      // user_stores untouched, so 99 swept accounts stayed on the rosters, under their usernames
-      // because there is no full name to show.
-      //
-      // Rostering someone the payroll cannot name is not useful anyway — you cannot pay a shift
-      // you cannot attach to a person (owner decision 2026-08-14). Requiring the record makes HR
-      // link them first, which is the step that was being skipped. Nobody real is lost: the only
-      // active store member without a record today is the owner's own account.
-      if (!e) return false;
-      if (e.status !== 'resigned' && e.status !== 'terminated') return true;
-      return !!e.end_date && e.end_date >= first;
-    })
-    .map((p) => {
-      const e = empByProfile.get(p.id);
-      const departed = e?.status === 'resigned' || e?.status === 'terminated';
-      const pos = e ? positionOf(e) : null;
+  // Who is on the roster — record required, system accounts out, leaver-window applied — was
+  // decided by resolveRoster above; this only shapes the rows the grid reads.
+  const staff = members
+    .map((m) => {
+      const departed = m.status === 'resigned' || m.status === 'terminated';
       return {
-        user_id: p.id,
-        name: p.display_name || p.username || '—',
+        user_id: m.profile_id,
+        name: m.display_name || m.username || '—',
         // For the roster's nickname ↔ full-name toggle: real name from the HR record,
         // login username as the last-resort fallback.
-        full_name: e?.full_name ?? null,
-        username: p.username ?? null,
+        full_name: m.full_name,
+        username: m.username,
         // Company scope sorts/labels by job position ("ไม่มี" group for the unassigned).
-        position_name: pos?.name ?? null,
-        position_sort: pos?.sort_order ?? null,
+        position_name: m.position_name,
+        position_sort: m.position_sort,
         // Payrun scope, for the chips that explain a store-vs-company list difference.
-        company_name: refName(e?.company),
-        payroll_group_name: refName(e?.payroll_group),
-        work_hours_per_day: e?.work_hours_per_day ?? DEFAULT_WORK_HOURS,
-        standard_days_off: e?.standard_days_off ?? DEFAULT_DAYS_OFF,
+        company_name: m.company_name,
+        payroll_group_name: m.payroll_group_name,
+        work_hours_per_day: m.work_hours_per_day ?? DEFAULT_WORK_HOURS,
+        standard_days_off: m.standard_days_off ?? DEFAULT_DAYS_OFF,
         // Signals the roster UI that this person has left (their end_date caps assignments).
-        end_date: departed ? (e?.end_date ?? null) : null,
+        end_date: departed ? m.end_date : null,
       };
     })
     .sort((a, b) => {
@@ -371,23 +249,7 @@ export async function GET(request: NextRequest) {
 
   // Names of the members held out of the grid, so the page can offer them back rather than just
   // quietly showing fewer people than last month.
-  let inactive_here: { user_id: string; name: string }[] = [];
-  if (inactiveHere.length > 0) {
-    const { data: inactiveRows } = await service
-      .from('hr_employees')
-      .select('profile_id, full_name, profile:profiles!hr_employees_profile_id_fkey(display_name, username)')
-      .in('profile_id', inactiveHere);
-    inactive_here = ((inactiveRows ?? []) as unknown as {
-      profile_id: string;
-      full_name: string | null;
-      profile: { display_name: string | null; username: string | null } | null;
-    }[])
-      .map((r) => ({
-        user_id: r.profile_id,
-        name: r.full_name?.trim() || r.profile?.display_name || r.profile?.username || '—',
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name, 'th'));
-  }
+  const inactive_here = inactiveMembers.map((m) => ({ user_id: m.profile_id, name: rosterMemberName(m) }));
 
   return NextResponse.json({
     employees: staff,
@@ -439,16 +301,16 @@ export async function POST(request: NextRequest) {
 
   const service = createServiceClient();
 
-  // The employee must belong to this store.
-  const { data: member, error: memberErr } = await service
-    .from('user_stores')
-    .select('user_id')
-    .eq('store_id', scope.storeId)
-    .eq('user_id', userId)
-    .maybeSingle();
-  if (memberErr) return NextResponse.json({ error: 'Failed to verify staff' }, { status: 500 });
-  if (!member) {
-    return NextResponse.json({ error: 'Employee is not assigned to this store' }, { status: 400 });
+  // The employee must be someone this store's roster lists — the same rule the GET uses, so a
+  // person the grid shows can always be scheduled. Used to demand a user_stores row, which refused
+  // everyone HR had placed here via work_store_id alone (2026-09-19).
+  try {
+    const rosterIds = await loadSchedulableProfileIds(service, scope.storeId, workDate, workDate);
+    if (findNotSchedulable(rosterIds, [userId])) {
+      return NextResponse.json({ error: 'Employee is not assigned to this store' }, { status: 400 });
+    }
+  } catch {
+    return NextResponse.json({ error: 'Failed to verify staff' }, { status: 500 });
   }
 
   // A leaver stays visible on the roster for their final month, so cap edits at their

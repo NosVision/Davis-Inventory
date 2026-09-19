@@ -11,13 +11,7 @@ import {
   type TimesheetOverride,
 } from '@/lib/hr/time-engine';
 import { getHrPolicies } from '@/lib/hr/policy';
-import {
-  loadVenueAttachment,
-  loadMemberVenues,
-  belongsToVenue,
-  loadAssignedWorkStores,
-  loadAssignedToVenue,
-} from '@/lib/hr/work-venues';
+import { resolveRoster, rosterMemberName, type RosterMember, type RosterScope } from '@/lib/hr/roster';
 import { businessDateBangkok } from '@/lib/utils/date';
 
 // Last business day that has CLOSED. A rostered day after this is still ahead of us, so it must
@@ -52,33 +46,6 @@ interface AttendanceRow {
   ts: string;
   business_date: string;
   review_status: string | null;
-}
-/** A PostgREST to-one embed arrives as an object, but the generated types widen it to an array. */
-type NamedRef = { name: string | null } | { name: string | null }[] | null;
-function refName(r: NamedRef | undefined): string | null {
-  if (!r) return null;
-  return (Array.isArray(r) ? r[0]?.name : r.name) ?? null;
-}
-
-interface EmployeeRow {
-  profile_id: string;
-  company_id: string | null;
-  full_name: string | null;
-  work_hours_per_day: number | null;
-  ot_eligible: boolean | null;
-  /** Day-rated staff are paid worked_days × rate, so a day edit that credits no hours costs them. */
-  pay_type: string | null;
-  status: string | null;
-  end_date: string | null;
-  // Why a venue's timesheet and its payrun list different people: the timesheet is keyed on store
-  // membership, a payrun on company + payroll group. Sent along so the row can say so itself.
-  company?: NamedRef;
-  payroll_group?: NamedRef;
-}
-interface ProfileRow {
-  id: string;
-  username: string | null;
-  display_name: string | null;
 }
 interface LeaveRow {
   id: string;
@@ -153,136 +120,47 @@ export async function GET(request: NextRequest) {
 
   const service = createServiceClient();
 
-  // Staff of the store (optionally a single employee) — or, for the no-store bucket, every active
-  // employee with no user_stores row anywhere (plus leavers whose last working day falls in or
-  // after this window, so a just-offboarded person's final period stays viewable).
-  // Who counts as staff for this window, in BOTH buckets: someone currently employed, or a leaver
-  // whose last working day falls in or after it (so a just-offboarded person's final period stays
-  // viewable). Matches the payroll rule — including probation, which the no-store bucket used to
-  // miss — so the timesheet and the payrun show the same people.
-  //
-  // The store bucket used to take every user_stores row with no filter at all, which is why the
-  // 101 logins deactivated on 2026-08-11 still appeared here after they had vanished from payroll:
-  // deactivating a profile does not remove its store membership, and most of them never had an
-  // employee record to begin with (owner report).
-  let eligQuery = service
-    .from('hr_employees')
-    .select('profile_id, company_id')
-    .or(`status.in.(active,probation),end_date.gte.${from}`);
-  // Company scope narrows the eligible set itself — every employee of that company, venue or not.
-  if (companyScope) {
-    eligQuery = companyScope.companyId
-      ? eligQuery.eq('company_id', companyScope.companyId)
-      : eligQuery.is('company_id', null);
-  }
-  const { data: eligibleEmps, error: eligErr } = await eligQuery;
-  if (eligErr) return NextResponse.json({ error: 'Failed to load staff' }, { status: 500 });
-  const eligible = new Set(
-    (eligibleEmps ?? []).map((r) => r.profile_id as string | null).filter((id): id is string => !!id)
-  );
-
+  // Who is on this sheet is decided by lib/hr/roster.ts — the same rule the roster and the SC pool
+  // use, so the three surfaces list the same people (HR kept asking "ระบบดึงชื่อจากอะไร",
+  // 2026-09-19). In every scope: a linked employee record, no system accounts, and the employed-
+  // window rule (currently employed, or a leaver whose last day falls in or after this window —
+  // matching payroll's leaver-window, probation included). Store scope is further split on venue
+  // evidence; `store_id=none` is everyone attached to no venue by either user_stores or
+  // work_store_id.
+  const rosterScope: RosterScope = companyScope
+    ? { kind: 'company', companyId: companyScope.companyId }
+    : noStore
+      ? { kind: 'no_venue' }
+      : { kind: 'store', storeId };
+  let members: RosterMember[];
   // Members of this venue who are only listed here because a user_stores row says so — no roster
   // row and no punch at this venue in the window. Reported separately so nobody vanishes silently.
-  let inactiveHere: string[] = [];
-  let userIds: string[];
-  if (companyScope) {
-    userIds = [...eligible];
-  } else if (noStore) {
-    const { data: links, error: linkErr } = await service.from('user_stores').select('user_id');
-    if (linkErr) return NextResponse.json({ error: 'Failed to load staff' }, { status: 500 });
-    const attached = new Set((links ?? []).map((r) => r.user_id as string));
-    userIds = [...eligible].filter((id) => !attached.has(id));
-  } else {
-    const [membersRes, assignedHere] = await Promise.all([
-      service.from('user_stores').select('user_id').eq('store_id', storeId),
-      // Anyone HR has ASSIGNED here (hr_employees.work_store_id) belongs on this sheet even if no
-      // user_stores row says so — that table is an access grant, not a staff list.
-      loadAssignedToVenue(service, storeId).catch(() => [] as string[]),
-    ]);
-    if (membersRes.error) return NextResponse.json({ error: 'Failed to load staff' }, { status: 500 });
-    userIds = [
-      ...new Set([
-        ...(membersRes.data ?? []).map((r: { user_id: string }) => r.user_id),
-        ...assignedHere,
-      ]),
-    ].filter((id) => eligible.has(id));
-
-    // Split the venue's members on evidence of actually working here. Single-venue members always
-    // stay — a new hire with nothing on record yet is exactly who HR opens this page to back-fill.
-    try {
-      const [worked, memberOf, assigned] = await Promise.all([
-        // Attachment, not this window's activity: a fresh pay cycle starts empty, and that must not
-        // detach a multi-venue employee from the venue they work every cycle.
-        loadVenueAttachment(service, from, to),
-        loadMemberVenues(service, userIds),
-        loadAssignedWorkStores(service, userIds),
-      ]);
-      const listed: string[] = [];
-      for (const uid of userIds) {
-        const keep = belongsToVenue({
-          storeId,
-          memberStoreIds: memberOf.get(uid) ?? [storeId],
-          workedStoreIds: worked.get(uid),
-          assignedStoreId: assigned.get(uid) ?? null,
-        });
-        if (keep) listed.push(uid);
-        else inactiveHere.push(uid);
-      }
-      if (!includeInactive) userIds = listed;
-    } catch {
-      // Evidence unavailable → fall back to listing every member, the pre-2026-08-17 behaviour.
-      // Showing too many is recoverable; hiding someone's hours silently is not.
-      inactiveHere = [];
-    }
+  let inactiveMembers: RosterMember[];
+  try {
+    const roster = await resolveRoster(service, { scope: rosterScope, from, to, includeInactive });
+    members = roster.members;
+    inactiveMembers = roster.inactiveHere;
+  } catch {
+    return NextResponse.json({ error: 'Failed to load staff' }, { status: 500 });
   }
   if (userFilter) {
     // Checked against members INCLUDING the ones filtered out of the grid: a deep link to one
     // person (the payslip's "fix this person's OT" link) must still resolve for a venue member
     // whose evidence happens to sit at another venue.
-    if (!userIds.includes(userFilter) && !inactiveHere.includes(userFilter)) {
-      return NextResponse.json({ error: 'Employee is not in this store' }, { status: 400 });
-    }
-    userIds = [userFilter];
-    inactiveHere = [];
+    const one = [...members, ...inactiveMembers].find((m) => m.profile_id === userFilter);
+    if (!one) return NextResponse.json({ error: 'Employee is not in this store' }, { status: 400 });
+    members = [one];
+    inactiveMembers = [];
   }
-  // Drop system accounts. The store branch above takes every user_stores member, and a print
-  // server IS a store member (that is how it authenticates) — so printers were appearing as rows
-  // in the attendance file, with no punches and nothing to explain (owner ask 2026-08-11).
-  if (userIds.length > 0) {
-    const { data: systemProfiles } = await service
-      .from('profiles')
-      .select('id')
-      .eq('is_system', true)
-      .in('id', userIds);
-    const systemIds = new Set((systemProfiles ?? []).map((r) => r.id as string));
-    if (systemIds.size) userIds = userIds.filter((id) => !systemIds.has(id));
-  }
+  const userIds = members.map((m) => m.profile_id);
 
   // Names for the people held out of the grid, plus the company list the scope picker needs. Both
   // are small, both are needed even when the grid itself is empty.
   const loadAside = async () => {
-    const [companiesRes, inactiveRes] = await Promise.all([
-      service.from('hr_companies').select('id, name').order('name'),
-      inactiveHere.length > 0
-        ? service
-            .from('hr_employees')
-            .select('profile_id, full_name, profile:profiles!hr_employees_profile_id_fkey(display_name, username)')
-            .in('profile_id', inactiveHere)
-        : Promise.resolve({ data: [], error: null }),
-    ]);
-    const rows = (inactiveRes.data ?? []) as unknown as {
-      profile_id: string;
-      full_name: string | null;
-      profile: { display_name: string | null; username: string | null } | null;
-    }[];
+    const companiesRes = await service.from('hr_companies').select('id, name').order('name');
     return {
       companies: companiesRes.data ?? [],
-      inactive_here: rows
-        .map((r) => ({
-          user_id: r.profile_id,
-          name: r.full_name?.trim() || r.profile?.display_name || r.profile?.username || '—',
-        }))
-        .sort((a, b) => a.name.localeCompare(b.name, 'th')),
+      inactive_here: inactiveMembers.map((m) => ({ user_id: m.profile_id, name: rosterMemberName(m) })),
     };
   };
 
@@ -290,15 +168,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ employees: [], from, to, ...(await loadAside()) });
   }
 
-  const [profilesRes, employeesRes, scheduleRes, attendanceRes, overridesRes, leavesRes] = await Promise.all([
-    service.from('profiles').select('id, username, display_name').in('id', userIds),
-    service
-      .from('hr_employees')
-      .select(
-        'profile_id, company_id, full_name, work_hours_per_day, ot_eligible, pay_type, status, end_date, ' +
-          'company:hr_companies(name), payroll_group:hr_payroll_groups(name)'
-      )
-      .in('profile_id', userIds),
+  const [scheduleRes, attendanceRes, overridesRes, leavesRes] = await Promise.all([
     // No-store and company scopes key on user_id alone. The no-store bucket belongs to no venue, so
     // there is no other store's data to leak in; the company scope deliberately wants every venue's
     // hours for its people, since the company is what payroll pays. Only a VENUE view scopes by
@@ -344,19 +214,10 @@ export async function GET(request: NextRequest) {
       .lte('from_date', to)
       .gte('to_date', from),
   ]);
-  if (
-    profilesRes.error ||
-    employeesRes.error ||
-    scheduleRes.error ||
-    attendanceRes.error ||
-    overridesRes.error ||
-    leavesRes.error
-  ) {
+  if (scheduleRes.error || attendanceRes.error || overridesRes.error || leavesRes.error) {
     return NextResponse.json({ error: 'Failed to load timesheet data' }, { status: 500 });
   }
 
-  const profiles = (profilesRes.data ?? []) as ProfileRow[];
-  const employees = (employeesRes.data ?? []) as unknown as EmployeeRow[];
   const schedule = (scheduleRes.data ?? []) as unknown as ScheduleCell[];
   const attendance = (attendanceRes.data ?? []) as AttendanceRow[];
   const overrides = (overridesRes.data ?? []) as OverrideRow[];
@@ -382,9 +243,6 @@ export async function GET(request: NextRequest) {
     ])
   );
 
-  const profById = new Map(profiles.map((p) => [p.id, p]));
-  const empById = new Map(employees.map((e) => [e.profile_id, e]));
-
   const schedByCell = new Map(schedule.map((s) => [`${s.user_id}|${s.work_date}`, s]));
   const punchesByCell = new Map<string, Punch[]>();
   for (const a of attendance) {
@@ -396,23 +254,13 @@ export async function GET(request: NextRequest) {
     punchesByCell.set(key, list);
   }
 
-  // A store member is on the timesheet unless they had already left before this window
-  // began: a leaver stays visible while the viewed period overlaps their employment
-  // (end_date >= window start), mirroring the payroll leaver-window, then drops off in
-  // later periods. Keeps a just-offboarded person's final timesheet viewable (client
-  // ask 2026-07-22).
-  const staff = userIds
-    .filter((uid) => {
-      const e = empById.get(uid);
-      if (!e) return true;
-      if (e.status !== 'resigned' && e.status !== 'terminated') return true;
-      return !!e.end_date && e.end_date >= from;
-    })
-    .map((uid) => {
-      const p = profById.get(uid);
-      const e = empById.get(uid);
-      const workHours = e?.work_hours_per_day ?? DEFAULT_WORK_HOURS;
-      const otEligible = e?.ot_eligible ?? false;
+  // The leaver-window (a just-offboarded person's final period stays viewable, client ask
+  // 2026-07-22) was applied by resolveRoster; every member here is on the sheet.
+  const staff = members
+    .map((m) => {
+      const uid = m.profile_id;
+      const workHours = m.work_hours_per_day ?? DEFAULT_WORK_HOURS;
+      const otEligible = m.ot_eligible ?? false;
       const days: (DaySummary & { leave: DayLeave | null })[] = dates.map((date) => {
         const cell = schedByCell.get(`${uid}|${date}`);
         const derived = computeDaySummary({
@@ -434,25 +282,26 @@ export async function GET(request: NextRequest) {
         // absent tally (payroll reconciles leave-vs-absent on its own path).
         return leave ? { ...merged, absent: false, leave } : { ...merged, leave: null };
       });
-      const departed = e?.status === 'resigned' || e?.status === 'terminated';
+      const departed = m.status === 'resigned' || m.status === 'terminated';
       return {
         user_id: uid,
         // Prefer the employee's real full name (ชื่อ-นามสกุล); fall back to the profile
         // nickname/username only when it's unset (e.g. an unlinked account).
-        name: e?.full_name?.trim() || p?.display_name || p?.username || '—',
+        name: rosterMemberName(m),
         // The venue's own word for this person. Sent so the row can offer it on hover without
         // spending width on it — profiles.display_name is not always even a name (several
         // accounting logins are called after a department), so it must never lead.
-        nickname: p?.display_name ?? null,
-        company_id: e?.company_id ?? null,
+        nickname: m.display_name,
+        company_id: m.company_id,
         // Payrun scope, for the chips that explain a store-vs-company list difference.
-        company_name: e ? refName(e.company) : null,
-        payroll_group_name: e ? refName(e.payroll_group) : null,
+        company_name: m.company_name,
+        payroll_group_name: m.payroll_group_name,
         work_hours_per_day: workHours,
         ot_eligible: otEligible,
-        pay_type: e?.pay_type ?? null,
+        // Day-rated staff are paid worked_days × rate, so a day edit that credits no hours costs them.
+        pay_type: m.pay_type,
         // Set only for leavers — lets the timesheet UI flag the row as departed.
-        end_date: departed ? (e?.end_date ?? null) : null,
+        end_date: departed ? m.end_date : null,
         days,
         totals: sumDays(days),
       };

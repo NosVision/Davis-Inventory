@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireSchedulerForScope } from '@/lib/hr/route-auth';
+import { loadSchedulableProfileIds, findNotSchedulable } from '@/lib/hr/roster';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_CELLS = 3000; // ~100 staff × 31 days ceiling for one save
@@ -76,17 +77,24 @@ export async function POST(request: NextRequest) {
 
   const userIds = [...new Set(cells.map((c) => c.user_id))];
   const templateIds = [...new Set(cells.map((c) => c.shift_template_id).filter((x): x is string => !!x))];
+  const dates = cells.map((c) => c.work_date);
+  const minDate = dates.reduce((a, b) => (a < b ? a : b));
+  const maxDate = dates.reduce((a, b) => (a > b ? a : b));
   let tplQuery = templateIds.length
     ? service.from('hr_shift_templates').select('id').eq('active', true).in('id', templateIds)
     : null;
   if (tplQuery) tplQuery = tplQuery.eq('store_id', scope.storeId);
-  const [userStoresRes, templatesRes] = await Promise.all([
+  const [userStoresRes, templatesRes, rosterRes] = await Promise.all([
     // ALL of each employee's stores — the finalized lock must consider every store they work, since
     // hr_schedule is unique on (user_id, work_date): one row per date across all stores.
     service.from('user_stores').select('user_id, store_id').in('user_id', userIds),
     tplQuery ?? Promise.resolve({ data: [], error: null }),
+    // Who may be scheduled here = who the roster GET lists here, over the saved dates' span. The
+    // same check as the single-cell POST; it used to be a second copy of "has a user_stores row",
+    // which refused everyone HR placed here via work_store_id alone (2026-09-19).
+    loadSchedulableProfileIds(service, scope.storeId, minDate, maxDate).catch(() => null),
   ]);
-  if (userStoresRes.error || templatesRes.error) {
+  if (userStoresRes.error || templatesRes.error || rosterRes === null) {
     return NextResponse.json({ error: 'Failed to validate staff/shifts' }, { status: 500 });
   }
 
@@ -97,18 +105,24 @@ export async function POST(request: NextRequest) {
     if (!set) { set = new Set(); userStores.set(uid, set); }
     set.add(r.store_id as string);
   }
-  // Every referenced employee must belong to this store; every template must be this store's + active.
-  const badMember = userIds.find((u) => !userStores.get(u)?.has(scope.storeId));
-  if (badMember) return NextResponse.json({ error: 'An employee is not assigned to this store' }, { status: 400 });
+  // Every referenced employee must be on this store's roster; every template must be this store's + active.
+  if (findNotSchedulable(rosterRes, userIds)) {
+    return NextResponse.json({ error: 'An employee is not assigned to this store' }, { status: 400 });
+  }
+  // The finalized lock below scopes by the stores each person works. Someone rostered here on a
+  // work_store_id alone has no user_stores row, so THIS store is added for everyone: a store-scoped
+  // finalized payrun here must lock their cells exactly as it locks a member's.
+  for (const uid of userIds) {
+    const set = userStores.get(uid) ?? new Set<string>();
+    set.add(scope.storeId);
+    userStores.set(uid, set);
+  }
   const templateSet = new Set((templatesRes.data ?? []).map((t) => t.id as string));
   const badTemplate = templateIds.find((t) => !templateSet.has(t));
   if (badTemplate) return NextResponse.json({ error: 'A shift template is invalid for this scope' }, { status: 400 });
 
   // §Phase 0B: skip cells whose date is in a finalized pay period — company-wide OR scoped to ANY
   // store the employee works (matching the unique-key semantics + the period-lock convention).
-  const dates = cells.map((c) => c.work_date);
-  const minDate = dates.reduce((a, b) => (a < b ? a : b));
-  const maxDate = dates.reduce((a, b) => (a > b ? a : b));
   const allStoreIds = [...new Set([...userStores.values()].flatMap((s) => [...s]))];
   let finQuery = service
     .from('hr_payruns')

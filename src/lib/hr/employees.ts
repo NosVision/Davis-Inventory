@@ -3,6 +3,8 @@
  * Pure functions — no DB/IO.
  */
 
+import { normalizeFullName } from './employee-name';
+
 export const PAY_TYPES = ['full_monthly', 'pt_hourly', 'pt_daily', 'pt_monthly'] as const;
 export const PART_TIME_PAY_TYPES = ['pt_hourly', 'pt_daily', 'pt_monthly'] as const;
 export const TAX_MODES = ['progressive', 'withholding_3pct', 'none'] as const;
@@ -223,7 +225,9 @@ export function pickEmployeeFields(
     if (name !== null && (typeof name !== 'string' || name.trim().length > 300)) {
       errors.push({ field: 'full_name', message: 'must be a string of at most 300 characters or null' });
     } else {
-      out.full_name = typeof name === 'string' ? name.trim() || null : null;
+      // One spelling per person, whatever HR typed ("นาย สมชาย" → "นายสมชาย"): every writer of
+      // full_name normalises, so the roster, timesheet and register agree (client report 2026-09-07/09).
+      out.full_name = typeof name === 'string' ? normalizeFullName(name) : null;
     }
   }
   setEnum('pay_type', PAY_TYPES);

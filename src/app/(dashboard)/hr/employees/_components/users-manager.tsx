@@ -36,7 +36,7 @@ import {
   ClipboardCheck,
 } from 'lucide-react';
 import { IdentityClaimsManager } from './identity-claims-manager';
-import { EmployeeFormModal } from './employee-form-modal';
+import { EmployeeFormModal, HR_EMPLOYEE_SAVED_EVENT } from './employee-form-modal';
 
 function formatLastSignIn(iso: string | null): string {
   if (!iso) return 'ยังไม่เคยเข้าใช้';
@@ -112,6 +112,11 @@ export function UsersManager({
   const [filterStoreId, setFilterStoreId] = useState<string>('all');
   const [filterRole, setFilterRole] = useState<string>('all');
   const [filterLinked, setFilterLinked] = useState<'all' | 'linked' | 'unlinked'>('all');
+  // Per-company view of the accounts (HR ask 2026-09-19): 'all' | 'none' (no company yet) | id.
+  // Company comes from the linked hr_employees row — an unlinked login has no company.
+  const [filterCompanyId, setFilterCompanyId] = useState<string>('all');
+  const [companies, setCompanies] = useState<{ id: string; name: string }[]>([]);
+  const [companyByProfile, setCompanyByProfile] = useState<Map<string, string | null>>(new Map());
   const [linkedIds, setLinkedIds] = useState<Set<string>>(new Set());
   // profile_id → hr_employees.id so clicking a linked user's name opens the same edit modal
   // the employees tab uses (owner ask 2026-07-27).
@@ -157,13 +162,14 @@ export function UsersManager({
       // page's audience) through hr_employees RLS. Drives the "ยืนยันตัวตนแล้ว" indicator +
       // filter (same wording as the ยืนยันตัวตนพนักงาน / identity-claims flow that creates
       // most of these links).
-      supabase.from('hr_employees').select('id, profile_id, full_name, status, end_date'),
+      supabase.from('hr_employees').select('id, profile_id, full_name, status, end_date, company_id'),
     ]);
 
     if (data) setUsers(data as unknown as UserProfile[]);
-    const empRows = (emps ?? []) as { id: string; profile_id: string; full_name: string | null; status: string | null; end_date: string | null }[];
+    const empRows = (emps ?? []) as { id: string; profile_id: string; full_name: string | null; status: string | null; end_date: string | null; company_id: string | null }[];
     setLinkedIds(new Set(empRows.map((e) => e.profile_id)));
     setEmployeeIdByProfile(new Map(empRows.map((e) => [e.profile_id, e.id])));
+    setCompanyByProfile(new Map(empRows.map((e) => [e.profile_id, e.company_id ?? null])));
     // Still employed = payroll will still pay them, whatever the login says. Drives the warning
     // when HR switches an account off (owner ask 2026-08-11).
     setStillEmployed(
@@ -193,10 +199,28 @@ export function UsersManager({
     if (data) setStores(data);
   }, []);
 
+  const loadCompanies = useCallback(async () => {
+    const supabase = createClient();
+    const { data } = await supabase.from('hr_companies').select('id, name').eq('active', true).order('name');
+    if (data) setCompanies(data as { id: string; name: string }[]);
+  }, []);
+
   useEffect(() => {
     loadUsers();
     loadStores();
-  }, [loadUsers, loadStores]);
+    loadCompanies();
+  }, [loadUsers, loadStores, loadCompanies]);
+
+  // The name map (profile → full_name) is rebuilt by loadUsers, but only this tab's own modal
+  // used to trigger it. Any successful employee save anywhere on the page now does — so a name
+  // edited in the employees tab shows here without a reload (HR report 2026-09-09).
+  useEffect(() => {
+    const onSaved = () => {
+      loadUsers();
+    };
+    window.addEventListener(HR_EMPLOYEE_SAVED_EVENT, onSaved);
+    return () => window.removeEventListener(HR_EMPLOYEE_SAVED_EVENT, onSaved);
+  }, [loadUsers]);
 
   // Pending identity-claims count for the summary card (never blocks the list on failure).
   const loadClaimsCount = useCallback(async () => {
@@ -392,6 +416,13 @@ export function UsersManager({
     const linked = linkedIds.has(u.id);
     if (filterLinked === 'linked' && !linked) return false;
     if (filterLinked === 'unlinked' && linked) return false;
+    if (filterCompanyId !== 'all') {
+      // 'none' = linked but filed under no company yet; an unlinked login has no company at all
+      // and is only ever in "ทุกบริษัท".
+      if (!linked) return false;
+      const cid = companyByProfile.get(u.id) ?? null;
+      if (filterCompanyId === 'none' ? cid !== null : cid !== filterCompanyId) return false;
+    }
     return true;
   });
 
@@ -529,6 +560,19 @@ export function UsersManager({
           ))}
         </select>
         <select
+          value={filterCompanyId}
+          onChange={(e) => setFilterCompanyId(e.target.value)}
+          className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+        >
+          <option value="all">ทุกบริษัท</option>
+          {companies.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+          <option value="none">ยังไม่ระบุบริษัท</option>
+        </select>
+        <select
           value={filterRole}
           onChange={(e) => setFilterRole(e.target.value)}
           className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
@@ -558,13 +602,14 @@ export function UsersManager({
           <option value="unlinked">ยังไม่ยืนยันตัวตน</option>
           <option value="claims">คำขอยืนยันตัวตน{claimsPending ? ` (${claimsPending})` : ''}</option>
         </select>
-        {(filterStoreId !== 'all' || filterRole !== 'all' || filterLinked !== 'all') && (
+        {(filterStoreId !== 'all' || filterRole !== 'all' || filterLinked !== 'all' || filterCompanyId !== 'all') && (
           <button
             type="button"
             onClick={() => {
               setFilterStoreId('all');
               setFilterRole('all');
               setFilterLinked('all');
+              setFilterCompanyId('all');
             }}
             className="rounded-lg border border-transparent px-3 py-2 text-xs text-indigo-600 transition-colors hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-900/20"
           >

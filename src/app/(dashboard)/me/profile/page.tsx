@@ -8,6 +8,7 @@ import { Button, Modal, ModalFooter, PageHeader, ViewToggle, useViewMode, DataLi
 import { TileNotices } from '../_components/tile-notices';
 import { AccountSettings } from './_components/account-settings';
 import { EmployeeName } from '@/components/hr/employee-name';
+import { normalizeFullName } from '@/lib/hr/employee-name';
 import { useAuthStore } from '@/stores/auth-store';
 
 type Status = 'pending' | 'approved' | 'rejected' | 'cancelled';
@@ -102,7 +103,10 @@ export default function MyProfilePage() {
   const [namePrefix, setNamePrefix] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
-  const fullNameDraft = `${namePrefix}${firstName.trim()} ${lastName.trim()}`.trim().replace(/\s+/g, ' ');
+  // Same canonical spelling every full_name writer produces (honorific glued for Thai, "Mr. X" for
+  // English) — so the preview shows exactly what HR will store, and a request that only differs
+  // by an honorific space is not a change at all (client report 2026-09-07/09).
+  const fullNameDraft = normalizeFullName(`${namePrefix} ${firstName} ${lastName}`) ?? '';
 
   // ชื่อเล่น — self-service and immediate (it is only a label), unlike the legal name above.
   const [nickOpen, setNickOpen] = useState(false);
@@ -313,7 +317,7 @@ export default function MyProfilePage() {
   const fullNameValid =
     Boolean(firstName.trim()) &&
     Boolean(lastName.trim()) &&
-    fullNameDraft !== (profile?.full_name ?? '').trim().replace(/\s+/g, ' ');
+    fullNameDraft !== (normalizeFullName(profile?.full_name) ?? '');
   const canSubmit =
     !submitting &&
     (openField === 'bank_account' ? bankValid : openField === 'full_name' ? fullNameValid : emergencyValid);
