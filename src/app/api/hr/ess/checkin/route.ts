@@ -39,7 +39,7 @@ type AttendanceLocationResolution = {
   inGeofence: boolean | null;
   allowedDistanceM: number | null;
   outcome: 'inside' | 'outside_pending' | 'rejected' | 'undetermined';
-  rejectionCode: 'outside_geofence_not_allowed' | 'outside_geofence_limit_exceeded' | null;
+  rejectionCode: 'outside_geofence_not_allowed' | 'outside_geofence_limit_exceeded' | 'gps_required' | null;
 };
 
 async function resolveAttendanceLocation(
@@ -104,6 +104,29 @@ async function resolveAttendanceLocation(
       }
     } else if (storeIds.length === 1) {
       storeId = storeIds[0];
+    }
+  }
+
+  // No GPS at all. A branch that forbids outside attendance cannot accept a punch that proves
+  // nothing about where the phone is — HR tested 2,276 m away and then with location denied, and
+  // both went through as "for review" (คุณเมย์ 2026-09-10: "ล็อคไว้เลย ไม่ใช่เช็ค"). So when every
+  // configured branch of this person is strict, a GPS-less punch is refused the same way an outside
+  // one is. Someone whose branches allow outside punches, or who has no geofence configured at all
+  // (office staff), keeps the HR-review path.
+  if (!input.hasGps && storeIds.length > 0) {
+    const { data: locations, error: locationsError } = await service
+      .from('hr_locations')
+      .select('store_id, allow_outside_geofence')
+      .in('store_id', storeIds)
+      .not('lat', 'is', null)
+      .not('lng', 'is', null);
+    if (locationsError) {
+      return { resolution: null, error: 'ไม่สามารถตรวจสอบพื้นที่ลงเวลาได้ กรุณาลองใหม่อีกครั้ง' };
+    }
+    const configured = (locations ?? []) as { store_id: string; allow_outside_geofence: boolean | null }[];
+    if (configured.length > 0 && configured.every((l) => l.allow_outside_geofence !== true)) {
+      outcome = 'rejected';
+      rejectionCode = 'gps_required';
     }
   }
 
@@ -222,7 +245,9 @@ export async function POST(request: NextRequest) {
       {
         error: rejectionCode === 'outside_geofence_limit_exceeded'
           ? `อยู่นอกระยะที่สาขาอนุญาต (${distanceM} ม. / อนุญาตไม่เกิน ${allowedDistanceM} ม.)`
-          : 'สาขานี้ไม่อนุญาตให้ลงเวลานอกพื้นที่ กรุณาเข้าพื้นที่สาขาแล้วลองอีกครั้ง',
+          : rejectionCode === 'gps_required'
+            ? 'สาขานี้ต้องใช้ตำแหน่ง GPS ในการลงเวลา กรุณาเปิดตำแหน่งแล้วลองอีกครั้ง'
+            : 'สาขานี้ไม่อนุญาตให้ลงเวลานอกพื้นที่ กรุณาเข้าพื้นที่สาขาแล้วลองอีกครั้ง',
         code: rejectionCode,
         distance_m: distanceM,
         allowed_distance_m: allowedDistanceM,
@@ -530,9 +555,13 @@ export async function GET(request: NextRequest) {
     allowed_distance_m: number | null;
   } | null = null;
 
-  if (hasGps) {
+  // Preflight runs with OR without GPS, so the employee page can lock the buttons for a strict
+  // branch before a GPS-less punch is even attempted (same rule as POST).
+  {
     const locationResult = await resolveAttendanceLocation(service, user.id, {
-      hasGps: true, gpsLat: gpsLatValue as number, gpsLng: gpsLngValue as number,
+      hasGps,
+      gpsLat: hasGps ? (gpsLatValue as number) : null,
+      gpsLng: hasGps ? (gpsLngValue as number) : null,
     });
     if (locationResult.resolution === null) {
       return NextResponse.json(

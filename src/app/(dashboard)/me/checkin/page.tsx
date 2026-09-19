@@ -11,8 +11,10 @@ import { TileNotices } from '../_components/tile-notices';
 import { UnclosedDayCard, type OpenDay } from '../_components/unclosed-day-card';
 import {
   areAttendanceControlsBlocked,
+  shouldRecheckLocationGate,
   type AttendanceLocationGate,
   type AttendanceLocationGateLoadStatus,
+  type GateFix,
 } from '@/lib/hr/checkin-location-gate';
 
 type AttendanceType = 'in' | 'out' | 'break_start' | 'break_end';
@@ -72,6 +74,16 @@ interface AttendanceRow {
 
 type LocStatus = 'idle' | 'loading' | 'ready' | 'failed';
 
+/**
+ * One preflight request. `fix` is null when the phone has no GPS at all — the server still has
+ * to answer, because a strict branch refuses GPS-less punches (2026-09-19). `seq` forces a
+ * re-run when the same coordinates are asked again after "ตรวจตำแหน่งใหม่".
+ */
+interface GateRequest {
+  fix: GateFix | null;
+  seq: number;
+}
+
 const isDev = process.env.NODE_ENV === 'development';
 
 export default function CheckinPage() {
@@ -84,6 +96,7 @@ export default function CheckinPage() {
   const [locStatus, setLocStatus] = useState<LocStatus>('idle');
   const [locationGate, setLocationGate] = useState<AttendanceLocationGate | null>(null);
   const [locationGateStatus, setLocationGateStatus] = useState<AttendanceLocationGateLoadStatus>('idle');
+  const [gateRequest, setGateRequest] = useState<GateRequest | null>(null);
   const [locationNow, setLocationNow] = useState(() => Date.now());
   const [photo, setPhoto] = useState<string | null>(null);
   const [cameraOn, setCameraOn] = useState(false);
@@ -97,17 +110,31 @@ export default function CheckinPage() {
   const streamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const locationWatchRef = useRef<number | null>(null);
+  // The fix the branch policy was last asked about. watchPosition keeps delivering fixes while
+  // the phone sits still; only a real move (or an old answer) is worth a new request — otherwise
+  // the page cycled loading → ready every second and the punch buttons blinked (2026-09-17).
+  const verifiedFixRef = useRef<GateFix | null>(null);
+  const gateSeqRef = useRef(0);
 
   // Punch types already recorded today — those buttons are disabled so a type can't be double-tapped.
   const usedTypes = new Set(rows.map((r) => r.type));
 
   // --- Location ---
+  // Ask the branch policy about a fix (or about having none). Records it as the verified fix so
+  // the watch callback can tell a real move from GPS jitter.
+  const requestGate = useCallback((fix: GateFix | null) => {
+    verifiedFixRef.current = fix;
+    gateSeqRef.current += 1;
+    setGateRequest({ fix, seq: gateSeqRef.current });
+  }, []);
+
   const getLocation = useCallback(() => {
     setCoords(null);
     setLocationGate(null);
+    verifiedFixRef.current = null;
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
       setLocStatus('failed');
-      setLocationGateStatus('unavailable');
+      requestGate(null);
       return;
     }
     if (locationWatchRef.current !== null) {
@@ -118,47 +145,56 @@ export default function CheckinPage() {
     setLocationGateStatus('loading');
     locationWatchRef.current = navigator.geolocation.watchPosition(
       (pos) => {
+        const now = Date.now();
         setCoords({
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
           accuracy: pos.coords.accuracy,
-          capturedAt: Date.now(),
+          capturedAt: now,
         });
-        setLocationNow(Date.now());
+        setLocationNow(now);
         setLocStatus('ready');
+        const fix: GateFix = { lat: pos.coords.latitude, lng: pos.coords.longitude, at: now };
+        if (shouldRecheckLocationGate(verifiedFixRef.current, fix)) requestGate(fix);
       },
       () => {
+        // Denied or unavailable. The server decides whether this person's branch accepts a
+        // GPS-less punch (for HR review) or refuses it — the page must not unlock on its own.
         setCoords(null);
-        setLocationGate(null);
         setLocStatus('failed');
-        setLocationGateStatus('unavailable');
+        requestGate(null);
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      // 5 s of reuse is invisible against the 30 s staleness rule below and halves the fix rate.
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 5_000 }
     );
-  }, []);
+  }, [requestGate]);
 
   // Even with watchPosition, browsers may pause GPS updates in the background. Never keep controls
   // unlocked forever from an old inside-area reading; stale positions require a fresh reading.
+  const hasCoords = coords !== null;
   useEffect(() => {
-    if (!coords) return;
+    if (!hasCoords) return;
     const timer = window.setInterval(() => setLocationNow(Date.now()), 5_000);
     return () => window.clearInterval(timer);
-  }, [coords]);
+  }, [hasCoords]);
 
-  // Resolve the employee's current coordinates against the same per-branch policy used by POST.
-  // Until this preflight completes, attendance controls stay locked so a known-outside punch is
-  // never presented as available and rejected only after upload.
+  // Resolve the request against the same per-branch policy used by POST. Until the FIRST answer
+  // arrives the controls stay locked, so a known-outside punch is never offered and then rejected
+  // after upload. A re-check keeps the previous verdict on screen instead of flashing "loading";
+  // the buttons only change when the new verdict differs.
   useEffect(() => {
-    if (!coords) return;
+    if (!gateRequest) return;
     const controller = new AbortController();
-    setLocationGateStatus('loading');
+    setLocationGateStatus((prev) => (prev === 'ready' ? prev : 'loading'));
     void (async () => {
       try {
-        const params = new URLSearchParams({
-          gps_lat: String(coords.lat),
-          gps_lng: String(coords.lng),
-        });
-        const res = await fetch(`/api/hr/ess/checkin?${params}`, { signal: controller.signal });
+        const params = new URLSearchParams();
+        if (gateRequest.fix) {
+          params.set('gps_lat', String(gateRequest.fix.lat));
+          params.set('gps_lng', String(gateRequest.fix.lng));
+        }
+        const query = params.size > 0 ? `?${params}` : '';
+        const res = await fetch(`/api/hr/ess/checkin${query}`, { signal: controller.signal });
         const json = await res.json().catch(() => ({}));
         if (!res.ok || !json.location_gate) throw new Error('location preflight failed');
         setLocationGate(json.location_gate as AttendanceLocationGate);
@@ -170,7 +206,7 @@ export default function CheckinPage() {
       }
     })();
     return () => controller.abort();
-  }, [coords]);
+  }, [gateRequest]);
 
   // Days with a check-IN and no check-OUT that the employee has not filed for yet. While any
   // exists, the check-in controls are replaced by the card that closes it — the server refuses the
@@ -383,6 +419,14 @@ export default function CheckinPage() {
             'ສາຂານີ້ບໍ່ອະນຸຍາດໃຫ້ລົງເວລານອກພື້ນທີ່ ກະລຸນາເຂົ້າພື້ນທີ່ສາຂາແລ້ວລອງອີກຄັ້ງ'
           ));
         }
+        if (json?.code === 'gps_required') {
+          throw new Error(tx(
+            'สาขานี้ต้องใช้ตำแหน่ง GPS ในการลงเวลา กรุณาเปิดตำแหน่งแล้วลองอีกครั้ง',
+            'This branch requires a GPS location to record attendance. Turn on location and try again.',
+            'ဤဆိုင်ခွဲသည် အလုပ်ချိန်မှတ်တမ်းတင်ရန် GPS တည်နေရာ လိုအပ်သည်။ တည်နေရာကို ဖွင့်ပြီး ထပ်မံကြိုးစားပါ။',
+            'ສາຂານີ້ຕ້ອງໃຊ້ຕຳແໜ່ງ GPS ໃນການລົງເວລາ ກະລຸນາເປີດຕຳແໜ່ງແລ້ວລອງອີກຄັ້ງ'
+          ));
+        }
         if (json?.code === 'outside_geofence_limit_exceeded') {
           throw new Error(tx(
             `อยู่นอกระยะที่สาขาอนุญาต: ห่าง ${json.distance_m} ม. อนุญาตไม่เกิน ${json.allowed_distance_m} ม. กรุณาเข้าใกล้สาขาแล้วลองอีกครั้ง`,
@@ -561,7 +605,7 @@ export default function CheckinPage() {
         </div>
       </div>
 
-      {locStatus === 'failed' && (
+      {locStatus === 'failed' && locationGate?.status !== 'blocked' && (
         <p className="-mt-3 flex items-start gap-1.5 px-1 text-xs text-amber-600 dark:text-amber-400">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           {tx(
@@ -600,7 +644,14 @@ export default function CheckinPage() {
       {locationGateStatus === 'ready' && locationGate?.status === 'blocked' && (
         <p className="-mt-3 flex items-start gap-1.5 rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700 dark:bg-red-950/30 dark:text-red-300">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          {locationGate.code === 'outside_geofence_limit_exceeded'
+          {locationGate.code === 'gps_required'
+            ? tx(
+                'สาขาของคุณต้องใช้ตำแหน่ง GPS ในการลงเวลา ระบบไม่พบตำแหน่งของคุณ กรุณาเปิดตำแหน่งแล้วกดตรวจตำแหน่งใหม่',
+                'Your branch requires a GPS location to record attendance and none was found. Turn on location and refresh it.',
+                'သင့်ဆိုင်ခွဲသည် အလုပ်ချိန်မှတ်တမ်းတင်ရန် GPS တည်နေရာ လိုအပ်ပြီး တည်နေရာ ရှာမတွေ့ပါ။ တည်နေရာကို ဖွင့်ပြီး ပြန်စစ်ပါ။',
+                'ສາຂາຂອງທ່ານຕ້ອງໃຊ້ຕຳແໜ່ງ GPS ໃນການລົງເວລາ ລະບົບບໍ່ພົບຕຳແໜ່ງຂອງທ່ານ ກະລຸນາເປີດຕຳແໜ່ງແລ້ວກວດຕຳແໜ່ງໃໝ່'
+              )
+            : locationGate.code === 'outside_geofence_limit_exceeded'
             ? tx(
                 `คุณอยู่นอกพื้นที่อนุโลม ห่าง ${locationGate.distance_m} ม. (อนุญาตไม่เกิน ${locationGate.allowed_distance_m} ม.) จึงไม่สามารถเช็คอินหรือเช็คเอาต์ได้`,
                 `You are outside the allowed area at ${locationGate.distance_m} m (maximum ${locationGate.allowed_distance_m} m), so check-in and check-out are disabled.`,

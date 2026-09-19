@@ -149,12 +149,33 @@ test('GET preflight fails closed when location policy cannot be loaded', async (
   assert.equal((await response.json()).code, 'attendance_location_unavailable');
 });
 
-test('GET today list without coordinates does not invent a zero-zero GPS preflight', async () => {
-  const route = setup({ locationsError: { code: '57014', message: 'must not be queried' } });
+// No coordinates: the preflight must not invent a 0,0 fix (no distance is ever measured), but it
+// still answers, because a strict branch refuses GPS-less punches (คุณเมย์ 2026-09-10).
+test('GET without coordinates blocks a strict branch as gps_required without measuring anything', async () => {
+  const route = setup();
   const response = await route.GET(new NextRequest('https://example.test/api/hr/ess/checkin'));
   const json = await response.json();
   assert.equal(response.status, 200);
-  assert.equal(json.location_gate, null);
+  assert.deepEqual(json.location_gate, {
+    status: 'blocked', code: 'gps_required', store_id: 'branch-a', distance_m: null, allowed_distance_m: null,
+  });
+  assertNoPunchWork(route.effects);
+});
+
+test('GET without coordinates leaves a branch that allows outside attendance undetermined', async () => {
+  const route = setup({ locations: [branch({ allow_outside_geofence: true })] });
+  const response = await route.GET(new NextRequest('https://example.test/api/hr/ess/checkin'));
+  const json = await response.json();
+  assert.equal(json.location_gate.status, 'undetermined');
+  assert.equal(json.location_gate.code, null);
+  assert.equal(json.location_gate.distance_m, null);
+});
+
+test('GET without coordinates leaves a person with no configured geofence undetermined', async () => {
+  const route = setup({ locations: [] });
+  const response = await route.GET(new NextRequest('https://example.test/api/hr/ess/checkin'));
+  const json = await response.json();
+  assert.equal(json.location_gate.status, 'undetermined');
 });
 
 function assertNoPunchWork(effects) {
@@ -252,8 +273,18 @@ test('POST cannot use a farther permissive branch or submitted policy to bypass 
   assertNoPunchWork(route.effects);
 });
 
-test('POST keeps no-GPS attendance pending and attributed to the single assignment', async () => {
+test('POST refuses a no-GPS punch on a strict branch before any upload or HR work', async () => {
   const route = setup();
+  const response = await route.POST(requestFor({ gps_lat: undefined, gps_lng: undefined }));
+  const json = await response.json();
+  assert.equal(response.status, 403);
+  assert.equal(json.code, 'gps_required');
+  assert.match(json.error, /GPS/);
+  assertNoPunchWork(route.effects);
+});
+
+test('POST keeps no-GPS attendance pending and attributed to the single assignment when the branch allows outside punches', async () => {
+  const route = setup({ locations: [branch({ allow_outside_geofence: true })] });
   const response = await route.POST(requestFor({ gps_lat: undefined, gps_lng: undefined }));
   const json = await response.json();
   assert.equal(response.status, 201);
