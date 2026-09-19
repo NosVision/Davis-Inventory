@@ -56,3 +56,6 @@ next-env.d.ts
 
 # local storage backups (may contain uploaded PII documents)
 /storage-backup/
+
+# HR test-data reset dumps (scripts/reset-hr-test-data.ts)
+/hr-reset-backup/

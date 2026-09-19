@@ -74,3 +74,40 @@ export function matchesEmployeeSearch(
   const haystack = `${person.name} ${person.nickname ?? ''}`.toLowerCase();
   return tokens.every((tok) => haystack.includes(tok));
 }
+
+/**
+ * One spelling for a legal name, however it was typed.
+ *
+ * Three writers produce hr_employees.full_name — the HR form ("นาย สมชาย ใจดี", hint said to
+ * leave a space), employee self-service ("นายสมชาย ใจดี", prefix glued on) and self-registration
+ * (anything at all) — and HR then sees three spellings of one person across the roster, the
+ * timesheet and the payroll register (client report 2026-09-07/09). The payroll sheets the module
+ * was seeded from write Thai honorifics glued to the given name and English ones with a space
+ * ("นายพันธุ์ธัช เธียรธราสิทธิ์", "Mr. Pantouch Thaintarasit"), so that is the canonical form.
+ *
+ * Rules: trim, collapse whitespace, drop the space after a Thai honorific, put exactly one space
+ * after an English one (with its dot), title-case the English honorific. Anything that is not an
+ * honorific is left exactly as typed — this never guesses at a person's name.
+ */
+const THAI_HONORIFIC = /^(นางสาว|นาง|นาย|น\.ส\.|ด\.ช\.|ด\.ญ\.)\s+/u;
+const ENGLISH_HONORIFIC = /^(mr|mrs|ms|miss|dr)\.?\s*(?=\S)/iu;
+const ENGLISH_HONORIFIC_CANON: Record<string, string> = {
+  mr: 'Mr.',
+  mrs: 'Mrs.',
+  ms: 'Ms.',
+  miss: 'Miss',
+  dr: 'Dr.',
+};
+
+export function normalizeFullName(raw: string | null | undefined): string | null {
+  const collapsed = (raw ?? '').replace(/\s+/gu, ' ').trim();
+  if (!collapsed) return null;
+  const thai = collapsed.match(THAI_HONORIFIC);
+  if (thai) return `${thai[1]}${collapsed.slice(thai[0].length)}`;
+  const english = collapsed.match(ENGLISH_HONORIFIC);
+  if (english) {
+    const canon = ENGLISH_HONORIFIC_CANON[english[1].toLowerCase()];
+    return `${canon} ${collapsed.slice(english[0].length)}`;
+  }
+  return collapsed;
+}
