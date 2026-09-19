@@ -20,7 +20,9 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
   const { data: slip, error: slErr } = await service
     .from('hr_payslips')
-    .select('id, payrun_id, user_id, employee_id, rate_satang, pay_type, tax_mode, worked_days, attended_days, gross_satang, sso_satang, tax_satang, total_deduction_satang, net_satang')
+    // leave_summary (20260919110100): per-leave-type day roll-up, so a leave that docks nothing is
+    // still visible on the slip. Null on slips generated before the column existed.
+    .select('id, payrun_id, user_id, employee_id, rate_satang, pay_type, tax_mode, worked_days, attended_days, leave_summary, gross_satang, sso_satang, tax_satang, total_deduction_satang, net_satang')
     .eq('id', id)
     .maybeSingle();
   if (slErr) return NextResponse.json({ error: 'Failed to load payslip' }, { status: 500 });

@@ -3,16 +3,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Plus, Pencil, ListChecks } from 'lucide-react';
+import { useEssText } from '@/lib/i18n/ess-locale';
 import {
   Button,
   Input,
   Select,
   Modal,
   ModalFooter,
-  Badge,
+  Badge,
   EmptyState,
   PageHeader,
-  StatusBadge,
+  StatusBadge,
   toast,
 } from '@/components/ui';
 
@@ -81,6 +82,11 @@ interface LeaveTypeFormState {
   sort_order: string;
 }
 
+// A new type docks travel AND SC by default. The form used to post both flags as false, which
+// meant the server's defaults never applied and every type HR added (ลางานศพ, ลาคลอด, …) came out
+// docking nothing (HR report 2026-09-10). Travel follows the client rule of 2026-07-20 — every leave
+// except ลาพักร้อน / นักขัตฤกษ์ docks it — so "on" is the right starting point; HR unticks the rare
+// exception rather than remembering to tick the common case.
 const EMPTY_LEAVE_FORM: LeaveTypeFormState = {
   code: '',
   name_th: '',
@@ -88,8 +94,8 @@ const EMPTY_LEAVE_FORM: LeaveTypeFormState = {
   paid: true,
   requires_cert: false,
   probational_allowed: true,
-  deduct_sc: false,
-  deduct_travel: false,
+  deduct_sc: true,
+  deduct_travel: true,
   paid_with_cert: false,
   cert_threshold_days: '',
   annual_quota_days: '',
@@ -108,6 +114,7 @@ interface LeaveTypeModalProps {
 
 function LeaveTypeModal({ open, editing, companyId, onClose, onSaved }: LeaveTypeModalProps) {
   const t = useTranslations('hr.leaveTypes');
+  const tx = useEssText();
   const [form, setForm] = useState<LeaveTypeFormState>(EMPTY_LEAVE_FORM);
   const [saving, setSaving] = useState(false);
 
@@ -265,6 +272,13 @@ function LeaveTypeModal({ open, editing, companyId, onClose, onSaved }: LeaveTyp
               {t('paidWithCert')}
             </label>
           </div>
+          {/* The rule behind the travel box, so HR can tell a correct exception from a mistake. */}
+          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            {tx(
+              'ค่าเดินทาง: หักทุกประเภทการลา (ลาป่วยมี/ไม่มีใบรับรอง ลากิจ ลางานศพ ฯลฯ — หัก ÷30 ต่อวัน แม้จะได้เงินเดือน) ยกเว้นลาพักร้อนและลาวันหยุดนักขัตฤกษ์ · เงินเดือนหักตามช่อง "ได้ค่าจ้าง" / "ได้ค่าจ้างเมื่อมีใบรับรอง"',
+              'Travel allowance: docked ÷30 per day for every leave type (sick with or without a cert, personal, bereavement, … — even when salary is paid), except annual leave and public-holiday leave. Salary follows the "paid" / "paid with cert" boxes.'
+            )}
+          </p>
           {form.requires_cert && (
             <div className="mt-3 max-w-[16rem]">
               <Input

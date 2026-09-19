@@ -10,12 +10,13 @@ import {
   type TimesheetOverride,
 } from '@/lib/hr/time-engine';
 import { classifyLeaveEffect, enumerateDates } from '@/lib/hr/leaves';
-import { computePayslip, type PayrollInput, type PayslipLine, type PayType, type TaxMode } from '@/lib/hr/payroll';
+import { computePayslip, type LeaveSummaryEntry, type PayrollInput, type PayslipLine, type PayType, type TaxMode } from '@/lib/hr/payroll';
 import { refuseIfConfidentialInScope } from '@/lib/hr/pay-visibility';
 import { getHrPolicies } from '@/lib/hr/policy';
 import { isUniqueViolation } from '@/lib/hr/db-errors';
 import { cycleDates, svPeriodMonth, evalPeriodMonth } from '@/lib/hr/pay-cycle';
 import { recomputePoolDeductions } from '@/lib/hr/sc-recompute';
+import { employmentEndFor, loadOffboardingEnds } from '@/lib/hr/employment-end';
 import { businessDateBangkok } from '@/lib/utils/date';
 
 // Last business day that has CLOSED. A rostered day after this is still ahead of us, so it must
@@ -78,6 +79,17 @@ interface LeaveRow {
   cert_path: string | null;
 }
 
+interface LeaveTypeRow {
+  id: string;
+  code: string;
+  name_th: string | null;
+  name_en: string | null;
+  paid: boolean;
+  paid_with_cert: boolean;
+  deduct_sc: boolean;
+  deduct_travel: boolean;
+}
+
 interface AssembledLine {
   earnings: PayslipLine[];
   deductions: PayslipLine[];
@@ -88,6 +100,7 @@ interface AssembledLine {
   net: number;
   workedDays: number;
   attendedDays: number;
+  leaveSummary: LeaveSummaryEntry[];
 }
 
 // POST /api/hr/payruns — generate a payrun for a company (optionally one store) over a pay
@@ -149,9 +162,23 @@ export async function POST(request: NextRequest) {
     // dropped by the employed-window filter below.
     .or(`status.in.(active,probation),end_date.gte.${start}`);
   if (empErr) return NextResponse.json({ error: 'Failed to load employees' }, { status: 500 });
-  let employees = ((empRows ?? []) as EmployeeFull[]).filter(
-    (e) => (!e.start_date || e.start_date <= end) && (!e.end_date || e.end_date >= start)
+  const candidates = ((empRows ?? []) as EmployeeFull[]).filter((e) => !e.start_date || e.start_date <= end);
+
+  // The end of employment is NOT just hr_employees.end_date — that is written only when the
+  // offboarding completes. An accepted resignation already fixes the last working date, and HR
+  // expects the final month prorated from the moment they accept it, not from the moment the
+  // paperwork closes (four September 2026 leavers were paid a full month; HR report 2026-09-10).
+  // employment-end.ts resolves both records into one date; the coverage panel and the payrun
+  // detail use the same helper, so the three surfaces name the same leavers.
+  const offboardingByUser = await loadOffboardingEnds(service, candidates.map((e) => e.profile_id));
+  if (!offboardingByUser) return NextResponse.json({ error: 'Failed to load employees' }, { status: 500 });
+  const employmentEndByProfile = new Map(
+    candidates.map((e) => [e.profile_id, employmentEndFor(e, offboardingByUser).date] as const)
   );
+  let employees = candidates.filter((e) => {
+    const effectiveEnd = employmentEndByProfile.get(e.profile_id) ?? null;
+    return !effectiveEnd || effectiveEnd >= start;
+  });
 
   // Keep only this slice. Two runs for one company must not overlap, or someone is paid twice —
   // so a named group takes exactly its members, and the default run takes exactly the ungrouped.
@@ -347,7 +374,7 @@ export async function POST(request: NextRequest) {
         .eq('status', 'approved')
         .lte('from_date', end)
         .gte('to_date', start),
-      service.from('hr_leave_types').select('id, code, paid, paid_with_cert, deduct_sc, deduct_travel'),
+      service.from('hr_leave_types').select('id, code, name_th, name_en, paid, paid_with_cert, deduct_sc, deduct_travel'),
       // Recurring items: only THIS run's employees (was an unscoped all-tenant scan), and only rows
       // whose period window covers this payrun period. Window sides are 'YYYY-MM' text (00162);
       // null start = since forever, null end = perpetual — expiry is enforced here, not by memory.
@@ -412,9 +439,7 @@ export async function POST(request: NextRequest) {
       { worked_min: o.worked_min, late_min: o.late_min, ot_min: o.ot_min, absent: o.absent, reason: o.reason },
     ])
   );
-  const leaveTypeById = new Map(
-    ((leaveTypesRes.data ?? []) as { id: string; code: string; paid: boolean; paid_with_cert: boolean; deduct_sc: boolean; deduct_travel: boolean }[]).map((t) => [t.id, t])
-  );
+  const leaveTypeById = new Map(((leaveTypesRes.data ?? []) as LeaveTypeRow[]).map((t) => [t.id, t]));
   const leavesByUser = new Map<string, LeaveRow[]>();
   for (const lv of (leavesRes.data ?? []) as LeaveRow[]) {
     const list = leavesByUser.get(lv.user_id) ?? [];
@@ -523,11 +548,14 @@ export async function POST(request: NextRequest) {
       return applyOverride(derived, overrideByCell.get(`${uid}|${date}`));
     });
 
-    // Employed window inside the cycle → mid-period hire/leave proration for full_monthly.
+    // Employed window inside the cycle → mid-period hire/leave proration for full_monthly. The end
+    // is the EFFECTIVE one (end_date, else an accepted resignation's last working date — see the
+    // eligibility filter above), so an accepted-but-not-completed leaver is prorated too.
+    const effectiveEnd = employmentEndByProfile.get(uid) ?? null;
     const empStart = emp.start_date && emp.start_date > start ? emp.start_date : start;
-    const empEnd = emp.end_date && emp.end_date < end ? emp.end_date : end;
+    const empEnd = effectiveEnd && effectiveEnd < end ? effectiveEnd : end;
     const isPartialPeriod =
-      (!!emp.start_date && emp.start_date > start) || (!!emp.end_date && emp.end_date < end);
+      (!!emp.start_date && emp.start_date > start) || (!!effectiveEnd && effectiveEnd < end);
     const inWindow = (d: string) => d >= empStart && d <= empEnd;
     // prorate_days: null when employed the whole cycle (→ full base, unchanged). Otherwise the
     // employed-day count by the configured basis. 'scheduled' treats no-schedule days as work
@@ -578,6 +606,12 @@ export async function POST(request: NextRequest) {
         label: t?.code ?? 'leave',
         salary_days: effect.deductSalary ? daysInCycle : 0,
         travel_days: effect.deductTravel ? daysInCycle : 0,
+        // For the slip's leave roll-up: the day count whatever the money effect, so a leave that
+        // docks nothing (a paid ลางานศพ on a slip with no travel allowance) is still on the slip.
+        days: daysInCycle,
+        name_th: t?.name_th ?? null,
+        name_en: t?.name_en ?? null,
+        deduct_sc: effect.deductSc,
       };
     });
 
@@ -670,6 +704,7 @@ export async function POST(request: NextRequest) {
       slip: {
         earnings: slip.earnings, deductions: slip.deductions, gross: slip.gross_satang, sso: slip.sso_satang,
         tax: slip.tax_satang, totalDed: slip.total_deduction_satang, net: slip.net_satang, workedDays, attendedDays,
+        leaveSummary: slip.leave_summary,
       },
       claimIds: claimList.map((c) => c.id),
     });
@@ -689,6 +724,8 @@ export async function POST(request: NextRequest) {
         tax_mode: emp.tax_mode,
         worked_days: slip.workedDays,
         attended_days: slip.attendedDays,
+        // Per-leave-type day roll-up (20260919110100). Informational — the money is in the lines.
+        leave_summary: slip.leaveSummary,
         gross_satang: slip.gross,
         sso_satang: slip.sso,
         tax_satang: slip.tax,

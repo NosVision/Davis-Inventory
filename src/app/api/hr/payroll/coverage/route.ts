@@ -4,6 +4,7 @@ import { requireHrManager } from '@/lib/hr/route-auth';
 import { cycleDates, isCycleClosed } from '@/lib/hr/pay-cycle';
 import { payHiddenProfileIds } from '@/lib/hr/pay-visibility';
 import { loadUnauthorizedAbsentDays } from '@/lib/hr/absence-summary';
+import { employmentEndFor, loadOffboardingEnds, type EmploymentEnd } from '@/lib/hr/employment-end';
 import { businessDateBangkok } from '@/lib/utils/date';
 
 /**
@@ -30,6 +31,12 @@ interface EligibleRow {
   start_date: string | null;
   end_date: string | null;
   pay_type: string | null;
+  rate_satang: number | null;
+}
+
+/** An eligible row with its EFFECTIVE end of employment resolved (employment-end.ts). */
+interface ResolvedRow extends EligibleRow {
+  employment_end: EmploymentEnd;
 }
 
 export type BucketState =
@@ -66,7 +73,7 @@ export async function GET(request: NextRequest) {
     // Same filter as payrun generation: employed at some point inside the cycle.
     service
       .from('hr_employees')
-      .select('profile_id, company_id, payroll_group_id, full_name, status, start_date, end_date, pay_type')
+      .select('profile_id, company_id, payroll_group_id, full_name, status, start_date, end_date, pay_type, rate_satang')
       .or(`status.in.(active,probation),end_date.gte.${cycle.start}`),
     service
       .from('hr_payruns')
@@ -97,13 +104,21 @@ export async function GET(request: NextRequest) {
   }
   const profById = new Map(profiles.map((p) => [p.id, p]));
 
-  const eligible = empRows.filter((e) => {
-    // Machines are not payees — same exclusion the payrun POST applies.
-    if (profById.get(e.profile_id)?.is_system) return false;
-    const startsInTime = !e.start_date || e.start_date <= cycle.end;
-    const endsInTime = !e.end_date || e.end_date >= cycle.start;
-    return startsInTime && endsInTime;
-  });
+  // Same end-of-employment rule as the payrun POST: end_date, else an accepted resignation's last
+  // working date (employment-end.ts). Without it this panel expected a slip for someone generation
+  // had (rightly) dropped, and never labelled the leaver whose final month it was.
+  const offboardingByUser = await loadOffboardingEnds(service, profileIds);
+  if (!offboardingByUser) return NextResponse.json({ error: 'Failed to load coverage' }, { status: 500 });
+
+  const eligible: ResolvedRow[] = empRows
+    .map((e) => ({ ...e, employment_end: employmentEndFor(e, offboardingByUser) }))
+    .filter((e) => {
+      // Machines are not payees — same exclusion the payrun POST applies.
+      if (profById.get(e.profile_id)?.is_system) return false;
+      const startsInTime = !e.start_date || e.start_date <= cycle.end;
+      const endsInTime = !e.employment_end.date || e.employment_end.date >= cycle.start;
+      return startsInTime && endsInTime;
+    });
 
   const payruns = (payrunRes.data ?? []) as {
     id: string;
@@ -116,15 +131,21 @@ export async function GET(request: NextRequest) {
   // Who already has a slip anywhere in this period. Keyed on the person, not the run: a
   // store-scoped run pays them just as a company-wide one does, and either way they are covered.
   const runIds = payruns.map((p) => p.id);
-  let paidUserIds = new Set<string>();
+  // The rate each existing slip was built on, so a slice can count how many of its slips no longer
+  // match the register (a raise entered after generation is silent until คำนวณใหม่ — HR report
+  // 2026-09-10). Still money-free as far as the response goes: a count, never an amount.
+  const slipRateByUser = new Map<string, number>();
   if (runIds.length > 0) {
     const { data: slips, error: slipErr } = await service
       .from('hr_payslips')
-      .select('user_id')
+      .select('user_id, rate_satang')
       .in('payrun_id', runIds);
     if (slipErr) return NextResponse.json({ error: 'Failed to load payslips' }, { status: 500 });
-    paidUserIds = new Set((slips ?? []).map((s) => s.user_id as string));
+    for (const s of (slips ?? []) as { user_id: string; rate_satang: number | null }[]) {
+      slipRateByUser.set(s.user_id, Number(s.rate_satang ?? 0));
+    }
   }
+  const paidUserIds = new Set(slipRateByUser.keys());
 
   const companyName = new Map(
     ((companyRes.data ?? []) as { id: string; name: string }[]).map((c) => [c.id, c.name])
@@ -146,7 +167,7 @@ export async function GET(request: NextRequest) {
 
   // Bucket by the pair that decides which run someone lands in.
   const bucketKey = (companyId: string | null, groupId: string | null) => `${companyId ?? ''}|${groupId ?? ''}`;
-  const buckets = new Map<string, { company_id: string | null; payroll_group_id: string | null; rows: EligibleRow[] }>();
+  const buckets = new Map<string, { company_id: string | null; payroll_group_id: string | null; rows: ResolvedRow[] }>();
   for (const e of eligible) {
     const k = bucketKey(e.company_id, e.payroll_group_id);
     const b = buckets.get(k) ?? { company_id: e.company_id, payroll_group_id: e.payroll_group_id, rows: [] };
@@ -173,7 +194,8 @@ export async function GET(request: NextRequest) {
       bucketList.map((b) =>
         loadUnauthorizedAbsentDays(
           service,
-          b.rows.map((e) => ({ profile_id: e.profile_id, start_date: e.start_date, end_date: e.end_date })),
+          // The effective end, so days after an accepted leaver's last working day are not "absent".
+          b.rows.map((e) => ({ profile_id: e.profile_id, start_date: e.start_date, end_date: e.employment_end.date })),
           cycle.start,
           cycle.end,
           closedThrough
@@ -209,6 +231,10 @@ export async function GET(request: NextRequest) {
       // one of the 16 on probation: the people most likely to have joined mid-cycle.
       // Only full_monthly is prorated, so a part-timer without a start date is not at risk here.
       const noStartDate = b.rows.filter((e) => !e.start_date && e.pay_type === 'full_monthly');
+      const rateStale = b.rows.filter((e) => {
+        const slipRate = slipRateByUser.get(e.profile_id);
+        return slipRate != null && e.rate_satang != null && slipRate !== Number(e.rate_satang);
+      }).length;
       const run =
         payruns.find(
           (p) => p.company_id === b.company_id && (p.payroll_group_id ?? null) === b.payroll_group_id
@@ -230,6 +256,8 @@ export async function GET(request: NextRequest) {
         state,
         can_manage: !b.rows.some((e) => hiddenFromCaller.has(e.profile_id)),
         payrun: run ? { id: run.id, status: run.status } : null,
+        // Slips built on a rate the register has since changed — needs คำนวณใหม่ (never automatic).
+        rate_stale: rateStale,
         // NOT filtered by hiddenFromCaller — same rule as `missing`/`no_start_date` above: this
         // route is money-free (a day count, never an amount), and the module's rule is "hide the
         // NUMBERS, not the PERSON" (see the file header). Hiding a hidden-pay person from the one
@@ -252,7 +280,11 @@ export async function GET(request: NextRequest) {
               user_id: e.profile_id,
               name: e.full_name?.trim() || p?.display_name || p?.username || '—',
               // A leaver mid-period is expected but easy to misread as an error — label them.
-              end_date: e.status === 'resigned' || e.status === 'terminated' ? e.end_date : null,
+              // Includes an accepted resignation not yet completed (source 'offboarding').
+              end_date:
+                e.status === 'resigned' || e.status === 'terminated' || e.employment_end.source === 'offboarding'
+                  ? e.employment_end.date
+                  : null,
             };
           })
           .sort((a, b2) => a.name.localeCompare(b2.name, 'th')),
@@ -279,6 +311,7 @@ export async function GET(request: NextRequest) {
       // No eligible members left to test, so nothing is hidden by definition.
       can_manage: true,
       payrun: { id: run.id, status: run.status },
+      rate_stale: 0,
       heavy_absence: [],
       no_start_date: [],
       missing: [],

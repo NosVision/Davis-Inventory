@@ -148,9 +148,32 @@ export interface PayrollTimesheet {
 /** One classified approved leave overlapping the period (from classifyLeaveEffect). */
 export interface PayrollLeave {
   leave_id: string;
-  label: string; // e.g. "ลากิจ" / leave type name
+  label: string; // the leave type CODE ('sick', 'bereavement', …) — the stable key on every line
   salary_days: number; // days that dock salary (deductSalary × count)
   travel_days: number; // days that dock the travel allowance
+  /** Rostered days of this leave inside the cycle, whatever its money effect. Feeds the slip's
+   *  leave roll-up (leave_summary) so a leave that docks nothing is still visible on the slip. */
+  days?: number;
+  /** Display names carried through to the roll-up; the code is shown when absent. */
+  name_th?: string | null;
+  name_en?: string | null;
+  /** The type's SC flag — informational here (SC is docked in the pool, not on this slip). */
+  deduct_sc?: boolean;
+}
+
+/**
+ * One row of the slip's leave roll-up: days of one leave type under one effect. A sick leave with
+ * a certificate and one without share a code but not an effect, so they are separate rows —
+ * "ลาป่วย 2 วัน (ไม่หักเงินเดือน หักค่าเดินทาง)" and "ลาป่วย 1 วัน (หักเงินเดือน หักค่าเดินทาง)".
+ */
+export interface LeaveSummaryEntry {
+  code: string;
+  name_th: string | null;
+  name_en: string | null;
+  days: number;
+  deduct_salary: boolean;
+  deduct_travel: boolean;
+  deduct_sc: boolean;
 }
 
 export type EarningType =
@@ -241,9 +264,45 @@ export interface Payslip {
   tax_satang: number;
   total_deduction_satang: number;
   net_satang: number;
+  /** Per-leave-type day counts for the period — visibility only, never money (see summarizeLeaveDays). */
+  leave_summary: LeaveSummaryEntry[];
 }
 
 const TRAVEL_CODE = 'travel';
+
+/**
+ * Roll the period's leaves up by (type, effect) for the slip. A leave that docks nothing emits no
+ * money line, and HR could not see from the payroll page that the person had been on leave at all —
+ * so a 2-day ลางานศพ that was correctly undocked was indistinguishable from one that was missed
+ * (HR report 2026-09-10). Grouped by code AND effect, because a certificate changes the effect of a
+ * sick leave without changing its code. Leaves with no rostered day in the cycle are dropped.
+ */
+export function summarizeLeaveDays(leaves: readonly PayrollLeave[]): LeaveSummaryEntry[] {
+  const byKey = new Map<string, LeaveSummaryEntry>();
+  for (const lv of leaves) {
+    const days = lv.days ?? Math.max(lv.salary_days, lv.travel_days);
+    if (days <= 0) continue;
+    const deductSalary = lv.salary_days > 0;
+    const deductTravel = lv.travel_days > 0;
+    const key = `${lv.label}|${deductSalary}|${deductTravel}`;
+    const cur = byKey.get(key);
+    byKey.set(
+      key,
+      cur
+        ? { ...cur, days: cur.days + days }
+        : {
+            code: lv.label,
+            name_th: lv.name_th ?? null,
+            name_en: lv.name_en ?? null,
+            days,
+            deduct_salary: deductSalary,
+            deduct_travel: deductTravel,
+            deduct_sc: lv.deduct_sc ?? false,
+          }
+    );
+  }
+  return [...byKey.values()];
+}
 
 function isPartTime(t: PayType): boolean {
   return t === 'pt_hourly' || t === 'pt_daily' || t === 'pt_monthly';
@@ -534,5 +593,6 @@ export function computePayslip(input: PayrollInput): Payslip {
     tax_satang: tax,
     total_deduction_satang: totalDeduction,
     net_satang: net,
+    leave_summary: summarizeLeaveDays(leaves),
   };
 }

@@ -55,6 +55,14 @@ interface PayslipSummary {
   start_date?: string | null;
   end_date?: string | null;
   employee_code?: string | null;
+  /** hr_employees.rate_satang snapshotted when the slip was built (hr_payslips.rate_satang). */
+  rate_satang?: number;
+  /** hr_employees.rate_satang as it stands now, and whether the slip was built on a different one. */
+  current_rate_satang?: number | null;
+  rate_stale?: boolean;
+  /** Effective end of employment: end_date, else an accepted resignation's last working date. */
+  employment_end_date?: string | null;
+  employment_end_source?: 'employee' | 'offboarding' | null;
   gross_satang: number;
   sso_satang: number;
   tax_satang: number;
@@ -93,6 +101,8 @@ interface PayrunDetail {
   hidden_count?: number;
   /** False when the run holds someone this viewer may not see — every action on it is refused. */
   can_manage?: boolean;
+  /** Visible slips built on a rate hr_employees has since changed — needs คำนวณใหม่. */
+  rate_stale_count?: number;
 }
 
 // Print isolation: window.print() otherwise prints the whole dashboard (sidebar/header from the
@@ -1102,6 +1112,38 @@ export default function HrPayrollPage() {
                     <PayrunStepper detail={detail} />
                   </div>
                   <PoolStrip detail={detail} />
+                  {/* A slip snapshots the rate it was built on, so a raise entered after generation
+                      changes nothing on the draft until คำนวณใหม่ — and nothing on this page said so
+                      (HR report 2026-09-10). Said here, beside the button that fixes it. Never
+                      rebuilt automatically: a draft may hold hand-entered items. */}
+                  {(detail.rate_stale_count ?? 0) > 0 && (
+                    <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-amber-300 bg-amber-50/70 px-3 py-2 text-xs text-amber-800 dark:border-amber-800/60 dark:bg-amber-900/15 dark:text-amber-300">
+                      <RefreshCw className="h-4 w-4 shrink-0" />
+                      <span className="min-w-0 flex-1">
+                        {isFinalized
+                          ? tt(
+                              `${detail.rate_stale_count} คนมีอัตราในทะเบียนเปลี่ยนหลังปิดยอด — สลิปงวดนี้คงเดิม อัตราใหม่มีผลงวดถัดไป`,
+                              `${detail.rate_stale_count} rate(s) changed after this run was finalized — these slips stand; the new rate applies next period`
+                            )
+                          : tt(
+                              `${detail.rate_stale_count} คนมีอัตราในทะเบียนเปลี่ยนไปจากตอนสร้างสลิป — กดคำนวณใหม่เพื่อใช้อัตราล่าสุด`,
+                              `${detail.rate_stale_count} slip(s) were built on a rate the register has since changed — recompute to apply it`
+                            )}
+                      </span>
+                      {!isFinalized && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          icon={<RefreshCw className="h-4 w-4" />}
+                          disabled={busy || recomputing || !canManageRun}
+                          title={canManageRun ? t('recomputeHint') : lockedReason}
+                          onClick={() => regenerateCurrent()}
+                        >
+                          {t('recompute')}
+                        </Button>
+                      )}
+                    </div>
+                  )}
                   {/* money-item shortcuts — both open as modals from ONE obvious spot instead of a
                       header link + a panel buried under a 100-row register (owner ask 2026-07-15) */}
                   <div className="mt-3 flex flex-wrap gap-2 border-t border-gray-100 pt-3 dark:border-gray-700">
@@ -1226,9 +1268,33 @@ export default function HrPayrollPage() {
                                 {idx + 1}{s.employee_code ? ` · ${s.employee_code}` : ''}{s.position ? ` · ${s.position}` : ''}
                                 {s.start_date ? ` · เริ่ม ${dmy(s.start_date)}` : ''}
                               </div>
-                              {s.end_date && s.end_date <= (detail.payrun.cycle_end ?? '') && (
+                              {s.end_date && s.end_date <= (detail.payrun.cycle_end ?? '') ? (
                                 <div className="text-[10px] font-medium text-red-500">
                                   พ้นสภาพ {dmy(s.end_date)} — คำนวณตามวันทำงานจริง
+                                </div>
+                              ) : s.employment_end_source === 'offboarding' &&
+                                s.employment_end_date &&
+                                s.employment_end_date <= (detail.payrun.cycle_end ?? '') ? (
+                                /* Resignation accepted, offboarding not yet completed: no end_date on
+                                   the record yet, but payroll already prorates to this date
+                                   (employment-end.ts). Say so, or the shorter salary looks wrong. */
+                                <div className="text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                                  {tt(
+                                    `แจ้งลาออก มีผล ${dmy(s.employment_end_date)} — คำนวณตามวันทำงานจริง`,
+                                    `Resignation accepted, effective ${dmy(s.employment_end_date)} — prorated`
+                                  )}
+                                </div>
+                              ) : null}
+                              {s.rate_stale && (
+                                <div
+                                  className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+                                  title={tt(
+                                    `สลิปสร้างจากอัตรา ${formatBaht(s.rate_satang ?? 0)} ฿ · ทะเบียนตอนนี้ ${formatBaht(s.current_rate_satang ?? 0)} ฿`,
+                                    `Slip built on ${formatBaht(s.rate_satang ?? 0)} ฿ · register now ${formatBaht(s.current_rate_satang ?? 0)} ฿`
+                                  )}
+                                >
+                                  <RefreshCw className="h-3 w-3" />
+                                  {tt('อัตราในทะเบียนเปลี่ยนแล้ว กดคำนวณใหม่', 'Rate changed in register — recompute')}
                                 </div>
                               )}
                             </td>

@@ -5,6 +5,9 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 const CODE_RE = /^[a-z_]+$/;
 
+/** The only leave codes whose days keep the travel allowance (client rule 2026-07-20). */
+export const TRAVEL_EXEMPT_CODES: ReadonlySet<string> = new Set(['vacation', 'public_holiday']);
+
 // ---------------------------------------------------------------------------
 // Shared option source — the SINGLE definition of "which leave types can be
 // picked" used by every surface (employee filing, HR day-edit, backfill,
@@ -142,13 +145,17 @@ export function collectLeaveTypeFields(
     if (!parsed.skip) fields[key] = parsed.value;
   }
 
-  // On create, when the SC/travel-dock flags aren't specified, default them to the type's paid
-  // state: a paid leave docks neither (its day is "earned"), an unpaid leave docks both (it reads
-  // as an absence). Keeps new types sensible without forcing HR to set every flag.
+  // On create, when the dock flags aren't specified:
+  //   - deduct_travel follows the client rule (2026-07-20): only ลาพักร้อน and ลาวันหยุดนักขัตฤกษ์
+  //     keep the travel allowance; every other leave day docks ค่าเดินทาง ÷30 — paid or not. It
+  //     used to follow `paid`, which is how the paid special types (ลางานศพ, …) came out undocked
+  //     (HR report 2026-09-10).
+  //   - deduct_sc still follows the paid state: a paid leave keeps its SC share, an unpaid one
+  //     reads as an absence. The SC rule was never part of that report.
   if (requireCore) {
     const paid = fields.paid === undefined ? true : Boolean(fields.paid); // DB default paid = true
     if (fields.deduct_sc === undefined) fields.deduct_sc = !paid;
-    if (fields.deduct_travel === undefined) fields.deduct_travel = !paid;
+    if (fields.deduct_travel === undefined) fields.deduct_travel = !TRAVEL_EXEMPT_CODES.has(String(fields.code));
   }
 
   return { ok: true, fields };

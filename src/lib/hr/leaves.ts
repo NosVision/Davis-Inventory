@@ -152,6 +152,12 @@ export function isCertRequired(
  *   ลากิจ / ลาป่วยไม่มีใบรับรอง (= absent)  → salary หัก · SC หัก · travel หัก
  *   ลาป่วยมีใบรับรองถูกต้อง                → salary ไม่หัก · SC หัก · travel หัก  (paid_with_cert)
  *   พักร้อน / PH                          → ไม่หัก ทั้งหมด
+ *   ลางานศพ / คลอด / แต่งงาน / อบรม / ฯลฯ  → salary ไม่หัก (paid) · travel หัก
+ *
+ * Travel is deliberately NOT derived from `paid` (client rule 2026-07-20): every leave day docks
+ * ค่าเดินทาง except ลาพักร้อน and ลาวันหยุดนักขัตฤกษ์. The 00169 backfill had set deduct_travel =
+ * NOT paid, so the paid special types slipped through undocked (HR report 2026-09-10) — fixed in
+ * data by 20260919110000_leave_travel_deduction_rule.sql; the classification here was already right.
  */
 export interface LeaveEffect {
   paid: boolean;

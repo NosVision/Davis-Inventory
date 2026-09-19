@@ -4,6 +4,8 @@ import { useLocale, useTranslations } from 'next-intl';
 import { formatBaht } from '@/lib/pos/money';
 import { useScLineLabel } from '@/components/hr/use-sc-line-label';
 import { svPayDate, scEventMonthForPool, payWindows } from '@/lib/hr/pay-cycle';
+import { pickEssText } from '@/lib/i18n/ess-locale';
+import type { LeaveSummaryEntry } from '@/lib/hr/payroll';
 
 export interface PayslipLine {
   type: string;
@@ -25,6 +27,8 @@ export interface PayslipDetailData {
     worked_days?: number;
     /** recorded days that were NOT approved leave; null on slips generated before it existed */
     attended_days?: number | null;
+    /** per-leave-type day roll-up for the cycle; null on slips generated before it existed */
+    leave_summary?: LeaveSummaryEntry[] | null;
     gross_satang: number;
     sso_satang: number;
     tax_satang: number;
@@ -131,6 +135,22 @@ const PAY_BY_DAY = new Set(['pt_daily', 'pt_monthly']);
 function dayCountLabel(workedDays: number, attendedDays: number | null | undefined, t: (k: string, v?: Record<string, string | number>) => string): string {
   if (attendedDays == null || attendedDays >= workedDays) return String(workedDays);
   return t('metaDaysSplit', { total: workedDays, attended: attendedDays, leave: workedDays - attendedDays });
+}
+
+/**
+ * "ลางานศพ 2 วัน (ไม่หักเงินเดือน หักค่าเดินทาง)" — one leave roll-up row as text. The effect is spelled
+ * out on every row because the point of the row is to let HR confirm the effect was the intended
+ * one: a leave that docked nothing used to leave no trace on the slip at all (HR report 2026-09-10).
+ */
+function leaveSummaryText(entry: LeaveSummaryEntry, locale: string): string {
+  const tx = (th: string, en: string) => pickEssText(locale, th, en);
+  const name = (locale === 'en' ? entry.name_en : entry.name_th) || entry.name_th || entry.code;
+  const days = Number.isInteger(entry.days) ? String(entry.days) : entry.days.toFixed(1);
+  const effects = [
+    entry.deduct_salary ? tx('หักเงินเดือน', 'salary docked') : tx('ไม่หักเงินเดือน', 'salary kept'),
+    entry.deduct_travel ? tx('หักค่าเดินทาง', 'travel docked') : tx('ไม่หักค่าเดินทาง', 'travel kept'),
+  ];
+  return `${name} ${days} ${tx('วัน', 'd')} (${effects.join(' ')})`;
 }
 
 // Localized line-type labels; a standard type (salary/ot/sso/tax/…) is translated, while a
@@ -320,6 +340,20 @@ export function PayslipView({ data, print = false }: PayslipViewProps) {
             value={dayCountLabel(payslip.worked_days, payslip.attended_days, t)}
             print={print}
           />
+        )}
+        {/* Every approved leave in the cycle, with its effect — including the ones that produced no
+            money line (a paid ลางานศพ on a slip with no travel allowance). Without this row HR could
+            not tell a leave correctly left undocked from one that was missed. Screen only; the
+            printed form keeps its layout. */}
+        {!print && (payslip.leave_summary?.length ?? 0) > 0 && (
+          <div className="col-span-2 flex justify-between gap-2">
+            <span className="shrink-0 text-gray-500 dark:text-gray-400">
+              {pickEssText(locale, 'วันลาในงวดนี้', 'Leave this period', 'ဤကာလခွင့်', 'ວັນລາໃນງວດນີ້')}
+            </span>
+            <span className="text-right font-medium">
+              {(payslip.leave_summary as LeaveSummaryEntry[]).map((e) => leaveSummaryText(e, locale)).join(' · ')}
+            </span>
+          </div>
         )}
       </div>
 

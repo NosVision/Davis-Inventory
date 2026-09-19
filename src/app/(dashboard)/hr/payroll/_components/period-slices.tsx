@@ -34,6 +34,8 @@ export interface CoverageBucket {
    *  refuse it, so the buttons say why instead of 403-ing on click. */
   can_manage: boolean;
   payrun: { id: string; status: string } | null;
+  /** Slips in this slice built on a rate hr_employees has since changed — needs คำนวณใหม่. */
+  rate_stale?: number;
   missing: { user_id: string; name: string; end_date: string | null }[];
   /** Full-month staff with no start date on file — paid a whole cycle on an assumption. */
   no_start_date: { user_id: string; name: string; status: string | null }[];
@@ -115,6 +117,7 @@ export function PeriodSlices({
             const finalized = b.payrun?.status === 'finalized';
             const missing = b.missing.length;
             const noStart = b.no_start_date.length;
+            const rateStale = b.rate_stale ?? 0;
             const tone = finalized
               ? 'border-emerald-300 dark:border-emerald-800'
               : b.state === 'incomplete'
@@ -214,6 +217,24 @@ export function PeriodSlices({
                         <span className="opacity-80">
                           {b.heavy_absence.slice(0, 4).map((h) => `${h.name} (${h.absent_days})`).join(' · ')}
                         </span>
+                      </p>
+                    )}
+                    {/* A slip snapshots the rate it was built on. A raise entered afterwards changes
+                        nothing on the draft until someone presses คำนวณใหม่ — and nothing said so
+                        (HR report 2026-09-10). Never rebuilt automatically: a draft may hold
+                        hand-entered items, and the rebuild is HR's call. */}
+                    {rateStale > 0 && (
+                      <p className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-amber-700 dark:text-amber-400">
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        {finalized
+                          ? tt(
+                              `${rateStale} คนมีอัตราในทะเบียนเปลี่ยนหลังปิดยอด — มีผลงวดถัดไป`,
+                              `${rateStale} rate(s) changed after finalizing — applies next period`
+                            )
+                          : tt(
+                              `${rateStale} คนมีอัตราในทะเบียนเปลี่ยนแล้ว — กดคำนวณใหม่`,
+                              `${rateStale} rate(s) changed in the register — recompute`
+                            )}
                       </p>
                     )}
                   </div>

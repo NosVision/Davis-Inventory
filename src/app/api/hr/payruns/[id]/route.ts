@@ -4,6 +4,7 @@ import { callerCanViewConfidentialPay, payHiddenProfileIds } from '@/lib/hr/pay-
 import { requireHrManagerForStore } from '@/lib/hr/route-auth';
 import { buildPayrunReviewRows } from '@/lib/hr/review-link';
 import { svPeriodMonth } from '@/lib/hr/pay-cycle';
+import { employmentEndFor, loadOffboardingEnds } from '@/lib/hr/employment-end';
 
 interface ProfileRow {
   id: string;
@@ -45,9 +46,9 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   // accountant review link's status (powers the status stepper + the finalize gate).
   // reviewRows adds the money split (salary/OT/allowance/other-deduction) the register renders —
   // the same aggregation the accountant portal shows, finally visible to HR (redesign 2026-07-14).
-  const [profsRes, empsRes, scRes, linkRes, scPoolsRes, tipPoolsRes, reviewRows, remarksRes] = await Promise.all([
+  const [profsRes, empsRes, scRes, linkRes, scPoolsRes, tipPoolsRes, reviewRows, remarksRes, offboardingByUser] = await Promise.all([
     service.from('profiles').select('id, username, display_name').in('id', userIds),
-    service.from('hr_employees').select('profile_id, full_name, start_date, end_date, position:hr_positions(name)').in('profile_id', userIds),
+    service.from('hr_employees').select('profile_id, full_name, start_date, end_date, rate_satang, position:hr_positions(name)').in('profile_id', userIds),
     service
       .from('hr_sc_allocations')
       .select('user_id, allocated_satang, pool:hr_sc_pools!inner(period_month), hr_sc_deductions(amount_satang)')
@@ -66,6 +67,9 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     service.from('hr_tip_pools').select('status, store_id').eq('period_month', periodMonth),
     buildPayrunReviewRows(service, id),
     service.from('hr_payrun_remarks').select('profile_id, remark').eq('payrun_id', id),
+    // Accepted resignations end employment before hr_employees.end_date is written (see
+    // employment-end.ts) — the register must label those leavers the same way generation prorates them.
+    loadOffboardingEnds(service, userIds),
   ]);
 
   const nameById = new Map<string, string>();
@@ -74,11 +78,19 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   const positionById = new Map<string, string>();
   const startDateById = new Map<string, string>();
   const endDateById = new Map<string, string>();
-  for (const e of (empsRes.data ?? []) as unknown as { profile_id: string; full_name: string | null; start_date: string | null; end_date: string | null; position: { name: string | null } | null }[]) {
+  // The rate in the register NOW. The slip snapshotted hr_employees.rate_satang when it was built
+  // (so a later raise never rewrites history) — which also means a raise entered AFTER generation is
+  // silently absent from the draft until someone presses คำนวณใหม่. HR found that out by reading
+  // the wrong figure on a slip (report 2026-09-10); the comparison below is what tells them first.
+  const currentRateById = new Map<string, number>();
+  const employmentEndById = new Map<string, { date: string | null; source: 'employee' | 'offboarding' | null }>();
+  for (const e of (empsRes.data ?? []) as unknown as { profile_id: string; full_name: string | null; start_date: string | null; end_date: string | null; rate_satang: number | null; position: { name: string | null } | null }[]) {
     if (e.full_name?.trim()) fullNameById.set(e.profile_id, e.full_name.trim());
     if (e.position?.name) positionById.set(e.profile_id, e.position.name);
     if (e.start_date) startDateById.set(e.profile_id, e.start_date);
     if (e.end_date) endDateById.set(e.profile_id, e.end_date);
+    if (e.rate_satang != null) currentRateById.set(e.profile_id, Number(e.rate_satang));
+    employmentEndById.set(e.profile_id, employmentEndFor(e, offboardingByUser ?? new Map()));
   }
   // No venue attribution here, by design (owner ask 2026-09-04). A payrun is generated per
   // (company × payroll group); a venue for a payslip could only ever be INFERRED, and every way of
@@ -104,9 +116,19 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     .map((s) => {
       const sc = scByUser.get(s.user_id);
       const rr = reviewBySlip.get(s.id as string);
+      const currentRate = currentRateById.get(s.user_id);
+      const employmentEnd = employmentEndById.get(s.user_id);
       return {
         ...s,
         name: fullNameById.get(s.user_id) || nameById.get(s.user_id) || '—',
+        // hr_employees.rate_satang as it stands now, and whether this slip was built on a different
+        // one. No auto-rebuild: a draft may hold hand-entered items, and a rebuild is HR's call.
+        current_rate_satang: currentRate ?? null,
+        rate_stale: currentRate != null && Number(s.rate_satang) !== currentRate,
+        // The effective end of employment (end_date, else an accepted resignation's last working
+        // date) and which record it came from — `end_date` below stays the raw column.
+        employment_end_date: employmentEnd?.date ?? null,
+        employment_end_source: employmentEnd?.source ?? null,
         // the app nickname (profiles.display_name) — shown alongside the payroll full name so HR
         // can tie the slip to the person they know in chat/schedule (client ask 2026-07-21)
         nickname: nameById.get(s.user_id) ?? null,
@@ -181,6 +203,9 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       totals,
       review,
       pools,
+      // How many visible slips were built on a rate the register has since changed — the number
+      // the toolbar shows beside คำนวณใหม่.
+      rate_stale_count: visibleSlips.filter((s) => s.rate_stale).length,
       // > 0 → the page must say the figures are partial, or the reader will take the total as the
       // payrun's real total.
       hidden_count: hiddenCount,
