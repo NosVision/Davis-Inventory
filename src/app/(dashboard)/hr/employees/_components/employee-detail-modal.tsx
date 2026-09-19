@@ -2,20 +2,25 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Loader2, Shield, UserCog } from 'lucide-react';
+import { Loader2, Lock, Shield, UserCog } from 'lucide-react';
 import { Badge, Button, Modal, StatusBadge, type StatusTone } from '@/components/ui';
 import { formatThaiDate } from '@/lib/utils/format';
 import { ROLE_LABELS, type UserRole } from '@/types/roles';
+import { useEssText } from '@/lib/i18n/ess-locale';
 
 // Read-only "everything about this employee" viewer (owner ask 2026-07-08): opened from the
 // person icon on each /hr/employees row. Shows the profile photo + real name / nickname and every
 // employment, pay, statutory, and bank field HR needs, fetched from GET /api/hr/employees/[id].
+//
+// The API blanks every pay column (EMPLOYEE_PAY_COLUMNS) for a viewer who may not see this
+// person's pay and sets `pay_hidden`; those fields then read "ปิดข้อมูล", never ฿0 or "—", so
+// HR cannot mistake a closed figure for a missing one (client 2026-09-11/14/16).
 export interface EmployeeDetailSeed {
   id: string;
   employee_code: string | null;
   status: string;
   pay_type: string;
-  rate_satang: number;
+  rate_satang: number | null;
   profile: { display_name?: string | null; username?: string | null } | null;
   position: { name?: string | null } | null;
   department: { name?: string | null } | null;
@@ -28,7 +33,8 @@ interface EmployeeDetail {
   employee_code: string | null;
   status: string;
   pay_type: string;
-  rate_satang: number;
+  rate_satang: number | null;
+  pay_hidden?: boolean | null;
   work_hours_per_day: number | null;
   break_hours: number | null;
   ot_eligible: boolean | null;
@@ -71,6 +77,8 @@ export function EmployeeDetailModal({
   onManageAccount?: (username: string) => void;
 }) {
   const t = useTranslations('hr.employees');
+  const tx = useEssText();
+  const hiddenLabel = tx('ปิดข้อมูล', 'Hidden', 'ပိတ်ထားသည်', 'ປິດຂໍ້ມູນ');
   const [detail, setDetail] = useState<EmployeeDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -106,6 +114,8 @@ export function EmployeeDetailModal({
   const val = (v: unknown): string => (v == null || v === '' ? '—' : String(v));
   const valDate = (v: string | null): string => (v ? formatThaiDate(v) : '—');
   const yesNo = (v: boolean | null | undefined) => (v ? t('profile.yes') : t('profile.no'));
+  // A pay field: the closed label when the viewer may not see it, the value otherwise.
+  const pay = (render: () => string): string => (detail?.pay_hidden ? hiddenLabel : render());
 
   return (
     <Modal isOpen onClose={onClose} title={t('detail.title')} size="lg">
@@ -154,7 +164,13 @@ export function EmployeeDetailModal({
           </Section>
 
           <Section title={t('profile.compensation')}>
-            <Field label={t('profile.rate')} value={`฿${bahtFromSatang(detail.rate_satang)}`} />
+            {detail.pay_hidden && (
+              <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-300 sm:col-span-2">
+                <Lock className="h-3.5 w-3.5 shrink-0" />
+                {tx('ปิดข้อมูลเงินเดือน — คุณไม่มีสิทธิ์ดูตัวเลขของคนนี้', "Pay is confidential — you may not see this person's figures")}
+              </div>
+            )}
+            <Field label={t('profile.rate')} value={pay(() => `฿${bahtFromSatang(detail.rate_satang ?? 0)}`)} />
             <Field label={t('detail.workHours')} value={val(detail.work_hours_per_day)} />
             <Field label={t('detail.breakHours')} value={val(detail.break_hours)} />
             <Field label={t('detail.otEligible')} value={yesNo(detail.ot_eligible)} />
@@ -194,15 +210,15 @@ export function EmployeeDetailModal({
 
           <Section title={t('profile.statutory')}>
             <Field label={t('profile.ssoEnrolled')} value={yesNo(detail.sso_enrolled)} />
-            <Field label={t('profile.ssoNo')} value={val(detail.sso_no)} />
-            <Field label={t('profile.taxMode')} value={val(detail.tax_mode)} />
-            <Field label={t('profile.taxId')} value={val(detail.tax_id)} />
+            <Field label={t('profile.ssoNo')} value={pay(() => val(detail.sso_no))} />
+            <Field label={t('profile.taxMode')} value={pay(() => val(detail.tax_mode))} />
+            <Field label={t('profile.taxId')} value={pay(() => val(detail.tax_id))} />
           </Section>
 
           <Section title={t('detail.bank')}>
-            <Field label={t('detail.bankName')} value={val(detail.bank_name)} />
-            <Field label={t('detail.bankAccountNo')} value={val(detail.bank_account_no)} />
-            <Field label={t('detail.bankAccountName')} value={val(detail.bank_account_name)} />
+            <Field label={t('detail.bankName')} value={pay(() => val(detail.bank_name))} />
+            <Field label={t('detail.bankAccountNo')} value={pay(() => val(detail.bank_account_no))} />
+            <Field label={t('detail.bankAccountName')} value={pay(() => val(detail.bank_account_name))} />
           </Section>
 
           {(detail.emergency_contact || detail.notes) && (

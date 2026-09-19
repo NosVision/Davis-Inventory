@@ -1,12 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManager } from '@/lib/hr/route-auth';
+import { callerCanViewConfidentialPay } from '@/lib/hr/pay-visibility';
 
 // GET /api/hr/pending-identities?q= — HR-only search over UNCLAIMED imported roster rows
 // (hr_pending_identities) by name or bank account, so HR can onboard a person whose payroll
 // data was imported but who has no login yet (owner ask 2026-07-08). Unlike the employee-facing
-// options route, this returns the full payroll seed (rate/bank/SSO/tax) to PREFILL the add-employee
-// form — appropriate because the caller is a verified HR manager.
+// options route, this returns the payroll seed (rate/bank/SSO/tax) to PREFILL the add-employee
+// form.
+//
+// The seed follows the pay-visibility rule (pay-visibility.ts) since 2026-09-19. A pending
+// identity is not an employee yet, so it carries neither pay_confidential nor a payroll group —
+// there is nothing to test the caller against, and the imported rows include ทีมบัญชี, whose pay
+// a second HR user must not see anywhere (client 2026-09-11/14/16). So the figures are only
+// returned to a can_view_confidential_pay holder; everyone else still gets the person (name,
+// code, company, venue, position, pay type, start date) and fills the money in later, or hands
+// the row to whoever may see it. Bank-account SEARCH is gated the same way, or the box would be
+// an oracle for guessing account numbers.
 export async function GET(request: NextRequest) {
   const auth = await requireHrManager();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
@@ -17,7 +27,14 @@ export async function GET(request: NextRequest) {
   if (q.length < 2) return NextResponse.json({ data: [] });
 
   const service = createServiceClient();
+  const canViewPay = await callerCanViewConfidentialPay(service, auth.userId);
   const like = `%${q}%`;
+  const searchFilters = [
+    `full_name_th.ilike.${like}`,
+    `full_name_en.ilike.${like}`,
+    `employee_code.ilike.${like}`,
+    ...(canViewPay ? [`bank_account_no.ilike.${like}`] : []),
+  ];
   const { data, error } = await service
     .from('hr_pending_identities')
     .select(
@@ -26,9 +43,7 @@ export async function GET(request: NextRequest) {
         'sheet_ref, store:stores(store_name)'
     )
     .eq('status', 'unclaimed')
-    .or(
-      `full_name_th.ilike.${like},full_name_en.ilike.${like},bank_account_no.ilike.${like},employee_code.ilike.${like}`
-    )
+    .or(searchFilters.join(','))
     .order('full_name_th')
     .limit(12);
   if (error) return NextResponse.json({ error: 'Failed to search roster' }, { status: 500 });
@@ -62,14 +77,17 @@ export async function GET(request: NextRequest) {
     store_id: (r.store_id as string | null) ?? null,
     store_name: ((r.store as { store_name?: string } | null)?.store_name as string) ?? null,
     position_text: (r.position_text as string | null) ?? null,
-    rate_satang: (r.rate_satang as number | null) ?? null,
     pay_type: (r.pay_type as string | null) ?? null,
     start_date: (r.start_date as string | null) ?? null,
     sso_enrolled: (r.sso_enrolled as boolean | null) ?? null,
-    tax_mode: (r.tax_mode as string | null) ?? null,
-    bank_name: (r.bank_name as string | null) ?? null,
-    bank_account_no: (r.bank_account_no as string | null) ?? null,
     sheet_ref: (r.sheet_ref as string | null) ?? null,
+    // The money — same columns EMPLOYEE_PAY_COLUMNS names on hr_employees, where the row will
+    // eventually land. `pay_hidden` tells the form why its prefill came back blank.
+    rate_satang: canViewPay ? ((r.rate_satang as number | null) ?? null) : null,
+    tax_mode: canViewPay ? ((r.tax_mode as string | null) ?? null) : null,
+    bank_name: canViewPay ? ((r.bank_name as string | null) ?? null) : null,
+    bank_account_no: canViewPay ? ((r.bank_account_no as string | null) ?? null) : null,
+    pay_hidden: !canViewPay,
   }));
   return NextResponse.json({ data: rows });
 }

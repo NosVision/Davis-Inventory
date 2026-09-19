@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireHrManager } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
+import { payHiddenProfileIds } from '@/lib/hr/pay-visibility';
+import { normalizeFullName } from '@/lib/hr/employee-name';
 
 const TABLE = 'hr_profile_change_requests';
 // The hr_employees columns touched by an apply — snapshotted before/after for the §B audit.
@@ -34,6 +36,24 @@ export async function POST(
   if (!row) return NextResponse.json({ error: 'Change request not found' }, { status: 404 });
   if ((row.status as string) !== 'pending') {
     return NextResponse.json({ error: 'Only pending change requests can be decided' }, { status: 409 });
+  }
+
+  // A bank-account request cannot be judged without reading the account, and the list route
+  // blanks it for a caller who may not see this person's pay (pay-visibility.ts). Approving blind
+  // would write a number they never saw into the bank-transfer file; rejecting blind is a
+  // decision on data they were not shown. Both refused — it waits for the person who may
+  // (client 2026-09-11/14/16: ทีมบัญชี's pay is closed to HR #2 everywhere).
+  if ((row.field_key as string) === 'bank_account') {
+    const hidden = await payHiddenProfileIds(service, auth.userId);
+    if (hidden.has(row.user_id as string)) {
+      return NextResponse.json(
+        {
+          error:
+            'คุณไม่มีสิทธิ์ดูบัญชีธนาคารของพนักงานคนนี้ จึงพิจารณาคำขอนี้ไม่ได้ — ต้องให้ผู้ที่ดูเงินเดือนของคนนี้ได้เป็นผู้อนุมัติหรือปฏิเสธ',
+        },
+        { status: 403 }
+      );
+    }
   }
 
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
@@ -149,7 +169,8 @@ export async function POST(
   } else if (fieldKey === 'full_name') {
     // The legal ชื่อ-นามสกุล — this is what the next ภ.ง.ด.1 / สปส. / ใบ 50 ทวิ and bank-transfer
     // file will carry, which is exactly why it needs an HR approval rather than a self-edit.
-    const name = typeof newValue.full_name === 'string' ? newValue.full_name.trim() : '';
+    // One spelling however the employee typed it (client report 2026-09-07/09).
+    const name = typeof newValue.full_name === 'string' ? normalizeFullName(newValue.full_name) : null;
     if (!name) {
       return warn('Change approved, but the requested name was empty — apply skipped. Manual follow-up required.');
     }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import {
+  EMPLOYEE_PAY_COLUMNS,
   callerCanViewConfidentialPay,
   isPayHiddenFrom,
   loadPayVisibility,
@@ -8,6 +9,7 @@ import {
 } from '@/lib/hr/pay-visibility';
 import { requireHrManagerForEmployeeId } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
+import { normalizeFullName } from '@/lib/hr/employee-name';
 import {
   pickEmployeeFields,
   applyPartTimeProfile,
@@ -22,9 +24,12 @@ const EMPLOYEE_SELECT =
   'supervisor:profiles!hr_employees_supervisor_id_fkey(id, display_name), ' +
   'position:hr_positions(id, name), department:hr_departments(id, name), company:hr_companies(id, name)';
 
-// Sensitive fields whose edit requires an audit reason (§B).
+// Sensitive fields whose edit requires an audit reason (§B). The employee form only posts these
+// when HR actually changed them, which is what makes their presence a real attempt (see PUT).
 const SENSITIVE_KEYS = ['rate_satang', 'bank_name', 'bank_account_no', 'bank_account_name', 'sso_no', 'tax_id'];
 const TERMINAL_STATUSES = ['resigned', 'terminated'];
+const PAY_EDIT_FORBIDDEN =
+  'ไม่มีสิทธิ์แก้ข้อมูลเงินเดือนของพนักงานคนนี้ — บันทึกข้อมูลอื่นแล้ว แต่ไม่ได้บันทึกเงินเดือน/บัญชีธนาคาร/เลขประกันสังคม/เลขผู้เสียภาษี ต้องให้ผู้ที่ดูเงินเดือนของคนนี้ได้เป็นผู้แก้';
 
 // Roles HR may assign from the employee modal (owner ask 2026-07-10). Excludes 'owner'/'customer'.
 // Owner ask 2026-07-23: HR may grant every non-owner role (the elevated owner-only gate is gone).
@@ -84,6 +89,9 @@ export async function PUT(
 
   const fields: Record<string, unknown> = { ...picked.fields };
 
+  // One spelling of the legal name whichever screen typed it (client report 2026-09-07/09).
+  if (typeof fields.full_name === 'string') fields.full_name = normalizeFullName(fields.full_name);
+
   // The flag is the lock itself: an HR user who cannot see confidential pay must not be able to
   // switch it off and then look. Silently dropping a real attempt would be worse — they would
   // think it saved — so that still refuses the write outright.
@@ -110,7 +118,13 @@ export async function PUT(
   // a moment later. Decided on where the employee is NOW (`current`), not where the request wants
   // them to be.
   const visibility = await loadPayVisibility(service, auth.userId);
-  if (isPayHiddenFrom(current as { pay_confidential: boolean; payroll_group_id: string | null }, visibility)) {
+  const payHidden = isPayHiddenFrom(
+    current as { pay_confidential: boolean; payroll_group_id: string | null },
+    visibility
+  );
+  // Pay fields this caller tried to change and was refused — reported back, never silently lost.
+  const droppedPayKeys: string[] = [];
+  if (payHidden) {
     if (
       'payroll_group_id' in fields &&
       (fields.payroll_group_id ?? null) !== (current.payroll_group_id ?? null)
@@ -120,10 +134,19 @@ export async function PUT(
         { status: 403 }
       );
     }
-    // The employee form posts every field on every save, and this caller received the pay fields
-    // blanked by redactEmployeePay. Writing those blanks back would erase a salary they were never
-    // allowed to read. Drop them rather than refuse, so editing a phone number still works.
-    for (const key of SENSITIVE_KEYS) delete fields[key];
+    // The employee form posts every field on every save, and this caller received EVERY pay
+    // column blanked by redactEmployeePay — so tax_mode comes back as the form's default,
+    // pvd_* as 0/false and bank_verified as false. Writing those back would erase a salary, a
+    // tax mode and a PVD enrolment they were never allowed to read (the wider redaction of
+    // 2026-09-19 made this bite for more than rate/bank). Drop them rather than refuse, so
+    // editing a phone number still works — but a value that DIFFERS from what is stored, on a
+    // key the form only sends when HR really typed it, was an attempt to set the salary, and
+    // HR must hear that it did not save (silently dropping it read as "saved" until 2026-09-19).
+    for (const key of EMPLOYEE_PAY_COLUMNS) {
+      if (!(key in fields)) continue;
+      if (SENSITIVE_KEYS.includes(key) && fields[key] !== (current[key] ?? null)) droppedPayKeys.push(key);
+      delete fields[key];
+    }
   }
 
   // Company changes MUST go through the dedicated transfer endpoint (mandatory reason + effective_date + audit, §A).
@@ -180,16 +203,18 @@ export async function PUT(
   // Bank verification flag (client ask 2026-07-24 — hand-typed account numbers feed the
   // bank-transfer file, so HR must re-verify after ANY change). Changing the number or bank
   // resets the flag; an explicit tick sent WITH the change verifies the new details.
+  // A caller who may not see the account cannot verify it either — the form posts the tick on every
+  // save, and for them it is the blank the redaction sent, not a decision.
   const bankChanged =
     ('bank_account_no' in fields && fields.bank_account_no !== current.bank_account_no) ||
     ('bank_name' in fields && fields.bank_name !== current.bank_name);
-  if (typeof body.bank_verified === 'boolean') {
+  if (!payHidden && typeof body.bank_verified === 'boolean') {
     if (body.bank_verified !== Boolean(current.bank_verified) || bankChanged) {
       fields.bank_verified = body.bank_verified;
       fields.bank_verified_by = body.bank_verified ? auth.userId : null;
       fields.bank_verified_at = body.bank_verified ? new Date().toISOString() : null;
     }
-  } else if (bankChanged) {
+  } else if (!payHidden && bankChanged) {
     fields.bank_verified = false;
     fields.bank_verified_by = null;
     fields.bank_verified_at = null;
@@ -204,6 +229,10 @@ export async function PUT(
   }
 
   if (Object.keys(fields).length === 0 && !hasDisplayName && !roleChange) {
+    // Only pay fields were sent and every one was refused: nothing to save, and a 200 would lie.
+    if (droppedPayKeys.length > 0) {
+      return NextResponse.json({ error: PAY_EDIT_FORBIDDEN, dropped: droppedPayKeys }, { status: 403 });
+    }
     return NextResponse.json({ error: 'No updatable fields provided' }, { status: 400 });
   }
 
@@ -275,5 +304,13 @@ export async function PUT(
   if (displayNameFailed) {
     return NextResponse.json({ error: 'บันทึกข้อมูลพนักงานแล้ว แต่บันทึกชื่อแสดงผลไม่สำเร็จ กรุณาลองใหม่' }, { status: 500 });
   }
-  return NextResponse.json({ data: updated });
+  // The GET is redacted; the PUT handed the same caller the full row back after every save
+  // (found 2026-09-19). Same visibility, same redaction — plus the dropped keys, so the form
+  // can say the salary did NOT save instead of showing a green toast.
+  const [redacted] = redactEmployeePay([updated as unknown as Record<string, unknown>], visibility);
+  return NextResponse.json(
+    droppedPayKeys.length > 0
+      ? { data: redacted, warning: { dropped: droppedPayKeys, message: PAY_EDIT_FORBIDDEN } }
+      : { data: redacted }
+  );
 }

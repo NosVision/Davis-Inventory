@@ -149,14 +149,58 @@ export async function payHiddenEmployeeIds(
   return new Set(hidden.map((e) => e.id));
 }
 
+/**
+ * The hr_employees columns that ARE the pay — the one list every layer redacts by.
+ *
+ * Widened on 2026-09-19 from the four money/bank fields to everything a payslip is computed from
+ * or paid into: the redacted row still carried tax_mode, the SSO/tax ids, the PVD rates and the
+ * bank-verification stamp, and a second HR user could read all of it off the detail modal and the
+ * profile PDF (client: คุณต๊ะ/คุณเมย์ 2026-08-11, 2026-09-11/14/16 — "ทีมบัญชี's pay, nowhere").
+ *
+ * NOT here, on purpose: pay_type and sso_enrolled. They are structural (monthly vs hourly, in the
+ * scheme or not) and every roster, filter and schedule screen keys on them; hiding them would
+ * hide the PERSON, which the rule forbids. pay_confidential / payroll_group_id are the lock's own
+ * inputs and stay readable so the form can round-trip a save.
+ *
+ * Mirrored by migration 20260919100000_hr_employees_pay_column_grants.sql, which revokes exactly
+ * these columns from `authenticated` (scripts/test-pay-visibility.cjs asserts the two lists match).
+ */
+export const EMPLOYEE_PAY_COLUMNS = [
+  'rate_satang',
+  'bank_name',
+  'bank_account_no',
+  'bank_account_name',
+  'bank_verified',
+  'bank_verified_at',
+  'bank_verified_by',
+  'sso_no',
+  'tax_id',
+  'tax_mode',
+  'pvd_enrolled',
+  'pvd_employee_rate',
+  'pvd_employer_rate',
+] as const;
+export type EmployeePayColumn = (typeof EMPLOYEE_PAY_COLUMNS)[number];
+
 /** Money fields stripped from an employee row the caller may not see the pay of. */
-export const REDACTED_EMPLOYEE_PAY = {
-  rate_satang: null,
-  bank_name: null,
-  bank_account_no: null,
-  bank_account_name: null,
+export const REDACTED_EMPLOYEE_PAY: Readonly<Record<EmployeePayColumn, null> & { pay_hidden: true }> = {
+  ...(Object.fromEntries(EMPLOYEE_PAY_COLUMNS.map((c) => [c, null])) as Record<EmployeePayColumn, null>),
   pay_hidden: true,
-} as const;
+};
+
+/**
+ * Blank every `bank_*` key of a profile-change-request payload (current_value / new_value of a
+ * `bank_account` request). The request queue is the one place bank details travel OUTSIDE an
+ * hr_employees row, so redactEmployeePay never sees them — and the diff card showed a hidden
+ * employee's old and new account numbers side by side to any HR user (found 2026-09-19).
+ * Non-bank keys are kept; a null/absent payload stays as it was.
+ */
+export function redactBankKeys<T extends Record<string, unknown> | null | undefined>(value: T): T {
+  if (!value) return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([k, v]) => [k, k.startsWith('bank_') ? null : v])
+  ) as T;
+}
 
 /**
  * Blank the pay fields on employee rows the caller may not see, leaving everything else — the

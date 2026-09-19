@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Inbox } from 'lucide-react';
+import { Inbox, Lock } from 'lucide-react';
 import { Button, Select, PageHeader, DataList, DataCard, StatusBadge, SkeletonList, ViewToggle, useViewMode, toast } from '@/components/ui';
 import { EmployeeName } from '@/components/hr/employee-name';
+import { useEssText } from '@/lib/i18n/ess-locale';
 
 type Status = 'pending' | 'approved' | 'rejected' | 'cancelled';
-type FieldKey = 'bank_account' | 'emergency_contact';
+type FieldKey = 'bank_account' | 'emergency_contact' | 'full_name';
 
 interface ChangeRequest {
   id: string;
@@ -20,6 +21,9 @@ interface ChangeRequest {
   decided_at: string | null;
   created_at: string;
   requester: { id: string; full_name: string | null; display_name: string | null; username: string | null } | null;
+  /** Set by the API when THIS caller may not see the requester's pay: bank values come back blanked
+   *  and the decide route refuses, so the card shows a lock instead of the diff and the buttons. */
+  pay_hidden?: boolean;
 }
 
 const STATUS_TONE: Record<Status, 'warn' | 'good' | 'critical' | 'neutral'> = {
@@ -41,6 +45,12 @@ const KNOWN_KEYS = [
 
 export default function HrProfileRequestsPage() {
   const t = useTranslations('hr.profile');
+  const tx = useEssText();
+  const fullNameLabel = tx('ชื่อ-นามสกุล', 'Full name', 'အမည်အပြည့်အစုံ', 'ຊື່-ນາມສະກຸນ');
+  const payHiddenNote = tx(
+    'ปิดข้อมูลเงินเดือน — คุณไม่มีสิทธิ์ดูบัญชีธนาคารของคนนี้ คำขอนี้รอผู้ที่ดูเงินเดือนของคนนี้ได้เป็นผู้พิจารณา',
+    'Pay is confidential — you may not see this person\'s bank account. This request waits for someone who can.'
+  );
 
   const [status, setStatus] = useState<string>('pending');
   const [view, setView] = useViewMode('hr-profile-requests');
@@ -63,14 +73,19 @@ export default function HrProfileRequestsPage() {
   );
 
   const fieldLabel = useCallback(
-    (f: FieldKey) => (f === 'bank_account' ? t('fieldBankAccount') : t('fieldEmergencyContact')),
-    [t]
+    (f: FieldKey) =>
+      f === 'bank_account' ? t('fieldBankAccount')
+      : f === 'full_name' ? fullNameLabel
+      : t('fieldEmergencyContact'),
+    [t, fullNameLabel]
   );
 
   const keyLabel = useCallback(
     (k: string) =>
-      (KNOWN_KEYS as readonly string[]).includes(k) ? t(`key_${k}` as never) : k,
-    [t]
+      k === 'full_name' ? fullNameLabel
+      : (KNOWN_KEYS as readonly string[]).includes(k) ? t(`key_${k}` as never)
+      : k,
+    [t, fullNameLabel]
   );
 
   const load = useCallback(async () => {
@@ -157,7 +172,9 @@ export default function HrProfileRequestsPage() {
               subtitle={fieldLabel(r.field_key)}
               status={<StatusBadge tone={STATUS_TONE[r.status]} label={statusLabel(r.status)} />}
               actions={
-                r.status === 'pending' ? (
+                // The decide route answers 403 for a hidden requester, so the buttons would only
+                // produce an error toast — the lock note in the body says who has to act instead.
+                r.status === 'pending' && !r.pay_hidden ? (
                   rejectId === r.id ? (
                     <div className="flex w-full flex-wrap items-center gap-2">
                       <input
@@ -206,14 +223,21 @@ export default function HrProfileRequestsPage() {
               }
             >
               <div className="mt-1">
-                <ValueDiff
-                  current={r.current_value}
-                  next={r.new_value}
-                  keyLabel={keyLabel}
-                  currentLabel={t('currentLabel')}
-                  newLabel={t('newLabel')}
-                  emptyLabel={t('emptyValue')}
-                />
+                {r.pay_hidden ? (
+                  <p className="flex items-start gap-1.5 rounded-lg bg-amber-50 p-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+                    <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span>{payHiddenNote}</span>
+                  </p>
+                ) : (
+                  <ValueDiff
+                    current={r.current_value}
+                    next={r.new_value}
+                    keyLabel={keyLabel}
+                    currentLabel={t('currentLabel')}
+                    newLabel={t('newLabel')}
+                    emptyLabel={t('emptyValue')}
+                  />
+                )}
               </div>
 
               {r.reason && (

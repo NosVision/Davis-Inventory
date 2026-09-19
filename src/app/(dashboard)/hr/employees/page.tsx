@@ -28,7 +28,8 @@ interface EmployeeRow extends Record<string, unknown> {
   profile_id: string;
   employee_code: string | null;
   full_name: string | null;
-  rate_satang: number;
+  /** null when `pay_hidden` — the API blanks every pay column for a caller who may not see them. */
+  rate_satang: number | null;
   pay_type: string;
   status: string;
   work_hours_per_day: number | null;
@@ -75,6 +76,12 @@ const STATUS_TONE: Record<string, StatusTone> = {
 function bahtFromSatang(satang: number): string {
   return (satang / 100).toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
+
+// What a closed pay field prints as — on the profile PDF, the register and the bank indicator.
+// Never ฿0 or "—": a second HR user reading "0" off the register concluded the salary was missing
+// rather than closed to them (client 2026-09-11/14/16). The person still prints; only the money
+// is replaced ("hide the NUMBERS, not the PERSON", pay-visibility.ts).
+const PAY_HIDDEN_LABEL = 'ปิดข้อมูล';
 
 // Prefer the employee's real full name (ชื่อ-นามสกุล); fall back to the profile nickname/
 // username only when full_name is unset (e.g. an unlinked/test account).
@@ -177,6 +184,9 @@ export default function EmployeesPage() {
       if (!res.ok || !d) { toast({ type: 'error', title: t('profile.fail') }); return; }
       const { buildEmployeeProfilePdf, downloadBlob } = await import('./_components/employee-profile-pdf');
       const s = (v: unknown) => (v == null || v === '' ? '' : String(v));
+      // The GET is redacted for this caller: every pay field is null and pay_hidden is set.
+      const payHidden = Boolean(d.pay_hidden) || Boolean(e.pay_hidden);
+      const pay = (v: string) => (payHidden ? PAY_HIDDEN_LABEL : v);
       const name = employeeName(e);
       const now = new Date();
       const blob = await buildEmployeeProfilePdf({
@@ -198,13 +208,13 @@ export default function EmployeesPage() {
             { label: t('profile.probationEnd'), value: s(d.probation_end) },
           ] },
           { title: t('profile.compensation'), fields: [
-            { label: t('profile.rate'), value: bahtFromSatang(e.rate_satang) },
+            { label: t('profile.rate'), value: pay(bahtFromSatang(e.rate_satang ?? 0)) },
           ] },
           { title: t('profile.statutory'), fields: [
             { label: t('profile.ssoEnrolled'), value: d.sso_enrolled ? t('profile.yes') : t('profile.no') },
-            { label: t('profile.ssoNo'), value: s(d.sso_no) },
-            { label: t('profile.taxMode'), value: s(d.tax_mode) },
-            { label: t('profile.taxId'), value: s(d.tax_id) },
+            { label: t('profile.ssoNo'), value: pay(s(d.sso_no)) },
+            { label: t('profile.taxMode'), value: pay(s(d.tax_mode)) },
+            { label: t('profile.taxId'), value: pay(s(d.tax_id)) },
           ] },
         ],
       });
@@ -247,6 +257,15 @@ export default function EmployeesPage() {
         toast({ type: 'warning', title: t('register.emptyResult') });
         return;
       }
+      // Hidden people stay on the register (it is a headcount document) with their money columns
+      // marked, and HR is told so before the file opens rather than discovering "ปิดข้อมูล" in print.
+      const hiddenCount = printRows.filter((r) => r.pay_hidden).length;
+      if (hiddenCount > 0 && columns.some((c) => c === 'rate' || c === 'bank_name' || c === 'bank_account_no')) {
+        toast({
+          type: 'warning',
+          title: `ปิดข้อมูลเงินเดือน ${hiddenCount} คน — ช่องอัตราค่าจ้าง/ธนาคารของคนเหล่านี้จะพิมพ์เป็น "${PAY_HIDDEN_LABEL}"`,
+        });
+      }
 
       const { buildEmployeeRegisterPdf, downloadBlob } = await import('./_components/employee-register-pdf');
       const companyName = printCompany
@@ -266,10 +285,10 @@ export default function EmployeesPage() {
           department: r.department?.name || '—',
           store: r.stores.length ? r.stores.map((s) => s.store_name).join(', ') : '—',
           pay_type: t(`payType.${r.pay_type}`),
-          rate: bahtFromSatang(r.rate_satang),
+          rate: r.pay_hidden ? PAY_HIDDEN_LABEL : bahtFromSatang(r.rate_satang ?? 0),
           status: t(`status.${r.status}`),
-          bank_name: r.bank_name || '—',
-          bank_account_no: r.bank_account_no || '—',
+          bank_name: r.pay_hidden ? PAY_HIDDEN_LABEL : r.bank_name || '—',
+          bank_account_no: r.pay_hidden ? PAY_HIDDEN_LABEL : r.bank_account_no || '—',
         })),
         labels: {
           title: t('register.title'),
@@ -416,7 +435,7 @@ export default function EmployeesPage() {
               ●●●●
             </span>
           ) : (
-            <span className="tabular-nums">{bahtFromSatang(e.rate_satang)}</span>
+            <span className="tabular-nums">{bahtFromSatang(e.rate_satang ?? 0)}</span>
           ),
       },
       {
@@ -440,8 +459,17 @@ export default function EmployeesPage() {
           return (
             <div className="flex items-center gap-2">
               <span
-                title={hasBank ? `${t('col.hasBank')}${e.bank_name ? ` (${e.bank_name})` : ''}` : t('col.noBank')}
-                className={hasBank ? 'text-emerald-500' : 'text-gray-300 dark:text-gray-600'}
+                // A blanked account is not a missing one: say "closed", not "no bank on file".
+                title={
+                  e.pay_hidden ? PAY_HIDDEN_LABEL
+                  : hasBank ? `${t('col.hasBank')}${e.bank_name ? ` (${e.bank_name})` : ''}`
+                  : t('col.noBank')
+                }
+                className={
+                  e.pay_hidden ? 'text-amber-400 dark:text-amber-500'
+                  : hasBank ? 'text-emerald-500'
+                  : 'text-gray-300 dark:text-gray-600'
+                }
               >
                 <Banknote className="h-4 w-4" />
               </span>
