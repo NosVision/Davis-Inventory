@@ -25,7 +25,6 @@ interface Ctx {
   company_id: string | null;
   company_name: string | null;
   companies: { id: string; name: string }[];
-  positions: { id: string; name: string }[];
 }
 interface Identity {
   id: string;
@@ -34,6 +33,7 @@ interface Identity {
   position_text: string | null;
   company_id: string | null;
   bank_name: string | null;
+  /** masked to the last 4 digits by the API — shown to recognise the row, never re-sent */
   bank_account_no: string | null;
   status: string;
   store?: { store_name: string | null } | null;
@@ -126,7 +126,7 @@ export function EmployeeSignupForm({ token }: { token: string }) {
   useEffect(() => {
     if (mode !== 'search') return;
     if (qTimer.current) clearTimeout(qTimer.current);
-    if (q.trim().length < 2) { setResults([]); return; }
+    if (q.trim().length < 3) { setResults([]); return; }
     setSearching(true);
     qTimer.current = setTimeout(async () => {
       try {
@@ -159,7 +159,10 @@ export function EmployeeSignupForm({ token }: { token: string }) {
     }
     setPicked(it);
     setFullName(it.full_name_th || it.full_name_en || '');
-    setBankNo(it.bank_account_no || '');
+    // The API returns the number masked, so there is nothing to put in the field — and nothing
+    // the hire should type: HR's import is the record (คุณต๊ะ 2026-07-23, employees never enter
+    // their own data). The masked number stays visible on the picked card for recognition.
+    setBankNo('');
     setBankName(it.bank_name || '');
     // Prefill company (unless the link is company-scoped). Position is NOT collected at
     // self-registration anymore — HR assigns it afterwards (owner ask 2026-07-24).
@@ -467,7 +470,7 @@ export function EmployeeSignupForm({ token }: { token: string }) {
                       <span className="min-w-0 flex-1">
                         <span className="block text-sm font-medium text-gray-800 dark:text-gray-100">{it.full_name_th || it.full_name_en}</span>
                         <span className="block text-[11px] text-gray-500 dark:text-gray-400">
-                          {[it.position_text, it.store?.store_name, it.bank_account_no ? `****${it.bank_account_no.slice(-4)}` : null].filter(Boolean).join(' · ')}
+                          {[it.position_text, it.store?.store_name, it.bank_account_no].filter(Boolean).join(' · ')}
                         </span>
                       </span>
                       {it.status !== 'unclaimed' && (
@@ -480,7 +483,7 @@ export function EmployeeSignupForm({ token }: { token: string }) {
                 ))}
               </ul>
             )}
-            {q.trim().length >= 2 && !searching && results.length === 0 && (
+            {q.trim().length >= 3 && !searching && results.length === 0 && (
               <p className="mt-1 text-xs text-gray-400">ไม่พบชื่อ — กด &quot;กรอกเอง&quot; เพื่อระบุข้อมูลเอง</p>
             )}
           </div>
@@ -490,7 +493,10 @@ export function EmployeeSignupForm({ token }: { token: string }) {
           <div className="space-y-3">
             {picked && (
               <div className="flex items-center justify-between rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300">
-                <span>เลือกจากข้อมูลนำเข้าแล้ว</span>
+                <span>
+                  เลือกจากข้อมูลนำเข้าแล้ว
+                  {picked.bank_account_no ? <> · บัญชี <b className="tabular-nums">{picked.bank_account_no}</b></> : null}
+                </span>
                 <button type="button" onClick={() => { setPicked(null); setMode('search'); setFullName(''); setBankNo(''); setBankName(''); }} className="font-medium underline">เปลี่ยน</button>
               </div>
             )}

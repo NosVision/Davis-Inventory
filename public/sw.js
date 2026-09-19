@@ -1,4 +1,6 @@
-const CACHE_NAME = 'davismanage-v2';
+// Bump on every deploy that changes the shell: an unbumped name kept serving the OLD register form
+// from cache for weeks (HR screenshot 2026-09-10). The activate handler deletes every other cache.
+const CACHE_NAME = 'davismanage-v3';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',

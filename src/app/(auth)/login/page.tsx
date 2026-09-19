@@ -1,11 +1,20 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils/cn';
 import { LogIn, Eye, EyeOff, Loader2 } from 'lucide-react';
+
+/**
+ * Where to go once signed in. The middleware puts the page it bounced from in ?redirect=; only a
+ * same-origin path is honoured, so a crafted link cannot send a fresh login off-site.
+ */
+function postLoginHome(): string {
+  const target = new URLSearchParams(window.location.search).get('redirect') ?? '';
+  return target.startsWith('/') && !target.startsWith('//') && !target.startsWith('/login') ? target : '/';
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -15,6 +24,24 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Already signed in (a stale tab, the PWA reopening on its start URL, a poll that bounced here
+  // during a blip) → straight back in. getUser(), not getSession(): the server must confirm the
+  // session, or an expired one would ping-pong between here and the middleware.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const { data, error: authError } = await createClient().auth.getUser();
+        if (alive && data.user && !authError) router.replace(postLoginHome());
+      } catch {
+        /* offline — show the form; the submit path reports its own errors */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,7 +79,7 @@ export default function LoginPage() {
         return;
       }
 
-      router.push('/');
+      router.push(postLoginHome());
       router.refresh();
     } catch {
       setError(t('networkError'));

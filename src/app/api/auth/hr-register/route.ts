@@ -27,6 +27,24 @@ async function verifyLogin(username: string, password: string): Promise<{ ok: bo
 
 const USERNAME_RE = /^[a-z0-9_]+$/;
 const USED_COUNT_CAP = 1000; // runaway backstop for a leaked link
+// Below this the name search is a directory dump: two Thai letters match half the roster.
+const MIN_IDENTITY_QUERY = 3;
+
+// This endpoint is public to anyone holding a registration link, so a bank account number is
+// never returned whole — only enough for the hire to recognise their own (2026-09-19).
+function maskAccountNo(no: string | null | undefined): string | null {
+  if (!no) return null;
+  const digits = no.replace(/\D/g, '');
+  if (digits.length <= 4) return '••••';
+  return `••••${digits.slice(-4)}`;
+}
+
+// A registrant may only land in a company HR still runs — an inactive one is a closed entity.
+async function activeCompanyId(service: ReturnType<typeof createServiceClient>, id: string | null): Promise<string | null> {
+  if (!id) return null;
+  const { data } = await service.from('hr_companies').select('id').eq('id', id).eq('active', true).maybeSingle();
+  return data ? (data.id as string) : null;
+}
 
 type Link = {
   kind: 'hr' | 'invite';
@@ -80,6 +98,30 @@ async function loadLink(service: ReturnType<typeof createServiceClient>, token: 
   };
 }
 
+type Identity = {
+  status: string;
+  company_id: string | null;
+  full_name_th: string | null;
+  bank_name: string | null;
+  bank_account_no: string | null;
+};
+
+async function loadIdentity(service: ReturnType<typeof createServiceClient>, id: string): Promise<Identity | null> {
+  const { data } = await service
+    .from('hr_pending_identities')
+    .select('status, company_id, full_name_th, bank_name, bank_account_no')
+    .eq('id', id)
+    .maybeSingle();
+  if (!data) return null;
+  return {
+    status: data.status as string,
+    company_id: (data.company_id as string | null) ?? null,
+    full_name_th: (data.full_name_th as string | null) ?? null,
+    bank_name: (data.bank_name as string | null) ?? null,
+    bank_account_no: (data.bank_account_no as string | null) ?? null,
+  };
+}
+
 // Bump the right counter for whichever link kind served this sign-up.
 async function bumpLinkUse(service: ReturnType<typeof createServiceClient>, link: Link): Promise<void> {
   if (link.kind === 'invite') {
@@ -114,25 +156,31 @@ export async function GET(request: NextRequest) {
 
   if (action === 'identities') {
     const q = (sp.get('q') ?? '').trim();
-    if (q.length < 2) return NextResponse.json({ data: [] });
-    const like = `%${q}%`;
-    // Return every status (not just unclaimed) with `status`, so the page can warn when a name is
-    // already claimed (under HR review) or linked (HR accepted) instead of letting them re-register.
+    if (q.length < MIN_IDENTITY_QUERY) return NextResponse.json({ data: [] });
+    // PostgREST's or() splits on commas and dots, so a query containing either would break out of
+    // the filter — strip them rather than 400 on a stray character in a name.
+    const like = `%${q.replace(/[,.()]/g, '')}%`;
+    // Names only — the bank account number is not a search key (it was, and a link holder could
+    // walk the roster by digits). Every status is returned with `status`, so the page can warn
+    // when a name is already claimed (under HR review) or linked (HR accepted).
     let query = service
       .from('hr_pending_identities')
       .select('id, full_name_th, full_name_en, position_text, company_id, bank_name, bank_account_no, status, store:stores(store_name)')
-      .or(`full_name_th.ilike.${like},full_name_en.ilike.${like},bank_account_no.ilike.${like}`)
+      .or(`full_name_th.ilike.${like},full_name_en.ilike.${like}`)
       .limit(15);
     if (link.company_id) query = query.eq('company_id', link.company_id);
     const { data } = await query;
-    return NextResponse.json({ data: data ?? [] });
+    const masked = ((data ?? []) as Record<string, unknown>[]).map((row) => ({
+      ...row,
+      bank_account_no: maskAccountNo(row.bank_account_no as string | null),
+    }));
+    return NextResponse.json({ data: masked });
   }
 
-  // default: context — companies + positions for the pickers.
-  const [companiesRes, positionsRes] = await Promise.all([
-    service.from('hr_companies').select('id, name').order('name'),
-    service.from('hr_positions').select('id, name').eq('active', true).order('sort_order'),
-  ]);
+  // default: context — the company picker (only when the link is not company-scoped). Positions
+  // are not offered: HR assigns them after registration (owner ask 2026-07-24), and the form has
+  // not rendered the picker since, so the list was shipped to a public page for nothing.
+  const companiesRes = await service.from('hr_companies').select('id, name').eq('active', true).order('name');
   const companyName = link.company_id
     ? (companiesRes.data ?? []).find((c) => c.id === link.company_id)?.name ?? null
     : null;
@@ -145,8 +193,8 @@ export async function GET(request: NextRequest) {
       store_name: link.store_name,
       company_id: link.company_id,
       company_name: companyName,
-      companies: companiesRes.data ?? [],
-      positions: positionsRes.data ?? [],
+      // a company-scoped link needs no picker, so it gets no list either
+      companies: link.company_id ? [] : (companiesRes.data ?? []),
     },
   });
 }
@@ -157,10 +205,9 @@ export async function POST(request: NextRequest) {
   const token = typeof body.token === 'string' ? body.token : '';
   const username = (typeof body.username === 'string' ? body.username : '').trim().toLowerCase();
   const password = typeof body.password === 'string' ? body.password : '';
-  const fullName = (typeof body.full_name === 'string' ? body.full_name : '').trim();
-  const bankAccountNo = (typeof body.bank_account_no === 'string' ? body.bank_account_no : '').trim();
-  const bankName = (typeof body.bank_name === 'string' ? body.bank_name : '').trim();
-  const positionId = typeof body.position_id === 'string' && body.position_id ? body.position_id : null;
+  const typedFullName = (typeof body.full_name === 'string' ? body.full_name : '').trim();
+  const typedBankAccountNo = (typeof body.bank_account_no === 'string' ? body.bank_account_no : '').trim();
+  const typedBankName = (typeof body.bank_name === 'string' ? body.bank_name : '').trim();
   const bodyCompanyId = typeof body.company_id === 'string' && body.company_id ? body.company_id : null;
   const pendingIdentityId = typeof body.pending_identity_id === 'string' && body.pending_identity_id ? body.pending_identity_id : null;
 
@@ -172,6 +219,21 @@ export async function POST(request: NextRequest) {
   if (action === 'create' && link.used_count >= USED_COUNT_CAP) {
     return NextResponse.json({ error: 'ลิงก์นี้ถูกใช้ครบจำนวนแล้ว กรุณาติดต่อ HR' }, { status: 429 });
   }
+
+  // When the hire matched an imported identity, HR's import IS the record: name and bank come
+  // from it, never from the form (คุณต๊ะ 2026-07-23 — employees never enter their own data; the
+  // search API only ever shows the number masked anyway). Typed values are used only for a hire
+  // HR has not imported. A company-scoped link cannot claim another company's identity.
+  const identity = pendingIdentityId ? await loadIdentity(service, pendingIdentityId) : null;
+  if (pendingIdentityId && !identity) {
+    return NextResponse.json({ error: 'ไม่พบข้อมูลพนักงานที่เลือก กรุณาค้นหาใหม่' }, { status: 404 });
+  }
+  if (identity && link.company_id && identity.company_id !== link.company_id) {
+    return NextResponse.json({ error: 'ชื่อนี้ไม่ได้อยู่ในบริษัทของลิงก์นี้' }, { status: 400 });
+  }
+  const fullName = identity?.full_name_th || typedFullName;
+  const bankAccountNo = identity ? (identity.bank_account_no ?? '') : typedBankAccountNo;
+  const bankName = identity ? (identity.bank_name ?? '') : typedBankName;
 
   // ── verify: the hire hit an existing username — confirm they own it (login password) so they
   // can LINK their imported name instead of creating a duplicate account. ──────────────────────
@@ -189,7 +251,7 @@ export async function POST(request: NextRequest) {
       data: {
         ok: true,
         display_name: prof?.display_name || prof?.username || username,
-        existing_bank_account_no: (emp?.bank_account_no as string | null) ?? null,
+        existing_bank_account_no: maskAccountNo((emp?.bank_account_no as string | null) ?? null),
         has_employee: !!emp,
       },
     });
@@ -202,17 +264,13 @@ export async function POST(request: NextRequest) {
     if (!v.ok || !v.userId) return NextResponse.json({ error: 'รหัสผ่านไม่ถูกต้อง' }, { status: 401 });
     const userId = v.userId;
 
-    let linkCompanyId = link.company_id ?? bodyCompanyId;
-    if (linkCompanyId) {
-      const { data: co } = await service.from('hr_companies').select('id').eq('id', linkCompanyId).maybeSingle();
-      if (!co) linkCompanyId = null;
-    }
+    // A company scope on the link wins; otherwise the picked company, if it is one HR still runs.
+    const linkCompanyId = await activeCompanyId(service, link.company_id ?? bodyCompanyId);
 
     const { data: existingEmp } = await service.from('hr_employees').select('id, company_id').eq('profile_id', userId).maybeSingle();
     const empFields: Record<string, unknown> = { full_name: fullName };
     if (bankAccountNo) empFields.bank_account_no = bankAccountNo;
     if (bankName) empFields.bank_name = bankName;
-    if (positionId) empFields.position_id = positionId;
     if (linkCompanyId) empFields.company_id = linkCompanyId;
     let employeeId: string | null = null;
     let employeeCompanyId: string | null = null;
@@ -292,19 +350,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'ชื่อผู้ใช้นี้ถูกใช้แล้ว' }, { status: 409 });
   }
   // Guard: don't create a new account for a name that's already claimed (under review) or linked.
-  if (pendingIdentityId) {
-    const { data: pid } = await service.from('hr_pending_identities').select('status').eq('id', pendingIdentityId).maybeSingle();
-    if (pid && pid.status !== 'unclaimed') {
-      return NextResponse.json({ error: 'ชื่อนี้ลงทะเบียนไปแล้ว กรุณาเข้าสู่ระบบด้วยบัญชีเดิม' }, { status: 409 });
-    }
+  if (identity && identity.status !== 'unclaimed') {
+    return NextResponse.json({ error: 'ชื่อนี้ลงทะเบียนไปแล้ว กรุณาเข้าสู่ระบบด้วยบัญชีเดิม' }, { status: 409 });
   }
 
-  // A company scope on the link wins; otherwise take the picked company (validated to exist).
-  let companyId = link.company_id ?? bodyCompanyId;
-  if (companyId) {
-    const { data: co } = await service.from('hr_companies').select('id').eq('id', companyId).maybeSingle();
-    if (!co) companyId = null;
-  }
+  // A company scope on the link wins; otherwise the picked company, if it is one HR still runs.
+  const companyId = await activeCompanyId(service, link.company_id ?? bodyCompanyId);
 
   // 1. Create the auth account (email = username@stockmanager.app). Role by link kind:
   //    hr link → 'not_assign' (HR assigns later) · invite link → the role the link pre-binds.
@@ -341,7 +392,6 @@ export async function POST(request: NextRequest) {
     .insert({
       profile_id: userId,
       company_id: companyId,
-      position_id: positionId,
       full_name: fullName,
       bank_account_no: bankAccountNo || null,
       bank_name: bankName || null,
@@ -389,7 +439,6 @@ export async function POST(request: NextRequest) {
       username,
       full_name: fullName,
       company_id: companyId,
-      position_id: positionId,
       role: newRole,
       via: link.kind === 'invite' ? 'staff_invitation' : 'hr_registration_link',
     },

@@ -14,7 +14,6 @@ const PUBLIC_ROUTES = [
   '/login',
   '/invite',                     // /invite/[token] — staff invitation register page
   '/register',                   // /register/[token] — HR self-registration page
-  '/api/auth/register',
   '/api/auth/hr-register',       // token-gated staff self-registration (validates its own token)
   '/api/auth/invitation',        // /api/auth/invitation/[token] — public lookup
   '/api/auth/callback',
@@ -40,6 +39,27 @@ const HQ_DEPOSIT_HISTORY_ROUTES = ['/hq/deposit-history', '/api/hq/deposit-histo
 
 function pathMatches(pathname: string, route: string): boolean {
   return pathname === route || pathname.startsWith(`${route}/`);
+}
+
+/**
+ * What "not signed in" looks like to the caller. A page navigation goes to /login; an API call
+ * gets a 401 it can read. The distinction matters because the shell polls five APIs every
+ * 45–60 s: when those were redirected too (fail-closed gate, 2026-09-10), one transient auth
+ * hiccup on a poll turned into the whole app landing on /login mid-task. A fetch cannot follow
+ * a redirect into a page anyway — all it saw was HTML where JSON was expected.
+ */
+function unauthenticated(request: NextRequest, pathname: string): NextResponse {
+  if (pathname.startsWith('/api/')) {
+    return NextResponse.json({ error: 'unauthenticated' }, { status: 401 });
+  }
+  const loginUrl = new URL('/login', request.url);
+  loginUrl.searchParams.set('redirect', pathname);
+  // Keep the installed-app launch marker (manifest start_url ?source=pwa) across the
+  // redirect so the login page can stamp sessionStorage for the PWA gate.
+  if (request.nextUrl.searchParams.get('source') === 'pwa') {
+    loginUrl.searchParams.set('source', 'pwa');
+  }
+  return NextResponse.redirect(loginUrl);
 }
 
 export async function middleware(request: NextRequest) {
@@ -84,17 +104,8 @@ export async function middleware(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser();
 
-  // No session → redirect to login
-  if (!user) {
-    const loginUrl = new URL('/login', request.url);
-    loginUrl.searchParams.set('redirect', pathname);
-    // Keep the installed-app launch marker (manifest start_url ?source=pwa) across the
-    // redirect so the login page can stamp sessionStorage for the PWA gate.
-    if (request.nextUrl.searchParams.get('source') === 'pwa') {
-      loginUrl.searchParams.set('source', 'pwa');
-    }
-    return NextResponse.redirect(loginUrl);
-  }
+  // No session → login page for a navigation, 401 for an API call
+  if (!user) return unauthenticated(request, pathname);
 
   // Read role from JWT app_metadata (fast, no DB query)
   // Falls back to profiles query only if app_metadata doesn't have role yet
@@ -107,15 +118,11 @@ export async function middleware(request: NextRequest) {
       .eq('id', user.id)
       .single();
 
-    if (!profile) {
-      return NextResponse.redirect(new URL('/login', request.url));
-    }
+    if (!profile) return unauthenticated(request, pathname);
     role = profile.role;
   }
 
-  if (!role) {
-    return NextResponse.redirect(new URL('/login', request.url));
-  }
+  if (!role) return unauthenticated(request, pathname);
 
   // Customer can only access /customer routes
   if (role === 'customer' && !CUSTOMER_ROUTES.some((r) => pathname.startsWith(r))) {

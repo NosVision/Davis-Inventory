@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { notifyHrOfEmployeeRequest } from '@/lib/hr/notify';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_OPEN_OT_REQUESTS = 20;
@@ -122,6 +123,17 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json({ error: 'Failed to file OT request' }, { status: 500 });
   }
+
+  // HR hears about it now, not when they next open the queue (คุณเมย์ 2026-09-17).
+  await notifyHrOfEmployeeRequest(service, {
+    userId: user.id,
+    storeId,
+    type: 'hr_ot_request',
+    title: 'มีคำขอโอทีใหม่',
+    what: `ขอโอที ${workDate} จำนวน ${requestedOtMin} นาที — รอ HR อนุมัติ`,
+    inboxType: 'ot',
+    itemId: (data as unknown as { id: string }).id,
+  });
   return NextResponse.json({ data }, { status: 201 });
 }
 

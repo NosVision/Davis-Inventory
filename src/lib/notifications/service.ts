@@ -58,7 +58,13 @@ export type NotificationType =
   | 'hr_eval_assigned'        // ได้รับมอบหมายให้ประเมินพนักงาน (for the evaluator)
   | 'hr_sc_ready'             // Service Charge งวดนี้สรุปแล้ว — ยอด+วันจ่ายของคุณ (for the employee)
   | 'hr_resignation_request'  // พนักงานยื่นใบลาออก รอ HR รับเรื่อง (for HR)
-  | 'hr_resignation_result';  // ผลคำขอลาออก — รับเรื่อง/ปฏิเสธ (for the employee)
+  | 'hr_resignation_result'   // ผลคำขอลาออก — รับเรื่อง/ปฏิเสธ (for the employee)
+  // Employee-filed requests that used to reach HR only by HR going to look (คุณเมย์ 2026-09-17:
+  // "ไม่เด้งโนติ ต้องเข้าไปดูเอง") — each now lands in the HR inbox with a push.
+  | 'hr_ot_request'             // พนักงานขอโอที รอ HR อนุมัติ (for HR)
+  | 'hr_attendance_request'     // พนักงานขอแก้เวลาเข้า-ออก รอ HR อนุมัติ (for HR)
+  | 'hr_profile_change_request' // พนักงานขอแก้ข้อมูลส่วนตัว/บัญชี รอ HR อนุมัติ (for HR)
+  | 'hr_claim_request';         // พนักงานยื่นเบิกค่าใช้จ่าย รอ HR อนุมัติ (for HR)
 
 export interface NotifyUserParams {
   userId: string;
@@ -185,6 +191,10 @@ const TYPE_TO_PREF: Record<NotificationType, keyof NotificationPreferences> = {
   hr_sc_ready: 'notify_approval_request',
   hr_resignation_request: 'notify_approval_request',
   hr_resignation_result: 'notify_approval_request',
+  hr_ot_request: 'notify_approval_request',
+  hr_attendance_request: 'notify_approval_request',
+  hr_profile_change_request: 'notify_approval_request',
+  hr_claim_request: 'notify_approval_request',
 };
 
 // Customer-facing notification types that respect store_settings toggles

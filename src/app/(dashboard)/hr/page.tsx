@@ -45,6 +45,7 @@ import {
   Search,
   ChevronDown,
   ChevronRight,
+  Inbox,
   type LucideIcon,
 } from 'lucide-react';
 import { PageHeader } from '@/components/ui';
@@ -70,6 +71,8 @@ const NAV_TILES: { key: string; icon: LucideIcon; href?: string }[] = [
   { key: 'timesheet', icon: CalendarClock, href: '/hr/timesheet' },
   { key: 'swaps', icon: Repeat, href: '/hr/swaps' },
   { key: 'requests', icon: ClipboardList, href: '/hr/requests' },
+  // Every pending item of every type, every company, in one list (คุณเมย์ 2026-09-08).
+  { key: 'inbox', icon: Inbox, href: '/hr/inbox' },
   { key: 'leave', icon: CalendarX, href: '/hr/leaves' },
   { key: 'leaveTypes', icon: Settings, href: '/hr/leave-types' },
   { key: 'warnings', icon: AlertTriangle, href: '/hr/warnings' },
@@ -112,7 +115,7 @@ const TILE_GROUPS: { key: string; tiles: string[] }[] = [
   },
   { key: 'people', tiles: ['employees', 'orgChart', 'profileRequests', 'offboarding'] },
   { key: 'time', tiles: ['attendance', 'timesheet', 'schedule', 'swaps'] },
-  { key: 'leave', tiles: ['leave', 'requests', 'claims'] },
+  { key: 'leave', tiles: ['leave', 'requests', 'inbox', 'claims'] },
   { key: 'performance', tiles: ['warnings', 'evaluation'] },
   { key: 'documents', tiles: ['documentRequests', 'certificates', 'announcements', 'policies', 'assets'] },
   { key: 'settings', tiles: ['companies', 'policySettings', 'org', 'leaveTypes', 'locations', 'audit'] },
@@ -128,12 +131,33 @@ const BADGE_KEYS = [
   'profileRequests',
   'documentRequests',
   'identityClaims',
+  'resignations',
+  'paperSlips',
+  'offboardingAck',
 ] as const;
+
+// Labels for keys that have no hub tile of their own (and so no `hr.nav.*` message): three new
+// queues that used to be counted nowhere (คุณเมย์ 2026-09-17), and the inbox tile itself.
+const LABEL_FALLBACK: Record<string, (isTh: boolean) => string> = {
+  inbox: (isTh) => (isTh ? 'กล่องคำขอทั้งหมด' : 'Request inbox'),
+  resignations: (isTh) => (isTh ? 'ใบลาออก' : 'Resignations'),
+  paperSlips: (isTh) => (isTh ? 'ขอสลิปกระดาษ' : 'Paper slips'),
+  offboardingAck: (isTh) => (isTh ? 'รอพนักงานลงนามพ้นสภาพ' : 'Offboarding awaiting signature'),
+};
+
+interface CompanyCount {
+  company_id: string | null;
+  name: string | null;
+  count: number;
+}
 
 const HREF_BY_KEY: Record<string, string | undefined> = {
   ...Object.fromEntries(NAV_TILES.map((tile) => [tile.key, tile.href])),
   // identity-claims merged into the accounts tab — its "needs action" chip deep-links there.
   identityClaims: '/hr/employees?tab=accounts&view=claims',
+  resignations: '/hr/offboarding',
+  paperSlips: '/hr/payroll',
+  offboardingAck: '/hr/offboarding',
 };
 
 /**
@@ -197,12 +221,21 @@ export default function HrDashboardPage() {
   // Per-area "needs action" counts → red badge on the relevant tile. Auto-refreshes so the hub
   // reflects new requests/approvals without a manual reload (owner ask 2026-07-09).
   const [badges, setBadges] = useState<Record<string, number>>({});
+  // The same total split by company — so HR reads "which company is waiting" off the strip
+  // instead of opening each queue per company (คุณเมย์ 2026-09-08).
+  const [byCompany, setByCompany] = useState<CompanyCount[]>([]);
   useEffect(() => {
     let alive = true;
     const load = async () => {
       try {
         const res = await fetch('/api/hr/dashboard/badges');
-        if (res.ok && alive) setBadges(((await res.json()).data ?? {}) as Record<string, number>);
+        if (!res.ok || !alive) return;
+        const data = ((await res.json()).data ?? {}) as Record<string, unknown>;
+        const counts = Object.fromEntries(
+          Object.entries(data).filter((e): e is [string, number] => typeof e[1] === 'number')
+        );
+        setBadges(counts);
+        setByCompany(Array.isArray(data.by_company) ? (data.by_company as CompanyCount[]) : []);
       } catch {
         /* badges are best-effort — never block the hub */
       }
@@ -226,7 +259,9 @@ export default function HrDashboardPage() {
         .sort((a, b) => b.count - a.count),
     [badges]
   );
-  const total = pending.reduce((s, p) => s + p.count, 0);
+  // The inbox total is authoritative (it is the list /hr/inbox opens on); the chip sum is only
+  // the fallback for a response that predates it.
+  const total = badges.inbox ?? pending.reduce((s, p) => s + p.count, 0);
 
   // Tile badges — identity-claims merged into the employees surface, so its count rides on the
   // employees tile (the standalone tile is gone; the summary chip still deep-links to the queue).
@@ -235,6 +270,11 @@ export default function HrDashboardPage() {
     t.employees = (t.employees ?? 0) + (t.identityClaims ?? 0);
     return t;
   }, [badges]);
+
+  const tileLabel = useCallback(
+    (key: string) => LABEL_FALLBACK[key]?.(isTh) ?? t(`nav.${key}`),
+    [isTh, t]
+  );
 
   // Collapsed groups — a per-browser preference, not per-account data, so localStorage is enough.
   const [collapsed, setCollapsed] = useState<string[]>([]);
@@ -287,8 +327,8 @@ export default function HrDashboardPage() {
   // Tiles matching the search box, flattened — searching is a "find one menu" gesture, so the
   // grouping gets out of the way rather than making the reader scan section headers too.
   const searchHits = useMemo(
-    () => (q ? NAV_TILES.filter((tile) => t(`nav.${tile.key}`).toLowerCase().includes(q)) : []),
-    [q, t]
+    () => (q ? NAV_TILES.filter((tile) => tileLabel(tile.key).toLowerCase().includes(q)) : []),
+    [q, tileLabel]
   );
 
   const allCollapsed = collapsed.length >= sections.length;
@@ -331,7 +371,7 @@ export default function HrDashboardPage() {
         >
           <Icon className="h-5 w-5" />
         </div>
-        <span className="text-sm font-medium text-gray-900 dark:text-white">{t(`nav.${key}`)}</span>
+        <span className="text-sm font-medium text-gray-900 dark:text-white">{tileLabel(key)}</span>
         <span className="text-xs text-gray-400 dark:text-gray-500">{href ? '' : t('comingSoon')}</span>
       </>
     );
@@ -415,20 +455,42 @@ export default function HrDashboardPage() {
       {/* Auto-updating "needs action" summary */}
       {total > 0 ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/40 dark:bg-amber-900/15">
-          <div className="mb-2.5 flex items-center gap-2 text-sm font-semibold text-amber-800 dark:text-amber-300">
+          <div className="mb-2.5 flex flex-wrap items-center gap-2 text-sm font-semibold text-amber-800 dark:text-amber-300">
             <AlertTriangle className="h-4 w-4" />
             {isTh ? 'รายการที่ต้องดำเนินการ' : 'Needs action'}
             <span className="ml-1 inline-flex min-w-[22px] items-center justify-center rounded-full bg-amber-500 px-1.5 py-0.5 text-xs font-bold text-white">
               {total > 99 ? '99+' : total}
             </span>
+            {/* The strip is a summary; the inbox is the list — one link, every type, every company. */}
+            <Link
+              href="/hr/inbox"
+              className="ml-auto inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-white px-2.5 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-gray-800 dark:text-amber-300 dark:hover:bg-amber-900/30"
+            >
+              <Inbox className="h-3.5 w-3.5" />
+              {isTh ? 'เปิดกล่องคำขอทั้งหมด' : 'Open the inbox'}
+            </Link>
           </div>
+          {byCompany.length > 0 && (
+            <div className="mb-2.5 flex flex-wrap gap-1.5 text-xs">
+              {byCompany.map((c) => (
+                <Link
+                  key={c.company_id ?? 'none'}
+                  href={`/hr/inbox?company_id=${encodeURIComponent(c.company_id ?? 'none')}`}
+                  className="inline-flex items-center gap-1 rounded-md bg-amber-100/80 px-2 py-0.5 font-medium text-amber-900 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-200 dark:hover:bg-amber-900/50"
+                >
+                  {c.name ?? (isTh ? 'ไม่ระบุบริษัท' : 'No company')}
+                  <span className="font-bold">{c.count}</span>
+                </Link>
+              ))}
+            </div>
+          )}
           <div className="flex flex-wrap gap-2">
             {pending.map((p) => {
               // Every chip here has a non-zero count by construction, so it always wants the queue.
               const href = actionHref(p.key);
               const chip = (
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-white px-3 py-1 text-sm font-medium text-gray-800 shadow-sm transition-colors hover:border-amber-400 dark:border-amber-900/50 dark:bg-gray-800 dark:text-gray-100">
-                  {t(`nav.${p.key}`)}
+                  {tileLabel(p.key)}
                   <span className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[11px] font-bold text-white">
                     {p.count > 99 ? '99+' : p.count}
                   </span>
@@ -489,7 +551,12 @@ export default function HrDashboardPage() {
             const isOpen = !collapsed.includes(section.key);
             // A collapsed group still has to admit what is waiting inside it, or hiding a section
             // would hide the work.
-            const groupCount = section.tiles.reduce((sum, k) => sum + (tileBadges[k] ?? 0), 0);
+            // The inbox tile carries the grand total, which would double every other tile in its
+            // group — so the group header counts everything except it.
+            const groupCount = section.tiles.reduce(
+              (sum, k) => (k === 'inbox' ? sum : sum + (tileBadges[k] ?? 0)),
+              0
+            );
             return (
               <section key={section.key}>
                 <button

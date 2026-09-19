@@ -1,5 +1,63 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { notifyUser, type NotificationType } from '@/lib/notifications/service';
+import { employeeNameLabel } from '@/lib/hr/employee-name';
+
+/** The inbox row types /hr/inbox knows how to preselect (mirrors INBOX_TYPES in the inbox API). */
+export type HrInboxType =
+  | 'ot'
+  | 'attendance_request'
+  | 'profile_change'
+  | 'claim';
+
+/**
+ * Tell HR that an employee just filed something for them to decide.
+ *
+ * OT, time-correction, profile-change and expense-claim requests used to insert a row and stop —
+ * HR only learned of them by opening each queue (คุณเมย์ 2026-09-17: "ไม่เด้งโนติ ต้องเข้าไปดูเอง").
+ * Every one now lands in the HR inbox with the row preselected, named the way every HR screen
+ * names people (ชื่อจริง (ชื่อเล่น)). Best-effort like notifyHrManagers: the caller's business
+ * action has already succeeded and must not be undone by a notification hiccup.
+ */
+export async function notifyHrOfEmployeeRequest(
+  service: SupabaseClient,
+  params: {
+    /** the employee who filed it — never notified about their own request */
+    userId: string;
+    storeId: string | null;
+    type: NotificationType;
+    title: string;
+    /** what they filed, in Thai, to follow their name: "ขอโอที 15/09 120 นาที" */
+    what: string;
+    inboxType: HrInboxType;
+    itemId: string;
+  }
+): Promise<void> {
+  try {
+    const [{ data: prof }, { data: emp }] = await Promise.all([
+      service.from('profiles').select('display_name, username').eq('id', params.userId).maybeSingle(),
+      service.from('hr_employees').select('full_name').eq('profile_id', params.userId).maybeSingle(),
+    ]);
+    const name = employeeNameLabel({
+      full_name: (emp?.full_name as string | null) ?? null,
+      display_name: (prof?.display_name as string | null) ?? null,
+      username: (prof?.username as string | null) ?? null,
+    });
+    await notifyHrManagers(service, {
+      storeId: params.storeId,
+      type: params.type,
+      title: params.title,
+      body: `${name} ${params.what}`,
+      data: {
+        url: `/hr/inbox?type=${params.inboxType}&id=${params.itemId}`,
+        inbox_type: params.inboxType,
+        item_id: params.itemId,
+      },
+      excludeUserId: params.userId,
+    });
+  } catch (e) {
+    console.error('[hr-notify] employee request fan-out failed:', e);
+  }
+}
 
 // HR-side notification fan-out (§C/§Q5): find everyone who can manage HR — owners, the `hr` role,
 // plus explicit `can_manage_hr` grants (mirrors canManageHr()/the DB can_manage_hr() exactly) —

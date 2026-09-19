@@ -1,72 +1,38 @@
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { resolveHrScope } from '@/lib/hr/route-auth';
+import { collectInboxItems } from '@/app/api/hr/inbox/collect';
+import { countByCompany, countByType, type CompanyCount } from '@/app/api/hr/inbox/items';
 
-// GET /api/hr/dashboard/badges — per-area "needs HR action" counts that drive the badge numbers on
-// the HR hub tiles + the sidebar menu (owner ask 2026-07-08). Scoped: company-HR counts everyone;
-// a store manager counts only their stores' employees. All counts are head-only (fast, no rows).
-type SB = ReturnType<typeof createServiceClient>;
-
-// [tile key, table, status column, needs-action value, the row's employee column]
-const SOURCES: { key: string; table: string; col: string; val: string; userCol: string }[] = [
-  { key: 'leave', table: 'hr_leaves', col: 'status', val: 'pending', userCol: 'user_id' },
-  { key: 'attendance', table: 'hr_attendance', col: 'review_status', val: 'pending', userCol: 'user_id' },
-  { key: 'attendanceReq', table: 'hr_attendance_requests', col: 'status', val: 'pending', userCol: 'user_id' },
-  { key: 'otReq', table: 'hr_ot_requests', col: 'status', val: 'pending', userCol: 'user_id' },
-  { key: 'claims', table: 'hr_claims', col: 'status', val: 'pending', userCol: 'user_id' },
-  { key: 'profileRequests', table: 'hr_profile_change_requests', col: 'status', val: 'pending', userCol: 'user_id' },
-  { key: 'documentRequests', table: 'hr_document_requests', col: 'status', val: 'requested', userCol: 'profile_id' },
-  { key: 'identityClaims', table: 'hr_pending_identities', col: 'status', val: 'claimed', userCol: 'claimed_by' },
-];
-
-async function countPending(
-  service: SB,
-  src: (typeof SOURCES)[number],
-  userIds: string[] | null
-): Promise<number> {
-  let q = service.from(src.table).select('id', { count: 'exact', head: true }).eq(src.col, src.val);
-  if (userIds) q = q.in(src.userCol, userIds); // scoped manager → only their employees
-  const { count } = await q;
-  return count ?? 0;
-}
-
-// Day-off swaps are decided at the store — by its manager or captain — and company HR only
-// acknowledges them afterwards (client decision 2026-07-20), deciding itself only for a store with
-// nobody set up. So what needs company HR is approved swaps not yet acknowledged, plus pending ones
-// at stores no one else can decide. A scoped caller's number is the pending swaps at the stores whose
-// roster they own — the can_schedule grant the decide route checks. A swap belongs to the store its
-// roster row is in, not to wherever the requester happens to be a member.
-async function countSwaps(service: SB, scopedUserId: string | null): Promise<number> {
-  const table = 'hr_dayoff_swaps';
-  if (scopedUserId) {
-    const { data: own } = await service
-      .from('hr_manager_scopes')
-      .select('store_id')
-      .eq('user_id', scopedUserId)
-      .eq('can_schedule', true);
-    const storeIds = [...new Set((own ?? []).map((s) => s.store_id as string))];
-    if (storeIds.length === 0) return 0;
-    const { count } = await service
-      .from(table)
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'pending')
-      .in('store_id', storeIds);
-    return count ?? 0;
-  }
-
-  const [{ count: unacked }, { data: scopes }] = await Promise.all([
-    service
-      .from(table)
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'approved')
-      .is('hr_acked_at', null),
-    service.from('hr_manager_scopes').select('store_id').eq('can_schedule', true),
-  ]);
-  const covered = [...new Set((scopes ?? []).map((s) => s.store_id as string))];
-  let uncovered = service.from(table).select('id', { count: 'exact', head: true }).eq('status', 'pending');
-  if (covered.length) uncovered = uncovered.not('store_id', 'in', `(${covered.join(',')})`);
-  const { count: pendingUncovered } = await uncovered;
-  return (unacked ?? 0) + (pendingUncovered ?? 0);
+/**
+ * GET /api/hr/dashboard/badges — per-area "needs HR action" counts that drive the badge numbers
+ * on the HR hub tiles + the sidebar menu (owner ask 2026-07-08). Scoped: company-HR counts
+ * everyone; a store manager counts only their stores' employees.
+ *
+ * Counts come from the same collector as /hr/inbox, so every number here is the length of a list
+ * HR can open. Before 2026-09-19 this route kept its own head-count list, and whatever was not on
+ * it — resignations, paper slips, offboardings waiting for a signature — never showed anywhere
+ * (คุณเมย์ 2026-09-17). `inbox` is the grand total the sidebar badge shows; `by_company` is what
+ * lets HR see which company's queue is deepest without visiting each (คุณเมย์ 2026-09-08).
+ */
+export interface HrBadges {
+  leave: number;
+  attendance: number;
+  /** time-correction + OT requests — the hub's "requests" tile covers both */
+  requests: number;
+  swaps: number;
+  claims: number;
+  profileRequests: number;
+  documentRequests: number;
+  identityClaims: number;
+  resignations: number;
+  paperSlips: number;
+  offboardingAck: number;
+  /** everything above, once */
+  inbox: number;
+  /** kept for older clients — same number as `inbox` */
+  total: number;
+  by_company: CompanyCount[];
 }
 
 export async function GET() {
@@ -74,33 +40,31 @@ export async function GET() {
   if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status });
 
   const service = createServiceClient();
+  const items = await collectInboxItems(service, { userId: scope.userId, storeIds: scope.storeIds });
+  const byType = countByType(items);
 
-  // Scoped manager: restrict to their stores' employees. Company-HR (storeIds null) counts everyone.
-  let userIds: string[] | null = null;
-  if (scope.storeIds) {
-    const { data } = await service.from('user_stores').select('user_id').in('store_id', scope.storeIds);
-    userIds = [...new Set((data ?? []).map((r) => r.user_id as string))];
-  }
+  const companyIds = [...new Set(items.map((it) => it.company_id).filter((id): id is string => !!id))];
+  const { data: companies } = companyIds.length
+    ? await service.from('hr_companies').select('id, name').in('id', companyIds)
+    : { data: [] as { id: string; name: string }[] };
+  const nameById = new Map(((companies ?? []) as { id: string; name: string }[]).map((c) => [c.id, c.name]));
 
-  const [results, swaps] = await Promise.all([
-    Promise.all(SOURCES.map((s) => countPending(service, s, userIds))),
-    countSwaps(service, scope.storeIds ? scope.userId : null),
-  ]);
-  const byKey: Record<string, number> = {};
-  SOURCES.forEach((s, i) => { byKey[s.key] = results[i]; });
-
-  // The HR hub's "requests" tile covers both time-correction and OT requests.
-  const data = {
-    leave: byKey.leave,
-    attendance: byKey.attendance,
-    requests: byKey.attendanceReq + byKey.otReq,
-    swaps,
-    claims: byKey.claims,
-    profileRequests: byKey.profileRequests,
-    documentRequests: byKey.documentRequests,
-    identityClaims: byKey.identityClaims,
+  const data: HrBadges = {
+    leave: byType.leave,
+    attendance: byType.attendance_review,
+    requests: byType.attendance_request + byType.ot,
+    swaps: byType.swap,
+    claims: byType.claim,
+    profileRequests: byType.profile_change,
+    documentRequests: byType.document,
+    identityClaims: byType.identity_claim,
+    resignations: byType.resignation,
+    paperSlips: byType.paper_slip,
+    offboardingAck: byType.offboarding_ack,
+    inbox: items.length,
+    total: items.length,
+    by_company: countByCompany(items, nameById),
   };
-  const total = Object.values(data).reduce((a, b) => a + b, 0);
 
-  return NextResponse.json({ data: { ...data, total } });
+  return NextResponse.json({ data });
 }

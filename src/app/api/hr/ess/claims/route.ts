@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { logHrAudit } from '@/lib/hr/audit';
 import { isCalendarDate } from '@/lib/hr/leaves';
+import { notifyHrOfEmployeeRequest } from '@/lib/hr/notify';
 
 const TABLE = 'hr_claims';
 const BUCKET = 'hr-documents';
@@ -10,6 +11,14 @@ const MAX_RECEIPT_BYTES = 10 * 1024 * 1024; // 10MB
 const MAX_AMOUNT_SATANG = 100000000; // ฿1,000,000 sanity ceiling
 
 const CLAIM_TYPES = ['travel', 'medical', 'supplies', 'equipment', 'other'];
+// Push text renders outside the app's i18n, so the claim type is spelled out in Thai.
+const CLAIM_TYPE_LABEL_TH: Record<string, string> = {
+  travel: 'ค่าเดินทาง',
+  medical: 'ค่ารักษาพยาบาล',
+  supplies: 'ค่าวัสดุ',
+  equipment: 'ค่าอุปกรณ์',
+  other: 'อื่นๆ',
+};
 
 const COLS =
   'id, user_id, store_id, company_id, claim_type, amount_satang, description, ' +
@@ -187,6 +196,19 @@ export async function POST(request: NextRequest) {
     recordId: (data as unknown as { id: string }).id,
     after: data as unknown as Record<string, unknown>,
     reason: `Claim filed: ${claimType}`,
+  });
+
+  // HR hears about it now, not when they next open the queue (คุณเมย์ 2026-09-17). The amount
+  // stays out of the push text on purpose: pay figures are gated per viewer (pay-visibility.ts)
+  // and a notification cannot be.
+  await notifyHrOfEmployeeRequest(service, {
+    userId: user.id,
+    storeId,
+    type: 'hr_claim_request',
+    title: 'มีคำขอเบิกค่าใช้จ่ายใหม่',
+    what: `ยื่นเบิกค่าใช้จ่าย (${CLAIM_TYPE_LABEL_TH[claimType] ?? claimType}) วันที่ ${claimDate} — รอ HR อนุมัติ`,
+    inboxType: 'claim',
+    itemId: (data as unknown as { id: string }).id,
   });
 
   return NextResponse.json({ data }, { status: 201 });

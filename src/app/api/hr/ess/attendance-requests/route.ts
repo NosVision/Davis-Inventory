@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { notifyHrOfEmployeeRequest } from '@/lib/hr/notify';
 import { isDateInFinalizedPeriod, FINALIZED_PERIOD_ERROR } from '@/lib/hr/period-lock';
 import {
   isFutureAttendanceDate,
@@ -252,6 +253,17 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json({ error: 'Failed to file attendance request' }, { status: 500 });
   }
+
+  // HR hears about it now, not when they next open the queue (คุณเมย์ 2026-09-17).
+  await notifyHrOfEmployeeRequest(service, {
+    userId: user.id,
+    storeId,
+    type: 'hr_attendance_request',
+    title: 'มีคำขอแก้เวลาเข้า-ออกใหม่',
+    what: `ขอแก้เวลาเข้า-ออกของวันที่ ${businessDate} — รอ HR อนุมัติ`,
+    inboxType: 'attendance_request',
+    itemId: (data as unknown as { id: string }).id,
+  });
   return NextResponse.json({ data }, { status: 201 });
 }
 

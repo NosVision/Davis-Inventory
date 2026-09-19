@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { logHrAudit } from '@/lib/hr/audit';
 import { isUniqueViolation } from '@/lib/hr/db-errors';
+import { normalizeFullName } from '@/lib/hr/employee-name';
+import { notifyHrOfEmployeeRequest } from '@/lib/hr/notify';
 
 const TABLE = 'hr_profile_change_requests';
 const FIELD_KEYS = ['bank_account', 'emergency_contact', 'full_name'];
@@ -15,6 +17,13 @@ const COLS =
   'decided_at, decision_note, applied, created_at, updated_at';
 
 const ACCOUNT_NO_RE = /^[0-9-]{6,20}$/;
+
+// What the push text calls each field — push renders outside the app's i18n, so Thai.
+const PROFILE_FIELD_LABEL_TH: Record<string, string> = {
+  bank_account: 'ขอแก้บัญชีธนาคาร',
+  emergency_contact: 'ขอแก้ผู้ติดต่อฉุกเฉิน',
+  full_name: 'ขอแก้ชื่อ-นามสกุล',
+};
 
 function nonEmptyString(v: unknown): v is string {
   return typeof v === 'string' && v.trim() !== '';
@@ -58,7 +67,10 @@ function validateNewValue(
 
   if (fieldKey === 'full_name') {
     if (!nonEmptyString(v.full_name)) return { ok: false, error: 'full_name is required' };
-    const name = v.full_name.trim().replace(/\s+/g, ' ');
+    // One spelling of the honorific whichever way it was typed — otherwise the approved value
+    // re-creates the three-spellings problem the roster just got rid of (client report 2026-09-07/09).
+    const name = normalizeFullName(v.full_name) ?? '';
+    if (!name) return { ok: false, error: 'full_name is required' };
     if (name.length > MAX_FULL_NAME) {
       return { ok: false, error: `full_name must be ${MAX_FULL_NAME} characters or fewer` };
     }
@@ -147,6 +159,17 @@ export async function POST(request: NextRequest) {
     recordId: (data as unknown as { id: string }).id,
     after: data as unknown as Record<string, unknown>,
     reason: `Profile change requested: ${fieldKey}`,
+  });
+
+  // HR hears about it now, not when they next open the queue (คุณเมย์ 2026-09-17).
+  await notifyHrOfEmployeeRequest(service, {
+    userId: user.id,
+    storeId: null,
+    type: 'hr_profile_change_request',
+    title: 'มีคำขอแก้ข้อมูลพนักงานใหม่',
+    what: `${PROFILE_FIELD_LABEL_TH[fieldKey] ?? fieldKey} — รอ HR อนุมัติ`,
+    inboxType: 'profile_change',
+    itemId: (data as unknown as { id: string }).id,
   });
 
   return NextResponse.json({ data }, { status: 201 });
