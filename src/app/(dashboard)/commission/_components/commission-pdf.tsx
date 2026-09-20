@@ -122,7 +122,14 @@ const styles = StyleSheet.create({
   rowAlt: { backgroundColor: '#f9fafb' },
 
   // Cover sheet columns — wider than the per-bill grid, since this page has only 6 columns.
-  coverName: { flex: 1, fontSize: 10 },
+  coverName: { flex: 1, fontSize: 10, paddingRight: 6 },
+  // Bank account and e-mail sit UNDER the name on the cover, exactly as the ค้างจ่าย tab shows
+  // them on screen: this is the page the accountant keys the transfers from, and she was
+  // re-typing the account number and the ใบ 50 ทวิ e-mail into หมายเหตุ by hand to get them
+  // onto the printed sheet (คุณเมย์ 2026-09-20).
+  coverNameText: { fontSize: 10 },
+  coverBank: { fontSize: 8, color: '#6b7280' },
+  coverEmail: { fontSize: 8, color: '#0f766e' },
   coverBills: { width: 50, textAlign: 'right', fontSize: 10 },
   coverMoney: { width: 95, textAlign: 'right', fontSize: 10 },
   coverWht: { width: 78, textAlign: 'center', fontSize: 9 },
@@ -339,6 +346,10 @@ export interface CommissionPdfAEGroup {
 export interface CommissionPdfCoverRow {
   kind: 'ae' | 'bottle';
   ae_name: string;
+  /** "กสิกร 123-4-56789 (สมชาย ใจดี)" — the account the transfer goes to. */
+  bank_label?: string | null;
+  /** อีเมลสำหรับส่งใบ 50 ทวิ, when the AE takes the certificate by mail. */
+  email?: string | null;
   bill_count: number;
   net: number;
   paid: number;
@@ -547,7 +558,13 @@ function ReportDocument({ data }: { data: CommissionReportData }) {
           {data.cover.map((r, idx) => (
             <View key={`${r.kind}-${r.ae_name}`} style={[styles.row, idx % 2 === 1 ? styles.rowAlt : {}]} wrap={false}>
               <Text style={styles.coverKind}>{r.kind === 'bottle' ? 'ขวด' : 'AE'}</Text>
-              <Text style={styles.coverName}>{r.ae_name}</Text>
+              <View style={styles.coverName}>
+                <Text style={styles.coverNameText}>{r.ae_name}</Text>
+                {r.kind === 'ae' && (
+                  <Text style={styles.coverBank}>{r.bank_label || 'ไม่มีข้อมูลธนาคาร'}{' '}</Text>
+                )}
+                {r.email && <Text style={styles.coverEmail}>อีเมล: {r.email}{' '}</Text>}
+              </View>
               <Text style={styles.coverBills}>{r.bill_count}</Text>
               <Text style={styles.coverMoney}>{fmtMoney(r.net)}</Text>
               <Text style={styles.coverMoney}>{fmtMoney(r.paid)}</Text>

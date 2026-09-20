@@ -315,6 +315,10 @@ export function CommissionExportButton({ month: monthProp, allowMonthChange = fa
         cover: rgs.map((g) => ({
           kind: g.kind,
           ae_name: `${g.ae_name}${g.ae_nickname ? ` (${g.ae_nickname})` : ''}`,
+          // The transfer details travel with the summary line, not only with the bill detail
+          // further down: page 1 is what the accountant keys the payments from (คุณเมย์ 2026-09-20).
+          bank_label: g.bank_label,
+          email: g.email,
           bill_count: g.totals.bill_count,
           net: g.totals.net,
           paid: g.paid,

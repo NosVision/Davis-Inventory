@@ -59,3 +59,6 @@ next-env.d.ts
 
 # HR test-data reset dumps (scripts/reset-hr-test-data.ts)
 /hr-reset-backup/
+
+# Rendered PDFs from scripts/commission-pdf-assert.ts
+/tmp/

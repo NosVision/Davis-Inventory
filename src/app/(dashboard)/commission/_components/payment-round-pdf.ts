@@ -48,17 +48,23 @@ export async function buildPaymentRoundData(payment: PaymentRoundForPdf, rounded
   const [y, m] = payment.month.split('-').map(Number);
   const month = new Intl.DateTimeFormat('th-TH-u-ca-buddhist', { month: 'long', year: 'numeric' }).format(new Date(y, m - 1, 1));
   const paid = payment.status === 'cancelled' ? 0 : totals.net;
+  // Built once and used by both the cover line and the detail block, so the receipt can never
+  // show the account in one place and omit it in the other (คุณเมย์ 2026-09-20).
+  const bankLabel = !isBottle && ae?.bank_name
+    ? `${ae.bank_name} ${ae.bank_account_no || ''}${ae.bank_account_name ? ` (${ae.bank_account_name})` : ''}`.trim()
+    : null;
+  const email = !isBottle ? ae?.email ?? null : null;
   const data: import('./commission-pdf').CommissionReportData = {
     store_name: 'สาขา',
     month_label: `${month} · จ่ายเมื่อ ${formatThaiDate(payment.paid_at)}${payment.status === 'cancelled' ? ' (ยกเลิกแล้ว)' : ''}`,
     generated_at_label: new Intl.DateTimeFormat('th-TH-u-ca-buddhist', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date()),
-    cover: [{ kind: isBottle ? 'bottle' : 'ae', ae_name: name, bill_count: totals.bill_count,
+    cover: [{ kind: isBottle ? 'bottle' : 'ae', ae_name: name, bank_label: bankLabel, email,
+      bill_count: totals.bill_count,
       net: totals.net, paid, outstanding: totals.net - paid, wht_label: null, note: payment.notes }],
     groups: [{
       kind: isBottle ? 'bottle' : 'ae', ae_name: name, ae_nickname: ae?.nickname ?? null,
-      bank_label: !isBottle && ae?.bank_name
-        ? `${ae.bank_name} ${ae.bank_account_no || ''}${ae.bank_account_name ? ` (${ae.bank_account_name})` : ''}`.trim() : null,
-      email: !isBottle ? ae?.email ?? null : null,
+      bank_label: bankLabel,
+      email,
       note: payment.notes, wht_label: null, rows, totals,
     }],
     grand: totals,

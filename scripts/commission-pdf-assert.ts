@@ -8,12 +8,20 @@ async function main() {
  const payment = { type: 'ae_commission', month: '2026-09', status: 'paid', paid_at: '2026-09-10T08:00:00Z', notes: 'ส่งใบ 50 ทวิทางอีเมล', ae_profile: { name: 'นายทดสอบ ใจดี', nickname: 'ทดสอบ', email: 'ae@example.com', bank_name: 'กสิกรไทย', bank_account_no: '1234567890', bank_account_name: 'นายทดสอบ ใจดี' }, entries };
  const ae = await buildPaymentRoundData(payment);
  assert.equal(ae.cover?.[0].paid,97.25); assert.equal(ae.groups[0].email,'ae@example.com');
+ // The cover sheet is what the accountant keys transfers from, so the account and the ใบ 50 ทวิ
+ // e-mail must be on it — not only in the detail block below (คุณเมย์ 2026-09-20).
+ assert.equal(ae.cover?.[0].bank_label,'กสิกรไทย 1234567890 (นายทดสอบ ใจดี)');
+ assert.equal(ae.cover?.[0].email,'ae@example.com');
+ assert.equal(ae.cover?.[0].bank_label,ae.groups[0].bank_label);
  const cancelled = await buildPaymentRoundData({...payment,status:'cancelled'});
  assert.equal(cancelled.cover?.[0].paid,0); assert.equal(cancelled.cover?.[0].outstanding,97.25);
  const bottleEntries = [{bill_date:'2026-09-10',receipt_no:'BTL-01', bottle_product_name:'น้ำดื่ม',bottle_count:3,bottle_rate:20.25,net_amount:60.75,payment_id:'payment',notes:'ทดสอบค่าคอมขวด'}];
  const bottle = await buildPaymentRoundData({...payment,type:'bottle_commission',ae_profile:undefined,entries:bottleEntries});
  assert.equal(bottle.groups[0].totals.bottles,3); assert.equal(bottle.groups[0].ae_name,'ไม่ระบุพนักงาน');assert.equal(bottle.cover?.[0].paid,60.75);
  assert.equal(pdf.bottlePaid(bottleEntries,n=>n??0),60.75);
+ // Bottle rounds are paid to a staff profile, which carries no AE bank row — the cover must not
+ // print a stray account, and the renderer must not label the line "ไม่มีข้อมูลธนาคาร" for them.
+ assert.equal(bottle.cover?.[0].bank_label,null); assert.equal(bottle.cover?.[0].email,null);
  const rounded=await buildPaymentRoundData({...payment,type:'bottle_commission',entries:bottleEntries},true);assert.equal(rounded.grand.net,61);assert.equal(rounded.groups[0].rows[0].bottle_rate,20.25);
  const mixed={...ae,cover:[...ae.cover!,...bottle.cover!],groups:[...ae.groups,...bottle.groups],grand:{...ae.grand,net:158,bill_count:2,bottles:3}};
  const long = await buildPaymentRoundData({...payment,entries:Array.from({length:75},(_,i)=>({...entries[0],bill_date:`2026-09-${String(i%28+1).padStart(2,'0')}`,receipt_no:`LONG-${i}`}))});
