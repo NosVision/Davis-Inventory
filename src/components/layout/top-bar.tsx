@@ -7,6 +7,7 @@ import { Menu, ChevronDown, LogOut, User, Settings, Bell, MessageSquare, Downloa
 import Link from 'next/link';
 import { cn } from '@/lib/utils/cn';
 import { useAuthStore } from '@/stores/auth-store';
+import { signOutToLogin } from '@/lib/auth/sign-out';
 import { canAccessDashboardPath } from '@/lib/auth/settings-access';
 import { useAppStore } from '@/stores/app-store';
 import { NotificationCenter } from '@/components/layout/notification-center';
@@ -31,7 +32,7 @@ export function TopBar({
 }: TopBarProps) {
   const router = useRouter();
   const t = useTranslations();
-  const { user, logout } = useAuthStore();
+  const { user } = useAuthStore();
   const { currentStoreId } = useAppStore();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [showIosGuide, setShowIosGuide] = useState(false);
@@ -52,8 +53,7 @@ export function TopBar({
   }, []);
 
   function handleLogout() {
-    logout();
-    router.push('/login');
+    void signOutToLogin();
   }
 
   const isIos = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);

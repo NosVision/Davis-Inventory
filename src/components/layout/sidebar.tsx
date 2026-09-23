@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import {
@@ -39,6 +39,7 @@ import { cn } from '@/lib/utils/cn';
 import { getModuleColors } from '@/lib/utils/module-colors';
 import { useAppStore } from '@/stores/app-store';
 import { useAuthStore } from '@/stores/auth-store';
+import { signOutToLogin } from '@/lib/auth/sign-out';
 import { getAccessibleModules } from '@/lib/modules/registry';
 import { useInboxCount } from '@/hooks/use-inbox-count';
 import { useMyTasksCount } from '@/hooks/use-my-tasks-count';
@@ -82,9 +83,8 @@ interface SidebarProps {
 
 export function Sidebar({ stores }: SidebarProps) {
   const pathname = usePathname();
-  const router = useRouter();
   const t = useTranslations();
-  const { user, logout } = useAuthStore();
+  const { user } = useAuthStore();
   const { sidebarOpen, toggleSidebar, theme, toggleTheme } = useAppStore();
   // Live count of items pending owner approval — drives the red badge
   // on the "กล่องอนุมัติ" menu entry. Returns 0 for non-privileged users.
@@ -130,8 +130,7 @@ export function Sidebar({ stores }: SidebarProps) {
   if (!user) return null;
 
   function handleLogout() {
-    logout();
-    router.push('/login');
+    void signOutToLogin();
   }
 
   return (

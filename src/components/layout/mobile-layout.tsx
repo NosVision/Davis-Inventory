@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import {
   X,
@@ -34,6 +34,7 @@ import {
 import { cn } from '@/lib/utils/cn';
 import { getModuleColors } from '@/lib/utils/module-colors';
 import { useAuthStore } from '@/stores/auth-store';
+import { signOutToLogin } from '@/lib/auth/sign-out';
 import { useAppStore } from '@/stores/app-store';
 import { getAccessibleModules } from '@/lib/modules/registry';
 import { TopBar } from './top-bar';
@@ -76,10 +77,9 @@ interface MobileLayoutProps {
 
 export function MobileLayout({ children, stores }: MobileLayoutProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const router = useRouter();
   const pathname = usePathname();
   const t = useTranslations();
-  const { user, logout } = useAuthStore();
+  const { user } = useAuthStore();
   const { theme, toggleTheme } = useAppStore();
 
   // เห็นโมดูลตาม role + permission ส่วนตัวที่ได้รับเพิ่ม
@@ -115,8 +115,7 @@ export function MobileLayout({ children, stores }: MobileLayoutProps) {
   const isFullWidthPage = pathname.startsWith('/performance');
 
   function handleLogout() {
-    logout();
-    router.push('/login');
+    void signOutToLogin();
   }
 
   return (
