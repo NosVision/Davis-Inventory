@@ -16,6 +16,20 @@ function postLoginHome(): string {
   return target.startsWith('/') && !target.startsWith('//') && !target.startsWith('/login') ? target : '/';
 }
 
+const DISABLED_MESSAGE = 'บัญชีนี้ถูกปิดใช้งานแล้ว — เข้าสู่ระบบด้วยบัญชีที่ใช้งานอยู่ หรือติดต่อ HR';
+
+/**
+ * Only an active profile may be forwarded into the app. The dashboard layout sends an inactive one
+ * back here, and this page used to send any live session straight back in — an endless bounce the
+ * phone shows as a flickering screen, with no chance to type a different account (HR report
+ * 2026-10-05: a duplicate self-registration was disabled and its owner was locked out). An inactive
+ * account is signed out on this device instead, so the form stays put.
+ */
+async function isActiveAccount(supabase: ReturnType<typeof createClient>, userId: string): Promise<boolean> {
+  const { data, error } = await supabase.from('profiles').select('active').eq('id', userId).maybeSingle();
+  return !error && data?.active === true;
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const t = useTranslations('auth');
@@ -32,8 +46,15 @@ export default function LoginPage() {
     let alive = true;
     (async () => {
       try {
-        const { data, error: authError } = await createClient().auth.getUser();
-        if (alive && data.user && !authError) router.replace(postLoginHome());
+        const supabase = createClient();
+        const { data, error: authError } = await supabase.auth.getUser();
+        if (!alive || !data.user || authError) return;
+        if (await isActiveAccount(supabase, data.user.id)) {
+          if (alive) router.replace(postLoginHome());
+          return;
+        }
+        await supabase.auth.signOut({ scope: 'local' });
+        if (alive) setError(DISABLED_MESSAGE);
       } catch {
         /* offline — show the form; the submit path reports its own errors */
       }
@@ -63,7 +84,7 @@ export default function LoginPage() {
       const trimmed = identifier.trim().toLowerCase();
       const email = trimmed.includes('@') ? trimmed : `${trimmed}@stockmanager.app`;
 
-      const { error: authError } = await supabase.auth.signInWithPassword({
+      const { data: signIn, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
@@ -76,6 +97,13 @@ export default function LoginPage() {
         } else {
           setError(t('loginError'));
         }
+        return;
+      }
+
+      // The right password on a disabled account: say so here rather than bounce off the app.
+      if (!signIn.user || !(await isActiveAccount(supabase, signIn.user.id))) {
+        await supabase.auth.signOut({ scope: 'local' });
+        setError(DISABLED_MESSAGE);
         return;
       }
 
