@@ -6,6 +6,7 @@ import { isRangeInFinalizedPeriod, FINALIZED_PERIOD_ERROR } from '@/lib/hr/perio
 import { buildCopyPlan, monthDates, type CopySourceRow } from '@/lib/hr/schedule-copy';
 
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+const SOURCE_PAGE = 1000; // PostgREST's per-request row cap
 
 /**
  * POST /api/hr/schedule/copy-month — fill a store's month from the month before it.
@@ -51,13 +52,28 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'ตรวจสอบงวดจ่ายไม่สำเร็จ' }, { status: 500 });
   }
 
-  const [srcRes, dstRes] = await Promise.all([
-    service
-      .from('hr_schedule')
-      .select('user_id, work_date, shift_template_id, is_day_off')
-      .eq('store_id', storeId)
-      .gte('work_date', fromDates[0])
-      .lte('work_date', fromDates[fromDates.length - 1]),
+  // Source month, paged: a big venue's month (~65 people × 31 days ≈ 2,000 rows) overruns
+  // PostgREST's silent 1,000-row cap, which copied only the first half of the month.
+  const loadSource = async (): Promise<CopySourceRow[] | null> => {
+    const rows: CopySourceRow[] = [];
+    for (let offset = 0; ; offset += SOURCE_PAGE) {
+      const { data, error } = await service
+        .from('hr_schedule')
+        .select('user_id, work_date, shift_template_id, is_day_off')
+        .eq('store_id', storeId)
+        .gte('work_date', fromDates[0])
+        .lte('work_date', fromDates[fromDates.length - 1])
+        .order('work_date')
+        .order('id')
+        .range(offset, offset + SOURCE_PAGE - 1);
+      if (error) return null;
+      rows.push(...((data ?? []) as CopySourceRow[]));
+      if (!data || data.length < SOURCE_PAGE) return rows;
+    }
+  };
+
+  const [srcRows, dstRes] = await Promise.all([
+    loadSource(),
     // Skip-set check: hr_schedule is unique on (user_id, work_date) regardless of store, so this
     // must catch rows at ANY store for the same person and date — a plain select with no store
     // filter over a whole target month (one row per person per day) is exactly what saturates
@@ -65,12 +81,12 @@ export async function POST(request: NextRequest) {
     // answer bounded by headcount instead. See that migration's comment for the incident this was.
     service.rpc('hr_scheduled_user_ids', { p_from: toDates[0], p_to: toDates[toDates.length - 1] }),
   ]);
-  if (srcRes.error || dstRes.error) {
+  if (srcRows === null || dstRes.error) {
     return NextResponse.json({ error: 'อ่านตารางกะไม่สำเร็จ' }, { status: 500 });
   }
 
   const skip = new Set(((dstRes.data ?? []) as { user_id: string }[]).map((r) => r.user_id));
-  const plan = buildCopyPlan((srcRes.data ?? []) as CopySourceRow[], toMonth, skip);
+  const plan = buildCopyPlan(srcRows, toMonth, skip);
 
   // Load employee records to check for inactive status and employment end dates — narrowed to the
   // people actually in the plan rather than every hr_employees row in the company (which, like the

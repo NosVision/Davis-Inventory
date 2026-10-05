@@ -22,6 +22,7 @@ const NEVER_PUNCHED_POLICY_START = '2026-09-01';
 
 const DEFAULT_WORK_HOURS = 9;
 const DEFAULT_DAYS_OFF = 6;
+const ENTRY_PAGE = 1000; // PostgREST's per-request row cap
 
 // Roster scope (owner ask 2026-07-27): a month is scheduled per STORE (user_stores members ∪
 // work_store_id assignees, the original mode) or per COMPANY (every hr_employees of that company —
@@ -123,22 +124,34 @@ export async function GET(request: NextRequest) {
 
   // Entries: store scope keeps the original store filter; company scope shows EVERY row of the
   // listed people that month (their store rows included) — the company view is the full picture.
-  let entryQuery = service
-    .from('hr_schedule')
-    .select('id, user_id, work_date, shift_template_id, is_day_off, status, note')
-    .gte('work_date', first)
-    .lte('work_date', last);
-  if (scope.kind === 'store') entryQuery = entryQuery.eq('store_id', scope.storeId);
-  else entryQuery = userIds.length ? entryQuery.in('user_id', userIds) : entryQuery.eq('user_id', NIL_UUID);
+  // Paged: PostgREST silently caps a select at 1,000 rows, and a 65-person venue's month is ~2,000 —
+  // the grid stopped mid-month (around the 16th) while every later day sat saved in the table
+  // (owner report 2026-10-05).
+  const loadEntries = async (): Promise<ScheduleRow[] | null> => {
+    const rows: ScheduleRow[] = [];
+    for (let offset = 0; ; offset += ENTRY_PAGE) {
+      let q = service
+        .from('hr_schedule')
+        .select('id, user_id, work_date, shift_template_id, is_day_off, status, note')
+        .gte('work_date', first)
+        .lte('work_date', last);
+      if (scope.kind === 'store') q = q.eq('store_id', scope.storeId);
+      else q = userIds.length ? q.in('user_id', userIds) : q.eq('user_id', NIL_UUID);
+      const { data, error } = await q.order('work_date').order('id').range(offset, offset + ENTRY_PAGE - 1);
+      if (error) return null;
+      rows.push(...((data ?? []) as ScheduleRow[]));
+      if (!data || data.length < ENTRY_PAGE) return rows;
+    }
+  };
 
-  const [templatesRes, entriesRes] = await Promise.all([tplQuery, entryQuery]);
+  const [templatesRes, loadedEntries] = await Promise.all([tplQuery, loadEntries()]);
 
-  if (templatesRes.error || entriesRes.error) {
+  if (templatesRes.error || loadedEntries === null) {
     return NextResponse.json({ error: 'Failed to load schedule' }, { status: 500 });
   }
 
   const templates = (templatesRes.data ?? []) as TemplateRow[];
-  const entries = (entriesRes.data ?? []) as ScheduleRow[];
+  const entries = loadedEntries;
 
   // Who is on the roster — record required, system accounts out, leaver-window applied — was
   // decided by resolveRoster above; this only shapes the rows the grid reads.
