@@ -54,12 +54,22 @@ export async function findDuplicateEmployees(
 
   // Resigned/terminated records are still worth flagging: a rehire should reuse the existing
   // record rather than start a second one, and their bank account is still theirs.
-  const { data } = await service
-    .from('hr_employees')
-    .select('id, profile_id, full_name, status, bank_account_no, profile:profiles!hr_employees_profile_id_fkey(username)');
+  // Paged: PostgREST silently caps a select at 1,000 rows, and a duplicate past the cap would pass.
+  const PAGE = 1000;
+  const data: unknown[] = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const { data: page, error } = await service
+      .from('hr_employees')
+      .select('id, profile_id, full_name, status, bank_account_no, profile:profiles!hr_employees_profile_id_fkey(username)')
+      .order('id')
+      .range(offset, offset + PAGE - 1);
+    if (error) throw new Error(`duplicate check failed: ${error.message}`);
+    data.push(...(page ?? []));
+    if (!page || page.length < PAGE) break;
+  }
 
   const out: DuplicateMatch[] = [];
-  for (const row of (data ?? []) as {
+  for (const row of data as {
     id: string;
     profile_id: string;
     full_name: string | null;

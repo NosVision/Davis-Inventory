@@ -65,7 +65,8 @@ export default function HrCertificatesPage() {
     if (!cid) { setEmployees([]); return; }
     setLoadingEmp(true);
     try {
-      const res = await fetch(`/api/hr/employees?company_id=${cid}&status=active&limit=1000`);
+      // Probationers are employed too — a certificate is often what a new hire needs first.
+      const res = await fetch(`/api/hr/employees?company_id=${cid}&status=active,probation&limit=1000`);
       setEmployees(((await res.json()).data ?? []) as EmployeeRow[]);
     } catch { toast({ type: 'error', title: L.loadFailed }); }
     finally { setLoadingEmp(false); }

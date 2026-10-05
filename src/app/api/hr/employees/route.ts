@@ -190,9 +190,16 @@ export async function GET(request: NextRequest) {
   const printerIds = (printerProfiles ?? []).map((r) => r.id as string);
 
   let query = service.from('hr_employees').select(LIST_SELECT, { count: 'exact' });
-  for (const key of ['position_id', 'department_id', 'company_id', 'pay_type', 'status'] as const) {
+  for (const key of ['position_id', 'department_id', 'company_id', 'pay_type'] as const) {
     const v = sp.get(key);
     if (v) query = query.eq(key, v);
+  }
+  // status may be a comma list — "active,probation" is everyone currently employed. A bare
+  // status=active silently left out every probationer (the certificates picker, 2026-10-05).
+  const statusParam = sp.get('status');
+  if (statusParam) {
+    const statuses = statusParam.split(',').map((s) => s.trim()).filter(Boolean);
+    query = statuses.length > 1 ? query.in('status', statuses) : query.eq('status', statuses[0] ?? statusParam);
   }
   if (profileIdFilter) query = query.in('profile_id', profileIdFilter.length ? profileIdFilter : [NIL_UUID]);
   if (printerIds.length) query = query.not('profile_id', 'in', `(${printerIds.join(',')})`);

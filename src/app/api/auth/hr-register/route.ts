@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient as createSbClient } from '@supabase/supabase-js';
 import { createServiceClient } from '@/lib/supabase/server';
 import { applyPendingLeaveBalances } from '@/lib/hr/leave-balance-link';
+import { findDuplicateEmployees } from '@/lib/hr/employee-duplicates';
+import { notifyHrManagers } from '@/lib/hr/notify';
 
 // Verify an existing login (username + password) WITHOUT persisting a session — used when a
 // self-registering hire matches an account that already exists, so they can link their imported
@@ -352,6 +354,42 @@ export async function POST(request: NextRequest) {
   // Guard: don't create a new account for a name that's already claimed (under review) or linked.
   if (identity && identity.status !== 'unclaimed') {
     return NextResponse.json({ error: 'ชื่อนี้ลงทะเบียนไปแล้ว กรุณาเข้าสู่ระบบด้วยบัญชีเดิม' }, { status: 409 });
+  }
+  // Guard: the same person registering AGAIN under a new username. The guard above only knows the
+  // imported identities; staff who forgot their login simply signed up afresh — three accounts for
+  // one cashier, two for a housekeeper — each with its own probation record and payslip (HR report
+  // 2026-10-05). Refused here; HR is told, so they can reset the existing login instead.
+  // Names compare without honorific and accounts as digits (employee-duplicates.ts). The existing
+  // username is never echoed: this endpoint is public to anyone holding a link.
+  let duplicates: Awaited<ReturnType<typeof findDuplicateEmployees>>;
+  try {
+    duplicates = await findDuplicateEmployees(service, { full_name: fullName, bank_account_no: bankAccountNo });
+  } catch {
+    return NextResponse.json({ error: 'ตรวจสอบข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' }, { status: 503 });
+  }
+  if (duplicates.length > 0) {
+    try {
+      await notifyHrManagers(service, {
+        storeId: link.store_id,
+        type: 'hr_identity_claim',
+        title: 'มีคนพยายามสมัครซ้ำ',
+        body: `${fullName} สมัครใหม่ด้วยชื่อผู้ใช้ @${username} แต่มีบัญชีอยู่แล้ว (${duplicates
+          .map((d) => `@${d.username ?? '—'}`)
+          .join(', ')}) — ระบบไม่สร้างบัญชีใหม่ ถ้าลืมรหัสผ่าน ให้รีเซ็ตบัญชีเดิมให้`,
+        data: { url: '/hr/employees?tab=accounts' },
+      });
+    } catch (e) {
+      console.error('[hr-register] notify HR of duplicate failed:', e);
+    }
+    return NextResponse.json(
+      {
+        error:
+          'มีบัญชีพนักงานชื่อนี้ (หรือเลขบัญชีธนาคารนี้) อยู่แล้ว — ไม่ต้องสมัครใหม่ ให้เข้าสู่ระบบด้วยบัญชีเดิม ' +
+          'ถ้าจำชื่อผู้ใช้หรือรหัสผ่านไม่ได้ ติดต่อ HR เพื่อรีเซ็ตให้ (ระบบแจ้ง HR ให้แล้ว)',
+        code: 'duplicate_employee',
+      },
+      { status: 409 }
+    );
   }
 
   // A company scope on the link wins; otherwise the picked company, if it is one HR still runs.
