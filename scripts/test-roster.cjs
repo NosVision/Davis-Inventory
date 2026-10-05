@@ -48,6 +48,17 @@ test('candidate: needs a linked, non-system login on top of the employed rule', 
   assert.equal(roster.isRosterCandidate(person('d', { status: 'resigned', end_date: '2026-08-31' }), '2026-09-01'), false);
 });
 
+test('candidate: a disabled login drops an employed record, never a leaver in their final window', () => {
+  const off = (id, extra = {}) =>
+    person(id, { ...extra, profile: { id, username: id, display_name: null, is_system: false, active: false } });
+  assert.equal(roster.isRosterCandidate(off('dup'), '2026-10-01'), false, 'duplicate self-registration');
+  assert.equal(roster.isRosterCandidate(off('dup2', { status: 'probation' }), '2026-10-01'), false);
+  // Offboarding switches the login off while the final month is still owed.
+  assert.equal(roster.isRosterCandidate(off('leaver', { status: 'resigned', end_date: '2026-10-10' }), '2026-10-01'), true);
+  // A profile without the field (older callers) is unaffected.
+  assert.equal(roster.isRosterCandidate(person('legacy'), '2026-10-01'), true);
+});
+
 test('venue split: work_store_id decides alone when set', () => {
   const { listed, inactiveHere } = roster.splitByVenueEvidence({
     storeId: 'S1',

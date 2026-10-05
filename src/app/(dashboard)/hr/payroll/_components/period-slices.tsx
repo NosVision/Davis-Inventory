@@ -41,6 +41,8 @@ export interface CoverageBucket {
   no_start_date: { user_id: string; name: string; status: string | null }[];
   /** Staff at 5+ unauthorized-absence days this cycle — the SAME count the payslip would dock. */
   heavy_absence: { user_id: string; name: string; absent_days: number }[];
+  /** Employed records whose login is switched off — not paid. `has_slip`: an older build still pays them. */
+  login_disabled?: { user_id: string; name: string; has_slip: boolean }[];
 }
 
 export interface CoverageData {
@@ -217,6 +219,22 @@ export function PeriodSlices({
                         <span className="opacity-80">
                           {b.heavy_absence.slice(0, 4).map((h) => `${h.name} (${h.absent_days})`).join(' · ')}
                         </span>
+                      </p>
+                    )}
+                    {/* A disabled login is not paid (owner decision 2026-10-05) — said here so a real
+                        employee whose login was switched off by mistake is caught before payday. */}
+                    {(b.login_disabled?.length ?? 0) > 0 && (
+                      <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                        {tt(
+                          `${b.login_disabled!.length} คนบัญชีถูกปิดใช้งาน — ไม่คิดเงินเดือน`,
+                          `${b.login_disabled!.length} with a disabled login — not paid`
+                        )}{' '}
+                        <span className="opacity-80">{b.login_disabled!.map((d) => d.name).join(' · ')}</span>
+                        {!finalized && b.login_disabled!.some((d) => d.has_slip) && (
+                          <span className="ml-1 font-medium text-amber-700 dark:text-amber-400">
+                            {tt('· ยังมีสลิปค้างในงวดนี้ — กดคำนวณใหม่', '· still holds a slip here — recompute')}
+                          </span>
+                        )}
                       </p>
                     )}
                     {/* A slip snapshots the rate it was built on. A raise entered afterwards changes

@@ -17,6 +17,7 @@ import { isUniqueViolation } from '@/lib/hr/db-errors';
 import { cycleDates, svPeriodMonth, evalPeriodMonth } from '@/lib/hr/pay-cycle';
 import { recomputePoolDeductions } from '@/lib/hr/sc-recompute';
 import { employmentEndFor, loadOffboardingEnds } from '@/lib/hr/employment-end';
+import { isDisabledLoginEmployee } from '@/lib/hr/login-disabled';
 import { businessDateBangkok } from '@/lib/utils/date';
 
 // Last business day that has CLOSED. A rostered day after this is still ahead of us, so it must
@@ -214,14 +215,21 @@ export async function POST(request: NextRequest) {
 
   // System accounts (print servers, test fixtures) are machines, not payees — drop them even if
   // one was accidentally linked to an hr_employees row. profiles.is_system, not a username prefix.
+  // A switched-off login on a still-employed record is not paid either (login-disabled.ts) — the
+  // coverage panel lists who this drops, so nobody leaves the run unseen.
   if (employees.length) {
-    const { data: printerProfiles } = await service
+    const { data: profRows, error: profErr } = await service
       .from('profiles')
-      .select('id')
-      .eq('is_system', true)
+      .select('id, is_system, active')
       .in('id', employees.map((e) => e.profile_id));
-    const printerIds = new Set((printerProfiles ?? []).map((r) => r.id as string));
-    if (printerIds.size) employees = employees.filter((e) => !printerIds.has(e.profile_id));
+    if (profErr) return NextResponse.json({ error: 'Failed to load employees' }, { status: 500 });
+    const profById = new Map(
+      ((profRows ?? []) as { id: string; is_system: boolean | null; active: boolean | null }[]).map((p) => [p.id, p])
+    );
+    employees = employees.filter((e) => {
+      const p = profById.get(e.profile_id);
+      return !p?.is_system && !isDisabledLoginEmployee(e, p?.active);
+    });
   }
   const userIds = employees.map((e) => e.profile_id);
 

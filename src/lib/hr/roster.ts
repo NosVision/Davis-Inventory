@@ -37,6 +37,7 @@ import {
   loadVenueAttachment,
   type WorkVenueMap,
 } from './work-venues';
+import { isDisabledLoginEmployee } from './login-disabled';
 
 export type RosterScope =
   | { kind: 'store'; storeId: string }
@@ -109,17 +110,25 @@ export interface RosterSourceRow {
   profile_id: string | null;
   status: string | null;
   end_date: string | null;
-  profile: { id: string; username: string | null; display_name: string | null; is_system: boolean | null } | null;
+  profile: {
+    id: string;
+    username: string | null;
+    display_name: string | null;
+    is_system: boolean | null;
+    active?: boolean | null;
+  } | null;
 }
 
 /**
  * Is this hr_employees row a person who can be listed at all, for a window starting `from`?
- * Requires a linked login (the row is keyed on it everywhere), refuses system accounts, and
+ * Requires a linked login (the row is keyed on it everywhere), refuses system accounts and an
+ * employed record whose login was switched off (login-disabled.ts — the payrun drops them too), and
  * applies the employed-window rule.
  */
 export function isRosterCandidate(row: RosterSourceRow, from: string): boolean {
   if (!row.profile_id || !row.profile) return false;
   if (row.profile.is_system) return false;
+  if (isDisabledLoginEmployee(row, row.profile.active)) return false;
   return isEmployedInWindow(row, from);
 }
 
@@ -189,7 +198,7 @@ interface RawRow extends RosterSourceRow {
 const MEMBER_SELECT =
   'id, profile_id, full_name, company_id, work_store_id, status, start_date, end_date, position_id, ' +
   'payroll_group_id, work_hours_per_day, standard_days_off, ot_eligible, pay_type, pay_confidential, ' +
-  'profile:profiles!hr_employees_profile_id_fkey(id, username, display_name, is_system), ' +
+  'profile:profiles!hr_employees_profile_id_fkey(id, username, display_name, is_system, active), ' +
   'position:hr_positions(name, sort_order), company:hr_companies(name), payroll_group:hr_payroll_groups(name)';
 
 function toMember(r: RawRow): RosterMember {

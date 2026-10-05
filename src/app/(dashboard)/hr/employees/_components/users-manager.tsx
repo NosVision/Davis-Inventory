@@ -289,17 +289,16 @@ export function UsersManager({
   };
 
   const toggleUserActive = async (userId: string, currentActive: boolean) => {
-    // Turning the login off does NOT take someone off the payroll: profiles.active answers "can
-    // they open the app", hr_employees.status answers "are they still employed". They have to stay
-    // separate — someone who resigns mid-month is still owed that month — but HR read one as the
-    // other and was surprised to find a deactivated account still in the payrun. Say so here,
-    // while they are making the decision.
+    // Turning the login off on a still-employed record now takes it OFF the payroll (owner decision
+    // 2026-10-05, lib/hr/login-disabled.ts): it is how HR retires a duplicate self-registration.
+    // A leaver is different — resigned/terminated with an end date is still paid the final month —
+    // so say which tool is which while HR is making the decision.
     if (currentActive && stillEmployed.has(userId)) {
       const ok = await confirm({
-        title: 'ปิดบัญชีนี้ — แต่ยังต้องจ่ายเงินเดือนอยู่',
+        title: 'ปิดบัญชีนี้ — จะไม่คิดเงินเดือนให้บัญชีนี้แล้ว',
         message:
-          'คนนี้ยังมีสถานะเป็นพนักงาน (ทำงานอยู่/ทดลองงาน) จึงยังอยู่ในงวดเงินเดือนต่อไป — ปิดบัญชีแค่ทำให้เข้าแอปไม่ได้เท่านั้น ' +
-          'ถ้าเขาลาออกหรือถูกเลิกจ้างแล้ว ให้ไปตั้งสถานะและ “วันสิ้นสุดการจ้าง” ที่แท็บพนักงาน หรือใช้เมนูพ้นสภาพ (offboarding) จึงจะหลุดจากงวดเงินเดือน',
+          'บัญชีที่ถูกปิดจะไม่อยู่ในงวดเงินเดือนและตารางกะอีก เหมาะกับบัญชีที่สมัครซ้ำ ' +
+          'ถ้าคนนี้ลาออกหรือถูกเลิกจ้างแต่ยังต้องได้เงินเดือนงวดสุดท้าย ให้ใช้เมนูพ้นสภาพ (offboarding) หรือตั้งสถานะพร้อม “วันสิ้นสุดการจ้าง” ที่แท็บพนักงานแทน',
         confirmLabel: 'ปิดบัญชีต่อไป',
         tone: 'danger',
       });

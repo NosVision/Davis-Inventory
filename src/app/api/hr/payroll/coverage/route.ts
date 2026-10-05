@@ -5,6 +5,7 @@ import { cycleDates, isCycleClosed } from '@/lib/hr/pay-cycle';
 import { payHiddenProfileIds } from '@/lib/hr/pay-visibility';
 import { loadUnauthorizedAbsentDays } from '@/lib/hr/absence-summary';
 import { employmentEndFor, loadOffboardingEnds, type EmploymentEnd } from '@/lib/hr/employment-end';
+import { isDisabledLoginEmployee } from '@/lib/hr/login-disabled';
 import { businessDateBangkok } from '@/lib/utils/date';
 
 /**
@@ -93,11 +94,17 @@ export async function GET(request: NextRequest) {
   // select at 1000 rows silently, and profiles grows with every account ever created — a truncated
   // read here would drop people from the expected headcount, which is the one number this route exists to get right.
   const profileIds = [...new Set(empRows.map((e) => e.profile_id))];
-  let profiles: { id: string; display_name: string | null; username: string | null; is_system: boolean | null }[] = [];
+  let profiles: {
+    id: string;
+    display_name: string | null;
+    username: string | null;
+    is_system: boolean | null;
+    active: boolean | null;
+  }[] = [];
   if (profileIds.length > 0) {
     const { data: profData, error: profErr } = await service
       .from('profiles')
-      .select('id, display_name, username, is_system')
+      .select('id, display_name, username, is_system, active')
       .in('id', profileIds);
     if (profErr) return NextResponse.json({ error: 'Failed to load coverage' }, { status: 500 });
     profiles = (profData ?? []) as typeof profiles;
@@ -110,7 +117,7 @@ export async function GET(request: NextRequest) {
   const offboardingByUser = await loadOffboardingEnds(service, profileIds);
   if (!offboardingByUser) return NextResponse.json({ error: 'Failed to load coverage' }, { status: 500 });
 
-  const eligible: ResolvedRow[] = empRows
+  const inCycle: ResolvedRow[] = empRows
     .map((e) => ({ ...e, employment_end: employmentEndFor(e, offboardingByUser) }))
     .filter((e) => {
       // Machines are not payees — same exclusion the payrun POST applies.
@@ -119,6 +126,12 @@ export async function GET(request: NextRequest) {
       const endsInTime = !e.employment_end.date || e.employment_end.date >= cycle.start;
       return startsInTime && endsInTime;
     });
+  // A switched-off login on an employed record is not paid (login-disabled.ts) — same as the payrun
+  // POST. Not expected, so never "missing"; listed per slice instead, so a real employee whose login
+  // was turned off by mistake is seen before payday rather than discovered on it.
+  const isDisabled = (e: ResolvedRow) => isDisabledLoginEmployee(e, profById.get(e.profile_id)?.active);
+  const eligible = inCycle.filter((e) => !isDisabled(e));
+  const disabledRows = inCycle.filter(isDisabled);
 
   const payruns = (payrunRes.data ?? []) as {
     id: string;
@@ -173,6 +186,20 @@ export async function GET(request: NextRequest) {
     const b = buckets.get(k) ?? { company_id: e.company_id, payroll_group_id: e.payroll_group_id, rows: [] };
     b.rows.push(e);
     buckets.set(k, b);
+  }
+  // Skipped for a disabled login, per slice. `has_slip`: an older build of the run still pays them —
+  // คำนวณใหม่ drops the slip.
+  const disabledByBucket = new Map<string, { user_id: string; name: string; has_slip: boolean }[]>();
+  for (const e of disabledRows) {
+    const k = bucketKey(e.company_id, e.payroll_group_id);
+    const p = profById.get(e.profile_id);
+    const list = disabledByBucket.get(k) ?? [];
+    list.push({
+      user_id: e.profile_id,
+      name: e.full_name?.trim() || p?.display_name || p?.username || '—',
+      has_slip: paidUserIds.has(e.profile_id),
+    });
+    disabledByBucket.set(k, list);
   }
 
   // Heavy-absence check (owner report 2026-08-17..2026-08-26: ten back-office staff who never clock
@@ -263,6 +290,9 @@ export async function GET(request: NextRequest) {
         // NUMBERS, not the PERSON" (see the file header). Hiding a hidden-pay person from the one
         // list that would catch their draft slip being wrong is exactly the silence this exists to end.
         heavy_absence: heavyAbsence,
+        login_disabled: (disabledByBucket.get(bucketKey(b.company_id, b.payroll_group_id)) ?? []).sort((a, b2) =>
+          a.name.localeCompare(b2.name, 'th')
+        ),
         no_start_date: noStartDate
           .map((e) => {
             const p = profById.get(e.profile_id);
@@ -313,6 +343,7 @@ export async function GET(request: NextRequest) {
       payrun: { id: run.id, status: run.status },
       rate_stale: 0,
       heavy_absence: [],
+      login_disabled: disabledByBucket.get(bucketKey(run.company_id, run.payroll_group_id ?? null)) ?? [],
       no_start_date: [],
       missing: [],
     });
