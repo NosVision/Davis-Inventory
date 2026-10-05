@@ -214,7 +214,7 @@ export default function HrOffboardingPage() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch('/api/hr/employees?limit=200');
+        const res = await fetch('/api/hr/employees?limit=1000');
         const json = await res.json().catch(() => ({}));
         const all = (json.data ?? []) as Employee[];
         // Only people still employed can be offboarded.

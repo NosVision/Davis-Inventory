@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Inbox } from 'lucide-react';
 import { Button, Select, Tabs, Modal, ModalFooter, PageHeader, DataList, DataCard, StatusBadge, SkeletonList, ViewToggle, useViewMode, toast } from '@/components/ui';
+import { CompanyFilterSelect, useHrCompanies } from '@/components/hr/company-filter';
 import { formatThaiDate, formatThaiDateTime } from '@/lib/utils/format';
 import { EmployeeName } from '@/components/hr/employee-name';
 
@@ -69,6 +70,10 @@ export default function HrRequestsPage() {
   // must open on the whole queue too — defaulting to the first store hid every other store's
   // pending requests behind a hunt.
   const [storeId, setStoreId] = useState('');
+  // บริษัท / ทั้งหมด (HR ask 2026-10-05). These queues carry company_name, not the id, so the
+  // match is by name — names are unique in hr_companies.
+  const companies = useHrCompanies();
+  const [companyId, setCompanyId] = useState('');
   const [storesReady, setStoresReady] = useState(false);
   const [status, setStatus] = useState<string>('pending');
   const [view, setView] = useViewMode('hr-requests');
@@ -248,7 +253,11 @@ export default function HrRequestsPage() {
     ...stores.map((s) => ({ value: s.id, label: s.store_name })),
   ];
 
-  const visibleRows = tab === 'ot' ? otRows : attRows;
+  const companyName = companies.find((c) => c.id === companyId)?.name ?? null;
+  const byCompany = <R extends { company_name: string | null }>(r: R) => !companyName || r.company_name === companyName;
+  const shownOt = otRows.filter(byCompany);
+  const shownAtt = attRows.filter(byCompany);
+  const visibleRows = tab === 'ot' ? shownOt : shownAtt;
   const visibleStores = new Set(visibleRows.map((r) => r.store_name ?? '').filter(Boolean)).size;
 
   const queueMeta = (r: OtRow | AttRow) => {
@@ -337,7 +346,8 @@ export default function HrRequestsPage() {
       />
 
       {/* filters */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <CompanyFilterSelect companies={companies} value={companyId} onChange={setCompanyId} />
         <Select
           label={tOt('storeLabel')}
           value={storeId}
@@ -361,14 +371,14 @@ export default function HrRequestsPage() {
       {loading ? (
         <SkeletonList rows={5} />
       ) : tab === 'ot' ? (
-        otRows.length === 0 ? (
+        shownOt.length === 0 ? (
           <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-gray-300 px-4 py-12 text-center text-sm text-gray-400 dark:border-gray-700">
             <Inbox className="h-8 w-8" />
             {tOt('noRequests')}
           </div>
         ) : (
           <DataList compact={view === 'compact'}>
-            {otRows.map((r) => (
+            {shownOt.map((r) => (
               <DataCard
                 key={r.id}
                 accent={STATUS_TONE[r.status]}
@@ -390,14 +400,14 @@ export default function HrRequestsPage() {
             ))}
           </DataList>
         )
-      ) : attRows.length === 0 ? (
+      ) : shownAtt.length === 0 ? (
         <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-gray-300 px-4 py-12 text-center text-sm text-gray-400 dark:border-gray-700">
           <Inbox className="h-8 w-8" />
           {tAtt('noRequests')}
         </div>
       ) : (
         <DataList compact={view === 'compact'}>
-          {attRows.map((r) => (
+          {shownAtt.map((r) => (
             <DataCard
               key={r.id}
               accent={STATUS_TONE[r.status]}

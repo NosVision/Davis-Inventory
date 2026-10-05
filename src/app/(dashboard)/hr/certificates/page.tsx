@@ -65,7 +65,7 @@ export default function HrCertificatesPage() {
     if (!cid) { setEmployees([]); return; }
     setLoadingEmp(true);
     try {
-      const res = await fetch(`/api/hr/employees?company_id=${cid}&status=active&limit=200`);
+      const res = await fetch(`/api/hr/employees?company_id=${cid}&status=active&limit=1000`);
       setEmployees(((await res.json()).data ?? []) as EmployeeRow[]);
     } catch { toast({ type: 'error', title: L.loadFailed }); }
     finally { setLoadingEmp(false); }

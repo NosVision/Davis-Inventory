@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2, Inbox, ReceiptText, Printer, Clock, Wallet } from 'lucide-react';
 import {
@@ -19,6 +19,7 @@ import {
   toast,
 } from '@/components/ui';
 import { employeeNameLabel } from '@/lib/hr/employee-name';
+import { CompanyFilterSelect, matchesCompany, useHrCompanies } from '@/components/hr/company-filter';
 
 interface StoreOpt {
   id: string;
@@ -40,6 +41,7 @@ interface ClaimRow {
   decision_note: string | null;
   decided_at: string | null;
   created_at: string;
+  company_id: string | null;
   claimant: { id: string; full_name: string | null; display_name: string | null; username: string | null } | null;
 }
 
@@ -74,7 +76,11 @@ export default function HrClaimsPage() {
   const [storeId, setStoreId] = useState(''); // '' = all stores (no store_id)
   const [status, setStatus] = useState<string>('pending');
 
-  const [rows, setRows] = useState<ClaimRow[]>([]);
+  const [allRows, setRows] = useState<ClaimRow[]>([]);
+  // บริษัท / ทั้งหมด (HR ask 2026-10-05) — every count, total and list below reads the filtered rows.
+  const companies = useHrCompanies();
+  const [companyId, setCompanyId] = useState('');
+  const rows = useMemo(() => allRows.filter((r) => matchesCompany(r.company_id, companyId)), [allRows, companyId]);
   const [loading, setLoading] = useState(true);
 
   const [rejectId, setRejectId] = useState<string | null>(null);
@@ -243,7 +249,8 @@ export default function HrClaimsPage() {
       </div>
 
       {/* filters */}
-      <div className="grid grid-cols-2 gap-3 print:hidden">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 print:hidden">
+        <CompanyFilterSelect companies={companies} value={companyId} onChange={setCompanyId} />
         <Select
           label={t('storeLabel')}
           value={storeId}

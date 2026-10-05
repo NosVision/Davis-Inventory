@@ -318,7 +318,7 @@ export default function OrgPage() {
     (async () => {
       setLoading(true);
       try {
-        const res = await fetch('/api/hr/employees?limit=200');
+        const res = await fetch('/api/hr/employees?limit=1000');
         const j = await res.json().catch(() => ({}));
         setEmps((j.data ?? []) as OrgEmployee[]);
       } catch {

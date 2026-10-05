@@ -109,7 +109,10 @@ export async function GET(request: NextRequest) {
   const sp = request.nextUrl.searchParams;
   const q = (sp.get('q') ?? '').trim();
   const storeId = sp.get('store_id');
-  const limit = Math.min(Math.max(Number(sp.get('limit')) || 50, 1), 200);
+  // Ceiling = PostgREST's own per-request cap. It was 200, and the pickers that load "everyone"
+  // (offboarding, warnings, org, certificates) silently lost the oldest records once the register
+  // passed 200 (246 records on 2026-10-05).
+  const limit = Math.min(Math.max(Number(sp.get('limit')) || 50, 1), 1000);
   const offset = Math.max(Number(sp.get('offset')) || 0, 0);
 
   const service = createServiceClient();

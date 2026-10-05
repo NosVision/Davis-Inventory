@@ -183,7 +183,7 @@ export default function HrWarningsPage() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch('/api/hr/employees?limit=200');
+        const res = await fetch('/api/hr/employees?limit=1000');
         const json = await res.json().catch(() => ({}));
         setEmployees((json.data ?? []) as Employee[]);
       } catch {

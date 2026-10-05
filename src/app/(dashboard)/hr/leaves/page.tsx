@@ -7,6 +7,7 @@ import { Button, Select, PageHeader, ViewToggle, useViewMode, DataList, DataCard
 import { matchesEmployeeSearch } from '@/lib/hr/employee-name';
 import { formatThaiDate } from '@/lib/utils/format';
 import { EmployeeName } from '@/components/hr/employee-name';
+import { CompanyFilterSelect, matchesCompany, useHrCompanies } from '@/components/hr/company-filter';
 import Link from 'next/link';
 
 interface StoreOpt {
@@ -28,6 +29,7 @@ interface LeaveRow {
   decision_note: string | null;
   /** null = the employee has no venue (company-level / not yet assigned) → HR approves directly. */
   store_id: string | null;
+  company_id: string | null;
   requester: { id: string; full_name: string | null; display_name: string | null; username: string | null } | null;
   leave_type: { code: string; name_th: string; name_en: string } | null;
 }
@@ -120,6 +122,9 @@ export default function HrLeavesPage() {
   const [storeId, setStoreId] = useState(''); // '' = company-wide (no store_id)
   const [status, setStatus] = useState<string>('pending');
   const [queue, setQueue] = useState<Queue>('manager_pending');
+  // บริษัท / ทั้งหมด — one choice for both the queue and the quota grid (HR ask 2026-10-05).
+  const companies = useHrCompanies();
+  const [companyId, setCompanyId] = useState('');
 
   const [rows, setRows] = useState<LeaveRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -271,9 +276,14 @@ export default function HrLeavesPage() {
    * hr_employees.full_name holds the first and last name in one string, and typing them the other
    * way round is the obvious thing to do when you only remember the surname.
    */
+  const visibleRows = useMemo(() => rows.filter((r) => matchesCompany(r.company_id, companyId)), [rows, companyId]);
+
   const visibleQuotaEmployees = useMemo(
-    () => (quota?.employees ?? []).filter((e) => matchesEmployeeSearch(e, quotaSearch)),
-    [quota, quotaSearch]
+    () =>
+      (quota?.employees ?? []).filter(
+        (e) => matchesCompany(e.company_id, companyId) && matchesEmployeeSearch(e, quotaSearch)
+      ),
+    [quota, quotaSearch, companyId]
   );
 
   const monthlyByUser = useMemo(() => {
@@ -625,7 +635,8 @@ export default function HrLeavesPage() {
           <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
             {t('quotaYearHeading', { year: String(quota.year) })}
           </h2>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-end gap-2">
+            <CompanyFilterSelect companies={companies} value={companyId} onChange={setCompanyId} className="py-1 text-xs" />
             <div className="relative">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
               <input
@@ -638,7 +649,7 @@ export default function HrLeavesPage() {
               />
             </div>
             <span className="whitespace-nowrap text-xs tabular-nums text-gray-500 dark:text-gray-400">
-              {quotaSearch.trim() ? `แสดง ${shown} จาก ${total} คน` : `${total} คน`}
+              {quotaSearch.trim() || companyId ? `แสดง ${shown} จาก ${total} คน` : `${total} คน`}
             </span>
           </div>
         </div>
@@ -845,13 +856,14 @@ export default function HrLeavesPage() {
           )}
 
           {/* filters */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             <Select
               label={t('storeLabel')}
               value={storeId}
               onChange={(e) => setStoreId(e.target.value)}
               options={storeOptions}
             />
+            <CompanyFilterSelect companies={companies} value={companyId} onChange={setCompanyId} />
             {queue === 'all' && (
               <Select
                 label={t('status')}
@@ -864,14 +876,14 @@ export default function HrLeavesPage() {
 
           {loading ? (
             <SkeletonList rows={5} />
-          ) : rows.length === 0 ? (
+          ) : visibleRows.length === 0 ? (
             <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-gray-300 px-4 py-12 text-center text-sm text-gray-400 dark:border-gray-700">
               <Inbox className="h-8 w-8" />
               {t('noRequests')}
             </div>
           ) : (
             <DataList compact={view === 'compact'}>
-              {rows.map((r) => (
+              {visibleRows.map((r) => (
                 <DataCard
                   key={r.id}
                   accent={STATUS_TONE[r.status]}
