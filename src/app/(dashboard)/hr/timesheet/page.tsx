@@ -423,7 +423,13 @@ export default function HrTimesheetPage() {
                   <SectionHeading title={emp.end_date ? `${emp.name} · ${t('departed')}` : emp.name} />
                   <PayrollScopeChips emp={emp} homeCompany={homeCompany} isTh={isTh} />
                 </div>
-                <AttendanceScoreCard days={emp.days} today={openBusinessDateBangkok()} compact config={scoreConfig} />
+                <AttendanceScoreCard
+                  days={emp.days}
+                  today={openBusinessDateBangkok()}
+                  compact
+                  config={scoreConfig}
+                  lateExempt={emp.late_exempt}
+                />
                 <SummaryChips totals={emp.totals} />
                 {hasData ? (
                   <DayTable

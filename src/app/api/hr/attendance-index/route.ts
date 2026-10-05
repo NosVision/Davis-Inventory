@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
   for (let d = from; d <= effTo; d = addDays(d, 1)) dates.push(d);
 
   const [empRes, schedRes, attRes, ovrRes] = await Promise.all([
-    service.from('hr_employees').select('profile_id, work_hours_per_day, ot_eligible').in('profile_id', userIds),
+    service.from('hr_employees').select('profile_id, work_hours_per_day, ot_eligible, late_exempt').in('profile_id', userIds),
     service
       .from('hr_schedule')
       .select('user_id, work_date, is_day_off, shift:hr_shift_templates(start_time, end_time)')
@@ -99,7 +99,12 @@ export async function GET(request: NextRequest) {
   }
 
   const empByUser = new Map(
-    ((empRes.data ?? []) as { profile_id: string; work_hours_per_day: number | null; ot_eligible: boolean | null }[]).map(
+    ((empRes.data ?? []) as {
+      profile_id: string;
+      work_hours_per_day: number | null;
+      ot_eligible: boolean | null;
+      late_exempt: boolean | null;
+    }[]).map(
       (e) => [e.profile_id, e]
     )
   );
@@ -154,7 +159,8 @@ export async function GET(request: NextRequest) {
       if (!day.scheduled || day.is_day_off) continue;
       scheduledDays++;
       if (day.absent) absentDays++;
-      if ((day.late_min ?? 0) > 0) { lateDays++; lateMinutes += day.late_min ?? 0; }
+      // ไม่หักสาย also spares the index its lateness penalty (HR ask 2026-10-05).
+      if (!emp?.late_exempt && (day.late_min ?? 0) > 0) { lateDays++; lateMinutes += day.late_min ?? 0; }
       if (day.incomplete && !day.absent) incompleteDays++;
     }
     const score = computeAttendanceScore({ scheduledDays, absentDays, lateDays, lateMinutes, incompleteDays, otMinutes }, scoreCfg);

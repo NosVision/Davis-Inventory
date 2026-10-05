@@ -51,6 +51,7 @@ interface EmployeeFull {
   pay_type: string;
   work_hours_per_day: number | null;
   ot_eligible: boolean | null;
+  late_exempt: boolean | null;
   ot_hour_divisor: number | null;
   tax_mode: string;
   sso_enrolled: boolean;
@@ -155,7 +156,7 @@ export async function POST(request: NextRequest) {
   const { data: empRows, error: empErr } = await service
     .from('hr_employees')
     .select(
-      'id, profile_id, rate_satang, pay_type, work_hours_per_day, ot_eligible, ot_hour_divisor, tax_mode, sso_enrolled, pvd_enrolled, pvd_employee_rate, status, start_date, end_date, full_name, payroll_group_id'
+      'id, profile_id, rate_satang, pay_type, work_hours_per_day, ot_eligible, late_exempt, ot_hour_divisor, tax_mode, sso_enrolled, pvd_enrolled, pvd_employee_rate, status, start_date, end_date, full_name, payroll_group_id'
     )
     .eq('company_id', companyId)
     // Active/probation staff, PLUS anyone who left on/after the cycle start so a mid-period
@@ -626,10 +627,14 @@ export async function POST(request: NextRequest) {
     // A late fine only applies to a day the person was actually due at work. Someone who taps in
     // on a rostered day off, or on a day an approved leave already covers, is not "late" for a
     // shift they did not owe — payroll was fining both (owner decision 2026-08-18).
-    const lateOccurrences = days
-      .filter((d) => !d.is_day_off && !leaveCovered.has(d.business_date))
-      .map((d) => d.late_min ?? 0)
-      .filter((m) => m > 0);
+    // ไม่หักสาย (hr_employees.late_exempt, HR ask 2026-10-05): no fine at all — the minutes stay on
+    // the timesheet, only the money goes.
+    const lateOccurrences = emp.late_exempt
+      ? []
+      : days
+          .filter((d) => !d.is_day_off && !leaveCovered.has(d.business_date))
+          .map((d) => d.late_min ?? 0)
+          .filter((m) => m > 0);
 
     // Unauthorized absence = absent timesheet days NOT covered by an approved leave, and only
     // within the employed window (days before hire / after leave never count as absent).

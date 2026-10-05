@@ -64,6 +64,7 @@ export interface RosterMember {
   work_hours_per_day: number | null;
   standard_days_off: number | null;
   ot_eligible: boolean | null;
+  late_exempt: boolean | null;
   pay_type: string | null;
   pay_confidential: boolean | null;
 }
@@ -188,6 +189,7 @@ interface RawRow extends RosterSourceRow {
   work_hours_per_day: number | null;
   standard_days_off: number | null;
   ot_eligible: boolean | null;
+  late_exempt: boolean | null;
   pay_type: string | null;
   pay_confidential: boolean | null;
   position: Embed<{ name: string | null; sort_order: number | null }>;
@@ -197,7 +199,7 @@ interface RawRow extends RosterSourceRow {
 
 const MEMBER_SELECT =
   'id, profile_id, full_name, company_id, work_store_id, status, start_date, end_date, position_id, ' +
-  'payroll_group_id, work_hours_per_day, standard_days_off, ot_eligible, pay_type, pay_confidential, ' +
+  'payroll_group_id, work_hours_per_day, standard_days_off, ot_eligible, late_exempt, pay_type, pay_confidential, ' +
   'profile:profiles!hr_employees_profile_id_fkey(id, username, display_name, is_system, active), ' +
   'position:hr_positions(name, sort_order), company:hr_companies(name), payroll_group:hr_payroll_groups(name)';
 
@@ -223,6 +225,7 @@ function toMember(r: RawRow): RosterMember {
     work_hours_per_day: r.work_hours_per_day,
     standard_days_off: r.standard_days_off,
     ot_eligible: r.ot_eligible,
+    late_exempt: r.late_exempt ?? false,
     pay_type: r.pay_type,
     pay_confidential: r.pay_confidential,
   };

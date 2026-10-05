@@ -52,6 +52,8 @@ export interface EmployeeWritable {
   work_hours_per_day: number;
   break_hours: number;
   ot_eligible: boolean;
+  /** ไม่หักสาย — no late fine, no attendance-index lateness penalty; minutes still recorded. */
+  late_exempt: boolean;
   ot_hour_divisor: number;
   standard_days_off: number;
   tax_mode: TaxMode;
@@ -240,6 +242,7 @@ export function pickEmployeeFields(
   if (has('rate_satang') && out.rate_satang !== undefined) out.rate_satang = Math.round(Number(out.rate_satang));
   setNum('break_hours', 0);
   setBool('ot_eligible');
+  setBool('late_exempt');
   setBool('sso_enrolled');
   setBool('pay_confidential');
   setBool('pvd_enrolled');

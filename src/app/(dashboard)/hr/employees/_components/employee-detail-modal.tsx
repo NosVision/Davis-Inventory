@@ -38,6 +38,7 @@ interface EmployeeDetail {
   work_hours_per_day: number | null;
   break_hours: number | null;
   ot_eligible: boolean | null;
+  late_exempt?: boolean | null;
   start_date: string | null;
   probation_end: string | null;
   birth_date: string | null;
@@ -174,6 +175,7 @@ export function EmployeeDetailModal({
             <Field label={t('detail.workHours')} value={val(detail.work_hours_per_day)} />
             <Field label={t('detail.breakHours')} value={val(detail.break_hours)} />
             <Field label={t('detail.otEligible')} value={yesNo(detail.ot_eligible)} />
+            <Field label="ไม่หักสาย" value={yesNo(detail.late_exempt)} />
           </Section>
 
           {/* บัญชีเข้าระบบ — login account + สิทธิ์ระบบ (Role), kept visually apart from the

@@ -99,6 +99,7 @@ interface FormState {
   work_hours_per_day: string;
   break_hours: string;
   ot_eligible: boolean;
+  late_exempt: boolean;
   ot_hour_divisor: string;
   standard_days_off: string;
   // tax & sso
@@ -168,6 +169,7 @@ function defaultForm(): FormState {
     work_hours_per_day: '9',
     break_hours: '1',
     ot_eligible: false,
+    late_exempt: false,
     ot_hour_divisor: '8',
     standard_days_off: '8',
     tax_mode: 'progressive',
@@ -476,6 +478,7 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved, onTran
         work_hours_per_day: String((d.work_hours_per_day as number) ?? 9),
         break_hours: String((d.break_hours as number) ?? 0),
         ot_eligible: Boolean(d.ot_eligible),
+        late_exempt: Boolean(d.late_exempt),
         ot_hour_divisor: String((d.ot_hour_divisor as number) ?? 8),
         standard_days_off: String((d.standard_days_off as number) ?? 8),
         tax_mode: (d.tax_mode as string) ?? 'progressive',
@@ -640,6 +643,7 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved, onTran
       work_hours_per_day: Number(form.work_hours_per_day),
       break_hours: Number(form.break_hours) || 0,
       ot_eligible: effOt,
+      late_exempt: form.late_exempt,
       ot_hour_divisor: Number(form.ot_hour_divisor),
       standard_days_off: Number(form.standard_days_off),
       tax_mode: effTaxMode,
@@ -1275,6 +1279,20 @@ export function EmployeeFormModal({ isOpen, employeeId, onClose, onSaved, onTran
               className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-60 dark:border-gray-600"
             />
             {t('otEligible')}
+          </label>
+          <label className="col-span-full flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
+            <input
+              type="checkbox"
+              checked={form.late_exempt}
+              onChange={(e) => update('late_exempt', e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-gray-600"
+            />
+            <span>
+              ไม่หักสาย
+              <span className="block text-xs text-gray-500 dark:text-gray-400">
+                ไม่หักเงินและไม่หักคะแนนดัชนีเรื่องมาสาย (เช่น ผู้จัดการที่เวลาเข้างานยืดหยุ่น) — นาทีที่สายยังแสดงในตารางเวลาตามจริง
+              </span>
+            </span>
           </label>
 
           {partTime && (

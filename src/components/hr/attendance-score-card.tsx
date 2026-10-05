@@ -48,6 +48,7 @@ export function AttendanceScoreCard({
   today,
   compact = false,
   config = DEFAULT_SCORE_CONFIG,
+  lateExempt = false,
 }: {
   days: DaySummary[];
   today: string;
@@ -55,17 +56,20 @@ export function AttendanceScoreCard({
   compact?: boolean;
   /** owner-tunable work-index knobs (hr_policy_settings) — servers attach it as score_config */
   config?: ScoreConfig;
+  /** hr_employees.late_exempt (ไม่หักสาย): lateness costs no index points — same rule as the API. */
+  lateExempt?: boolean;
 }) {
   const t = useTranslations('hr.timesheet');
 
   // Past (or today) scheduled working days only — future rows must not dilute the score.
   const past = days.filter((d) => d.business_date <= today);
   const workdays = past.filter((d) => d.scheduled && !d.is_day_off);
+  const lateDays = lateExempt ? [] : workdays.filter((d) => (d.late_min ?? 0) > 0);
   const score = computeAttendanceScore({
     scheduledDays: workdays.length,
     absentDays: workdays.filter((d) => d.absent).length,
-    lateDays: workdays.filter((d) => (d.late_min ?? 0) > 0).length,
-    lateMinutes: workdays.reduce((acc, d) => acc + (d.late_min ?? 0), 0),
+    lateDays: lateDays.length,
+    lateMinutes: lateDays.reduce((acc, d) => acc + (d.late_min ?? 0), 0),
     incompleteDays: workdays.filter((d) => d.incomplete && !d.absent).length,
     otMinutes: past.reduce((acc, d) => acc + (d.ot_min ?? 0), 0),
   }, config);

@@ -298,6 +298,8 @@ export async function GET(request: NextRequest) {
         payroll_group_name: m.payroll_group_name,
         work_hours_per_day: workHours,
         ot_eligible: otEligible,
+        // ไม่หักสาย — the row says so, and the index card scores lateness as nothing.
+        late_exempt: m.late_exempt === true,
         // Day-rated staff are paid worked_days × rate, so a day edit that credits no hours costs them.
         pay_type: m.pay_type,
         // Set only for leavers — lets the timesheet UI flag the row as departed.

@@ -20,6 +20,7 @@ interface EssTimesheet {
   to: string;
   work_hours_per_day: number;
   ot_eligible: boolean;
+  late_exempt?: boolean;
   days: DaySummary[];
   totals: TimesheetTotals;
   score_config?: import('@/lib/hr/attendance-score').ScoreConfig;
@@ -92,7 +93,12 @@ export default function MyTimesheetPage() {
         </p>
       ) : (
         <div className="space-y-3">
-          <AttendanceScoreCard days={data.days} today={openBusinessDateBangkok()} config={data.score_config} />
+          <AttendanceScoreCard
+            days={data.days}
+            today={openBusinessDateBangkok()}
+            config={data.score_config}
+            lateExempt={data.late_exempt}
+          />
           <SummaryChips totals={data.totals} />
           {hasData ? (
             <DayTable days={data.days} />

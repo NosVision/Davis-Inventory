@@ -19,6 +19,8 @@ export type TimesheetEmployee = PayrollScopeInfo & {
   company_id: string | null;
   work_hours_per_day: number;
   ot_eligible: boolean;
+  /** ไม่หักสาย — lateness costs this person neither money nor index points. */
+  late_exempt?: boolean;
   /** hr_employees.pay_type — day-rated staff are paid worked_days × rate. */
   pay_type: string | null;
   /** Set only for departed (resigned/terminated) staff — their last working day. The API keeps
@@ -329,6 +331,14 @@ export function TimesheetSummaryTable({
               <td className="px-3 py-2 font-medium text-gray-800 dark:text-gray-200">
                 <span title={nickTitle(emp, isTh)}>{emp.name}</span>
                 {emp.end_date && <DepartedChip endDate={emp.end_date} isTh={isTh} />}
+                {emp.late_exempt && (
+                  <span
+                    className="ml-1.5 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-300"
+                    title={isTh ? 'นาทีสายยังแสดงตามจริง แต่ไม่หักเงินและไม่หักคะแนนดัชนี' : 'Late minutes shown, but no fine and no index penalty'}
+                  >
+                    {isTh ? 'ไม่หักสาย' : 'no late fine'}
+                  </span>
+                )}
                 <PayrollScopeChips emp={emp} homeCompany={homeCompany} isTh={isTh} />
               </td>
               <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300">{emp.totals.work_days}</td>

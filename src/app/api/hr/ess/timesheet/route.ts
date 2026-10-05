@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
   const [empRes, scheduleRes, attendanceRes, overridesRes] = await Promise.all([
     service
       .from('hr_employees')
-      .select('work_hours_per_day, ot_eligible, company_id')
+      .select('work_hours_per_day, ot_eligible, late_exempt, company_id')
       .eq('profile_id', user.id)
       .maybeSingle(),
     service
@@ -117,7 +117,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to load timesheet' }, { status: 500 });
   }
 
-  const emp = empRes.data as { work_hours_per_day: number | null; ot_eligible: boolean | null; company_id: string | null } | null;
+  const emp = empRes.data as {
+    work_hours_per_day: number | null;
+    ot_eligible: boolean | null;
+    late_exempt: boolean | null;
+    company_id: string | null;
+  } | null;
   const workHours = emp?.work_hours_per_day ?? DEFAULT_WORK_HOURS;
   const otEligible = emp?.ot_eligible ?? false;
 
@@ -157,5 +162,14 @@ export async function GET(request: NextRequest) {
   // score_config: the owner-tunable work-index knobs so the client card scores with the same
   // rules HR sees (defaults = historical constants when no policy rows exist).
   const scoreConfig = (await getHrPolicies(service)).work_index;
-  return NextResponse.json({ from, to, work_hours_per_day: workHours, ot_eligible: otEligible, days, totals: sumDays(days), score_config: scoreConfig });
+  return NextResponse.json({
+    from,
+    to,
+    work_hours_per_day: workHours,
+    ot_eligible: otEligible,
+    late_exempt: emp?.late_exempt === true,
+    days,
+    totals: sumDays(days),
+    score_config: scoreConfig,
+  });
 }
