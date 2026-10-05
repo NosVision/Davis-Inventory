@@ -4,13 +4,14 @@ import { resolveHrScope } from '@/lib/hr/route-auth';
 import { openBusinessDateBangkok } from '@/lib/utils/date';
 import { employeeNameLabel } from '@/lib/hr/employee-name';
 
-// GET /api/hr/dashboard/daily?business_date=&store_id= — the manager/HR "who's in today" summary
+// GET /api/hr/dashboard/daily?business_date=&store_id=&company_id= — the manager/HR "who's in today" summary
 // (§P5.3). Scoped: company-HR sees everyone; a store manager sees only their stores' staff. Buckets
 // the active headcount into checked-in / on-approved-leave / not-yet-in for the business date, and
 // returns the names so the page can render cards AND build a copy-to-LINE text. Read-only.
 interface Person { user_id: string; name: string; store_ids?: string[] }
 interface LeavePerson extends Person { leave_th: string | null; leave_en: string | null }
 interface StoreLite { id: string; name: string }
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // ชื่อจริง (ชื่อเล่น) in one string — these names get pasted into LINE as prose, not a table.
 const nameOf = (e: {
@@ -34,6 +35,10 @@ export async function GET(request: NextRequest) {
   }
   const businessDate = dateParam || openBusinessDateBangkok();
   const storeFilter = sp.get('store_id');
+  // ?company_id narrows the PEOPLE (hr_employees.company_id), ANDed with the store scope. A value
+  // that isn't a uuid is ignored rather than rejected — it's a convenience filter, not a gate.
+  const companyParam = sp.get('company_id');
+  const companyId = companyParam && UUID_RE.test(companyParam) ? companyParam : null;
 
   const service = createServiceClient();
 
@@ -63,6 +68,7 @@ export async function GET(request: NextRequest) {
     .select('profile_id, status, full_name, profile:profiles!hr_employees_profile_id_fkey(display_name, username, active)')
     .eq('status', 'active');
   if (scopedUserIds) empQuery = empQuery.in('profile_id', [...scopedUserIds]);
+  if (companyId) empQuery = empQuery.eq('company_id', companyId);
   const { data: empRows, error: empErr } = await empQuery;
   if (empErr) return NextResponse.json({ error: 'Failed to load employees' }, { status: 500 });
 

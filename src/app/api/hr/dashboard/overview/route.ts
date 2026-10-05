@@ -16,9 +16,37 @@ const CLOSED_THROUGH = () => businessDateBangkok();
 // evaluation snapshots). Counts only — names stay on /api/hr/dashboard/daily. Scope mirrors
 // /daily: company-HR sees everything; a scoped manager sees only their stores (?store_id must
 // be inside the scope). Read-only.
+//
+// ?company_id (optional) narrows the PEOPLE every count is about to hr_employees of that company,
+// ANDed with the store scope; the payroll card filters payruns by their own company_id.
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DEFAULT_WORK_HOURS = 9;
+const PAGE_SIZE = 1000; // PostgREST's silent per-select cap
+
+/**
+ * Every profile_id the company employs, any status — paged, because one select stops at 1,000
+ * rows without an error. Any status: a pending request or a warning from someone on probation or
+ * already resigned still belongs to that company's queue. null = the lookup failed.
+ */
+async function companyProfileIds(
+  service: ReturnType<typeof createServiceClient>,
+  companyId: string
+): Promise<string[] | null> {
+  const ids: string[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await service
+      .from('hr_employees')
+      .select('profile_id')
+      .eq('company_id', companyId)
+      .order('id')
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) return null;
+    for (const r of data ?? []) ids.push(r.profile_id as string);
+    if (!data || data.length < PAGE_SIZE) return ids;
+  }
+}
 
 interface StoreRow { id: string; store_name: string | null; store_code: string | null }
 interface ByStore {
@@ -76,6 +104,9 @@ export async function GET(request: NextRequest) {
     }
     workingStoreIds = [storeFilter];
   }
+  // A non-uuid company_id is ignored rather than rejected — it's a convenience filter, not a gate.
+  const companyParam = sp.get('company_id');
+  const companyId = companyParam && UUID_RE.test(companyParam) ? companyParam : null;
   // profile_changes/evaluation/payroll company rows are company-wide functions — only surfaced
   // for company-HR looking at the unfiltered view (a scoped manager gets store-kept parts only).
   const companyWide = scopedStoreIds === null;
@@ -117,12 +148,22 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ data: emptyResult(businessDate, month) });
   }
 
+  // The company's people (null = no company filter). Used for the user-keyed counts below that
+  // aren't already narrowed through the active-employee set (warnings, queues, evaluation).
+  let companyPeople: string[] | null = null;
+  if (companyId) {
+    companyPeople = await companyProfileIds(service, companyId);
+    if (!companyPeople) return NextResponse.json({ error: 'Company lookup failed' }, { status: 500 });
+    if (companyPeople.length === 0) return NextResponse.json({ data: emptyResult(businessDate, month) });
+  }
+
   // ---- active employees (today's population) ----------------------------------------------
   let empQuery = service
     .from('hr_employees')
     .select('profile_id, work_hours_per_day, profile:profiles!hr_employees_profile_id_fkey(active)')
     .eq('status', 'active');
   if (scopedUserFilter) empQuery = empQuery.in('profile_id', scopedUserFilter);
+  if (companyId) empQuery = empQuery.eq('company_id', companyId);
   const { data: empRows, error: empErr } = await empQuery;
   if (empErr) return NextResponse.json({ error: 'Failed to load employees' }, { status: 500 });
   const activeEmp = (empRows ?? []).filter(
@@ -130,6 +171,12 @@ export async function GET(request: NextRequest) {
   );
   const activeIds = new Set(activeEmp.map((e) => e.profile_id as string));
   const workHoursById = new Map(activeEmp.map((e) => [e.profile_id as string, (e.work_hours_per_day as number | null) ?? DEFAULT_WORK_HOURS]));
+
+  // Every month aggregate below is already narrowed in code through activeIds (which now carries
+  // the company filter). Pushing the same set into the queries just keeps the row counts — and the
+  // 1,000-row cap — about this company instead of the whole group. The active set, not
+  // companyPeople: it's the smaller list and the only people these rows are counted for.
+  const companyActive: string[] | null = companyId ? [...activeIds] : null;
 
   // ---- bulk month data (attendance 'in' punches, schedule, overrides, leaves) -------------
   let attQuery = service
@@ -139,6 +186,7 @@ export async function GET(request: NextRequest) {
     .gte('business_date', monthStart)
     .lte('business_date', trendEnd);
   if (workingStoreIds) attQuery = attQuery.in('store_id', workingStoreIds);
+  if (companyActive) attQuery = attQuery.in('user_id', companyActive);
 
   let schedQuery = service
     .from('hr_schedule')
@@ -146,13 +194,17 @@ export async function GET(request: NextRequest) {
     .gte('work_date', monthStart)
     .lte('work_date', trendEnd);
   if (workingStoreIds) schedQuery = schedQuery.in('store_id', workingStoreIds);
+  if (companyActive) schedQuery = schedQuery.in('user_id', companyActive);
 
   let ovrQuery = service
     .from('hr_timesheet_overrides')
     .select('user_id, business_date, worked_min, late_min, ot_min, absent, reason')
     .gte('business_date', monthStart)
     .lte('business_date', trendEnd);
-  if (scopedUserFilter) ovrQuery = ovrQuery.in('user_id', scopedUserFilter);
+  // companyActive ⊆ scopedUserFilter (activeIds came from a query already scoped by it), so the
+  // one list suffices — two user_id filters would only double the URL.
+  if (companyActive) ovrQuery = ovrQuery.in('user_id', companyActive);
+  else if (scopedUserFilter) ovrQuery = ovrQuery.in('user_id', scopedUserFilter);
 
   let leaveQuery = service
     .from('hr_leaves')
@@ -160,7 +212,8 @@ export async function GET(request: NextRequest) {
     .eq('status', 'approved')
     .lte('from_date', monthEnd)
     .gte('to_date', monthStart);
-  if (scopedUserFilter) leaveQuery = leaveQuery.in('user_id', scopedUserFilter);
+  if (companyActive) leaveQuery = leaveQuery.in('user_id', companyActive);
+  else if (scopedUserFilter) leaveQuery = leaveQuery.in('user_id', scopedUserFilter);
 
   const [attRes, schedRes, ovrRes, leaveRes] = await Promise.all([attQuery, schedQuery, ovrQuery, leaveQuery]);
   if (attRes.error || schedRes.error || ovrRes.error || leaveRes.error) {
@@ -285,6 +338,7 @@ export async function GET(request: NextRequest) {
     .gte('start_date', monthStart)
     .lte('start_date', monthEnd);
   if (scopedUserFilter) hiresQuery = hiresQuery.in('profile_id', scopedUserFilter);
+  if (companyId) hiresQuery = hiresQuery.eq('company_id', companyId);
 
   let offbQuery = service
     .from('hr_employees')
@@ -293,6 +347,15 @@ export async function GET(request: NextRequest) {
     .gte('end_date', monthStart)
     .lte('end_date', monthEnd);
   if (scopedUserFilter) offbQuery = offbQuery.in('profile_id', scopedUserFilter);
+  if (companyId) offbQuery = offbQuery.eq('company_id', companyId);
+
+  // User-keyed counts take the store scope AND the company as one list (scope ∩ company).
+  const companySet = companyPeople ? new Set(companyPeople) : null;
+  const peopleFilter: string[] | null = companySet
+    ? scopedUserFilter
+      ? scopedUserFilter.filter((id) => companySet.has(id))
+      : companyPeople
+    : scopedUserFilter;
 
   let warnQuery = service
     .from('hr_warnings')
@@ -300,15 +363,15 @@ export async function GET(request: NextRequest) {
     .neq('status', 'void')
     .gte('issued_at', bkkMonthStartTs)
     .lte('issued_at', bkkMonthEndTs);
-  if (scopedUserFilter) warnQuery = warnQuery.in('user_id', scopedUserFilter);
+  if (peopleFilter) warnQuery = warnQuery.in('user_id', peopleFilter);
 
   // ---- pending queues ------------------------------------------------------------------------
   const pendingCount = (table: string, storeKeyed: boolean) => {
     let q = service.from(table).select('id', { count: 'exact', head: true }).eq('status', 'pending');
-    if (workingStoreIds) {
-      if (storeKeyed) q = q.in('store_id', workingStoreIds);
-      else q = q.in('user_id', scopedUserFilter ?? []);
-    }
+    if (workingStoreIds && storeKeyed) q = q.in('store_id', workingStoreIds);
+    if (workingStoreIds && !storeKeyed) q = q.in('user_id', peopleFilter ?? []);
+    // A request kept at a venue but filed by another company's staff isn't this company's queue.
+    else if (companyPeople) q = q.in('user_id', companyPeople);
     return q;
   };
 
@@ -321,7 +384,9 @@ export async function GET(request: NextRequest) {
     pendingCount('hr_attendance_requests', true),
     pendingCount('hr_claims', true),
     companyWide && !storeFilter
-      ? service.from('hr_profile_change_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending')
+      ? companyPeople
+        ? service.from('hr_profile_change_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending').in('user_id', companyPeople)
+        : service.from('hr_profile_change_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending')
       : Promise.resolve({ count: null, error: null }),
   ]);
 
@@ -333,6 +398,8 @@ export async function GET(request: NextRequest) {
     .eq('period_year', periodYear)
     .eq('period_month', periodMonth);
   if (workingStoreIds) payrunQuery = payrunQuery.in('store_id', workingStoreIds);
+  // Payruns are cut per company already — filter on the run, not on the slips' people.
+  if (companyId) payrunQuery = payrunQuery.eq('company_id', companyId);
   const { data: payruns } = await payrunQuery;
   let payroll: { runs: number; finalized: number; slips: number; net_total_satang: number | null } | null = null;
   if (payruns && payruns.length > 0) {
@@ -367,10 +434,13 @@ export async function GET(request: NextRequest) {
       .eq('period_month', month)
       .neq('status', 'void');
     if (periods && periods.length > 0) {
-      const { data: assigns } = await service
+      // Periods aren't per company — the company filter narrows to the people being evaluated.
+      let assignQuery = service
         .from('hr_eval_assignments')
         .select('id, status')
         .in('period_id', periods.map((p) => p.id as string));
+      if (companyPeople) assignQuery = assignQuery.in('employee_id', companyPeople);
+      const { data: assigns } = await assignQuery;
       const all = assigns ?? [];
       evaluation = {
         periods: periods.length,

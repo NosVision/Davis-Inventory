@@ -26,6 +26,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { Button, toast } from '@/components/ui';
+import { CompanyFilterSelect, useHrCompanies } from '@/components/hr/company-filter';
 import { cn } from '@/lib/utils/cn';
 import {
   AttendanceDonut,
@@ -114,6 +115,10 @@ export default function HrDailyDashboardPage() {
   const searchParams = useSearchParams();
   const [date, setDate] = useState(() => searchParams.get('business_date') || todayBangkok());
   const [storeId, setStoreId] = useState(() => searchParams.get('store_id') || '');
+  // '' = ทุกบริษัท. The routes narrow the people server-side (counts, not just name lists), so this
+  // goes on every fetch rather than filtering rows here.
+  const [companyId, setCompanyId] = useState(() => searchParams.get('company_id') || '');
+  const companies = useHrCompanies();
   const [stores, setStores] = useState<StoreOpt[]>([]);
   const [data, setData] = useState<Daily | null>(null);
   const [overview, setOverview] = useState<Overview | null>(null);
@@ -130,16 +135,20 @@ export default function HrDailyDashboardPage() {
     })();
   }, []);
 
-  // forward-looking reminders (probation ending / anniversaries) — scope follows the store filter
+  // forward-looking reminders (probation ending / anniversaries) — scope follows the store and
+  // company filters
   useEffect(() => {
     (async () => {
       try {
-        const qs = storeId ? `?store_id=${storeId}` : '';
-        const res = await fetch(`/api/hr/dashboard/alerts${qs}`);
+        const qs = new URLSearchParams();
+        if (storeId) qs.set('store_id', storeId);
+        if (companyId) qs.set('company_id', companyId);
+        const q = qs.toString();
+        const res = await fetch(`/api/hr/dashboard/alerts${q ? `?${q}` : ''}`);
         if (res.ok) setAlerts((await res.json()).data as Alerts);
       } catch { /* alerts are best-effort */ }
     })();
-  }, [storeId]);
+  }, [storeId, companyId]);
 
   const load = useCallback(async () => {
     const seq = ++reqSeq.current;
@@ -147,6 +156,7 @@ export default function HrDailyDashboardPage() {
     try {
       const qs = new URLSearchParams({ business_date: date });
       if (storeId) qs.set('store_id', storeId);
+      if (companyId) qs.set('company_id', companyId);
       const [dailyRes, overviewRes] = await Promise.all([
         fetch(`/api/hr/dashboard/daily?${qs.toString()}`),
         fetch(`/api/hr/dashboard/overview?${qs.toString()}`),
@@ -160,23 +170,25 @@ export default function HrDailyDashboardPage() {
       setOverview(overviewRes.ok ? (overviewJson.data as Overview) : null);
     } catch { if (seq === reqSeq.current) toast({ type: 'error', title: L.loadFailed }); }
     finally { if (seq === reqSeq.current) setLoading(false); }
-  }, [date, storeId, L.loadFailed]);
+  }, [date, storeId, companyId, L.loadFailed]);
 
   useEffect(() => { load(); }, [load]);
 
   const lineText = useMemo(() => {
     if (!data) return '';
     const storeName = storeId ? stores.find((s) => s.id === storeId)?.store_name ?? '' : (isTh ? 'ทุกสาขา' : 'All stores');
+    // Only when narrowed — "all companies" is the default and needs no saying in a LINE post.
+    const companyName = companyId ? companies.find((c) => c.id === companyId)?.name ?? '' : '';
     const names = (list: Person[]) => (list.length ? list.map((p) => p.name).join(', ') : L.none);
     return [
-      `📊 ${L.title} ${fmtDate(data.business_date)}${storeName ? ` · ${storeName}` : ''}`,
+      `📊 ${L.title} ${fmtDate(data.business_date)}${companyName ? ` · ${companyName}` : ''}${storeName ? ` · ${storeName}` : ''}`,
       `👥 ${L.headcount} ${data.headcount} ${isTh ? L.people : ''}`.trim(),
       `✅ ${L.checkedIn} ${data.checked_in.length}: ${names(data.checked_in)}`,
       `🌴 ${L.onLeave} ${data.on_leave.length}: ${names(data.on_leave)}`,
       `⛔ ${L.notIn} ${data.not_in.length}: ${names(data.not_in)}`,
     ].join('\n');
     // L is a pure function of isTh (rebuilt each render) — depend on isTh, not the fresh L ref.
-  }, [data, storeId, stores, isTh]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [data, storeId, stores, companyId, companies, isTh]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const copy = async () => {
     try {
@@ -281,6 +293,11 @@ export default function HrDailyDashboardPage() {
               {stores.map((s) => (<option key={s.id} value={s.id}>{s.store_name || s.store_code}</option>))}
             </select>
           </label>
+          {/* The shared select renders nothing for callers who can't list companies (a venue
+              manager) — empty:hidden keeps that from leaving a blank gap in the row. */}
+          <div className="w-44 empty:hidden">
+            <CompanyFilterSelect companies={companies} value={companyId} onChange={setCompanyId} className="py-2" />
+          </div>
           <Button variant="outline" type="button" onClick={load} icon={<RefreshCw className="h-4 w-4" />}>{L.refresh}</Button>
         </div>
       </div>

@@ -3,7 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { resolveHrScope } from '@/lib/hr/route-auth';
 import { employeeNameLabel } from '@/lib/hr/employee-name';
 
-// GET /api/hr/dashboard/alerts?window_days= — forward-looking HR reminders for the caller's scope
+// GET /api/hr/dashboard/alerts?window_days=&store_id=&company_id= — forward-looking HR reminders for the caller's scope
 // (§P1.5): (1) probation ending within the window (status='probation', probation_end in range),
 // (2) upcoming work anniversaries (start_date's month-day in range), and (3) SSO pending —
 // full-time staff PAST probation who still aren't enrolled in social security (sso_enrolled=false).
@@ -22,6 +22,7 @@ interface EmpRow {
   profile: { display_name: string | null; username: string | null; active: boolean | null } | null;
 }
 const DAY_MS = 86_400_000;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // ชื่อจริง (ชื่อเล่น) in one string — these alerts are read as prose, not table columns.
 const nameOf = (e: EmpRow) =>
   employeeNameLabel({ full_name: e.full_name, display_name: e.profile?.display_name, username: e.profile?.username });
@@ -58,6 +59,10 @@ export async function GET(request: NextRequest) {
 
   const windowDays = Math.min(Math.max(Number(request.nextUrl.searchParams.get('window_days')) || 14, 1), 90);
   const storeFilter = request.nextUrl.searchParams.get('store_id');
+  // ?company_id narrows the people to hr_employees of that company (ANDed with the store scope);
+  // anything that isn't a uuid is ignored — a convenience filter, not a gate.
+  const companyParam = request.nextUrl.searchParams.get('company_id');
+  const companyId = companyParam && UUID_RE.test(companyParam) ? companyParam : null;
   const today = todayBangkok();
   const horizon = new Date(Date.parse(`${today}T00:00:00Z`) + windowDays * DAY_MS).toISOString().slice(0, 10);
 
@@ -86,6 +91,7 @@ export async function GET(request: NextRequest) {
     .select('profile_id, status, start_date, probation_end, birth_date, pay_type, sso_enrolled, full_name, profile:profiles!hr_employees_profile_id_fkey(display_name, username, active)')
     .in('status', ['active', 'probation']);
   if (scopedUserIds) q = q.in('profile_id', [...scopedUserIds]);
+  if (companyId) q = q.eq('company_id', companyId);
   const { data, error } = await q;
   if (error) return NextResponse.json({ error: 'Failed to load employees' }, { status: 500 });
 
