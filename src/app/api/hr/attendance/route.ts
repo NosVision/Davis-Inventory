@@ -20,6 +20,7 @@ const LIST_SELECT =
   'employee:profiles!hr_attendance_user_id_fkey(username, display_name), store:stores(store_code, store_name)';
 
 const ATTENDANCE_TYPES = ['in', 'out', 'break_start', 'break_end'];
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface AttendanceRow {
   id: string;
@@ -65,7 +66,23 @@ export async function GET(request: NextRequest) {
   const offset = Math.max(Number(sp.get('offset')) || 0, 0);
 
   const service = createServiceClient();
+
+  // ?company_id — punches of that company's employees only (HR ask 2026-10-05). Server-side because
+  // the list is paged: filtering a page in the browser would show short pages and a wrong total.
+  const companyParam = sp.get('company_id');
+  let companyUserIds: string[] | null = null;
+  if (companyParam && UUID_RE.test(companyParam)) {
+    const { data: emps, error: empErr } = await service
+      .from('hr_employees')
+      .select('profile_id')
+      .eq('company_id', companyParam);
+    if (empErr) return NextResponse.json({ error: 'Failed to load attendance' }, { status: 500 });
+    companyUserIds = (emps ?? []).map((e) => e.profile_id as string).filter(Boolean);
+    if (companyUserIds.length === 0) return NextResponse.json({ data: [], total: 0, limit, offset });
+  }
+
   let query = service.from('hr_attendance').select(LIST_SELECT, { count: 'exact' });
+  if (companyUserIds) query = query.in('user_id', companyUserIds);
   // The review queue spans all dates (HR clears the whole backlog); normal browsing is date-scoped.
   if (reviewPending) query = query.eq('review_status', 'pending');
   else query = query.eq('business_date', businessDate);

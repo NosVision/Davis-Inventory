@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { AlertTriangle, ArrowLeftRight } from 'lucide-react';
 import { Button, Select, PageHeader, DataList, DataCard, StatusBadge, SkeletonList, ViewToggle, useViewMode, toast } from '@/components/ui';
 import { EmployeeName } from '@/components/hr/employee-name';
+import { CompanyFilterSelect, matchesCompany, useHrCompanies } from '@/components/hr/company-filter';
 import type { SwapBlockReason } from '@/lib/hr/dayoff-swap';
 
 interface StoreOpt {
@@ -15,6 +16,8 @@ interface StoreOpt {
 type SwapPreview = { ok: true; counterpart_trades: boolean } | { ok: false; reason: SwapBlockReason } | null;
 interface Swap {
   id: string;
+  /** the requester's company */
+  company_id: string | null;
   requester_name: string;
   requester_nickname: string | null;
   counterpart_name: string;
@@ -69,7 +72,12 @@ export function DayoffSwapQueue({ mode }: { mode: 'hr' | 'store' }) {
   const [status, setStatus] = useState<string>(mode === 'store' ? 'pending' : 'all');
   const [view, setView] = useViewMode(mode === 'store' ? 'store-swaps' : 'hr-swaps');
 
-  const [swaps, setSwaps] = useState<Swap[]>([]);
+  const [allSwaps, setSwaps] = useState<Swap[]>([]);
+  // บริษัท / ทั้งหมด (HR ask 2026-10-05). Renders nothing for a store approver, who cannot load the
+  // company list — their queue is one venue anyway.
+  const companies = useHrCompanies();
+  const [companyId, setCompanyId] = useState('');
+  const swaps = useMemo(() => allSwaps.filter((s) => matchesCompany(s.company_id, companyId)), [allSwaps, companyId]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -279,7 +287,7 @@ export function DayoffSwapQueue({ mode }: { mode: 'hr' | 'store' }) {
         actions={<ViewToggle value={view} onChange={setView} />}
       />
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <Select
           label={t('storeLabel')}
           value={storeId}
@@ -292,6 +300,7 @@ export function DayoffSwapQueue({ mode }: { mode: 'hr' | 'store' }) {
           onChange={(e) => setStatus(e.target.value)}
           options={STATUS_FILTERS.map((s) => ({ value: s, label: statusLabel(s) }))}
         />
+        <CompanyFilterSelect companies={companies} value={companyId} onChange={setCompanyId} />
       </div>
 
       {loading ? (

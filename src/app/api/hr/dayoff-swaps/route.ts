@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
   const pendingUserIds = [...new Set(pending.flatMap((s) => [s.requester_id, s.counterpart_id]))];
   const pendingDates = [...new Set(pending.flatMap((s) => [s.requester_date, s.counterpart_date]))];
 
-  const [nameById, cellsRes] = await Promise.all([
+  const [nameById, cellsRes, empRes] = await Promise.all([
     // ชื่อจริง (ชื่อเล่น), same rule as /hr/payroll — a swap names two people, both of them the
     // way their payslip does.
     buildEmployeeNameMap(service, userIds),
@@ -69,11 +69,18 @@ export async function GET(request: NextRequest) {
           .in('user_id', pendingUserIds)
           .in('work_date', pendingDates)
       : Promise.resolve({ data: [], error: null }),
+    // The requester's company, so HR can narrow the queue by company (HR ask 2026-10-05).
+    userIds.length
+      ? service.from('hr_employees').select('profile_id, company_id').in('profile_id', userIds)
+      : Promise.resolve({ data: [], error: null }),
   ]);
-  if (cellsRes.error) {
+  if (cellsRes.error || empRes.error) {
     return NextResponse.json({ error: 'Failed to load swaps' }, { status: 500 });
   }
   const cells = (cellsRes.data ?? []) as CellRow[];
+  const companyByUser = new Map(
+    ((empRes.data ?? []) as { profile_id: string; company_id: string | null }[]).map((e) => [e.profile_id, e.company_id])
+  );
 
   const out = swaps.map((s) => {
     // A decided swap has already happened (or never will) — only a pending one has an outcome to show.
@@ -83,6 +90,7 @@ export async function GET(request: NextRequest) {
         : null;
     return {
       id: s.id,
+      company_id: companyByUser.get(s.requester_id) ?? null,
       requester_name: nameById.get(s.requester_id)?.name ?? null,
       requester_nickname: nameById.get(s.requester_id)?.nickname ?? null,
       counterpart_name: nameById.get(s.counterpart_id)?.name ?? null,

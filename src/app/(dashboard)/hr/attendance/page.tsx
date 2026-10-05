@@ -8,6 +8,7 @@ import { DataTable, type Column } from '@/components/data/data-table';
 import { createClient } from '@/lib/supabase/client';
 import { openBusinessDateBangkok, formatTimeBangkok } from '@/lib/utils/date';
 import { AttendanceReviewModal, type ReviewRow } from './_components/review-modal';
+import { CompanyFilterSelect, useHrCompanies } from '@/components/hr/company-filter';
 import { EmployeeName } from '@/components/hr/employee-name';
 
 interface AttendanceRow extends Record<string, unknown> {
@@ -56,6 +57,9 @@ export default function AttendanceReportPage() {
   // filters
   const [date, setDate] = useState<string>(() => openBusinessDateBangkok());
   const [storeId, setStoreId] = useState('');
+  // บริษัท / ทั้งหมด — filtered server-side, the list is paged (HR ask 2026-10-05).
+  const companies = useHrCompanies();
+  const [companyId, setCompanyId] = useState('');
   const [type, setType] = useState('');
   const [suspectOnly, setSuspectOnly] = useState(false);
   const [reviewOnly, setReviewOnly] = useState(false);
@@ -102,6 +106,7 @@ export default function AttendanceReportPage() {
       const params = new URLSearchParams();
       if (date) params.set('business_date', date);
       if (storeId) params.set('store_id', storeId);
+      if (companyId) params.set('company_id', companyId);
       if (type) params.set('type', type);
       if (suspectOnly) params.set('suspect', 'true');
       if (reviewOnly) params.set('review', 'pending');
@@ -121,7 +126,7 @@ export default function AttendanceReportPage() {
         setLoading(false);
       }
     },
-    [date, storeId, type, suspectOnly, reviewOnly, t]
+    [date, storeId, companyId, type, suspectOnly, reviewOnly, t]
   );
 
   // The all-dates pending count. One row is enough — we only want the `total`.
@@ -307,6 +312,7 @@ export default function AttendanceReportPage() {
             className="control disabled:cursor-not-allowed disabled:opacity-50"
           />
         </FilterField>
+        <CompanyFilterSelect companies={companies} value={companyId} onChange={setCompanyId} />
         <Select
           label={t('filterStore')}
           value={storeId}
