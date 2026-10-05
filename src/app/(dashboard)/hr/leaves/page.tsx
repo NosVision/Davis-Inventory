@@ -470,6 +470,40 @@ export default function HrLeavesPage() {
     [t, load, prompt]
   );
 
+  // Cancel an approved leave (owner ask 2026-10-05). The server returns the days to the quota,
+  // undoes the timesheet days approval wrote, and refuses a finalized pay period; a draft payrun
+  // still needs คำนวณใหม่ to pick it up, which is why the dialog says so.
+  const cancelLeave = useCallback(
+    async (r: LeaveRow) => {
+      const reason = await prompt({
+        title: 'ยกเลิกการลาที่อนุมัติแล้ว?',
+        message:
+          'วันลาจะคืนเข้าโควตาทันที และวันในตารางเวลาจะกลับเป็นตามเวลาเข้า-ออกจริง\n' +
+          'ถ้างวดนี้มีรอบจ่ายเงินเดือน (ร่าง) อยู่แล้ว ให้กด “คำนวณใหม่” ที่หน้าเงินเดือน · งวดที่ปิดยอดแล้วยกเลิกไม่ได้\n\n' +
+          'ระบุเหตุผล (แจ้งพนักงานและบันทึกในประวัติ)',
+        required: true,
+        confirmLabel: 'ยกเลิกการลา',
+        cancelLabel: 'ปิด',
+      });
+      if (reason == null) return;
+      try {
+        const res = await fetch(`/api/hr/leaves/${r.id}`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json?.error);
+        toast({ type: 'success', title: 'ยกเลิกการลาแล้ว' });
+        if (json?.warning) toast({ type: 'warning', title: json.warning });
+        await Promise.all([load(), loadQuota()]);
+      } catch (e) {
+        toast({ type: 'error', title: e instanceof Error && e.message ? e.message : t('actionFailed') });
+      }
+    },
+    [prompt, load, loadQuota, t]
+  );
+
   const viewCert = useCallback(
     async (id: string) => {
       setCertLoadingId(id);
@@ -857,7 +891,15 @@ export default function HrLeavesPage() {
                     </>
                   }
                   status={<StatusBadge tone={STATUS_TONE[r.status]} label={statusLabel(r.status)} />}
-                  actions={renderDecideBar(r.id, r.status)}
+                  actions={
+                    r.status === 'approved' ? (
+                      <Button size="sm" variant="outline" onClick={() => cancelLeave(r)}>
+                        ยกเลิกการลา
+                      </Button>
+                    ) : (
+                      renderDecideBar(r.id, r.status)
+                    )
+                  }
                 >
                   <p>{r.reason}</p>
                   {renderQuotaChip(r)}
