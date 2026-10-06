@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuthStore } from '@/stores/auth-store';
 
+const REALTIME_REFETCH_DEBOUNCE_MS = 3_000;
+
 /**
  * Total number of items waiting for owner approval across all stores.
  *
@@ -19,8 +21,10 @@ import { useAuthStore } from '@/stores/auth-store';
  *
  * Update strategy:
  *   1. Supabase Realtime: subscribe to changes on the five source tables
- *      and refetch (debounced ~600ms) when an event arrives, so the badge
- *      updates within ~1 second of staff submitting an explanation.
+ *      and refetch (debounced 3s) when an event arrives. Every write to these
+ *      tables reaches every owner/accountant tab and costs five count
+ *      queries, so at the 04:00 shift-end burst a short debounce turned into
+ *      a refetch storm; 3s folds a burst into one refetch.
  *   2. Polling fallback: every `pollMs` (default 60s) AND on tab focus,
  *      in case the realtime channel hiccups or a deploy invalidates the
  *      socket. Poll is paused while the tab is hidden so we don't burn
@@ -66,7 +70,7 @@ export function useInboxCount(pollMs = 60_000): number {
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
         if (!document.hidden) fetchRef.current();
-      }, 600);
+      }, REALTIME_REFETCH_DEBOUNCE_MS);
     };
 
     fetchRef.current();

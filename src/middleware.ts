@@ -102,20 +102,28 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  const { data: { user } } = await supabase.auth.getUser();
+  // Verify the session JWT locally against the project's ES256 signing key
+  // (JWKS cached per isolate) instead of asking the Auth server on every
+  // request. getUser() here was one Supabase round trip per page/API hit, and
+  // at the 04:00 shift-end peak those calls queued behind a saturated database
+  // until Vercel killed the middleware (504 MIDDLEWARE_INVOCATION_TIMEOUT).
+  // A token is still refreshed through the Auth server when it expires.
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const claims = claimsData?.claims;
 
   // No session → login page for a navigation, 401 for an API call
-  if (!user) return unauthenticated(request, pathname);
+  if (!claims?.sub) return unauthenticated(request, pathname);
 
-  // Read role from JWT app_metadata (fast, no DB query)
-  // Falls back to profiles query only if app_metadata doesn't have role yet
-  let role: string | null = (user.app_metadata?.role as string) || null;
+  // Role is mirrored from profiles.role into app_metadata by a trigger
+  // (migration 20261006100000), so the JWT carries it. Falls back to a
+  // profiles query only for a token issued before that copy existed.
+  let role: string | null = (claims.app_metadata?.role as string) || null;
 
   if (!role) {
     const { data: profile } = await supabase
       .from('profiles')
       .select('role')
-      .eq('id', user.id)
+      .eq('id', claims.sub)
       .single();
 
     if (!profile) return unauthenticated(request, pathname);
