@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { InboxItem, InboxType } from './items';
+import { punchIdsAwaitingRequests } from '@/lib/hr/attendance-review';
 
 /**
  * Gather every item waiting on HR, across all request types, into InboxItem rows.
@@ -125,6 +126,8 @@ interface Source {
   nullCols?: string[];
   order: string;
   limit?: number;
+  /** ids waiting elsewhere in the inbox already — left out so one fact is counted once */
+  excludeIds?: (service: SB, userIds: string[] | null) => Promise<string[]>;
   map: (r: Row) => Omit<InboxItem, 'id' | 'type' | 'user_id'>;
 }
 
@@ -287,6 +290,8 @@ const SOURCES: Source[] = [
     select: 'id, user_id, store_id, business_date, ts, type',
     order: 'ts',
     limit: ATTENDANCE_REVIEW_CAP,
+    // A forgotten check-out with its correction request already filed is that request's item.
+    excludeIds: punchIdsAwaitingRequests,
     map: (r) => ({
       store_id: str(r.store_id),
       company_id: null,
@@ -302,6 +307,15 @@ async function collectSource(service: SB, src: Source, userIds: string[] | null)
   q = Array.isArray(src.val) ? q.in(src.col, src.val) : q.eq(src.col, src.val);
   if (userIds) q = q.in(src.userCol, userIds);
   for (const col of src.nullCols ?? []) q = q.is(col, null);
+  if (src.excludeIds) {
+    try {
+      const skip = await src.excludeIds(service, userIds);
+      if (skip.length) q = q.not('id', 'in', `(${skip.join(',')})`);
+    } catch (e) {
+      // Fall back to the unfiltered list (some items counted twice) rather than dropping the source.
+      console.error(`[hr-inbox] ${src.table} exclusion failed:`, e instanceof Error ? e.message : e);
+    }
+  }
   q = q.order(src.order, { ascending: false });
   if (src.limit) q = q.limit(src.limit);
   const { data, error } = await q;
