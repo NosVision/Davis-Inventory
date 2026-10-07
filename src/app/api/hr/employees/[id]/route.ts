@@ -7,7 +7,8 @@ import {
   loadPayVisibility,
   redactEmployeePay,
 } from '@/lib/hr/pay-visibility';
-import { requireHrManagerForEmployeeId } from '@/lib/hr/route-auth';
+import { requireHrManager, requireHrManagerForEmployeeId } from '@/lib/hr/route-auth';
+import { findDeleteBlockers, DELETE_BLOCKER_TH, type DeleteBlocker } from '@/lib/hr/employee-delete';
 import { logHrAudit } from '@/lib/hr/audit';
 import { normalizeFullName } from '@/lib/hr/employee-name';
 import {
@@ -313,4 +314,64 @@ export async function PUT(
       ? { data: redacted, warning: { dropped: droppedPayKeys, message: PAY_EDIT_FORBIDDEN } }
       : { data: redacted }
   );
+}
+
+// DELETE /api/hr/employees/[id] — remove a duplicate record that never did anything (client report
+// 2026-10-08). Company-wide HR only, and only once the login is disabled and the record has no
+// history at all (lib/hr/employee-delete.ts); everything else is resigned, never erased. The login
+// itself is left disabled, not deleted — profiles carry audit and authorship references.
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const auth = await requireHrManager();
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
+  const service = createServiceClient();
+  const { data: current, error: fetchErr } = await service
+    .from('hr_employees')
+    .select('*, profile:profiles!hr_employees_profile_id_fkey(username, active)')
+    .eq('id', id)
+    .maybeSingle();
+  if (fetchErr) return NextResponse.json({ error: 'Failed to load employee' }, { status: 500 });
+  if (!current) return NextResponse.json({ error: 'Employee not found' }, { status: 404 });
+
+  const profile = current.profile as { username: string | null; active: boolean | null } | null;
+  let blockers: DeleteBlocker[];
+  try {
+    blockers = await findDeleteBlockers(service, {
+      id,
+      profile_id: current.profile_id as string,
+      profile_active: profile?.active ?? null,
+    });
+  } catch (e) {
+    console.error('hr employee delete: blocker check failed', id, e);
+    return NextResponse.json({ error: 'Failed to check employee history' }, { status: 500 });
+  }
+  if (blockers.length > 0) {
+    return NextResponse.json(
+      {
+        error: `ลบไม่ได้ — ${blockers.map((b) => DELETE_BLOCKER_TH[b]).join(', ')}`,
+        blockers,
+      },
+      { status: 409 }
+    );
+  }
+
+  const { error: delErr } = await service.from('hr_employees').delete().eq('id', id);
+  if (delErr) return NextResponse.json({ error: 'Failed to delete employee' }, { status: 500 });
+
+  const before = Object.fromEntries(Object.entries(current).filter(([k]) => k !== 'profile'));
+  await logHrAudit(service, {
+    actorId: auth.userId,
+    action: 'delete',
+    table: 'hr_employees',
+    recordId: id,
+    before,
+    after: null,
+    reason: `Duplicate record removed (login @${profile?.username ?? current.profile_id} already disabled)`,
+  });
+
+  return NextResponse.json({ data: { id, deleted: true } });
 }

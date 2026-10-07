@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { AlertTriangle } from 'lucide-react';
 import { Button, Select, PageHeader, StatusBadge, FilterBar, FilterField, toast } from '@/components/ui';
@@ -21,6 +22,8 @@ interface AttendanceRow extends Record<string, unknown> {
   distance_m: number | null;
   in_geofence: boolean | null;
   review_status: string | null;
+  /** Why a pending punch is in the queue — see lib/hr/attendance-review.ts. */
+  review_reasons: string[];
   is_vpn_suspect: boolean;
   ip_country: string | null;
   employee_name: string | null;
@@ -42,6 +45,14 @@ const TYPE_KEY: Record<string, string> = {
   out: 'out',
   break_start: 'breakStart',
   break_end: 'breakEnd',
+};
+
+// review reason → i18n key under hr.attendance, and how loudly to show it
+const REASON_BADGE: Record<string, { key: string; tone: 'warn' | 'critical' | 'neutral' }> = {
+  no_gps: { key: 'reason_no_gps', tone: 'warn' },
+  outside: { key: 'reason_outside', tone: 'warn' },
+  vpn: { key: 'reason_vpn', tone: 'critical' },
+  unclosed: { key: 'reason_unclosed', tone: 'neutral' },
 };
 
 const PAGE_SIZE = 50;
@@ -234,6 +245,27 @@ export default function AttendanceReportPage() {
             <span className="text-xs text-gray-400 dark:text-gray-500">{t('notSuspect')}</span>
           ),
       },
+      // Why the punch is held. Without it a row marked VPN "ปกติ" sat in the queue with nothing
+      // saying it was there for a missing check-out (client report 2026-10-08).
+      ...(reviewOnly
+        ? [
+            {
+              key: 'reason',
+              header: t('colReason'),
+              render: (r: AttendanceRow) =>
+                r.review_reasons.length ? (
+                  <div className="flex flex-wrap gap-1">
+                    {r.review_reasons.map((reason) => {
+                      const badge = REASON_BADGE[reason];
+                      return badge ? <StatusBadge key={reason} tone={badge.tone} label={t(badge.key)} /> : null;
+                    })}
+                  </div>
+                ) : (
+                  <span className="text-xs text-gray-400 dark:text-gray-500">—</span>
+                ),
+            },
+          ]
+        : []),
       {
         key: 'review',
         header: t('colReview'),
@@ -359,6 +391,9 @@ export default function AttendanceReportPage() {
             >
               {t('backToDate')}
             </button>
+            <Link href="/hr/requests" className="basis-full text-gray-500 hover:underline dark:text-gray-400">
+              {t('reviewQueueRequestsNote')}
+            </Link>
           </>
         )}
       </div>

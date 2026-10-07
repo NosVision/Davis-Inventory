@@ -9,9 +9,43 @@ import {
   OFF_BUSINESS_DATE_ERROR,
   OFF_BUSINESS_DATE_OUT_ERROR,
 } from '@/lib/hr/attendance-window';
+import { settleCheckInWithRequest, AUTO_SETTLE_NOTE } from '@/lib/hr/attendance-review';
 
 const REQUEST_TABLE = 'hr_attendance_requests';
 const ATTENDANCE_TABLE = 'hr_attendance';
+
+/** Best-effort: a failure leaves the check-in in the punch queue, where HR can still clear it. */
+async function settleHeldCheckIn(
+  service: ReturnType<typeof createServiceClient>,
+  row: Record<string, unknown>,
+  outcome: 'approved' | 'rejected',
+  actorId: string
+): Promise<void> {
+  try {
+    const ids = await settleCheckInWithRequest(service, {
+      userId: row.user_id as string,
+      businessDate: row.business_date as string,
+      outcome,
+      actorId,
+    });
+    for (const attendanceId of ids) {
+      await logHrAudit(service, {
+        actorId,
+        action: 'update',
+        table: ATTENDANCE_TABLE,
+        recordId: attendanceId,
+        before: { review_status: 'pending' },
+        after: { review_status: outcome },
+        reason: `${AUTO_SETTLE_NOTE} (request ${row.id as string})`,
+      });
+    }
+  } catch (e) {
+    console.error('Attendance request decide: settling the held check-in failed', {
+      attendanceRequestId: row.id,
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
+}
 
 // POST /api/hr/attendance-requests/[id]/decide — the store manager approves or
 // rejects a pending attendance correction request (§B/§J8). Every status transition is
@@ -218,6 +252,9 @@ export async function POST(
       }
 
       await service.from(REQUEST_TABLE).update({ applied: true }).eq('id', id);
+      // The day is settled as absent / leave, so its held check-in is dismissed with it — the
+      // outcome /hr/attendance's own absent/leave action gives.
+      await settleHeldCheckIn(service, row, 'rejected', auth.userId);
       await logHrAudit(service, {
         actorId: auth.userId,
         action: 'update',
@@ -283,6 +320,11 @@ export async function POST(
         after: inserted,
         reason: applyReason,
       });
+
+      // The check-out is now on record, so the check-in held for "no check-out" is settled too —
+      // it used to stay in the punch queue and HR reviewed the same day twice (client report
+      // 2026-10-08: 42 of 100 queued punches were days already closed this way).
+      if (kind === 'missing_out') await settleHeldCheckIn(service, row, 'approved', auth.userId);
 
       return NextResponse.json({ data: { id, status: 'approved' } });
     }

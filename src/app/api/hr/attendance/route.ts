@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { resolveHrScope } from '@/lib/hr/route-auth';
 import { buildEmployeeNameMap } from '@/lib/hr/employee-name-map';
 import { openBusinessDateBangkok } from '@/lib/utils/date';
+import { punchIdsAwaitingRequests, reviewReasonsFor } from '@/lib/hr/attendance-review';
 
 // Attendance selfies are uploaded by the ESS check-in route to the PRIVATE
 // `hr-documents` bucket under `attendance/<userId>/…jpg` — we mint short-lived
@@ -14,7 +15,7 @@ const SIGNED_URL_TTL_SECONDS = 120;
 // plain relationship embed resolves without needing the constraint name.
 const LIST_SELECT =
   'id, user_id, store_id, type, ts, business_date, distance_m, in_geofence, review_status, ' +
-  'photo_url, ip, ip_country, is_vpn_suspect, device, ' +
+  'gps_lat, photo_url, ip, ip_country, is_vpn_suspect, device, ' +
   // hr_attendance now has TWO FKs to profiles (user_id + reviewed_by), so the embed must name the
   // relationship explicitly or PostgREST 300/500s on the ambiguity.
   'employee:profiles!hr_attendance_user_id_fkey(username, display_name), store:stores(store_code, store_name)';
@@ -32,6 +33,7 @@ interface AttendanceRow {
   distance_m: number | null;
   in_geofence: boolean | null;
   review_status: string | null;
+  gps_lat: number | null;
   photo_url: string | null;
   ip: string | null;
   ip_country: string | null;
@@ -81,11 +83,23 @@ export async function GET(request: NextRequest) {
     if (companyUserIds.length === 0) return NextResponse.json({ data: [], total: 0, limit, offset });
   }
 
+  // A check-in held only for "no check-out" whose day already has a pending correction request is
+  // decided on that request, not here — see lib/hr/attendance-review.ts.
+  let awaitingRequestIds: string[] = [];
+  if (reviewPending) {
+    try {
+      awaitingRequestIds = await punchIdsAwaitingRequests(service, companyUserIds);
+    } catch {
+      return NextResponse.json({ error: 'Failed to load attendance' }, { status: 500 });
+    }
+  }
+
   let query = service.from('hr_attendance').select(LIST_SELECT, { count: 'exact' });
   if (companyUserIds) query = query.in('user_id', companyUserIds);
   // The review queue spans all dates (HR clears the whole backlog); normal browsing is date-scoped.
   if (reviewPending) query = query.eq('review_status', 'pending');
   else query = query.eq('business_date', businessDate);
+  if (awaitingRequestIds.length) query = query.not('id', 'in', `(${awaitingRequestIds.join(',')})`);
   if (storeId) query = query.eq('store_id', storeId);
   if (scope.storeIds) query = query.in('store_id', scope.storeIds); // scoped manager: their stores only
   if (userId) query = query.eq('user_id', userId);
@@ -121,6 +135,18 @@ export async function GET(request: NextRequest) {
   // hr_attendance embeds profiles (the ชื่อเล่น). Pull the payroll ชื่อจริง alongside it so the
   // review queue names people the same way /hr/payroll does.
   const nameByUser = await buildEmployeeNameMap(service, rows.map((r) => r.user_id));
+  // Only pending punches carry a reason — "why is this in the queue" (client report 2026-10-08:
+  // rows marked VPN ปกติ sat in the queue with nothing saying they were there for a missing check-out).
+  const pendingRows = rows.filter((r) => r.review_status === 'pending');
+  // The reasons are a label, not the data — a failed lookup shows none rather than failing the page.
+  let reasonsById = new Map<string, string[]>();
+  if (pendingRows.length) {
+    try {
+      reasonsById = await reviewReasonsFor(service, pendingRows);
+    } catch (e) {
+      console.error('[hr/attendance] review reasons failed:', e instanceof Error ? e.message : e);
+    }
+  }
 
   const responseRows = rows.map((r) => ({
     id: r.id,
@@ -132,6 +158,7 @@ export async function GET(request: NextRequest) {
     distance_m: r.distance_m,
     in_geofence: r.in_geofence,
     review_status: r.review_status,
+    review_reasons: reasonsById.get(r.id) ?? [],
     is_vpn_suspect: r.is_vpn_suspect,
     ip_country: r.ip_country,
     employee_name: nameByUser.get(r.user_id)?.name ?? r.employee?.display_name ?? r.employee?.username ?? null,

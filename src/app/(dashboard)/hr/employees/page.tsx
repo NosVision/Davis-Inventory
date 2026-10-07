@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Plus, ArrowLeftRight, History, Printer, IdCard, Archive, UserRound, Link2, Users, Shield, UserCog, UserSearch, ShieldCheck, Layers, Banknote, Clock, Lock } from 'lucide-react';
-import { Button, Select, Badge, PageHeader, StatusBadge, Modal, ModalFooter, type StatusTone, toast } from '@/components/ui';
+import { Plus, ArrowLeftRight, History, Printer, IdCard, Archive, UserRound, Link2, Users, Shield, UserCog, UserSearch, ShieldCheck, Layers, Banknote, Clock, Lock, Trash2 } from 'lucide-react';
+import { Button, Select, Badge, PageHeader, StatusBadge, Modal, ModalFooter, type StatusTone, toast, useConfirm } from '@/components/ui';
 import { DataTable, type Column } from '@/components/data/data-table';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils/cn';
@@ -150,6 +150,11 @@ export default function EmployeesPage() {
   const [payType, setPayType] = useState('');
   const [status, setStatus] = useState('');
   const [confidentialFilter, setConfidentialFilter] = useState<'all' | 'yes' | 'no'>('all');
+  // Records still marked employed whose login is disabled are hidden by default — payroll and the
+  // rosters already drop them, so here they only read as a second copy of someone (2026-10-08).
+  const [showDisabled, setShowDisabled] = useState(false);
+  const [hiddenDisabled, setHiddenDisabled] = useState(0);
+  const { confirm, dialog: confirmDialog } = useConfirm();
 
   // filter option data
   const [stores, setStores] = useState<Ref[]>([]);
@@ -246,8 +251,9 @@ export default function EmployeesPage() {
     setPrinting(true);
     try {
       // Fresh fetch — the on-screen list is paginated (50) and may be company-filtered;
-      // the register prints the modal's company choice in full (API cap 200).
-      const params = new URLSearchParams({ limit: '200' });
+      // the register prints the modal's company choice in full (API cap 200). A disabled login
+      // still marked employed is a duplicate, not a head — left off the printed register too.
+      const params = new URLSearchParams({ limit: '200', hide_disabled: '1' });
       if (printCompany) params.set('company_id', printCompany);
       const res = await fetch(`/api/hr/employees?${params.toString()}`);
       const json = await res.json().catch(() => ({}));
@@ -336,14 +342,35 @@ export default function EmployeesPage() {
     if (departmentId) params.set('department_id', departmentId);
     if (payType) params.set('pay_type', payType);
     if (status) params.set('status', status);
+    if (!showDisabled) params.set('hide_disabled', '1');
     const res = await fetch(`/api/hr/employees?${params.toString()}`);
     if (res.ok) {
       const json = await res.json();
       setRows(json.data ?? []);
       setCount(json.count ?? 0);
+      setHiddenDisabled(Number(json.hidden_disabled) || 0);
     }
     setLoading(false);
-  }, [q, companyId, storeId, positionId, departmentId, payType, status]);
+  }, [q, companyId, storeId, positionId, departmentId, payType, status, showDisabled]);
+
+  // Only a duplicate with no history can go (the API re-checks and names what blocks it).
+  const deleteDuplicate = useCallback(async (e: EmployeeRow) => {
+    const ok = await confirm({
+      title: t('deleteDuplicate.title'),
+      message: t('deleteDuplicate.message', { name: employeeName(e), username: e.profile?.username ?? '—' }),
+      confirmLabel: t('deleteDuplicate.confirm'),
+      tone: 'danger',
+    });
+    if (!ok) return;
+    const res = await fetch(`/api/hr/employees/${e.id}`, { method: 'DELETE' });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast({ type: 'error', title: (json as { error?: string }).error ?? t('deleteDuplicate.fail') });
+      return;
+    }
+    toast({ type: 'success', title: t('deleteDuplicate.done') });
+    fetchEmployees();
+  }, [confirm, t, fetchEmployees]);
 
   useEffect(() => {
     const id = setTimeout(fetchEmployees, 250); // debounce search
@@ -580,11 +607,22 @@ export default function EmployeesPage() {
                   greyed field in the form that moving company was impossible (report 2026-08-28). */}
               <span className="hidden text-xs font-medium lg:inline">{t('transfer.action')}</span>
             </button>
+            {e.profile?.active === false && (
+              <button
+                type="button"
+                title={t('deleteDuplicate.action')}
+                aria-label={t('deleteDuplicate.action')}
+                onClick={(ev) => { ev.stopPropagation(); deleteDuplicate(e); }}
+                className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
           </div>
         ),
       },
     ],
-    [t]
+    [t, deleteDuplicate]
   );
 
   const opt = (items: Ref[]) => items.map((i) => ({ value: i.id, label: i.name }));
@@ -701,8 +739,20 @@ export default function EmployeesPage() {
         <Button variant="ghost" size="sm" onClick={clearFilters}>
           {t('filter.clear')}
         </Button>
+        {(showDisabled || hiddenDisabled > 0) && (
+          <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+            <input
+              type="checkbox"
+              checked={showDisabled}
+              onChange={(e) => setShowDisabled(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800"
+            />
+            {showDisabled ? t('filter.showDisabledOn') : t('filter.showDisabled', { n: hiddenDisabled })}
+          </label>
+        )}
       </div>
 
+      {confirmDialog}
       <DataTable
         columns={columns}
         data={visibleRows}

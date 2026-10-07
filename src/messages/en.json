@@ -3989,6 +3989,12 @@
       "showPendingQueue": "Open the review queue",
       "backToDate": "Back to daily view",
       "colDate": "Date",
+      "colReason": "Reason",
+      "reason_no_gps": "No GPS",
+      "reason_outside": "Outside area",
+      "reason_vpn": "VPN",
+      "reason_unclosed": "No check-out",
+      "reviewQueueRequestsNote": "Days with a forgotten check-out that already have a correction request are decided on the request page, not repeated here",
       "colReview": "Review",
       "approve": "Approve",
       "reject": "Reject",
@@ -4328,7 +4334,9 @@
         "department": "Department",
         "payType": "Pay type",
         "status": "Status",
-        "clear": "Clear filters"
+        "clear": "Clear filters",
+        "showDisabled": "Show disabled accounts ({n})",
+        "showDisabledOn": "Show disabled accounts"
       },
       "payType": {
         "full_monthly": "Full-time (monthly)",
@@ -4533,6 +4541,14 @@
         "accountActive": "Active",
         "accountDisabled": "Disabled",
         "manageAccount": "Manage account & role"
+      },
+      "deleteDuplicate": {
+        "action": "Delete duplicate record",
+        "title": "Delete duplicate employee record",
+        "message": "Remove the record of {name} (@{username}) from the register.\nOnly for a duplicate with no attendance, leave or payslip history — the login stays disabled. This cannot be undone.",
+        "confirm": "Delete record",
+        "done": "Duplicate record deleted",
+        "fail": "Delete failed"
       }
     }
   },

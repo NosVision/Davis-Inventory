@@ -189,6 +189,22 @@ export async function GET(request: NextRequest) {
     .eq('is_system', true);
   const printerIds = (printerProfiles ?? []).map((r) => r.id as string);
 
+  // ?hide_disabled=1 — the register's default view leaves out records still marked employed whose
+  // login HR disabled: payroll and the rosters already drop them, so in the register they only read
+  // as a second copy of someone (client report 2026-10-08). Leavers are NOT hidden — their login is
+  // disabled too, and the ลาออก filter must still find them. Opt-in, so every picker that reads this
+  // route keeps its old answer.
+  let hiddenDisabledIds: string[] = [];
+  if (sp.get('hide_disabled') === '1') {
+    const { data: ghosts, error: ghostErr } = await service
+      .from('hr_employees')
+      .select('id, profile:profiles!hr_employees_profile_id_fkey!inner(active)')
+      .in('status', ['active', 'probation'])
+      .eq('profile.active', false);
+    if (ghostErr) return NextResponse.json({ error: 'Failed to load employees' }, { status: 500 });
+    hiddenDisabledIds = (ghosts ?? []).map((g) => g.id as string);
+  }
+
   let query = service.from('hr_employees').select(LIST_SELECT, { count: 'exact' });
   for (const key of ['position_id', 'department_id', 'company_id', 'pay_type'] as const) {
     const v = sp.get(key);
@@ -203,6 +219,7 @@ export async function GET(request: NextRequest) {
   }
   if (profileIdFilter) query = query.in('profile_id', profileIdFilter.length ? profileIdFilter : [NIL_UUID]);
   if (printerIds.length) query = query.not('profile_id', 'in', `(${printerIds.join(',')})`);
+  if (hiddenDisabledIds.length) query = query.not('id', 'in', `(${hiddenDisabledIds.join(',')})`);
   query = query.order('created_at', { ascending: false }).range(offset, offset + limit - 1);
 
   const { data, count, error } = await query;
@@ -232,7 +249,7 @@ export async function GET(request: NextRequest) {
     await loadPayVisibility(service, scope.userId)
   );
 
-  return NextResponse.json({ data: visible, count: count ?? 0 });
+  return NextResponse.json({ data: visible, count: count ?? 0, hidden_disabled: hiddenDisabledIds.length });
 }
 
 // POST /api/hr/employees — onboard a new person: auth account + profile + hr_employees.

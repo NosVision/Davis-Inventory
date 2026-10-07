@@ -288,7 +288,13 @@ export async function POST(request: NextRequest) {
     ipAssessment.lat !== null &&
     ipAssessment.lng !== null &&
     haversineMeters(gpsLat as number, gpsLng as number, ipAssessment.lat, ipAssessment.lng) > IP_GPS_MISMATCH_M;
-  const isVpnSuspect = ipAssessment.is_vpn_suspect || geoMismatch;
+  // A proxy/datacenter IP is not suspect on its own when it is a Thai IP and the phone's GPS is
+  // inside the branch geofence: that is iCloud Private Relay (Cloudflare egress, 104.28.x.x), on by
+  // default for many iPhones. 12 of the 16 VPN flags in Sept–Oct 2026 were exactly this, every one
+  // of them standing at the venue (client report 2026-10-08). A foreign IP is still flagged.
+  const privateRelayAtVenue =
+    ipAssessment.is_vpn_suspect && inGeofence === true && ipAssessment.country === 'TH';
+  const isVpnSuspect = (ipAssessment.is_vpn_suspect && !privateRelayAtVenue) || geoMismatch;
   const ipCountry = ipAssessment.country;
 
   const ts = new Date().toISOString();
