@@ -3,12 +3,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useEssText } from '@/lib/i18n/ess-locale';
-import { MapPin, RefreshCw, Camera, Loader2, AlertTriangle, Check } from 'lucide-react';
+import { MapPin, RefreshCw, Camera, Loader2, AlertTriangle, Check, Bug } from 'lucide-react';
 import { Button, PageHeader, StatusBadge, DataList, DataCard, ViewToggle, useViewMode, Modal, ModalFooter, toast } from '@/components/ui';
 import { cn } from '@/lib/utils/cn';
 import { toBangkokISO, formatTimeBangkok } from '@/lib/utils/date';
 import { TileNotices } from '../_components/tile-notices';
 import { UnclosedDayCard, type OpenDay } from '../_components/unclosed-day-card';
+import { CheckinDebugModal, cameraFailureHint } from '../_components/checkin-debug';
+import {
+  describeStream,
+  openFrontCamera,
+  type CameraAttempt,
+  type CameraEvent,
+  type CameraFailureKind,
+  type CheckinDebugInput,
+} from '@/lib/hr/checkin-diagnostics';
 import {
   areAttendanceControlsBlocked,
   shouldRecheckLocationGate,
@@ -86,6 +95,14 @@ interface GateRequest {
 
 const isDev = process.env.NODE_ENV === 'development';
 
+/** A preview that has shown no frame after this long is reported as a dead camera. */
+const NO_FRAME_TIMEOUT_MS = 5_000;
+/**
+ * Above this GPS error radius an "outside the area" verdict is likely the fix, not the person —
+ * Android's first indoor fix is often a cell/Wi-Fi guess hundreds of metres off (2026-10-08).
+ */
+const POOR_ACCURACY_M = 50;
+
 export default function CheckinPage() {
   const t = useTranslations('hr.checkin');
   const tx = useEssText();
@@ -100,6 +117,7 @@ export default function CheckinPage() {
   const [locationNow, setLocationNow] = useState(() => Date.now());
   const [photo, setPhoto] = useState<string | null>(null);
   const [cameraOn, setCameraOn] = useState(false);
+  const [debugOpen, setDebugOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [rows, setRows] = useState<AttendanceRow[]>([]);
   const [loadingList, setLoadingList] = useState(true);
@@ -115,6 +133,16 @@ export default function CheckinPage() {
   // the page cycled loading → ready every second and the punch buttons blinked (2026-09-17).
   const verifiedFixRef = useRef<GateFix | null>(null);
   const gateSeqRef = useRef(0);
+  // Evidence for the debug modal. Refs, not state: nothing on screen renders from them.
+  const cameraKindRef = useRef<CameraFailureKind | null>(null);
+  const cameraAttemptsRef = useRef<CameraAttempt[]>([]);
+  const debugEventsRef = useRef<CameraEvent[]>([]);
+  const geoErrorRef = useRef<string | null>(null);
+
+  const logDebug = useCallback((message: string) => {
+    const at = new Date().toISOString().slice(11, 19);
+    debugEventsRef.current = [...debugEventsRef.current, { at, message }].slice(-30);
+  }, []);
 
   // Punch types already recorded today — those buttons are disabled so a type can't be double-tapped.
   const usedTypes = new Set(rows.map((r) => r.type));
@@ -154,10 +182,13 @@ export default function CheckinPage() {
         });
         setLocationNow(now);
         setLocStatus('ready');
+        geoErrorRef.current = null;
         const fix: GateFix = { lat: pos.coords.latitude, lng: pos.coords.longitude, at: now };
         if (shouldRecheckLocationGate(verifiedFixRef.current, fix)) requestGate(fix);
       },
-      () => {
+      (err) => {
+        geoErrorRef.current = `code ${err.code}: ${err.message}`;
+        logDebug(`geolocation error ${geoErrorRef.current}`);
         // Denied or unavailable. The server decides whether this person's branch accepts a
         // GPS-less punch (for HR review) or refuses it — the page must not unlock on its own.
         setCoords(null);
@@ -167,7 +198,7 @@ export default function CheckinPage() {
       // 5 s of reuse is invisible against the 30 s staleness rule below and halves the fix rate.
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 5_000 }
     );
-  }, [requestGate]);
+  }, [requestGate, logDebug]);
 
   // Even with watchPosition, browsers may pause GPS updates in the background. Never keep controls
   // unlocked forever from an old inside-area reading; stale positions require a fresh reading.
@@ -196,17 +227,18 @@ export default function CheckinPage() {
         const query = params.size > 0 ? `?${params}` : '';
         const res = await fetch(`/api/hr/ess/checkin${query}`, { signal: controller.signal });
         const json = await res.json().catch(() => ({}));
-        if (!res.ok || !json.location_gate) throw new Error('location preflight failed');
+        if (!res.ok || !json.location_gate) throw new Error(`location preflight failed (HTTP ${res.status})`);
         setLocationGate(json.location_gate as AttendanceLocationGate);
         setLocationGateStatus('ready');
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') return;
+        logDebug(error instanceof Error ? error.message : 'location preflight failed');
         setLocationGate(null);
         setLocationGateStatus('error');
       }
     })();
     return () => controller.abort();
-  }, [gateRequest]);
+  }, [gateRequest, logDebug]);
 
   // Days with a check-IN and no check-OUT that the employee has not filed for yet. While any
   // exists, the check-in controls are replaced by the card that closes it — the server refuses the
@@ -271,29 +303,49 @@ export default function CheckinPage() {
     setCameraOn(false);
   }, []);
 
+  // Every failure used to be one bare "เปิดกล้องไม่สำเร็จ" toast, so a phone that refused could
+  // only be reported as "it doesn't work" (2026-10-08). The toast now says what to do about it,
+  // and the reason is kept for the debug modal.
+  const failCamera = useCallback(
+    (kind: CameraFailureKind) => {
+      cameraKindRef.current = kind;
+      toast({ type: 'error', title: t('cameraFailed'), message: cameraFailureHint(kind, tx), duration: 10_000 });
+    },
+    [t, tx]
+  );
+
   const startCamera = useCallback(async () => {
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      toast({ type: 'error', title: t('cameraFailed') });
+    const result = await openFrontCamera();
+    cameraAttemptsRef.current = result.attempts;
+    if (!result.ok) {
+      logDebug(`camera failed: ${result.kind}`);
+      failCamera(result.kind);
       return;
     }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user' },
-        audio: false,
-      });
-      streamRef.current = stream;
-      setCameraOn(true);
-    } catch {
-      toast({ type: 'error', title: t('cameraFailed') });
-    }
-  }, [t]);
+    cameraKindRef.current = null;
+    logDebug(`camera opened: ${describeStream(result.stream)}`);
+    streamRef.current = result.stream;
+    setCameraOn(true);
+  }, [failCamera, logDebug]);
 
-  // Attach the stream once the <video> element is mounted (cameraOn === true).
+  // Attach the stream once the <video> element is mounted (cameraOn === true). play() is called
+  // explicitly — some Android WebViews ignore autoPlay on a srcObject — and a preview that never
+  // receives a frame is reported instead of leaving a grey box whose capture button does nothing.
   useEffect(() => {
-    if (cameraOn && videoRef.current && streamRef.current) {
-      videoRef.current.srcObject = streamRef.current;
-    }
-  }, [cameraOn]);
+    const video = videoRef.current;
+    const stream = streamRef.current;
+    if (!cameraOn || !video || !stream) return;
+    video.srcObject = stream;
+    video.play().catch((err: unknown) => {
+      logDebug(`video.play() rejected: ${err instanceof Error ? `${err.name} ${err.message}` : String(err)}`);
+    });
+    const timer = window.setTimeout(() => {
+      if (video.videoWidth > 0) return;
+      logDebug(`no frames after ${NO_FRAME_TIMEOUT_MS} ms: ${describeStream(stream)}`);
+      failCamera('no_frames');
+    }, NO_FRAME_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [cameraOn, failCamera, logDebug]);
 
   // Stop the camera on unmount.
   useEffect(() => {
@@ -333,7 +385,11 @@ export default function CheckinPage() {
     if (!video || !canvas) return;
     const w = video.videoWidth;
     const h = video.videoHeight;
-    if (!w || !h) return;
+    if (!w || !h) {
+      logDebug('capture tapped with no video frame');
+      failCamera('no_frames');
+      return;
+    }
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext('2d');
@@ -354,7 +410,7 @@ export default function CheckinPage() {
     drawWatermark(ctx, w, h);
     setPhoto(canvas.toDataURL('image/jpeg', 0.85));
     stopCamera();
-  }, [drawWatermark, stopCamera]);
+  }, [drawWatermark, stopCamera, failCamera, logDebug]);
 
   const retake = useCallback(() => {
     setPhoto(null);
@@ -482,6 +538,22 @@ export default function CheckinPage() {
   const blockedByOpenDay = openDays.length > 0 && type === 'in';
   const locationIsStale = locStatus === 'ready' && coords !== null && locationNow - coords.capturedAt > 30_000;
   const blockedByLocation = areAttendanceControlsBlocked(locationGateStatus, locationGate, !locationIsStale);
+  const getDebugInput = (): CheckinDebugInput => ({
+    cameraKind: cameraKindRef.current,
+    attempts: cameraAttemptsRef.current,
+    events: debugEventsRef.current,
+    location: {
+      locStatus,
+      gateStatus: locationGateStatus,
+      lat: coords?.lat ?? null,
+      lng: coords?.lng ?? null,
+      accuracyM: coords?.accuracy ?? null,
+      ageS: coords ? Math.round((Date.now() - coords.capturedAt) / 1000) : null,
+      geoError: geoErrorRef.current,
+      gate: locationGate,
+    },
+  });
+  const poorAccuracy = coords !== null && coords.accuracy > POOR_ACCURACY_M;
   const canSubmit = photo !== null && !submitting && !usedTypes.has(type) && !blockedByOpenDay && !blockedByLocation;
 
   return (
@@ -586,6 +658,9 @@ export default function CheckinPage() {
               {coords && (
                 <p className="truncate text-xs text-gray-500 dark:text-gray-400">
                   {coords.lat.toFixed(6)}, {coords.lng.toFixed(6)}
+                  <span className={cn('ml-1', poorAccuracy && 'font-medium text-amber-600 dark:text-amber-400')}>
+                    ±{Math.round(coords.accuracy)} {tx('ม.', 'm', 'မီတာ', 'ມ.')}
+                  </span>
                 </p>
               )}
             </div>
@@ -667,6 +742,18 @@ export default function CheckinPage() {
         </p>
       )}
 
+      {poorAccuracy && coords && (locationGate?.status === 'blocked' || locationGate?.status === 'outside_pending') && (
+        <p className="-mt-3 flex items-start gap-1.5 px-1 text-xs text-amber-600 dark:text-amber-400">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          {tx(
+            `GPS ยังไม่แม่นยำ (คลาดเคลื่อนได้ ±${Math.round(coords.accuracy)} ม.) ระยะที่แสดงอาจผิด — เปิด Wi-Fi และตำแหน่งแบบแม่นยำสูง ออกไปใกล้ประตูหรือหน้าต่าง รอ 10–20 วินาที แล้วกดตรวจตำแหน่งใหม่`,
+            `GPS is not precise yet (±${Math.round(coords.accuracy)} m), so the distance may be wrong. Turn on Wi-Fi and high-accuracy location, move near a door or window, wait 10–20 s, then refresh your location.`,
+            `GPS မတိကျသေးပါ (±${Math.round(coords.accuracy)} မီတာ)။ Wi-Fi နှင့် တိကျမှုမြင့် တည်နေရာကို ဖွင့်ပြီး တံခါး သို့မဟုတ် ပြတင်းပေါက်အနီး ရွှေ့ကာ စက္ကန့် ၁၀–၂၀ စောင့်ပြီး တည်နေရာကို ပြန်စစ်ပါ။`,
+            `GPS ຍັງບໍ່ແມ່ນຍຳ (±${Math.round(coords.accuracy)} ມ.) ໄລຍະທີ່ສະແດງອາດຜິດ — ເປີດ Wi-Fi ແລະ ຕຳແໜ່ງແບບແມ່ນຍຳສູງ ອອກໄປໃກ້ປະຕູ ຫຼື ປ່ອງຢ້ຽມ ລໍຖ້າ 10–20 ວິນາທີ ແລ້ວກົດກວດຕຳແໜ່ງໃໝ່`
+          )}
+        </p>
+      )}
+
       {locationGateStatus === 'ready' && locationGate?.status === 'outside_pending' && (
         <p className="-mt-3 flex items-start gap-1.5 px-1 text-xs text-amber-600 dark:text-amber-400">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -736,6 +823,15 @@ export default function CheckinPage() {
             />
           </label>
         )}
+
+        <button
+          type="button"
+          onClick={() => setDebugOpen(true)}
+          className="mx-auto flex items-center gap-1 rounded px-2 py-1 text-[11px] text-gray-400 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300 dark:text-gray-500 dark:hover:text-gray-300"
+        >
+          <Bug className="h-3 w-3" />
+          {tx('ข้อมูลแจ้งปัญหา', 'Report info', 'ပြဿနာအချက်အလက်', 'ຂໍ້ມູນແຈ້ງບັນຫາ')}
+        </button>
       </div>
 
       {/* Submit */}
@@ -786,6 +882,8 @@ export default function CheckinPage() {
           </DataList>
         )}
       </div>
+
+      <CheckinDebugModal isOpen={debugOpen} onClose={() => setDebugOpen(false)} getInput={getDebugInput} />
 
       {/* No-GPS confirmation */}
       <Modal
