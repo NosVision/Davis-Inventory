@@ -143,6 +143,7 @@ export default function CheckinPage() {
   const geoErrorRef = useRef<string | null>(null);
   const lastGateLogRef = useRef<string | null>(null);
   const latestAccuracyRef = useRef<number | null>(null);
+  const hasFixRef = useRef(false);
 
   const logDebug = useCallback((message: string) => {
     debugEventsRef.current = appendDebugEvent(debugEventsRef.current, message);
@@ -167,10 +168,31 @@ export default function CheckinPage() {
     setGateRequest({ fix, seq: gateSeqRef.current });
   }, []);
 
+  const applyFix = useCallback(
+    (pos: GeolocationPosition) => {
+      const now = Date.now();
+      setCoords({
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        accuracy: pos.coords.accuracy,
+        capturedAt: now,
+      });
+      setLocationNow(now);
+      setLocStatus('ready');
+      geoErrorRef.current = null;
+      latestAccuracyRef.current = pos.coords.accuracy;
+      hasFixRef.current = true;
+      const fix: GateFix = { lat: pos.coords.latitude, lng: pos.coords.longitude, at: now };
+      if (shouldRecheckLocationGate(verifiedFixRef.current, fix)) requestGate(fix);
+    },
+    [requestGate]
+  );
+
   const getLocation = useCallback(() => {
     setCoords(null);
     setLocationGate(null);
     verifiedFixRef.current = null;
+    hasFixRef.current = false;
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
       setLocStatus('failed');
       requestGate(null);
@@ -183,24 +205,15 @@ export default function CheckinPage() {
     setLocStatus('loading');
     setLocationGateStatus('loading');
     locationWatchRef.current = navigator.geolocation.watchPosition(
-      (pos) => {
-        const now = Date.now();
-        setCoords({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-          accuracy: pos.coords.accuracy,
-          capturedAt: now,
-        });
-        setLocationNow(now);
-        setLocStatus('ready');
-        geoErrorRef.current = null;
-        latestAccuracyRef.current = pos.coords.accuracy;
-        const fix: GateFix = { lat: pos.coords.latitude, lng: pos.coords.longitude, at: now };
-        if (shouldRecheckLocationGate(verifiedFixRef.current, fix)) requestGate(fix);
-      },
+      applyFix,
       (err) => {
         geoErrorRef.current = `code ${err.code}: ${err.message}`;
         logDebug(`geolocation error ${geoErrorRef.current}`);
+        // A TIMEOUT after a good fix only means the phone sat still and Android stopped sending
+        // updates. Wiping the fix for it flipped a person standing inside the branch to "no GPS"
+        // and locked Submit (2026-10-08). The 30 s staleness rule still guards an old fix, and the
+        // stale effect below asks for a fresh one.
+        if (err.code === err.TIMEOUT && hasFixRef.current) return;
         // Denied or unavailable. The server decides whether this person's branch accepts a
         // GPS-less punch (for HR review) or refuses it — the page must not unlock on its own.
         setCoords(null);
@@ -210,7 +223,7 @@ export default function CheckinPage() {
       // 5 s of reuse is invisible against the 30 s staleness rule below and halves the fix rate.
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 5_000 }
     );
-  }, [requestGate, logDebug]);
+  }, [requestGate, applyFix, logDebug]);
 
   // Even with watchPosition, browsers may pause GPS updates in the background. Never keep controls
   // unlocked forever from an old inside-area reading; stale positions require a fresh reading.
@@ -573,6 +586,19 @@ export default function CheckinPage() {
   const blockedByOpenDay = openDays.length > 0 && type === 'in';
   const locationIsStale = locStatus === 'ready' && coords !== null && locationNow - coords.capturedAt > 30_000;
   const blockedByLocation = areAttendanceControlsBlocked(locationGateStatus, locationGate, !locationIsStale);
+
+  // A stationary Android phone can stop delivering watchPosition fixes, so the reading goes stale
+  // while the employee is still taking the selfie. Ask for one fresh fix instead of leaving them
+  // to find the refresh button scrolled out of view.
+  useEffect(() => {
+    if (!locationIsStale || typeof navigator === 'undefined' || !navigator.geolocation) return;
+    logDebug('gps fix stale (>30 s) — requesting a fresh one');
+    navigator.geolocation.getCurrentPosition(
+      applyFix,
+      (err) => logDebug(`fresh fix failed: code ${err.code}: ${err.message}`),
+      { enableHighAccuracy: true, timeout: 15_000, maximumAge: 0 }
+    );
+  }, [locationIsStale, applyFix, logDebug]);
   const getDebugInput = (): CheckinDebugInput => ({
     cameraKind: cameraKindRef.current,
     attempts: cameraAttemptsRef.current,
@@ -879,6 +905,34 @@ export default function CheckinPage() {
       >
         {submitting ? t('submitting') : t('submit')}
       </Button>
+
+      {/* Why Submit is grey. The location warnings sit above the camera, scrolled out of view
+          once a selfie is on screen, so a locked button used to look broken (2026-10-08). */}
+      {photo && !canSubmit && !submitting && (
+        <div className="-mt-3 flex items-start justify-between gap-2 px-1 text-xs text-red-600 dark:text-red-400">
+          <p className="flex min-w-0 items-start gap-1.5">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            {usedTypes.has(type)
+              ? tx('วันนี้ลงเวลาประเภทนี้ไปแล้ว', 'This punch type is already recorded today', 'ဤအမျိုးအစားကို ယနေ့ မှတ်တမ်းတင်ပြီးပါပြီ', 'ມື້ນີ້ລົງເວລາປະເພດນີ້ແລ້ວ')
+              : blockedByOpenDay
+                ? tx('มีวันที่ยังไม่ได้ลงเวลาออก — แจ้งในกล่องด้านบนก่อน', 'An earlier day has no check-out — file it in the box at the top first', 'ယခင်နေ့တွင် အထွက်မှတ်တမ်း မရှိပါ — အပေါ်ရှိ ကတ်တွင် အရင် တင်ပြပါ', 'ມີມື້ທີ່ຍັງບໍ່ໄດ້ລົງເວລາອອກ — ແຈ້ງໃນກ່ອງດ້ານເທິງກ່ອນ')
+                : locationIsStale || locationGateStatus === 'loading' || locationGateStatus === 'idle'
+                  ? tx('กำลังตรวจตำแหน่ง รอสักครู่…', 'Checking your location, please wait…', 'တည်နေရာ စစ်ဆေးနေသည်၊ ခဏစောင့်ပါ…', 'ກຳລັງກວດຕຳແໜ່ງ ລໍຖ້າສັກຄູ່…')
+                  : locationGate?.status === 'blocked'
+                    ? tx('อยู่นอกพื้นที่ลงเวลา (ดูรายละเอียดด้านบน)', 'Outside the attendance area (details above)', 'အလုပ်ချိန်ဧရိယာ ပြင်ပတွင် ရှိနေသည် (အပေါ်တွင် ကြည့်ပါ)', 'ຢູ່ນອກພື້ນທີ່ລົງເວລາ (ເບິ່ງລາຍລະອຽດດ້ານເທິງ)')
+                    : tx('ตรวจสอบพื้นที่ลงเวลาไม่ได้', 'Could not verify the attendance area', 'အလုပ်ချိန်မှတ်တမ်းဧရိယာကို စစ်ဆေး၍မရပါ', 'ບໍ່ສາມາດກວດສອບພື້ນທີ່ລົງເວລາໄດ້')}
+          </p>
+          {blockedByLocation && (
+            <button
+              type="button"
+              onClick={getLocation}
+              className="shrink-0 font-semibold text-blue-600 underline-offset-2 hover:underline dark:text-blue-400"
+            >
+              {tx('ตรวจตำแหน่งใหม่', 'Refresh location', 'တည်နေရာ ပြန်စစ်ရန်', 'ກວດຕຳແໜ່ງໃໝ່')}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Today */}
       <div className="space-y-2">
