@@ -11,8 +11,11 @@ import { TileNotices } from '../_components/tile-notices';
 import { UnclosedDayCard, type OpenDay } from '../_components/unclosed-day-card';
 import { CheckinDebugModal, cameraFailureHint } from '../_components/checkin-debug';
 import {
+  appendDebugEvent,
   describeStream,
+  loadDebugEvents,
   openFrontCamera,
+  summarizeAttempts,
   type CameraAttempt,
   type CameraEvent,
   type CameraFailureKind,
@@ -138,11 +141,19 @@ export default function CheckinPage() {
   const cameraAttemptsRef = useRef<CameraAttempt[]>([]);
   const debugEventsRef = useRef<CameraEvent[]>([]);
   const geoErrorRef = useRef<string | null>(null);
+  const lastGateLogRef = useRef<string | null>(null);
+  const latestAccuracyRef = useRef<number | null>(null);
 
   const logDebug = useCallback((message: string) => {
-    const at = new Date().toISOString().slice(11, 19);
-    debugEventsRef.current = [...debugEventsRef.current, { at, message }].slice(-30);
+    debugEventsRef.current = appendDebugEvent(debugEventsRef.current, message);
   }, []);
+
+  // Pick up the trail from before a reload. Declared ahead of the effects that log, so their
+  // first events land after the restored ones.
+  useEffect(() => {
+    debugEventsRef.current = [...loadDebugEvents(), ...debugEventsRef.current];
+    logDebug('page loaded');
+  }, [logDebug]);
 
   // Punch types already recorded today — those buttons are disabled so a type can't be double-tapped.
   const usedTypes = new Set(rows.map((r) => r.type));
@@ -183,6 +194,7 @@ export default function CheckinPage() {
         setLocationNow(now);
         setLocStatus('ready');
         geoErrorRef.current = null;
+        latestAccuracyRef.current = pos.coords.accuracy;
         const fix: GateFix = { lat: pos.coords.latitude, lng: pos.coords.longitude, at: now };
         if (shouldRecheckLocationGate(verifiedFixRef.current, fix)) requestGate(fix);
       },
@@ -228,7 +240,19 @@ export default function CheckinPage() {
         const res = await fetch(`/api/hr/ess/checkin${query}`, { signal: controller.signal });
         const json = await res.json().catch(() => ({}));
         if (!res.ok || !json.location_gate) throw new Error(`location preflight failed (HTTP ${res.status})`);
-        setLocationGate(json.location_gate as AttendanceLocationGate);
+        const gate = json.location_gate as AttendanceLocationGate;
+        // Only verdict changes are logged — the re-check every ~20 s would otherwise push the
+        // camera and submit events out of the trail.
+        const gateKey = `${gate.status}/${gate.code ?? '-'}/${gate.store_id ?? '-'}`;
+        if (gateKey !== lastGateLogRef.current) {
+          lastGateLogRef.current = gateKey;
+          const accuracy = latestAccuracyRef.current;
+          logDebug(
+            `area ${gateKey} distance=${gate.distance_m ?? '-'}m allowed=${gate.allowed_distance_m ?? '-'}m ` +
+              `gps=${gateRequest.fix ? `±${accuracy !== null ? Math.round(accuracy) : '?'}m` : 'none'}`
+          );
+        }
+        setLocationGate(gate);
         setLocationGateStatus('ready');
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') return;
@@ -318,7 +342,7 @@ export default function CheckinPage() {
     const result = await openFrontCamera();
     cameraAttemptsRef.current = result.attempts;
     if (!result.ok) {
-      logDebug(`camera failed: ${result.kind}`);
+      logDebug(`camera failed: ${result.kind} — ${summarizeAttempts(result.attempts) || 'no attempt'}`);
       failCamera(result.kind);
       return;
     }
@@ -408,14 +432,17 @@ export default function CheckinPage() {
     ctx.drawImage(video, 0, 0, w, h);
     ctx.restore();
     drawWatermark(ctx, w, h);
-    setPhoto(canvas.toDataURL('image/jpeg', 0.85));
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+    logDebug(`photo captured ${w}x${h} ${Math.round(dataUrl.length / 1024)} KB`);
+    setPhoto(dataUrl);
     stopCamera();
   }, [drawWatermark, stopCamera, failCamera, logDebug]);
 
   const retake = useCallback(() => {
+    logDebug('retake');
     setPhoto(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
-  }, []);
+  }, [logDebug]);
 
   // --- Dev bypass: draw an uploaded file through the same watermark path ---
   const onDevFile = useCallback(
@@ -451,6 +478,7 @@ export default function CheckinPage() {
   const doSubmit = useCallback(async () => {
     if (!photo) return;
     setSubmitting(true);
+    logDebug(`submit ${type} photo=${Math.round(photo.length / 1024)} KB gps=${coords ? 'yes' : 'none'}`);
     try {
       const res = await fetch('/api/hr/ess/checkin', {
         method: 'POST',
@@ -463,6 +491,11 @@ export default function CheckinPage() {
         }),
       });
       const json = await res.json().catch(() => ({}));
+      logDebug(
+        res.ok
+          ? `submit OK HTTP ${res.status} review=${json?.review_status ?? '-'} in_geofence=${json?.in_geofence ?? '-'}`
+          : `submit FAILED HTTP ${res.status} code=${json?.code ?? '-'} error=${json?.error ?? '-'}`
+      );
       if (!res.ok) {
         // The server refuses a new check-in while a day hangs open. Surfacing the card is more use
         // than the message alone — it is the thing that clears the block.
@@ -513,11 +546,13 @@ export default function CheckinPage() {
       if (fileInputRef.current) fileInputRef.current.value = '';
       await fetchToday();
     } catch (err) {
+      // A thrown fetch (offline, timeout, body too large for a proxy) never reaches the HTTP log above.
+      if (err instanceof TypeError) logDebug(`submit network error: ${err.message}`);
       toast({ type: 'error', title: err instanceof Error ? err.message : t('failed') });
     } finally {
       setSubmitting(false);
     }
-  }, [coords, photo, type, t, tx, fetchToday, fetchOpenDays]);
+  }, [coords, photo, type, t, tx, fetchToday, fetchOpenDays, logDebug]);
 
   const submit = useCallback(() => {
     if (areAttendanceControlsBlocked(locationGateStatus, locationGate)) return;

@@ -266,12 +266,12 @@ export async function buildCheckinDebugReport({
     `screen: ${window.screen.width}x${window.screen.height} @${window.devicePixelRatio}`,
     `userAgent: ${navigator.userAgent}`,
     '--- location ---',
-    `location permission: ${geoPerm}`,
+    `location permission (as reported): ${geoPerm}`,
     ...locationLines(loc),
     '--- camera ---',
     `camera result: ${cameraKind ?? 'no failure recorded'}`,
     `getUserMedia: ${typeof navigator.mediaDevices?.getUserMedia === 'function' ? 'yes' : 'NO'}`,
-    `camera permission: ${cameraPerm}`,
+    `camera permission (as reported): ${cameraPerm}`,
     `cameras: ${cams}`,
     ...(attempts.length
       ? attempts.map(
@@ -280,10 +280,54 @@ export async function buildCheckinDebugReport({
             `${a.constraint ? ` [constraint: ${a.constraint}]` : ''} (${a.ms} ms)`
         )
       : ['attempts: (none yet)']),
-    '--- events ---',
+    '--- events (UTC, kept across reloads of this tab) ---',
     ...(events.length ? events.map((e) => `${e.at} ${e.message}`) : ['(none)']),
   ];
   return lines.join('\n');
+}
+
+const EVENTS_STORAGE_KEY = 'checkin-debug-events';
+const MAX_EVENTS = 60;
+
+/**
+ * Events survive a reload of the tab. Staff refresh the page the moment something goes wrong,
+ * which used to wipe the only record of it before they reached the debug button (2026-10-08).
+ * sessionStorage, not localStorage: the trail belongs to this tab's session and is gone when
+ * the tab closes. Storage can be blocked (private mode, some in-app browsers) — then the events
+ * simply live in memory only.
+ */
+export function loadDebugEvents(): CameraEvent[] {
+  try {
+    const raw = window.sessionStorage.getItem(EVENTS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(
+        (e): e is CameraEvent =>
+          typeof e === 'object' && e !== null && typeof e.at === 'string' && typeof e.message === 'string'
+      )
+      .slice(-MAX_EVENTS);
+  } catch {
+    return [];
+  }
+}
+
+export function appendDebugEvent(events: CameraEvent[], message: string): CameraEvent[] {
+  const next = [...events, { at: new Date().toISOString().slice(11, 19), message }].slice(-MAX_EVENTS);
+  try {
+    window.sessionStorage.setItem(EVENTS_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // storage blocked or full — the in-memory list still works
+  }
+  return next;
+}
+
+/** One line for an attempt list, so a failure's detail lands in the persisted event trail. */
+export function summarizeAttempts(attempts: CameraAttempt[]): string {
+  return attempts
+    .map((a) => `${a.label}=${a.ok ? 'OK' : `${a.errorName ?? '?'}(${a.errorMessage ?? ''})`}`)
+    .join('; ');
 }
 
 /** Clipboard API first; the textarea fallback covers http, old WebViews and denied clipboard. */
