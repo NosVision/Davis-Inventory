@@ -1,5 +1,6 @@
 'use client';
 
+import { useCallback } from 'react';
 import { useLocale } from 'next-intl';
 
 /**
@@ -18,5 +19,10 @@ export function pickEssText(locale: string, th: string, en: string, my?: string,
 /** Hook form: `const tx = useEssText(); tx('ไทย', 'English', 'မြန်မာ', 'ລາວ')`. */
 export function useEssText(): (th: string, en: string, my?: string, lo?: string) => string {
   const locale = useLocale();
-  return (th, en, my, lo) => pickEssText(locale, th, en, my, lo);
+  // Stable per locale, so callers can list `tx` in hook dependencies without re-running effects
+  // on every render.
+  return useCallback(
+    (th: string, en: string, my?: string, lo?: string) => pickEssText(locale, th, en, my, lo),
+    [locale]
+  );
 }
