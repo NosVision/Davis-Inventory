@@ -111,8 +111,83 @@ export async function sendWebPush(
 }
 
 // ---------------------------------------------------------------------------
-// sendPushToUser — Send push to all active subscriptions for a user
+// sendPushToUsers — Send push to all active subscriptions of many users
 // ---------------------------------------------------------------------------
+
+/** Ids per `.in()` lookup — keeps the PostgREST URL well under its length limit. */
+const LOOKUP_CHUNK = 150;
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+/**
+ * Send a push notification to every active subscription of each user.
+ *
+ * Preferences and subscriptions are read in one query each for the whole list. A chat message to a
+ * 40-person venue room used to cost 80 lookups (one preference + one subscription read per member);
+ * at the 2026-10-09 shift-start peak those were ~6.5% of all server time.
+ *
+ * @returns The count of successful sends across all users
+ */
+export async function sendPushToUsers(userIds: string[], payload: PushPayload): Promise<number> {
+  const ids = [...new Set(userIds.filter(Boolean))];
+  if (ids.length === 0) return 0;
+  try {
+    const supabase = createServiceClient();
+
+    const [prefResults, subResults] = await Promise.all([
+      Promise.all(
+        chunk(ids, LOOKUP_CHUNK).map((part) =>
+          supabase.from('notification_preferences').select('user_id, notify_work_hours_only').in('user_id', part),
+        ),
+      ),
+      Promise.all(
+        chunk(ids, LOOKUP_CHUNK).map((part) =>
+          supabase.from('push_subscriptions').select('*').in('user_id', part).eq('active', true),
+        ),
+      ),
+    ]);
+
+    const subError = subResults.find((r) => r.error)?.error;
+    if (subError) {
+      console.error('[WebPush] Failed to fetch subscriptions:', subError.message);
+      return 0;
+    }
+    const subscriptions = subResults.flatMap((r) => (r.data ?? []) as PushSubscriptionRow[]);
+    if (subscriptions.length === 0) return 0;
+
+    // Quiet gate: users who opted into "only during my work hours" get web push suppressed off-shift.
+    // In-app notifications are inserted separately by callers, so nothing is lost — only the popup.
+    // A failed preference read falls open, like the gate itself: it must never drop a notification.
+    const withSubs = new Set(subscriptions.map((s) => s.user_id));
+    const quietUsers = prefResults
+      .flatMap((r) => (r.data ?? []) as { user_id: string; notify_work_hours_only: boolean | null }[])
+      .filter((p) => p.notify_work_hours_only === true && withSubs.has(p.user_id))
+      .map((p) => p.user_id);
+    const offShift = new Set<string>();
+    await Promise.all(
+      quietUsers.map(async (id) => {
+        if (!(await isWithinWorkHours(supabase, id))) offShift.add(id);
+      }),
+    );
+
+    const targets = subscriptions.filter((s) => !offShift.has(s.user_id));
+    const results = await Promise.allSettled(targets.map((sub) => sendWebPush(sub.subscription, payload)));
+    const successCount = results.filter((r) => r.status === 'fulfilled' && r.value).length;
+
+    const failures = results.length - successCount;
+    if (failures > 0) {
+      console.log(`[WebPush] ${failures}/${targets.length} push(es) failed for ${ids.length} user(s)`);
+    }
+    return successCount;
+  } catch (error) {
+    console.error('[WebPush] sendPushToUsers error:', error);
+    return 0;
+  }
+}
 
 /**
  * Send a push notification to all active subscriptions for a given user.
@@ -121,65 +196,8 @@ export async function sendWebPush(
  * @param payload - The notification payload
  * @returns The count of successful sends
  */
-export async function sendPushToUser(
-  userId: string,
-  payload: PushPayload,
-): Promise<number> {
-  try {
-    const supabase = createServiceClient();
-
-    // Quiet gate: users who opted into "only during my work hours" get web push suppressed off-shift.
-    // In-app notifications are inserted separately by callers, so nothing is lost — only the popup.
-    const { data: pref } = await supabase
-      .from('notification_preferences')
-      .select('notify_work_hours_only')
-      .eq('user_id', userId)
-      .maybeSingle();
-    if ((pref as { notify_work_hours_only?: boolean } | null)?.notify_work_hours_only) {
-      const working = await isWithinWorkHours(supabase, userId);
-      if (!working) return 0;
-    }
-
-    const { data: subscriptions, error } = await supabase
-      .from('push_subscriptions')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('active', true);
-
-    if (error) {
-      console.error('[WebPush] Failed to fetch subscriptions:', error.message);
-      return 0;
-    }
-
-    if (!subscriptions || subscriptions.length === 0) {
-      return 0;
-    }
-
-    let successCount = 0;
-
-    const results = await Promise.allSettled(
-      (subscriptions as PushSubscriptionRow[]).map(async (sub) => {
-        const success = await sendWebPush(sub.subscription, payload);
-        if (success) successCount++;
-        return success;
-      }),
-    );
-
-    // Log failures for debugging
-    const failures = results.filter(
-      (r) => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value),
-    );
-    if (failures.length > 0) {
-      console.log(
-        `[WebPush] ${failures.length}/${subscriptions.length} push(es) failed for user ${userId}`,
-      );
-    }
-
-    return successCount;
-  } catch (error) {
-    console.error('[WebPush] sendPushToUser error:', error);
-    return 0;
-  }
+export function sendPushToUser(userId: string, payload: PushPayload): Promise<number> {
+  return sendPushToUsers([userId], payload);
 }
 
 // ---------------------------------------------------------------------------

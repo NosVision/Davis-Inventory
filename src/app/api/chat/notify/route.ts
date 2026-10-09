@@ -16,7 +16,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server';
-import { sendPushToUser, type PushPayload } from '@/lib/notifications/push';
+import { sendPushToUsers, type PushPayload } from '@/lib/notifications/push';
 
 export async function POST(request: NextRequest) {
   try {
@@ -97,24 +97,8 @@ export async function POST(request: NextRequest) {
     };
 
     // 6. Send push to each active (non-muted) member
-    let sent = 0;
     console.log(`[ChatNotify] Sending push to ${activeMembers.length} members for room ${room_id}`);
-
-    const results = await Promise.allSettled(
-      activeMembers.map(async (m) => {
-        const count = await sendPushToUser(m.user_id, payload);
-        if (count > 0) sent += count;
-        return { user_id: m.user_id, count };
-      }),
-    );
-
-    // Log results
-    const failures = results.filter((r) => r.status === 'rejected');
-    if (failures.length > 0) {
-      console.error(
-        `[ChatNotify] ${failures.length} push(es) failed for room ${room_id}`,
-      );
-    }
+    const sent = await sendPushToUsers(activeMembers.map((m) => m.user_id), payload);
     console.log(`[ChatNotify] Push sent: ${sent}/${activeMembers.length} for room ${room_id}`);
 
     return NextResponse.json({ status: 'ok', sent, total_members: activeMembers.length });

@@ -1,5 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/server';
-import { sendPushToUser, type PushPayload } from '@/lib/notifications/push';
+import { sendPushToUsers, type PushPayload } from '@/lib/notifications/push';
 import { pushTaskLineGroup } from '@/lib/line/tasks-bot';
 import { taskNotifyFlex } from '@/lib/line/flex-templates';
 import { getRoomColor } from '@/lib/tasks/colors';
@@ -69,17 +69,14 @@ export async function notifyTaskUsers(params: NotifyTaskUsersParams): Promise<vo
       data,
     };
 
-    await Promise.allSettled(
-      targets.map((userId) => {
-        const p = prefMap.get(userId);
-        const pwaOn = p ? p.pwa_enabled !== false : true;
-        // Task alerts are MANDATORY work notifications: they ignore the per-type mute so a newly
-        // assigned/started task is never missed. Off-hours quiet is still handled by the work-hours
-        // gate in sendPushToUser; for full silence the user uses their phone's Do Not Disturb.
-        if (!pwaOn) return Promise.resolve();
-        return sendPushToUser(userId, payload);
-      }),
-    );
+    // Task alerts are MANDATORY work notifications: they ignore the per-type mute so a newly
+    // assigned/started task is never missed. Off-hours quiet is still handled by the work-hours
+    // gate in sendPushToUsers; for full silence the user uses their phone's Do Not Disturb.
+    const pushTargets = targets.filter((userId) => {
+      const p = prefMap.get(userId);
+      return p ? p.pwa_enabled !== false : true;
+    });
+    await sendPushToUsers(pushTargets, payload);
   } catch (error) {
     console.error('[tasks] notifyTaskUsers error:', error);
   }
