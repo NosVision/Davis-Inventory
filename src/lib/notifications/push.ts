@@ -151,10 +151,9 @@ export async function sendPushToUsers(userIds: string[], payload: PushPayload): 
       ),
     ]);
 
-    const subError = subResults.find((r) => r.error)?.error;
-    if (subError) {
-      console.error('[WebPush] Failed to fetch subscriptions:', subError.message);
-      return 0;
+    // A failed chunk loses only its own recipients — the rest still get their push.
+    for (const r of subResults) {
+      if (r.error) console.error('[WebPush] Failed to fetch subscriptions:', r.error.message);
     }
     const subscriptions = subResults.flatMap((r) => (r.data ?? []) as PushSubscriptionRow[]);
     if (subscriptions.length === 0) return 0;

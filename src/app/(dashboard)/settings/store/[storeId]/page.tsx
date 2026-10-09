@@ -337,6 +337,7 @@ export default function StoreDetailSettingsPage() {
   useEffect(() => {
     if (!storeId) return;
     const supabase = createClient();
+    let cancelled = false;
     const refresh = async () => {
       if (document.hidden) return;
       const { data } = await supabase
@@ -344,10 +345,16 @@ export default function StoreDetailSettingsPage() {
         .select('*')
         .eq('store_id', storeId)
         .maybeSingle();
-      if (data) setPrintServerStatus(data as PrintServerStatus);
+      // A reply for a store the page has left must not overwrite the new one.
+      if (data && !cancelled) setPrintServerStatus(data as PrintServerStatus);
     };
     const timer = window.setInterval(refresh, PRINT_STATUS_POLL_MS);
-    return () => window.clearInterval(timer);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refresh);
+    };
   }, [storeId]);
 
   // ---------------------------------------------------------------------------
