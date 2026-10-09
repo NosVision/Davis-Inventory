@@ -88,6 +88,9 @@ interface StoreSettingsData {
   audit_log_retention_days: number | null;
 }
 
+/** How often the open settings page re-reads the print server heartbeat. */
+const PRINT_STATUS_POLL_MS = 30_000;
+
 const settingsDefaults: StoreSettingsData = {
   notify_time_daily: '09:00',
   notify_days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
@@ -327,23 +330,24 @@ export default function StoreDetailSettingsPage() {
     loadData();
   }, [loadData]);
 
-  // Realtime subscription for print server status
+  // Poll the print server status while this page is visible. It used to be a realtime
+  // subscription, but every print-server heartbeat (one per store every few seconds) then went
+  // through Realtime's change feed for all subscribers — continuous database load for a status
+  // dot the HQ opens a few times a week (2026-10-09). The heartbeat is minutes-coarse anyway.
   useEffect(() => {
     if (!storeId) return;
     const supabase = createClient();
-    const channel = supabase
-      .channel(`ps-status-${storeId}`)
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'print_server_status',
-        filter: `store_id=eq.${storeId}`,
-      }, (payload) => {
-        setPrintServerStatus(payload.new as PrintServerStatus);
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
+    const refresh = async () => {
+      if (document.hidden) return;
+      const { data } = await supabase
+        .from('print_server_status')
+        .select('*')
+        .eq('store_id', storeId)
+        .maybeSingle();
+      if (data) setPrintServerStatus(data as PrintServerStatus);
+    };
+    const timer = window.setInterval(refresh, PRINT_STATUS_POLL_MS);
+    return () => window.clearInterval(timer);
   }, [storeId]);
 
   // ---------------------------------------------------------------------------

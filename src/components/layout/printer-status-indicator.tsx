@@ -95,10 +95,13 @@ export function PrinterStatusIndicator() {
     setLoadingJobs(false);
   }, [currentStoreId]);
 
-  // Background refresh of status (indicator only) every 45s
+  // Background refresh of status (indicator only) every 45s — skipped while the tab is hidden,
+  // since this indicator sits on every page of every open tab.
   useEffect(() => {
     refreshStatus();
-    const id = setInterval(refreshStatus, 45_000);
+    const id = setInterval(() => {
+      if (!document.hidden) refreshStatus();
+    }, 45_000);
     return () => clearInterval(id);
   }, [refreshStatus]);
 
