@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 
 /**
  * ใบ 50 ทวิ (withholding-tax certificates) that AEs ask for, tracked per month.
@@ -23,7 +23,7 @@ const SELECT_WITH_ACTORS =
 // GET /api/commission/wht-certs?month=2026-08&store_id=…
 export async function GET(req: NextRequest) {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const month = req.nextUrl.searchParams.get('month');
@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
 // Upsert on (store, ae, month): first call records the request, later calls flip status/note.
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await req.json().catch(() => ({}));
@@ -108,7 +108,7 @@ export async function POST(req: NextRequest) {
 // DELETE /api/commission/wht-certs?ae_id=…&month=…&store_id=… — the AE no longer wants one.
 export async function DELETE(req: NextRequest) {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const p = req.nextUrl.searchParams;

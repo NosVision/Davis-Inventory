@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { recomputeOrderTotals } from '@/lib/pos/orders';
 
 interface PromoRow {
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   let body: { code?: string };
@@ -77,7 +77,7 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   await supabase.from('pos_orders').update({ discount_satang: 0, promo_id: null }).eq('id', id);

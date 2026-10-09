@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server';
 import { buildEmployeeNameMap } from '@/lib/hr/employee-name-map';
 
 // GET /api/hr/ess/eval/my-queue?period_id= — the CALLER'S own evaluation assignments for a
@@ -9,7 +9,7 @@ import { buildEmployeeNameMap } from '@/lib/hr/employee-name-map';
 // total/done/pending and auto-advance to the next pending person.
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const periodId = request.nextUrl.searchParams.get('period_id');

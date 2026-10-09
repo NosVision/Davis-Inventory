@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server';
 import { loadLeaveQuotaContext } from '@/lib/hr/leave-quota';
 import { checkLeaveOverlap } from '@/lib/hr/leave-overlap';
 import { logHrAudit } from '@/lib/hr/audit';
@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const form = await request.formData().catch(() => null);
@@ -298,7 +298,7 @@ export async function GET() {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const service = createServiceClient();

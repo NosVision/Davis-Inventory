@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const date = request.nextUrl.searchParams.get('date') ?? '';

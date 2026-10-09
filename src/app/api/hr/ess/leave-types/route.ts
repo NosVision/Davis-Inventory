@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server';
 import { fetchLeaveTypeOptions } from '@/lib/hr/leave-types';
 
 // GET /api/hr/ess/leave-types — ACTIVE leave types the CALLER can file against.
@@ -10,7 +10,7 @@ export async function GET() {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const service = createServiceClient();

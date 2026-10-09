@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server';
 
 const ASSIGNMENTS = 'hr_eval_assignments';
 const CRITERIA = 'hr_eval_criteria';
@@ -14,7 +14,7 @@ const SCORES = 'hr_eval_scores';
 // own assignments, so the scoring form prefills draft values on re-open. Self-scoped.
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const assignmentId = request.nextUrl.searchParams.get('assignment_id');
@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
 // POST /api/hr/ess/eval/score — body { assignment_id, scores:[{criterion_id,points,comment}], submit? }
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;

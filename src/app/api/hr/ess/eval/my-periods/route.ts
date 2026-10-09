@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server';
 
 // GET /api/hr/ess/eval/my-periods — OPEN evaluation periods in which the caller is an evaluator
 // (§G: an evaluator only scores while a period is open). Auth-any, strictly self-scoped by
@@ -7,7 +7,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server';
 // /me evaluations landing can show a "you have N people left to score" queue picker.
 export async function GET() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const service = createServiceClient();

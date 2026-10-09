@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server';
 import { aggregateEvalScores, type AssignmentRow, type ScoreRow } from '@/lib/hr/evaluation';
 
 // GET /api/hr/ess/eval/my-results — the CALLER'S own evaluation results across periods, each
@@ -8,7 +8,7 @@ import { aggregateEvalScores, type AssignmentRow, type ScoreRow } from '@/lib/hr
 // after the period closes, before the 15th); a still-open period is hidden.
 export async function GET() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const service = createServiceClient();

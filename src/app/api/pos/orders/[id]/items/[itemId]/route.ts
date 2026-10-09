@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { recomputeOrderTotals } from '@/lib/pos/orders';
 import { lineTotalSatang } from '@/lib/pos/money';
 
@@ -13,7 +13,7 @@ export async function DELETE(
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { data: order } = await supabase.from('pos_orders').select('status').eq('id', id).maybeSingle();
@@ -47,7 +47,7 @@ export async function PATCH(
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   let body: PatchBody;

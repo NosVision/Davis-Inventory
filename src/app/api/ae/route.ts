@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 
 // GET /api/ae?store_id=...&search=... — list AE profiles in a store.
 // store_id is required so one branch can't query another branch's
 // roster; the entry form passes the user's currentStoreId.
 export async function GET(req: NextRequest) {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const storeId = req.nextUrl.searchParams.get('store_id');
@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
 // POST /api/ae — create AE profile (scoped to a store).
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await req.json();

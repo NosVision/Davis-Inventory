@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server';
 import { notifyStoreStaff, STORE_STAFF_ROLES } from '@/lib/notifications/service';
 import { sendBotMessage } from '@/lib/chat/bot';
 import { isCrossVenueRole } from '@/types/roles';
@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const sp = request.nextUrl.searchParams;
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   let body: CreateBody;

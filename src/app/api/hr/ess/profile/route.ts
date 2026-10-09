@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server';
 
 // The caller's own hr_employees fields we expose to ESS. NEVER include rate_satang,
 // tax_id, sso_no, notes, or end_reason — the ESS profile must not surface those (P0 gate).
@@ -24,7 +24,7 @@ export async function GET() {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const service = createServiceClient();

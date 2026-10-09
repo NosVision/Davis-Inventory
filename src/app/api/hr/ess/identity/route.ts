@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server';
 
 // GET /api/hr/ess/identity — the caller's identity-link status, driving the "ระบุชื่อจริงของคุณ"
 // modal (owner flow 2026-07-05): linked = an hr_employees row exists for this profile; claim =
@@ -8,7 +8,7 @@ export async function GET() {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const service = createServiceClient();

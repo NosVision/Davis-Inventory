@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server';
 import { notifyUser } from '@/lib/notifications/service';
 
 // Stock fines → HR deduction hand-off (owner ask 2026-07-09; preview+select 2026-07-17).
@@ -15,7 +15,7 @@ async function requireStockSopManager(): Promise<
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return { ok: false, res: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
   const service = createServiceClient();
   const [profileRes, permsRes] = await Promise.all([

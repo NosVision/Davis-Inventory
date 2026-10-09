@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { sanitizeTarget } from '@/lib/tasks/target';
 import { userMatchesTarget } from '@/lib/tasks/resolve-target';
 import type { TaskAssignMode, TaskResponseType, TaskRoom, TaskRoomMember, TaskTarget } from '@/types/tasks';
@@ -20,7 +20,7 @@ export async function GET(
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const [{ data: room, error }, { data: members }, { data: profile }] = await Promise.all([
@@ -61,7 +61,7 @@ export async function PATCH(
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { data: profile } = await supabase
@@ -156,7 +156,7 @@ export async function DELETE(
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { data: profile } = await supabase

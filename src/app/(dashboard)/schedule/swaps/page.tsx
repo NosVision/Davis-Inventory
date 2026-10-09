@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server';
 import { canManageHr } from '@/lib/hr/access';
 import { DayoffSwapQueue } from '@/components/hr/dayoff-swap-queue';
 
@@ -12,7 +12,7 @@ export default async function StoreSwapsPage() {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) redirect('/login');
 
   const [{ data: profile }, { data: perms }] = await Promise.all([

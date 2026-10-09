@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server';
 import { notifyHrManagers } from '@/lib/hr/notify';
 
 const DOC_TYPES = ['cert_50twi', 'salary_cert', 'slip_copy', 'other'];
@@ -7,7 +7,7 @@ const DOC_TYPES = ['cert_50twi', 'salary_cert', 'slip_copy', 'other'];
 // GET /api/hr/ess/document-requests — the caller's own requests + statuses.
 export async function GET() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const service = createServiceClient();
@@ -23,7 +23,7 @@ export async function GET() {
 // POST /api/hr/ess/document-requests { doc_type, year?, note? } — file a personal-document request.
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;

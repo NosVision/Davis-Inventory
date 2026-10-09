@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server';
 import { notifyStoreStaff } from '@/lib/notifications/service';
 import { sendBotMessage } from '@/lib/chat/bot';
 import { isCrossVenueRole } from '@/types/roles';
@@ -28,7 +28,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { data, error } = await supabase.from('inv_requisitions').select(REQ_SELECT).eq('id', id).maybeSingle();
@@ -43,7 +43,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   let body: PatchBody;

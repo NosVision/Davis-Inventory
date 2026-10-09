@@ -14,7 +14,7 @@
  */
 
 import { NextResponse } from 'next/server';
-import { createServiceClient, createClient as createServerClient } from '@/lib/supabase/server';
+import { createServiceClient, createClient as createServerClient, getSessionUser } from '@/lib/supabase/server';
 import { getChatBotSettings, isBotTypeEnabled, getTimeoutForType, getPriorityForType } from '@/lib/chat/bot-settings';
 import type { ChatMessage, ChatBroadcastPayload, UnreadBadgePayload } from '@/types/chat';
 import { createClient as createRealtimeClient } from '@supabase/supabase-js';
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
   if (!isCronAuth) {
     // Fallback: check user session
     const userClient = await createServerClient();
-    const { data: { user } } = await userClient.auth.getUser();
+    const { data: { user } } = await getSessionUser(userClient);
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

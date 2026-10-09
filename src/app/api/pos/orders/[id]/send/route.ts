@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 
 interface ItemRow {
   id: string;
@@ -15,7 +15,7 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { data: order } = await supabase.from('pos_orders').select('status, store_id').eq('id', id).maybeSingle();

@@ -14,7 +14,7 @@
  */
 
 import { NextResponse } from 'next/server';
-import { createServiceClient, createClient as createServerClient } from '@/lib/supabase/server';
+import { createServiceClient, createClient as createServerClient, getSessionUser } from '@/lib/supabase/server';
 import { createClient as createRealtimeClient } from '@supabase/supabase-js';
 import { broadcastToChannel } from '@/lib/supabase/broadcast';
 import type { ChatMessage } from '@/types/chat';
@@ -22,7 +22,7 @@ import type { ChatMessage } from '@/types/chat';
 export async function POST(request: Request) {
   // Auth: user session only
   const userClient = await createServerClient();
-  const { data: { user } } = await userClient.auth.getUser();
+  const { data: { user } } = await getSessionUser(userClient);
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }

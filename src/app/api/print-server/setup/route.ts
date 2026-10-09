@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
   // Verify caller is owner/manager
   const {
     data: { user: authUser },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
 
   if (!authUser) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

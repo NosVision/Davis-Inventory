@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server';
 import { notifyHrManagers } from '@/lib/hr/notify';
 
 // POST /api/hr/ess/payslips/[id]/request-paper — the employee asks for a PAPER copy of one of
@@ -9,7 +9,7 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { id } = await params;

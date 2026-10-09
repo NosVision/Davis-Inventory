@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 
 export default async function PrintStationLayout({
   children,
@@ -10,7 +10,7 @@ export default async function PrintStationLayout({
 
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
 
   if (!user) {
     redirect('/login?redirect=/print-station');
