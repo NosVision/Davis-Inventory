@@ -287,6 +287,11 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
     && ['bar', 'head_bar', 'manager', 'owner', 'accountant', 'hq'].includes(user.role)
     && (deposit.status === 'in_store' || deposit.status === 'pending_confirm');
 
+  // Renaming the product / changing its category (a typo fixed after intake) is held back from
+  // the bar: it changes what the customer sees in their deposit history. Owner, plus HQ since
+  // 2026-10-09 — branches asked HQ to fix names when the owner was not around.
+  const canRenameProduct = user?.role === 'owner' || user?.role === 'hq';
+
   const refreshDeposit = useCallback(async () => {
     const supabase = createClient();
     const { data } = await supabase
@@ -638,25 +643,27 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
     setShowEditModal(true);
   };
 
-  // Fetch the active products list once the owner opens the edit modal so
+  // Fetch the active products list once the owner/HQ opens the edit modal so
   // the rename input behaves like the bar's intake search. We only fetch
-  // when needed — non-owner roles never see the search UI.
+  // when needed — other roles never see the search UI. The list is the
+  // deposit's own branch: HQ may be looking at it from another store.
+  const renameStoreId = deposit.store_id || currentStoreId;
   useEffect(() => {
     if (!showEditModal) return;
-    if (user?.role !== 'owner') return;
-    if (!currentStoreId) return;
+    if (!canRenameProduct) return;
+    if (!renameStoreId) return;
     if (editProductOptions.length > 0) return;
     const supabase = createClient();
     supabase
       .from('products')
       .select('product_name, category')
-      .eq('store_id', currentStoreId)
+      .eq('store_id', renameStoreId)
       .eq('active', true)
       .order('product_name')
       .then(({ data }) => {
         if (data) setEditProductOptions(data);
       });
-  }, [showEditModal, user?.role, currentStoreId, editProductOptions.length]);
+  }, [showEditModal, canRenameProduct, renameStoreId, editProductOptions.length]);
 
   const handleEditSave = async () => {
     if (!user || !currentStoreId || !canEditDeposit) return;
@@ -679,10 +686,10 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
       percents.push(n);
     }
 
-    // Owner-only: rename the product + adjust category (typo fix at intake).
+    // Owner/HQ only: rename the product + adjust category (typo fix at intake).
     // For other roles the field is hidden, so we leave product_name/category
     // untouched.
-    const isOwnerRenaming = user.role === 'owner';
+    const isOwnerRenaming = canRenameProduct;
     const trimmedProductName = editProductName.trim();
     const newCategory = editCategory.trim() || null;
     if (isOwnerRenaming && !trimmedProductName) {
@@ -3043,7 +3050,7 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
         size="md"
       >
         <div className="space-y-4">
-          {user?.role === 'owner' && (() => {
+          {canRenameProduct && (() => {
             const query = editProductName.trim().toLowerCase();
             const filteredProducts = query
               ? editProductOptions.filter((p) =>
@@ -3254,7 +3261,7 @@ export function DepositDetail({ deposit: initialDeposit, onBack, storeName = '' 
               const qtyNum = parseInt(editQty);
               const validQty = Number.isFinite(qtyNum) && qtyNum > 0 ? qtyNum : 0;
               if (!validQty) return true;
-              if (user?.role === 'owner' && !editProductName.trim()) return true;
+              if (canRenameProduct && !editProductName.trim()) return true;
               for (let i = 0; i < validQty; i++) {
                 const raw = editBottlePercents[i];
                 if (raw === undefined || raw === '') return true;
