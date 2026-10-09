@@ -9,10 +9,16 @@ import { cn } from '@/lib/utils/cn';
 import { toBangkokISO, formatTimeBangkok } from '@/lib/utils/date';
 import { TileNotices } from '../_components/tile-notices';
 import { UnclosedDayCard, type OpenDay } from '../_components/unclosed-day-card';
-import { CheckinDebugModal, cameraFailureHint } from '../_components/checkin-debug';
+import {
+  CheckinDebugModal,
+  approximateLocationHint,
+  cameraFailureHint,
+  locationDeniedHint,
+} from '../_components/checkin-debug';
 import {
   appendDebugEvent,
   describeStream,
+  detectPlatform,
   loadDebugEvents,
   openFrontCamera,
   summarizeAttempts,
@@ -20,6 +26,7 @@ import {
   type CameraEvent,
   type CameraFailureKind,
   type CheckinDebugInput,
+  type DevicePlatform,
 } from '@/lib/hr/checkin-diagnostics';
 import {
   areAttendanceControlsBlocked,
@@ -105,6 +112,10 @@ const NO_FRAME_TIMEOUT_MS = 5_000;
  * Android's first indoor fix is often a cell/Wi-Fi guess hundreds of metres off (2026-10-08).
  */
 const POOR_ACCURACY_M = 50;
+/** At or above this the fix is the phone's "approximate location" (Android ±2000 m), not a weak GPS. */
+const APPROXIMATE_ACCURACY_M = 1_000;
+/** Before mount there is no navigator; the Android/Chrome wording is the safe default. */
+const DEFAULT_PLATFORM: DevicePlatform = { ios: false, standalone: false };
 
 export default function CheckinPage() {
   const t = useTranslations('hr.checkin');
@@ -114,6 +125,8 @@ export default function CheckinPage() {
   const [noGpsOpen, setNoGpsOpen] = useState(false);
   const [coords, setCoords] = useState<Coords | null>(null);
   const [locStatus, setLocStatus] = useState<LocStatus>('idle');
+  const [locDenied, setLocDenied] = useState(false);
+  const [platform, setPlatform] = useState<DevicePlatform>(DEFAULT_PLATFORM);
   const [locationGate, setLocationGate] = useState<AttendanceLocationGate | null>(null);
   const [locationGateStatus, setLocationGateStatus] = useState<AttendanceLocationGateLoadStatus>('idle');
   const [gateRequest, setGateRequest] = useState<GateRequest | null>(null);
@@ -156,6 +169,11 @@ export default function CheckinPage() {
     logDebug('page loaded');
   }, [logDebug]);
 
+  // navigator only exists after mount; reading it during render would break hydration.
+  useEffect(() => {
+    setPlatform(detectPlatform());
+  }, []);
+
   // Punch types already recorded today — those buttons are disabled so a type can't be double-tapped.
   const usedTypes = new Set(rows.map((r) => r.type));
 
@@ -179,6 +197,7 @@ export default function CheckinPage() {
       });
       setLocationNow(now);
       setLocStatus('ready');
+      setLocDenied(false);
       geoErrorRef.current = null;
       latestAccuracyRef.current = pos.coords.accuracy;
       hasFixRef.current = true;
@@ -214,6 +233,7 @@ export default function CheckinPage() {
         // and locked Submit (2026-10-08). The 30 s staleness rule still guards an old fix, and the
         // stale effect below asks for a fresh one.
         if (err.code === err.TIMEOUT && hasFixRef.current) return;
+        setLocDenied(err.code === err.PERMISSION_DENIED);
         // Denied or unavailable. The server decides whether this person's branch accepts a
         // GPS-less punch (for HR review) or refuses it — the page must not unlock on its own.
         setCoords(null);
@@ -346,7 +366,7 @@ export default function CheckinPage() {
   const failCamera = useCallback(
     (kind: CameraFailureKind) => {
       cameraKindRef.current = kind;
-      toast({ type: 'error', title: t('cameraFailed'), message: cameraFailureHint(kind, tx), duration: 10_000 });
+      toast({ type: 'error', title: t('cameraFailed'), message: cameraFailureHint(kind, tx, detectPlatform()), duration: 10_000 });
     },
     [t, tx]
   );
@@ -615,6 +635,7 @@ export default function CheckinPage() {
     },
   });
   const poorAccuracy = coords !== null && coords.accuracy > POOR_ACCURACY_M;
+  const approximateFix = coords !== null && coords.accuracy >= APPROXIMATE_ACCURACY_M;
   const canSubmit = photo !== null && !submitting && !usedTypes.has(type) && !blockedByOpenDay && !blockedByLocation;
 
   return (
@@ -803,7 +824,21 @@ export default function CheckinPage() {
         </p>
       )}
 
-      {poorAccuracy && coords && (locationGate?.status === 'blocked' || locationGate?.status === 'outside_pending') && (
+      {locDenied && locStatus === 'failed' && (
+        <p className="-mt-3 flex items-start gap-1.5 px-1 text-xs text-red-600 dark:text-red-400">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          {locationDeniedHint(tx, platform)}
+        </p>
+      )}
+
+      {approximateFix && coords && (locationGate?.status === 'blocked' || locationGate?.status === 'outside_pending') && (
+        <p className="-mt-3 flex items-start gap-1.5 px-1 text-xs text-amber-600 dark:text-amber-400">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          {approximateLocationHint(tx, platform, Math.round(coords.accuracy))}
+        </p>
+      )}
+
+      {poorAccuracy && !approximateFix && coords && (locationGate?.status === 'blocked' || locationGate?.status === 'outside_pending') && (
         <p className="-mt-3 flex items-start gap-1.5 px-1 text-xs text-amber-600 dark:text-amber-400">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           {tx(

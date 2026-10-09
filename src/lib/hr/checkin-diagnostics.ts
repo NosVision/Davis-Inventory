@@ -181,11 +181,35 @@ async function videoInputs(): Promise<string> {
   }
 }
 
+function isStandalone(): boolean {
+  return (
+    window.matchMedia?.('(display-mode: standalone)').matches === true ||
+    (navigator as Navigator & { standalone?: boolean }).standalone === true
+  );
+}
+
 function displayMode(): string {
-  const standalone =
-    window.matchMedia?.('(display-mode: standalone)').matches ||
-    (navigator as Navigator & { standalone?: boolean }).standalone === true;
-  return standalone ? 'PWA (standalone)' : 'browser tab';
+  return isStandalone() ? 'PWA (standalone)' : 'browser tab';
+}
+
+export interface DevicePlatform {
+  ios: boolean;
+  /** Opened from the home-screen icon rather than a browser tab. */
+  standalone: boolean;
+}
+
+/**
+ * Which set of permission instructions applies. An iPhone home-screen app keeps its own camera and
+ * location decisions, apart from Safari's, and has no URL bar or settings page to change them — a
+ * "Don't Allow" tapped once sticks until the icon is removed and added again (2026-10-09). The
+ * Android hints talk about Chrome's lock icon, which means nothing there.
+ */
+export function detectPlatform(): DevicePlatform {
+  if (typeof window === 'undefined') return { ios: false, standalone: false };
+  const ua = navigator.userAgent;
+  // iPadOS reports a Mac user agent; the touch points give it away.
+  const ios = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  return { ios, standalone: isStandalone() };
 }
 
 /** What the check-in page knew about location when the report was taken. */
