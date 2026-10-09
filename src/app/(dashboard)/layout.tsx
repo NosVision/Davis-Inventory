@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { isDesktopRole } from '@/lib/auth/permissions';
 import type { UserRole } from '@/types/roles';
 import type { Store, UserPermission } from '@/types/database';
@@ -19,7 +19,7 @@ export default async function DashboardLayout({
   // ดึงข้อมูลผู้ใช้จาก Supabase Auth
   const {
     data: { user: authUser },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
 
   if (!authUser) {
     redirect('/login');

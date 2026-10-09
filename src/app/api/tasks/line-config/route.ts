@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server';
 import { TASK_BOT_TOKEN_KEY, TASK_BOT_SECRET_KEY } from '@/lib/line/tasks-bot';
 
 // Central task-bot credentials (owner only). The raw token/secret are NEVER returned to the client
@@ -7,7 +7,7 @@ import { TASK_BOT_TOKEN_KEY, TASK_BOT_SECRET_KEY } from '@/lib/line/tasks-bot';
 
 async function requireOwner() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await getSessionUser(supabase);
   if (!user) return { ok: false as const, status: 401, error: 'Unauthorized' };
   const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
   if (profile?.role !== 'owner') return { ok: false as const, status: 403, error: 'เฉพาะเจ้าของร้านเท่านั้น' };

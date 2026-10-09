@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { ROLE_HOME_ROUTES } from '@/types/roles';
 import type { UserRole } from '@/types/roles';
 
@@ -7,7 +7,7 @@ export default async function RootPage() {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
 
   if (!user) redirect('/login');
 

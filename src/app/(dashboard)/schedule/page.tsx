@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server';
 import ScheduleWorkspace from '@/app/(dashboard)/hr/schedule/page';
 
 // The scheduling workspace. Lives OUTSIDE /hr (which is HR-only) so people who schedule but are
@@ -13,7 +13,7 @@ export default async function SchedulePage() {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) redirect('/login');
 
   const [{ data: profile }, { data: perms }] = await Promise.all([

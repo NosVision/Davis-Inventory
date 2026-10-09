@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server';
 import { DEFAULT_WARNING_THRESHOLD } from '@/lib/stock/penalty-engine';
 
 // GET /api/stock/penalties/summary?store_id=…&month=YYYY-MM
@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const service = createServiceClient();

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server';
 
 // PUT /api/stock/penalties/settings  { auto_hr: boolean }
 // Toggle the group-wide "Auto send-to-HR" mode for stock SOP (owner ask 2026-07-09): in Auto mode,
@@ -13,7 +13,7 @@ async function requireStockSopManager(): Promise<
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return { ok: false, res: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
 
   const service = createServiceClient();

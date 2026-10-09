@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server';
 
 // GET /api/hr/ess/identity/options?q= — UNCLAIMED real names the employee can pick as "me".
 // Names + venue hint only (the staging rows carry salary seed data — those columns never leave
@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const q = (request.nextUrl.searchParams.get('q') ?? '').trim();

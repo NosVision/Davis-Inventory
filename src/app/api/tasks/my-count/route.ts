@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server';
 import { getClaimableTaskIds } from '@/lib/tasks/resolve-target';
 
 // GET /api/tasks/my-count — จำนวนงานที่ต้องการความสนใจจากผู้ใช้คนนี้ (ขับ badge บน sidebar)
@@ -8,7 +8,7 @@ export async function GET() {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const svc = createServiceClient();

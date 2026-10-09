@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server';
 import { notifyStoreStaff } from '@/lib/notifications/service';
 import { notifyUserWithLine } from '@/lib/repairs/notify';
 import type { RepairRequest, RepairStatus } from '@/types/database';
@@ -39,7 +39,7 @@ export async function PATCH(
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }

@@ -56,8 +56,11 @@ export default async function RootLayout({
   const locale = await getLocale();
   const messages = await getMessages();
 
+  // translate="no": Chrome's auto-translate swaps React's text nodes for its own, so labels stop
+  // updating (a captured selfie still read "Turn on the camera") and some pages crash with a
+  // client-side exception (2026-10-09). The app has its own language switch.
   return (
-    <html lang={locale} suppressHydrationWarning>
+    <html lang={locale} translate="no" suppressHydrationWarning>
       <head>
         {/* ป้องกันจอขาว flash ก่อน React hydrate โดยอ่าน theme จาก localStorage ทันที */}
         <script

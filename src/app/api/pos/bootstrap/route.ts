@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { isCrossVenueRole } from '@/types/roles';
 
 // GET /api/pos/bootstrap?storeId= — โหลดข้อมูลหน้าจอ POS (สาขา/โซน/โต๊ะ/เมนู/บิลที่เปิดอยู่)
@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const storeId = request.nextUrl.searchParams.get('storeId');

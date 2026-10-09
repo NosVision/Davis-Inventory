@@ -9,14 +9,32 @@ import {
   copyText,
   type CameraFailureKind,
   type CheckinDebugInput,
+  type DevicePlatform,
 } from '@/lib/hr/checkin-diagnostics';
 
 type Tx = ReturnType<typeof useEssText>;
 
+/** The only way to undo a refused permission in an iPhone home-screen app. */
+function iosReinstallSteps(tx: Tx): string {
+  return tx(
+    'ลบไอคอน DavisManage ออกจากหน้าจอ → เปิดเว็บใน Safari → ปุ่มแชร์ → "เพิ่มไปยังหน้าจอโฮม" → เปิดจากไอคอนใหม่แล้วกด "อนุญาต"',
+    'Remove the DavisManage icon from the home screen → open the site in Safari → Share → "Add to Home Screen" → open the new icon and tap "Allow".'
+  );
+}
+
 /** What the employee can do about it — shown under the "เปิดกล้องไม่สำเร็จ" toast. */
-export function cameraFailureHint(kind: CameraFailureKind, tx: Tx): string {
+export function cameraFailureHint(kind: CameraFailureKind, tx: Tx, platform: DevicePlatform): string {
   switch (kind) {
     case 'denied':
+      if (platform.ios && platform.standalone) {
+        return `${tx('แอปบนหน้าจอ iPhone ไม่ได้รับสิทธิ์กล้อง: ', 'The iPhone home-screen app has no camera permission: ')}${iosReinstallSteps(tx)}`;
+      }
+      if (platform.ios) {
+        return tx(
+          'ยังไม่ได้อนุญาตกล้อง: ตั้งค่า → Safari → กล้อง → "ถาม" หรือ "อนุญาต" แล้วโหลดหน้านี้ใหม่',
+          'Camera not allowed: Settings → Safari → Camera → "Ask" or "Allow", then reload this page.'
+        );
+      }
       return tx(
         'ยังไม่ได้อนุญาตกล้อง: กดรูปแม่กุญแจข้างช่อง URL → สิทธิ์ → กล้อง → อนุญาต และตรวจในตั้งค่ามือถือ → แอป → Chrome → สิทธิ์ → กล้อง',
         'Camera not allowed: tap the lock icon next to the URL → Permissions → Camera → Allow, and check phone Settings → Apps → Chrome → Permissions → Camera.'
@@ -52,6 +70,44 @@ export function cameraFailureHint(kind: CameraFailureKind, tx: Tx): string {
         'Tap "Report info" below and send the copied text to HR.'
       );
   }
+}
+
+/** Location refused by the phone (GeolocationPositionError PERMISSION_DENIED). */
+export function locationDeniedHint(tx: Tx, platform: DevicePlatform): string {
+  const iosLocation = tx(
+    'ตั้งค่า → ความเป็นส่วนตัวและความปลอดภัย → บริการหาตำแหน่ง → เว็บไซต์ Safari → "ขณะใช้งาน" และเปิด "ตำแหน่งที่แม่นยำ"',
+    'Settings → Privacy & Security → Location Services → Safari Websites → "While Using", with "Precise Location" on.'
+  );
+  if (platform.ios && platform.standalone) {
+    return `${tx('ยังไม่ได้อนุญาตตำแหน่ง: ', 'Location not allowed: ')}${iosLocation} ${tx('ถ้ายังไม่ได้: ', 'If it still fails: ')}${iosReinstallSteps(tx)}`;
+  }
+  if (platform.ios) return `${tx('ยังไม่ได้อนุญาตตำแหน่ง: ', 'Location not allowed: ')}${iosLocation}`;
+  return tx(
+    'ยังไม่ได้อนุญาตตำแหน่ง: ตั้งค่ามือถือ → แอป → Chrome → สิทธิ์ → ตำแหน่ง → "อนุญาตขณะใช้แอป" และเปิด "ใช้ตำแหน่งที่แน่นอน"',
+    'Location not allowed: phone Settings → Apps → Chrome → Permissions → Location → "Allow while using", with "Use precise location" on.'
+  );
+}
+
+/**
+ * A fix this coarse is the phone's "approximate location" (Android rounds it to ~2 km, iOS to a few
+ * km) — moving to a window will not help; only granting precise location does (2026-10-09: a
+ * staff member at 24 BLVD read ±2000 m every time and was shown 871 m, then 1,361 m away).
+ */
+export function approximateLocationHint(tx: Tx, platform: DevicePlatform, accuracyM: number): string {
+  const lead = tx(
+    `มือถือส่งแค่ตำแหน่งโดยประมาณ (±${accuracyM} ม.) ระยะที่แสดงจึงผิด — `,
+    `The phone is only sharing an approximate location (±${accuracyM} m), so the distance shown is wrong — `
+  );
+  if (platform.ios) {
+    return lead + tx(
+      'ตั้งค่า → ความเป็นส่วนตัวและความปลอดภัย → บริการหาตำแหน่ง → เว็บไซต์ Safari → เปิด "ตำแหน่งที่แม่นยำ" แล้วกดตรวจตำแหน่งใหม่',
+      'Settings → Privacy & Security → Location Services → Safari Websites → turn on "Precise Location", then refresh your location.'
+    );
+  }
+  return lead + tx(
+    'ตั้งค่ามือถือ → แอป → Chrome → สิทธิ์ → ตำแหน่ง → เปิด "ใช้ตำแหน่งที่แน่นอน" แล้วกดตรวจตำแหน่งใหม่',
+    'phone Settings → Apps → Chrome → Permissions → Location → turn on "Use precise location", then refresh your location.'
+  );
 }
 
 interface CheckinDebugModalProps {

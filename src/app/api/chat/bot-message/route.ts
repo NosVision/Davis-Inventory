@@ -14,12 +14,12 @@
  */
 
 import { NextResponse } from 'next/server';
-import { createServiceClient, createClient as createServerClient } from '@/lib/supabase/server';
+import { createServiceClient, createClient as createServerClient, getSessionUser } from '@/lib/supabase/server';
 import { getChatBotSettings, isBotTypeEnabled, getTimeoutForType, getPriorityForType } from '@/lib/chat/bot-settings';
 import type { ChatMessage, ChatBroadcastPayload, UnreadBadgePayload } from '@/types/chat';
 import { createClient as createRealtimeClient } from '@supabase/supabase-js';
 import { broadcastToChannel, broadcastToMany } from '@/lib/supabase/broadcast';
-import { sendPushToUser, type PushPayload } from '@/lib/notifications/push';
+import { sendPushToUsers, type PushPayload } from '@/lib/notifications/push';
 
 export async function POST(request: Request) {
   // Auth check: CRON_SECRET (server-to-server) OR user session (client components)
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
   if (!isCronAuth) {
     // Fallback: check user session
     const userClient = await createServerClient();
-    const { data: { user } } = await userClient.auth.getUser();
+    const { data: { user } } = await getSessionUser(userClient);
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -156,9 +156,8 @@ export async function POST(request: Request) {
       };
 
       // Fire-and-forget — ไม่ต้องรอผล push
-      Promise.allSettled(
-        members.map((m) => sendPushToUser(m.user_id, pushPayload))
-      ).catch((err) => console.error('[Bot Push] error:', err));
+      sendPushToUsers(members.map((m) => m.user_id), pushPayload)
+        .catch((err) => console.error('[Bot Push] error:', err));
     }
 
     // 7. Update pinned summary ถ้าเป็น action_card

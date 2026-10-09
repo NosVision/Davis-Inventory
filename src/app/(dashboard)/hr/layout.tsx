@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { HrBackButton } from './_components/hr-back-button';
 
 /**
@@ -12,7 +12,7 @@ export default async function HrLayout({ children }: { children: React.ReactNode
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) redirect('/login');
 
   const [{ data: profile }, { data: perms }] = await Promise.all([

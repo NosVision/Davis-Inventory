@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server';
 import { issueSopWarning } from '@/lib/stock/sop-warning';
 
 // POST /api/stock/penalties/issue-warning  { store_id, month: 'YYYY-MM' }
@@ -14,7 +14,7 @@ async function requireStockSopManager(): Promise<
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return { ok: false, res: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
 
   const service = createServiceClient();

@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getSessionUser } from '@/lib/supabase/server';
 
 // ตำแหน่งฝั่งจัดการ/HQ ที่แก้ catalog/PO ได้
 export const INV_MGMT_ROLES = ['owner', 'manager', 'accountant'];
@@ -8,7 +8,7 @@ export async function getInvContext() {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return { supabase, user: null, role: null as string | null };
   const { data: p } = await supabase.from('profiles').select('role').eq('id', user.id).single();
   return { supabase, user, role: ((p as { role?: string } | null)?.role ?? null) as string | null };

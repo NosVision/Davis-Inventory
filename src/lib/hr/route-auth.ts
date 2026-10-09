@@ -1,4 +1,4 @@
-import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server';
 import { canManageHr } from '@/lib/hr/access';
 
 export type HrAuthResult =
@@ -26,7 +26,7 @@ export async function requireHrManager(): Promise<HrAuthResult> {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return { ok: false, error: 'Unauthorized', status: 401 };
 
   const [profileRes, permsRes] = await Promise.all([
@@ -72,7 +72,7 @@ export async function requireStoreManager(
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return { ok: false, error: 'Unauthorized', status: 401 };
 
   const [profileRes, permsRes] = await Promise.all([
@@ -153,7 +153,7 @@ export async function requireScheduler(): Promise<HrAuthResult> {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return { ok: false, error: 'Unauthorized', status: 401 };
 
   const [profileRes, permsRes] = await Promise.all([
@@ -224,7 +224,7 @@ async function requireHrManagerForEmployee(
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return { ok: false, error: 'Unauthorized', status: 401 };
 
   const [profileRes, permsRes] = await Promise.all([
@@ -282,7 +282,7 @@ export async function resolveHrScope(): Promise<HrScopeResult> {
   const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getSessionUser(supabase);
   if (!user) return { ok: false, error: 'Unauthorized', status: 401 };
 
   const [profileRes, permsRes] = await Promise.all([
