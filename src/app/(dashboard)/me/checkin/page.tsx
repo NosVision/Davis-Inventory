@@ -274,7 +274,7 @@ export default function CheckinPage() {
         const json = await res.json().catch(() => ({}));
         if (!res.ok || !json.location_gate) throw new Error(`location preflight failed (HTTP ${res.status})`);
         const gate = json.location_gate as AttendanceLocationGate;
-        // Only verdict changes are logged — the re-check every ~20 s would otherwise push the
+        // Only verdict changes are logged — the periodic re-check would otherwise push the
         // camera and submit events out of the trail.
         const gateKey = `${gate.status}/${gate.code ?? '-'}/${gate.store_id ?? '-'}`;
         if (gateKey !== lastGateLogRef.current) {
@@ -290,6 +290,9 @@ export default function CheckinPage() {
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') return;
         logDebug(error instanceof Error ? error.message : 'location preflight failed');
+        // Forget the fix this answer was for, so the next GPS fix asks again at once instead of
+        // waiting out the re-check window (2 min) with the controls locked.
+        verifiedFixRef.current = null;
         setLocationGate(null);
         setLocationGateStatus('error');
       }

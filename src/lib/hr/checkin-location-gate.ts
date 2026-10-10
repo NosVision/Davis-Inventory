@@ -29,8 +29,13 @@ export interface GateFix {
 
 /** How far the phone must move before the branch policy is asked again. */
 export const GATE_RECHECK_DISTANCE_M = 20;
-/** How old a verified fix may get before it is re-verified even without moving. */
-export const GATE_RECHECK_AGE_MS = 20_000;
+/**
+ * How old a verified fix may get before it is re-verified even without moving. Every re-check is a
+ * server round trip (user_stores + hr_locations + today's punches). At 20 s, the phones sitting on
+ * this page through a shift change were ~2,000 of those in 20 minutes (2026-10-10); the branch
+ * policy does not change minute to minute, and a MOVE still re-checks at once via the 20 m rule.
+ */
+export const GATE_RECHECK_AGE_MS = 120_000;
 
 /**
  * Does a new GPS fix justify asking the server again?

@@ -123,8 +123,8 @@ export default async function DashboardLayout({
       useDesktop={useDesktop}
     >
       {profile.must_change_password && <PasswordChangeBanner />}
-      <IdentityClaimModal role={profile.role as string} />
-      <PolicyGate role={profile.role as string} />
+      <IdentityClaimModal role={profile.role as string} userId={authUser.id} />
+      <PolicyGate role={profile.role as string} userId={authUser.id} />
       {children}
     </DashboardLayoutClient>
   );
