@@ -135,6 +135,8 @@ const DEPOSIT_TAB_KEYS: Record<string, string> = {
 
 const PAGE_SIZE = 50;
 const ACTIVE_STATUSES = ['pending_staff', 'in_store', 'pending_confirm', 'pending_withdrawal', 'transfer_pending', 'expired'];
+/** A bar confirming ten deposits at close is one refetch, not ten. */
+const REALTIME_REFETCH_DEBOUNCE_MS = 3_000;
 
 export default function DepositPage() {
   const t = useTranslations('deposit');
@@ -278,50 +280,37 @@ export default function DepositPage() {
     loadWorkingHours();
   }, [currentStoreId]);
 
-  // Load stats counts separately (lightweight queries)
-  // When date filter is enabled, counts reflect only the filtered date range
+  // Tab counts in one RPC (deposit_tab_counts, migration 20261010120000; RLS applies as it did to
+  // the eight separate HEAD count requests this replaces — those were 612 requests in the 20
+  // minutes of the 2026-10-10 04:00 shift change, re-run on every change to a deposit).
+  // When the date filter is enabled, counts reflect only the filtered date range.
   const loadStats = useCallback(async (supabase: ReturnType<typeof createClient>, storeId: string, filterEnabled?: boolean, fromDate?: string, toDate?: string) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const withDateFilter = (query: any) => {
-      if (filterEnabled && fromDate && toDate) {
-        const from = new Date(fromDate);
-        from.setHours(0, 0, 0, 0);
-        const to = new Date(toDate);
-        to.setHours(23, 59, 59, 999);
-        return query.gte('created_at', from.toISOString()).lte('created_at', to.toISOString());
-      }
-      return query;
-    };
+    let p_from: string | null = null;
+    let p_to: string | null = null;
+    if (filterEnabled && fromDate && toDate) {
+      const from = new Date(fromDate);
+      from.setHours(0, 0, 0, 0);
+      const to = new Date(toDate);
+      to.setHours(23, 59, 59, 999);
+      p_from = from.toISOString();
+      p_to = to.toISOString();
+    }
 
-    const [
-      { count: activeCount },
-      { count: pendingCount },
-      { count: newRequestCount },
-      { count: expiredCount },
-      { count: cancelledCount },
-      { count: vipCount },
-      { count: transferPendingCount },
-      { count: pendingWithdrawalCount },
-    ] = await Promise.all([
-      withDateFilter(supabase.from('deposits').select('*', { count: 'exact', head: true }).eq('store_id', storeId).eq('status', 'in_store')),
-      withDateFilter(supabase.from('deposits').select('*', { count: 'exact', head: true }).eq('store_id', storeId).eq('status', 'pending_confirm')),
-      withDateFilter(supabase.from('deposits').select('*', { count: 'exact', head: true }).eq('store_id', storeId).eq('status', 'pending_staff')),
-      withDateFilter(supabase.from('deposits').select('*', { count: 'exact', head: true }).eq('store_id', storeId).eq('status', 'expired')),
-      withDateFilter(supabase.from('deposits').select('*', { count: 'exact', head: true }).eq('store_id', storeId).eq('status', 'cancelled')),
-      withDateFilter(supabase.from('deposits').select('*', { count: 'exact', head: true }).eq('store_id', storeId).eq('is_vip', true)),
-      withDateFilter(supabase.from('deposits').select('*', { count: 'exact', head: true }).eq('store_id', storeId).eq('status', 'transfer_pending')),
-      withDateFilter(supabase.from('withdrawals').select('*', { count: 'exact', head: true }).eq('store_id', storeId).in('status', ['pending', 'approved'])),
-    ]);
-
+    const { data, error } = await supabase.rpc('deposit_tab_counts', { p_store_id: storeId, p_from, p_to });
+    if (error || !data) {
+      if (error) console.error('[deposit] tab counts failed:', error.message);
+      return;
+    }
+    const c = data as Record<string, number>;
     setStats({
-      activeCount: activeCount || 0,
-      pendingCount: pendingCount || 0,
-      newRequestCount: newRequestCount || 0,
-      expiredCount: expiredCount || 0,
-      cancelledCount: cancelledCount || 0,
-      vipCount: vipCount || 0,
-      transferPendingCount: transferPendingCount || 0,
-      pendingWithdrawalCount: pendingWithdrawalCount || 0,
+      activeCount: c.in_store ?? 0,
+      pendingCount: c.pending_confirm ?? 0,
+      newRequestCount: c.pending_staff ?? 0,
+      expiredCount: c.expired ?? 0,
+      cancelledCount: c.cancelled ?? 0,
+      vipCount: c.vip ?? 0,
+      transferPendingCount: c.transfer_pending ?? 0,
+      pendingWithdrawalCount: c.pending_withdrawal ?? 0,
     });
   }, []);
 
@@ -528,6 +517,7 @@ export default function DepositPage() {
   useEffect(() => {
     if (!currentStoreId) return;
     const supabase = createClient();
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const channel = supabase
       .channel(`deposit-page-${currentStoreId}`)
       .on(
@@ -539,11 +529,13 @@ export default function DepositPage() {
           filter: `store_id=eq.${currentStoreId}`,
         },
         () => {
-          loadDeposits();
+          if (timer) clearTimeout(timer);
+          timer = setTimeout(() => loadDeposits(), REALTIME_REFETCH_DEBOUNCE_MS);
         },
       )
       .subscribe();
     return () => {
+      if (timer) clearTimeout(timer);
       supabase.removeChannel(channel);
     };
   }, [currentStoreId, loadDeposits]);

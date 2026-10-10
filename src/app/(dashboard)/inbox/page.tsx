@@ -435,7 +435,7 @@ export default function InboxPage() {
         if (document.hidden) return;
         fetchPendingRef.current();
         fetchSummaryRef.current();
-      }, 600);
+      }, 3_000);
     };
 
     const channel = supabase

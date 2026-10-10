@@ -284,6 +284,7 @@ export default function BarApprovalPage() {
   useRealtime({
     table: 'deposits',
     filter: `store_id=eq.${currentStoreId}`,
+    debounceMs: 2_000,
     onInsert: () => loadAll(),
     onUpdate: () => loadAll(),
     enabled: !!currentStoreId,
@@ -292,6 +293,7 @@ export default function BarApprovalPage() {
   useRealtime({
     table: 'withdrawals',
     filter: `store_id=eq.${currentStoreId}`,
+    debounceMs: 2_000,
     onInsert: () => loadAll(),
     onUpdate: () => loadAll(),
     enabled: !!currentStoreId,

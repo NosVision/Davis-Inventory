@@ -19,12 +19,16 @@ const REALTIME_REFETCH_DEBOUNCE_MS = 3_000;
  * Privileged-only (owner/accountant); other roles always get 0 so the
  * sidebar badge stays hidden for them.
  *
+ * The five counts are one RPC (inbox_pending_counts, migration 20261010120000), SECURITY
+ * INVOKER so the same row-level security applies as to the five separate count queries it
+ * replaced.
+ *
  * Update strategy:
- *   1. Supabase Realtime: subscribe to changes on the five source tables
+ *   1. Supabase Realtime: subscribe to changes on the four source tables
  *      and refetch (debounced 3s) when an event arrives. Every write to these
- *      tables reaches every owner/accountant tab and costs five count
- *      queries, so at the 04:00 shift-end burst a short debounce turned into
- *      a refetch storm; 3s folds a burst into one refetch.
+ *      tables reaches every owner/accountant tab, so at the 04:00 shift-end
+ *      burst a short debounce turned into a refetch storm; 3s folds a burst
+ *      into one refetch.
  *   2. Polling fallback: every `pollMs` (default 60s) AND on tab focus,
  *      in case the realtime channel hiccups or a deploy invalidates the
  *      socket. Poll is paused while the tab is hidden so we don't burn
@@ -42,20 +46,16 @@ export function useInboxCount(pollMs = 60_000): number {
       return;
     }
     const supabase = createClient();
-    const [explainRes, barRes, custReqRes, borrowRes, transferRes] = await Promise.all([
-      supabase.from('comparisons').select('id', { count: 'exact', head: true }).eq('status', 'explained'),
-      supabase.from('deposits').select('id', { count: 'exact', head: true }).eq('status', 'pending_confirm'),
-      supabase.from('deposits').select('id', { count: 'exact', head: true }).eq('status', 'pending_staff'),
-      supabase.from('borrows').select('id', { count: 'exact', head: true }).eq('status', 'pending_approval'),
-      supabase.from('transfers').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-    ]);
-    const total =
-      (explainRes.count || 0)
-      + (barRes.count || 0)
-      + (custReqRes.count || 0)
-      + (borrowRes.count || 0)
-      + (transferRes.count || 0);
-    setCount(total);
+    const { data, error } = await supabase.rpc('inbox_pending_counts');
+    if (error || !data) return; // keep the last badge rather than flashing 0 on a blip
+    const c = data as Record<string, number>;
+    setCount(
+      (c.explained ?? 0)
+      + (c.pending_confirm ?? 0)
+      + (c.pending_staff ?? 0)
+      + (c.pending_approval ?? 0)
+      + (c.transfer_pending ?? 0),
+    );
   }, [isPrivileged]);
 
   // Keep a ref to the latest fetcher so the realtime + interval callbacks

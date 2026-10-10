@@ -5,6 +5,7 @@ import { useLocale } from 'next-intl';
 import { UserCheck, Search, LogOut } from 'lucide-react';
 import { Modal, ModalFooter, Button, toast } from '@/components/ui';
 import { createClient } from '@/lib/supabase/client';
+import { getIdentityStatus } from '@/lib/hr/ess-gate-cache';
 
 // Identity-claim GATE (owner ask 2026-07-20): an app user who is NOT yet linked to an
 // hr_employees record AND has no claim awaiting HR must pick their REAL full name from the
@@ -23,12 +24,13 @@ interface Option {
   requires_bank_verify?: boolean;
 }
 
-// NOTE: there is deliberately no localStorage short-circuit here. A 'done' flag was cached per
-// BROWSER, not per user — so signing in as an unverified account on a device where any verified
-// account had signed in before skipped the gate entirely. Server state is the only source of
-// truth; the check is two indexed lookups and runs once per full page load.
+// NOTE: there is deliberately no localStorage 'done' flag here. One was cached per BROWSER, not
+// per user — so signing in as an unverified account on a device where any verified account had
+// signed in before skipped the gate entirely. What getIdentityStatus remembers instead is only a
+// POSITIVE `linked` answer, keyed by user id, in this tab's sessionStorage, for a few hours — an
+// unlinked account is asked the server on every load, as before.
 
-export function IdentityClaimModal({ role }: { role: string }) {
+export function IdentityClaimModal({ role, userId }: { role: string; userId: string }) {
   const isTh = useLocale() === 'th';
   const L = isTh
     ? { title: 'กรุณาระบุชื่อจริงในระบบของคุณ', body: 'HR กำลังเชื่อมบัญชีผู้ใช้กับประวัติพนักงาน กรุณาเลือกชื่อ-นามสกุลจริงของคุณเพื่อยืนยันตัวตน', confirmNow: 'ยืนยันทันที', signOut: 'ออกจากระบบ', required: 'จำเป็นต้องยืนยันก่อนใช้งานระบบ — ข้ามขั้นตอนนี้ไม่ได้', noNameHelp: 'ไม่พบชื่อของคุณ? แจ้ง HR เพื่อเพิ่มชื่อเข้าระบบก่อน', searchPh: 'พิมพ์ชื่อจริงของคุณ…', pick: 'เลือกชื่อของคุณ', submit: 'ยืนยัน', sent: 'ส่งให้ HR ตรวจสอบแล้ว', sentBody: 'เมื่อ HR อนุมัติ บัญชีของคุณจะถูกผูกกับประวัติพนักงานอัตโนมัติ', failed: 'ส่งไม่สำเร็จ ลองใหม่อีกครั้ง', taken: 'ชื่อนี้ถูกยืนยันไปแล้ว — เลือกใหม่', noResult: 'ไม่พบชื่อ ลองพิมพ์เพิ่ม หรือติดต่อ HR', bankLabel: 'ยืนยันเลขบัญชีเงินเดือนของคุณ', bankHintOf: (b: string | null, l4: string) => `บัญชี${b ? ` ${b}` : ''}ที่ลงท้าย •••• ${l4}`, bankPh: 'เลขบัญชีเต็ม (ตัวเลขล้วน)', bankMismatch: 'เลขบัญชีไม่ตรงกับข้อมูลในระบบ — ตรวจสอบสมุดบัญชีของคุณอีกครั้ง' }
@@ -56,14 +58,12 @@ export function IdentityClaimModal({ role }: { role: string }) {
     if (!eligible) return;
     (async () => {
       try {
-        const res = await fetch('/api/hr/ess/identity', { cache: 'no-store' });
-        if (!res.ok) return;
-        const d = (await res.json())?.data;
-        if (d?.linked || d?.claim) return;
+        const d = await getIdentityStatus(userId);
+        if (!d || d.linked || d.claim) return;
         setOpen(true);
       } catch { /* a failed status check must not lock the app out — stay closed, retry next load */ }
     })();
-  }, [eligible]);
+  }, [eligible, userId]);
 
   // Manual entry point (e.g. the "ผูกชื่อ" button on /me/profile) — re-check the API so an
   // already-linked user never gets a dead prompt.
