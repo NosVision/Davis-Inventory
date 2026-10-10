@@ -32,6 +32,9 @@ interface UseRealtimeOptions<T> {
 
 type EventType = 'INSERT' | 'UPDATE' | 'DELETE';
 
+/** A burst that never pauses still gets a callback after this many debounce windows. */
+const DEBOUNCE_MAX_WAIT_FACTOR = 3;
+
 export function useRealtime<T extends Record<string, unknown> = Record<string, unknown>>({
   table,
   filter,
@@ -54,9 +57,10 @@ export function useRealtime<T extends Record<string, unknown> = Record<string, u
     if (!enabled) return;
 
     const supabase = createClient();
-    const timers: Partial<Record<EventType, ReturnType<typeof setTimeout>>> = {};
+    const pending: Partial<Record<EventType, { timer: ReturnType<typeof setTimeout>; since: number }>> = {};
     const dispatch = (type: EventType, row: T) => {
       const run = () => {
+        delete pending[type];
         const h = handlers.current;
         if (type === 'INSERT') h.onInsert?.(row);
         else if (type === 'UPDATE') h.onUpdate?.(row);
@@ -66,9 +70,15 @@ export function useRealtime<T extends Record<string, unknown> = Record<string, u
         run();
         return;
       }
-      const pending = timers[type];
-      if (pending) clearTimeout(pending);
-      timers[type] = setTimeout(run, debounceMs);
+      const now = Date.now();
+      const prev = pending[type];
+      if (prev) clearTimeout(prev.timer);
+      const since = prev?.since ?? now;
+      if (now - since >= debounceMs * DEBOUNCE_MAX_WAIT_FACTOR) {
+        run();
+        return;
+      }
+      pending[type] = { timer: setTimeout(run, debounceMs), since };
     };
 
     const channel = supabase
@@ -90,7 +100,7 @@ export function useRealtime<T extends Record<string, unknown> = Record<string, u
       .subscribe();
 
     return () => {
-      for (const t of Object.values(timers)) if (t) clearTimeout(t);
+      for (const p of Object.values(pending)) if (p) clearTimeout(p.timer);
       supabase.removeChannel(channel);
     };
   }, [table, filter, enabled, debounceMs]);

@@ -135,8 +135,10 @@ const DEPOSIT_TAB_KEYS: Record<string, string> = {
 
 const PAGE_SIZE = 50;
 const ACTIVE_STATUSES = ['pending_staff', 'in_store', 'pending_confirm', 'pending_withdrawal', 'transfer_pending', 'expired'];
-/** A bar confirming ten deposits at close is one refetch, not ten. */
+/** A bar confirming ten deposits at close is one refetch, not ten… */
 const REALTIME_REFETCH_DEBOUNCE_MS = 3_000;
+/** …but a burst that never pauses still refreshes this often. */
+const REALTIME_REFETCH_MAX_WAIT_MS = 10_000;
 
 export default function DepositPage() {
   const t = useTranslations('deposit');
@@ -518,6 +520,12 @@ export default function DepositPage() {
     if (!currentStoreId) return;
     const supabase = createClient();
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let burstSince: number | null = null;
+    const refetch = () => {
+      timer = null;
+      burstSince = null;
+      loadDeposits();
+    };
     const channel = supabase
       .channel(`deposit-page-${currentStoreId}`)
       .on(
@@ -529,8 +537,14 @@ export default function DepositPage() {
           filter: `store_id=eq.${currentStoreId}`,
         },
         () => {
+          const now = Date.now();
           if (timer) clearTimeout(timer);
-          timer = setTimeout(() => loadDeposits(), REALTIME_REFETCH_DEBOUNCE_MS);
+          burstSince ??= now;
+          if (now - burstSince >= REALTIME_REFETCH_MAX_WAIT_MS) {
+            refetch();
+            return;
+          }
+          timer = setTimeout(refetch, REALTIME_REFETCH_DEBOUNCE_MS);
         },
       )
       .subscribe();

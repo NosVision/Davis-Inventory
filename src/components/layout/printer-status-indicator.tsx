@@ -77,39 +77,49 @@ export function PrinterStatusIndicator() {
   // sets one up on the settings page. The heartbeat is polled separately, and only when there is a
   // printer to show: this indicator sits on every page of every tab, so the old pair of reads every
   // 45 s was ~800 requests in the 20 minutes of the 2026-10-10 04:00 peak.
-  const hasPrinterRef = useRef(false);
+  //
+  // `null` = not known yet for this venue, including after a failed read — the next poll asks again,
+  // so one blip at the peak cannot hide the indicator for the whole session.
+  const hasPrinterRef = useRef<boolean | null>(null);
+  // The venue the page is on now; an answer that arrives after a switch is dropped.
+  const storeRef = useRef<string | null>(null);
+
   const refreshStatus = useCallback(async () => {
-    if (!currentStoreId || !hasPrinterRef.current) return;
+    const storeId = currentStoreId;
+    if (!storeId) return;
     const supabase = createClient();
+    if (hasPrinterRef.current === null) {
+      const { data, error } = await supabase
+        .from('store_settings')
+        .select('print_server_account_id')
+        .eq('store_id', storeId)
+        .maybeSingle();
+      if (storeRef.current !== storeId || error) return;
+      const has = !!data?.print_server_account_id;
+      hasPrinterRef.current = has;
+      setHasPrinter(has);
+      if (!has) {
+        setStatus(null);
+        return;
+      }
+    }
+    if (!hasPrinterRef.current) return;
     const { data: stat } = await supabase
       .from('print_server_status')
       .select('*')
-      .eq('store_id', currentStoreId)
+      .eq('store_id', storeId)
       .maybeSingle();
+    if (storeRef.current !== storeId) return;
     setStatus((stat as PrinterStatus | null) || null);
   }, [currentStoreId]);
 
+  // New venue: forget what we knew and read again (deferred a tick so the effect itself does not
+  // set state synchronously).
   useEffect(() => {
-    if (!currentStoreId) return;
-    let cancelled = false;
-    hasPrinterRef.current = false;
-    const supabase = createClient();
-    supabase
-      .from('store_settings')
-      .select('print_server_account_id')
-      .eq('store_id', currentStoreId)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (cancelled) return;
-        const has = !!data?.print_server_account_id;
-        hasPrinterRef.current = has;
-        setHasPrinter(has);
-        if (has) refreshStatus();
-        else setStatus(null);
-      });
-    return () => {
-      cancelled = true;
-    };
+    storeRef.current = currentStoreId;
+    hasPrinterRef.current = null;
+    const t = setTimeout(refreshStatus, 0);
+    return () => clearTimeout(t);
   }, [currentStoreId, refreshStatus]);
 
   const loadJobs = useCallback(async () => {
@@ -126,8 +136,8 @@ export function PrinterStatusIndicator() {
     setLoadingJobs(false);
   }, [currentStoreId]);
 
-  // Background refresh of the heartbeat while the tab is visible. The first read happens when the
-  // venue's settings arrive above.
+  // Background refresh of the heartbeat while the tab is visible (and a retry of the venue
+  // settings when that read failed).
   useEffect(() => {
     const id = setInterval(() => {
       if (!document.hidden) refreshStatus();
