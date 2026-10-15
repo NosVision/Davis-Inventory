@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient as createSbClient } from '@supabase/supabase-js';
 import { createServiceClient } from '@/lib/supabase/server';
 import { applyPendingLeaveBalances } from '@/lib/hr/leave-balance-link';
-import { findDuplicateEmployees } from '@/lib/hr/employee-duplicates';
+import { findDuplicateEmployees, normalizeEmployeeName } from '@/lib/hr/employee-duplicates';
 import { notifyHrManagers } from '@/lib/hr/notify';
 
 // Verify an existing login (username + password) WITHOUT persisting a session — used when a
@@ -104,6 +104,7 @@ type Identity = {
   status: string;
   company_id: string | null;
   full_name_th: string | null;
+  full_name_en: string | null;
   bank_name: string | null;
   bank_account_no: string | null;
 };
@@ -111,7 +112,7 @@ type Identity = {
 async function loadIdentity(service: ReturnType<typeof createServiceClient>, id: string): Promise<Identity | null> {
   const { data } = await service
     .from('hr_pending_identities')
-    .select('status, company_id, full_name_th, bank_name, bank_account_no')
+    .select('status, company_id, full_name_th, full_name_en, bank_name, bank_account_no')
     .eq('id', id)
     .maybeSingle();
   if (!data) return null;
@@ -119,6 +120,7 @@ async function loadIdentity(service: ReturnType<typeof createServiceClient>, id:
     status: data.status as string,
     company_id: (data.company_id as string | null) ?? null,
     full_name_th: (data.full_name_th as string | null) ?? null,
+    full_name_en: (data.full_name_en as string | null) ?? null,
     bank_name: (data.bank_name as string | null) ?? null,
     bank_account_no: (data.bank_account_no as string | null) ?? null,
   };
@@ -266,10 +268,36 @@ export async function POST(request: NextRequest) {
     if (!v.ok || !v.userId) return NextResponse.json({ error: 'รหัสผ่านไม่ถูกต้อง' }, { status: 401 });
     const userId = v.userId;
 
+    // A name someone else already holds is not up for grabs: the identity CAS below would no-op,
+    // but the employee record would still be overwritten with that person's name and bank.
+    if (identity && identity.status !== 'unclaimed') {
+      return NextResponse.json({ error: 'ชื่อนี้ลงทะเบียนไปแล้ว กรุณาติดต่อ HR' }, { status: 409 });
+    }
+
+    const { data: existingEmp } = await service
+      .from('hr_employees')
+      .select('id, company_id, full_name')
+      .eq('profile_id', userId)
+      .maybeSingle();
+
+    // An account that already has an employee record can only take the imported identity carrying
+    // its own name. Myo Min Chit linked "Mr. Myo Min Oo" to his account by picking the wrong search
+    // hit (2026-09-09) — the real Myo Min Oo then could neither find nor register his name. The
+    // name check is the only thing that tells two near-identical names apart; HR re-links by hand.
+    if (identity && existingEmp) {
+      const current = normalizeEmployeeName(existingEmp.full_name as string | null);
+      const candidates = [identity.full_name_th, identity.full_name_en].map(normalizeEmployeeName).filter(Boolean);
+      if (current && candidates.length && !candidates.includes(current)) {
+        return NextResponse.json(
+          { error: 'ชื่อที่เลือกไม่ตรงกับชื่อในบัญชีนี้ — ตรวจว่าเลือกชื่อตัวเองถูกคน ถ้าถูกแล้วให้ติดต่อ HR' },
+          { status: 409 }
+        );
+      }
+    }
+
     // A company scope on the link wins; otherwise the picked company, if it is one HR still runs.
     const linkCompanyId = await activeCompanyId(service, link.company_id ?? bodyCompanyId);
 
-    const { data: existingEmp } = await service.from('hr_employees').select('id, company_id').eq('profile_id', userId).maybeSingle();
     const empFields: Record<string, unknown> = { full_name: fullName };
     if (bankAccountNo) empFields.bank_account_no = bankAccountNo;
     if (bankName) empFields.bank_name = bankName;

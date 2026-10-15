@@ -502,7 +502,16 @@ export function EmployeeSignupForm({ token }: { token: string }) {
             )}
             <div>
               <label className={label}>ชื่อ-นามสกุล</label>
-              <input className={input} value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="เช่น นายสมชาย ใจดี" />
+              {/* A picked identity's name is HR's record — the server uses it and ignores edits, so
+                  letting the field change only hid a wrong pick behind the hire's own name. */}
+              <input
+                className={`${input} ${picked ? 'cursor-not-allowed bg-gray-50 dark:bg-gray-900' : ''}`}
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                readOnly={!!picked}
+                placeholder="เช่น นายสมชาย ใจดี"
+              />
+              {picked && <p className="mt-1 text-[11px] text-gray-400">ชื่อจากข้อมูล HR — ถ้าไม่ใช่ชื่อคุณ กด &quot;เปลี่ยน&quot; แล้วเลือกใหม่</p>}
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
