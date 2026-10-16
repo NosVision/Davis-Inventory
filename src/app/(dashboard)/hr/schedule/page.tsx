@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { Loader2, Plus, Pencil, Save, Undo2, AlertTriangle } from 'lucide-react';
 import { SwapQueueLink } from '@/components/hr/swap-queue-link';
@@ -25,8 +25,10 @@ interface Employee extends PayrollScopeInfo {
   /** Real full name from the HR record — for the nickname ↔ full-name display toggle. */
   full_name?: string | null;
   username?: string | null;
-  /** Job position — company scope sorts by it; null = ยังไม่กำหนดตำแหน่ง. */
+  /** Job position — the roster can group by it; null = ยังไม่กำหนดตำแหน่ง. */
   position_name?: string | null;
+  /** hr_positions.sort_order — the venue's own order of positions (null = unassigned). */
+  position_sort?: number | null;
   work_hours_per_day: number;
   standard_days_off: number;
   /** Set only for departed staff — visible for their final month, capped by the API. */
@@ -113,6 +115,26 @@ export default function SchedulePage({
   // full name, nickname and payroll chips. Remembered per browser.
   const [gridMode, setGridMode] = useViewMode('hr-schedule-grid', 'compact');
   const compact = gridMode === 'compact';
+  // Row order (staff ask 2026-10-16): the API hands a store roster over sorted by nickname, which
+  // read as random — HR's own sheet groups people by position. Remembered per browser.
+  type SortBy = 'position' | 'name' | 'nickname';
+  const [sortBy, setSortByState] = useState<SortBy>('position');
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem('hr-schedule-sort');
+      if (v === 'position' || v === 'name' || v === 'nickname') setSortByState(v);
+    } catch {
+      /* storage unavailable — keep the default */
+    }
+  }, []);
+  const setSortBy = (v: SortBy) => {
+    setSortByState(v);
+    try {
+      localStorage.setItem('hr-schedule-sort', v);
+    } catch {
+      /* ignore */
+    }
+  };
   const [monthStatus, setMonthStatus] = useState<MonthStatus>('empty');
   // Employees with NO roster row at all this month — "nobody thought about them", which an empty
   // grid line hides (HR ask 2026-08-07).
@@ -411,6 +433,25 @@ export default function SchedulePage({
     }
     publishRoster();
   }, [employees, days, effectiveCell, publishRoster, empName, empNick]);
+
+  const sortedEmployees = useMemo(() => {
+    const byName = (a: Employee, b: Employee) => empName(a).localeCompare(empName(b), 'th');
+    const list = [...employees];
+    if (sortBy === 'name') return list.sort(byName);
+    if (sortBy === 'nickname') {
+      return list.sort((a, b) => (empNick(a) ?? empName(a)).localeCompare(empNick(b) ?? empName(b), 'th'));
+    }
+    // Position: the positions' own sort_order, then position name, "no position" last; name within.
+    return list.sort((a, b) => {
+      const sa = a.position_sort ?? Number.MAX_SAFE_INTEGER;
+      const sb = b.position_sort ?? Number.MAX_SAFE_INTEGER;
+      if (sa !== sb) return sa - sb;
+      const pa = a.position_name ?? '';
+      const pb = b.position_name ?? '';
+      if (pa !== pb) return !pa ? 1 : !pb ? -1 : pa.localeCompare(pb, 'th');
+      return byName(a, b);
+    });
+  }, [employees, sortBy, empName, empNick]);
 
   // Live per-employee balance from the EFFECTIVE (draft-aware) cells, so day-off counts update as
   // you edit — before saving.
@@ -765,6 +806,16 @@ export default function SchedulePage({
               </button>
             ))}
           </div>
+          <span className="ml-2 text-gray-500 dark:text-gray-400">{tt('เรียงตาม', 'Sort by')}:</span>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as SortBy)}
+            className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+          >
+            <option value="position">{tt('ตำแหน่ง', 'Position')}</option>
+            <option value="name">{tt('ชื่อ-นามสกุล', 'Full name')}</option>
+            <option value="nickname">{tt('ชื่อเล่น', 'Nickname')}</option>
+          </select>
         </div>
       )}
 
@@ -825,8 +876,18 @@ export default function SchedulePage({
               </tr>
             </thead>
             <tbody>
-              {employees.map((emp) => (
-                <tr key={emp.user_id} className="border-t border-gray-100 dark:border-gray-700/50">
+              {sortedEmployees.map((emp, i) => (
+                <Fragment key={emp.user_id}>
+                {/* Position heading whenever the group changes — the sheet HR used reads this way. */}
+                {sortBy === 'position' && (i === 0 || (sortedEmployees[i - 1].position_name ?? '') !== (emp.position_name ?? '')) && (
+                  <tr className="bg-gray-50 dark:bg-gray-800/60">
+                    <td className="sticky left-0 z-10 bg-gray-50 px-2 py-1 text-[11px] font-semibold text-indigo-600 dark:bg-gray-800 dark:text-indigo-300">
+                      {emp.position_name || tt('ยังไม่กำหนดตำแหน่ง', 'No position')}
+                    </td>
+                    <td colSpan={days.length} />
+                  </tr>
+                )}
+                <tr className="border-t border-gray-100 dark:border-gray-700/50">
                   <td
                     className={`sticky left-0 z-10 whitespace-nowrap bg-white font-medium text-gray-800 dark:bg-gray-900 dark:text-gray-200 ${compact ? 'max-w-[11rem] px-1.5 py-1' : 'px-2 py-1.5'}`}
                     title={compact ? (empNick(emp) ? `${empName(emp)} (${empNick(emp)})` : empName(emp)) : undefined}
@@ -897,6 +958,7 @@ export default function SchedulePage({
                     );
                   })}
                 </tr>
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -920,7 +982,7 @@ export default function SchedulePage({
                 </tr>
               </thead>
               <tbody>
-                {employees.map((emp) => {
+                {sortedEmployees.map((emp) => {
                   const b = balByUser.get(emp.user_id);
                   const offBad = b ? b.off_delta !== 0 : false;
                   const hrs = b ? (b.scheduled_minutes / 60).toFixed(1) : '0.0';
