@@ -6,6 +6,7 @@ import { Loader2, Plus, Pencil, Save, Undo2, AlertTriangle } from 'lucide-react'
 import { SwapQueueLink } from '@/components/hr/swap-queue-link';
 import { Button, Modal, ModalFooter, PageHeader, StatusBadge, type StatusTone, toast, useConfirm } from '@/components/ui';
 import { EmployeeName } from '@/components/hr/employee-name';
+import { useViewMode } from '@/components/ui/view-toggle';
 import { leaveCellStyle, glyphSizeClass } from '@/lib/hr/leave-style';
 import { PayrollScopeChips, dominantCompany, type PayrollScopeInfo } from '@/components/hr/payroll-scope-chips';
 import { todayBangkok } from '@/lib/utils/date';
@@ -107,6 +108,11 @@ export default function SchedulePage({
   const [templates, setTemplates] = useState<Template[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [leaves, setLeaves] = useState<RosterLeave[]>([]);
+  // กระชับ (default): a narrow name column and slimmer day columns so the whole month fits on a
+  // laptop without scrolling sideways — staff ask 2026-10-16. ปกติ keeps the roomy layout with the
+  // full name, nickname and payroll chips. Remembered per browser.
+  const [gridMode, setGridMode] = useViewMode('hr-schedule-grid', 'compact');
+  const compact = gridMode === 'compact';
   const [monthStatus, setMonthStatus] = useState<MonthStatus>('empty');
   // Employees with NO roster row at all this month — "nobody thought about them", which an empty
   // grid line hides (HR ask 2026-08-07).
@@ -743,6 +749,25 @@ export default function SchedulePage({
         </div>
       )}
 
+      {/* Layout switch — compact fits the whole month; normal shows full names and chips. */}
+      {!loading && employees.length > 0 && (
+        <div className="flex items-center gap-2 text-xs">
+          <span className="text-gray-500 dark:text-gray-400">{tt('มุมมอง', 'View')}:</span>
+          <div className="inline-flex rounded-lg bg-gray-100 p-0.5 dark:bg-gray-800">
+            {(['compact', 'cards'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setGridMode(m)}
+                className={`rounded-md px-2.5 py-1 font-medium ${gridMode === m ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-700 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400'}`}
+              >
+                {m === 'compact' ? tt('กระชับ (เห็นทั้งเดือน)', 'Compact (whole month)') : tt('ปกติ', 'Normal')}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Leave legend — the roster now shows approved leave itself (SL / LWP / PH / VL …). */}
       {!loading && leaveLegend.length > 0 && (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-500 dark:text-gray-400">
@@ -791,9 +816,9 @@ export default function SchedulePage({
                   // over the rows sliding beneath it only if it has a background of its own.
                   <th
                     key={d}
-                    className="sticky top-0 z-20 min-w-[38px] bg-gray-50 px-1 py-2 text-center font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400"
+                    className={`sticky top-0 z-20 bg-gray-50 py-2 text-center font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400 ${compact ? 'min-w-[26px] px-0' : 'min-w-[38px] px-1'}`}
                   >
-                    <div className="text-[10px] uppercase">{WEEKDAYS[getDay(d)]}</div>
+                    <div className={`uppercase ${compact ? 'text-[8px]' : 'text-[10px]'}`}>{compact ? WEEKDAYS[getDay(d)].slice(0, 2) : WEEKDAYS[getDay(d)]}</div>
                     <div className="tabular-nums">{Number(d.split('-')[2])}</div>
                   </th>
                 ))}
@@ -802,14 +827,18 @@ export default function SchedulePage({
             <tbody>
               {employees.map((emp) => (
                 <tr key={emp.user_id} className="border-t border-gray-100 dark:border-gray-700/50">
-                  <td className="sticky left-0 z-10 whitespace-nowrap bg-white px-2 py-1.5 font-medium text-gray-800 dark:bg-gray-900 dark:text-gray-200">
-                    <label className="flex items-center gap-1.5">
+                  <td
+                    className={`sticky left-0 z-10 whitespace-nowrap bg-white font-medium text-gray-800 dark:bg-gray-900 dark:text-gray-200 ${compact ? 'max-w-[11rem] px-1.5 py-1' : 'px-2 py-1.5'}`}
+                    title={compact ? (empNick(emp) ? `${empName(emp)} (${empNick(emp)})` : empName(emp)) : undefined}
+                  >
+                    <label className="flex min-w-0 items-center gap-1.5">
                       <input type="checkbox" checked={selectedEmps.has(emp.user_id)} onChange={() => toggleEmp(emp.user_id)}
-                        className="h-3.5 w-3.5 rounded border-gray-300 text-indigo-600" />
+                        className="h-3.5 w-3.5 shrink-0 rounded border-gray-300 text-indigo-600" />
                       {/* Nickname trails the name — the venue's own word for this person, kept
-                          without letting it take the place of the name payroll and the law use. */}
-                      <EmployeeName name={empName(emp)} nickname={empNick(emp)} />
-                      <PayrollScopeChips emp={emp} homeCompany={homeCompany} isTh={isTh} />
+                          without letting it take the place of the name payroll and the law use.
+                          Compact truncates the pair; the cell's tooltip carries it whole. */}
+                      <EmployeeName className={compact ? 'min-w-0 truncate' : undefined} name={empName(emp)} nickname={empNick(emp)} />
+                      {!compact && <PayrollScopeChips emp={emp} homeCompany={homeCompany} isTh={isTh} />}
                       {emp.end_date && (
                         <span
                           className="inline-flex shrink-0 items-center rounded-full bg-rose-50 px-1.5 py-0.5 text-[9px] font-medium text-rose-600 dark:bg-rose-900/30 dark:text-rose-400"
@@ -831,9 +860,9 @@ export default function SchedulePage({
                       const ls = leaveCellStyle(lv.code);
                       const shiftNote = c?.is_day_off ? t('dayOff') : tpl ? `${tpl.label} ${hhmm(tpl.start_time)}–${hhmm(tpl.end_time)}` : null;
                       return (
-                        <td key={d} className="p-0.5 text-center">
+                        <td key={d} className={`text-center ${compact ? 'p-px' : 'p-0.5'}`}>
                           <button type="button" onClick={() => paintCell(emp.user_id, d)}
-                            className={`relative flex h-8 w-full items-center justify-center rounded font-bold ring-1 ${ls.block} ${glyphSizeClass(ls.glyph)} ${isDirty ? 'ring-2 ring-amber-400' : ''}`}
+                            className={`relative flex ${compact ? 'h-7' : 'h-8'} w-full items-center justify-center rounded font-bold ring-1 ${ls.block} ${glyphSizeClass(ls.glyph)} ${isDirty ? 'ring-2 ring-amber-400' : ''}`}
                             title={`${isTh ? lv.name_th : lv.name_en}${lv.half_day ? tt(' (ครึ่งวัน)', ' (half day)') : ''} · ${tt('อนุมัติแล้ว', 'approved')}${shiftNote ? ` · ${tt('กะ', 'shift')}: ${shiftNote}` : ''}`}>
                             {ls.glyph}
                             {lv.half_day && (
@@ -846,9 +875,9 @@ export default function SchedulePage({
                       );
                     }
                     return (
-                      <td key={d} className="p-0.5 text-center">
+                      <td key={d} className={`text-center ${compact ? 'p-px' : 'p-0.5'}`}>
                         <button type="button" onClick={() => paintCell(emp.user_id, d)}
-                          className={`flex h-8 w-full items-center justify-center rounded ${isDirty ? 'ring-2 ring-amber-400' : ''} ${
+                          className={`flex ${compact ? 'h-7' : 'h-8'} w-full items-center justify-center rounded ${isDirty ? 'ring-2 ring-amber-400' : ''} ${
                             c
                               ? (c.is_day_off ? 'bg-gray-100 text-gray-400 dark:bg-gray-700/50' : 'text-white')
                                   : 'bg-transparent hover:bg-gray-100 dark:hover:bg-gray-700/50'
@@ -859,7 +888,9 @@ export default function SchedulePage({
                              until late detection silently read 0 minutes. */
                           title={c?.is_day_off ? t('dayOff') : tpl ? `${tpl.label} · ${hhmm(tpl.start_time)}–${hhmm(tpl.end_time)}` : undefined}>
                           {c
-                            ? (c.is_day_off ? <span className="text-[10px]">OFF</span> : <span className="hidden truncate px-0.5 text-[10px] font-medium sm:inline">{tpl?.label?.slice(0, 3)}</span>)
+                            ? (c.is_day_off
+                                ? <span className={compact ? 'text-[8px]' : 'text-[10px]'}>OFF</span>
+                                : <span className={`hidden truncate font-medium sm:inline ${compact ? 'text-[9px]' : 'px-0.5 text-[10px]'}`}>{tpl?.label?.slice(0, 3)}</span>)
                               : ''}
                         </button>
                       </td>
