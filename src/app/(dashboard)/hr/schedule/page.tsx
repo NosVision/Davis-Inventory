@@ -756,7 +756,9 @@ export default function SchedulePage({
               </span>
             );
           })}
-          <span>· ½ = {tt('ลาครึ่งวัน', 'half day')}</span>
+          {/* Only when a half day is actually on the roster — a standing "½ = ลาครึ่งวัน" read as
+              if every leave shown were a half day (HR report 2026-10-16). */}
+          {leaves.some((lv) => lv.half_day) && <span>· ½ = {tt('ลาครึ่งวัน', 'half day')}</span>}
         </div>
       )}
 
