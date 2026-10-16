@@ -5,6 +5,7 @@ import { useLocale } from 'next-intl';
 import { cn } from '@/lib/utils/cn';
 import { isEmptyDay, type DaySummary, type TimesheetTotals } from '@/components/hr/timesheet-parts';
 import { PayrollScopeChips, type PayrollScopeInfo } from '@/components/hr/payroll-scope-chips';
+import { EmployeeName } from '@/components/hr/employee-name';
 import { openBusinessDateBangkok } from '@/lib/utils/date';
 
 // Extra timesheet presentations for /hr/timesheet (owner ask 2026-07-08): a colour-block grid
@@ -14,7 +15,7 @@ import { openBusinessDateBangkok } from '@/lib/utils/date';
 export type TimesheetEmployee = PayrollScopeInfo & {
   user_id: string;
   name: string;
-  /** profiles.display_name — offered on hover only; it is not always a person's name. */
+  /** profiles.display_name — trails the name muted; it is not always a person's name. */
   nickname?: string | null;
   company_id: string | null;
   work_hours_per_day: number;
@@ -42,11 +43,14 @@ export function DepartedChip({ endDate, isTh }: { endDate: string; isTh: boolean
   );
 }
 
-/** Tooltip naming the venue's nickname for someone, when it differs from the name on the row. */
-export function nickTitle(emp: TimesheetEmployee, isTh: boolean): string | undefined {
+/**
+ * The venue's nickname for someone, when it differs from the name on the row. It trails the name
+ * as a muted "(ชื่อเล่น)" like every other HR screen (EmployeeName) — a hover tooltip could not be
+ * read at a glance, and never on a phone (owner ask 2026-10-16).
+ */
+export function empNickname(emp: Pick<TimesheetEmployee, 'name' | 'nickname'>): string | null {
   const nick = emp.nickname?.trim();
-  if (!nick || nick === emp.name) return undefined;
-  return `${isTh ? 'ชื่อเล่น' : 'Nickname'}: ${nick}`;
+  return nick && nick !== emp.name ? nick : null;
 }
 
 export type DayStatus =
@@ -219,16 +223,13 @@ export function TimesheetBlockGrid({
                         <button
                           type="button"
                           onClick={() => onPickEmployee(emp)}
-                          title={
-                            nickTitle(emp, isTh) ??
-                            (isTh ? 'ดูสรุป ขาด/ลา/สาย ของช่วงนี้' : 'Absence, leave and lateness for this range')
-                          }
+                          title={isTh ? 'ดูสรุป ขาด/ลา/สาย ของช่วงนี้' : 'Absence, leave and lateness for this range'}
                           className="truncate text-left hover:text-indigo-600 hover:underline dark:hover:text-indigo-400"
                         >
-                          {emp.name}
+                          <EmployeeName name={emp.name} nickname={empNickname(emp)} />
                         </button>
                       ) : (
-                        <span className="truncate" title={nickTitle(emp, isTh)}>{emp.name}</span>
+                        <EmployeeName className="truncate" name={emp.name} nickname={empNickname(emp)} />
                       )}
                       {emp.end_date && <DepartedChip endDate={emp.end_date} isTh={isTh} />}
                       <PayrollScopeChips emp={emp} homeCompany={homeCompany} isTh={isTh} />
@@ -329,7 +330,7 @@ export function TimesheetSummaryTable({
               )}
             >
               <td className="px-3 py-2 font-medium text-gray-800 dark:text-gray-200">
-                <span title={nickTitle(emp, isTh)}>{emp.name}</span>
+                <EmployeeName name={emp.name} nickname={empNickname(emp)} />
                 {emp.end_date && <DepartedChip endDate={emp.end_date} isTh={isTh} />}
                 {emp.late_exempt && (
                   <span

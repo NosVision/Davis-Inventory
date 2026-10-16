@@ -11,7 +11,7 @@ import { DayTable, SummaryChips, isEmptyDay } from '@/components/hr/timesheet-pa
 import {
   TimesheetBlockGrid,
   TimesheetSummaryTable,
-  nickTitle,
+  empNickname,
   type TimesheetEmployee,
 } from './_components/timesheet-views';
 import { TimesheetEditModal, type EditTarget, type LeaveTypeOption } from './_components/timesheet-edit-modal';
@@ -184,7 +184,10 @@ export default function HrTimesheetPage() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return employees;
-    return employees.filter((e) => e.name.toLowerCase().includes(q));
+    // The nickname is on screen now, so it is a search key too — the venue knows people by it.
+    return employees.filter(
+      (e) => e.name.toLowerCase().includes(q) || (e.nickname ?? '').toLowerCase().includes(q)
+    );
   }, [employees, search]);
 
   // A venue's timesheet lists its store members; a payrun is generated per company + payroll
@@ -419,8 +422,14 @@ export default function HrTimesheetPage() {
             const hasData = emp.days.some((d) => !isEmptyDay(d));
             return (
               <section key={emp.user_id} className="space-y-2">
-                <div className="flex flex-wrap items-center" title={nickTitle(emp, isTh)}>
-                  <SectionHeading title={emp.end_date ? `${emp.name} · ${t('departed')}` : emp.name} />
+                <div className="flex flex-wrap items-center">
+                  <SectionHeading
+                    title={(() => {
+                      const nick = empNickname(emp);
+                      const label = nick ? `${emp.name} (${nick})` : emp.name;
+                      return emp.end_date ? `${label} · ${t('departed')}` : label;
+                    })()}
+                  />
                   <PayrollScopeChips emp={emp} homeCompany={homeCompany} isTh={isTh} />
                 </div>
                 <AttendanceScoreCard
