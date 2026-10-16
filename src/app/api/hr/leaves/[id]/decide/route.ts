@@ -6,7 +6,7 @@ import { logHrAudit } from '@/lib/hr/audit';
 import { describeQuotaExceeded, type QuotaBreakdown } from '@/lib/hr/leaves';
 import { loadLeaveQuotaContext } from '@/lib/hr/leave-quota';
 import { notifyUser } from '@/lib/notifications/service';
-import { enumerateDates, classifyLeaveEffect } from '@/lib/hr/leaves';
+import { enumerateDates, classifyLeaveEffect, isHalfDayLeave } from '@/lib/hr/leaves';
 import { isRangeInFinalizedPeriod, employeeStoreIds, FINALIZED_PERIOD_ERROR } from '@/lib/hr/period-lock';
 
 // Tell the employee their leave was approved/rejected (best-effort — never fail the decision).
@@ -261,6 +261,13 @@ export async function POST(
       warning:
         'Leave approved, but the leave type could not be loaded to apply timesheet effects. Manual follow-up required.',
     });
+  }
+
+  // A half day leaves the timesheet alone: the person works the other half, so stamping the date
+  // "absent, 0 min" would erase real punches. Payroll already reads the leave itself (0.5 day of
+  // salary + SC) and skips the late fine and the absence on a covered date.
+  if (isHalfDayLeave({ from_date: row.from_date as string, to_date: row.to_date as string, days: row.days as number })) {
+    return NextResponse.json({ data: { id, status: 'approved', applied_days: 0 } });
   }
 
   const code = leaveType.code as string;

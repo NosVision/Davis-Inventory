@@ -9,7 +9,7 @@ import {
   requireHrManagerForEmployeeProfile,
 } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
-import { countLeaveDays, isCalendarDate } from '@/lib/hr/leaves';
+import { countLeaveDays, isCalendarDate, HALF_DAY } from '@/lib/hr/leaves';
 import { buildFullNameMap } from '@/lib/hr/employee-name-map';
 
 const TABLE = 'hr_leaves';
@@ -79,6 +79,7 @@ export async function POST(request: NextRequest) {
   const fromDate = typeof body.from_date === 'string' ? body.from_date : '';
   const toDate = typeof body.to_date === 'string' ? body.to_date : '';
   const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+  const halfDay = body.half_day === true;
   // Set by the confirm dialog after the caller has been shown the numbers (owner ask 2026-08-27):
   // HR carries the authority, so an over-quota entry is a decision to record, not a wall. Forcing
   // a hard block here would just push them to edit the person's quota instead, which corrupts it.
@@ -94,6 +95,9 @@ export async function POST(request: NextRequest) {
   }
   if (fromDate > toDate) {
     return NextResponse.json({ error: 'to_date must be on or after from_date' }, { status: 400 });
+  }
+  if (halfDay && fromDate !== toDate) {
+    return NextResponse.json({ error: 'ลาครึ่งวันเลือกได้ครั้งละ 1 วันเท่านั้น' }, { status: 400 });
   }
   // A reason is always required for an HR-entered leave (owner ask 2026-07-10).
   if (!reason) {
@@ -139,7 +143,8 @@ export async function POST(request: NextRequest) {
 
   // Raw calendar-day count. Roster day-offs are excluded at approval time (see the decide
   // route), because a leave filed for future dates has no roster row to check yet.
-  const days = countLeaveDays(fromDate, toDate);
+  // A half day is one date at 0.5 (isHalfDayLeave) — payroll docks it by that number.
+  const days = halfDay ? HALF_DAY : countLeaveDays(fromDate, toDate);
   if (days <= 0) {
     return NextResponse.json({ error: 'Leave range contains no working days' }, { status: 400 });
   }

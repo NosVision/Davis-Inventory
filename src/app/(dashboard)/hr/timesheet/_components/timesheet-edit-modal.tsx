@@ -95,6 +95,8 @@ export function TimesheetEditModal({
   const [late, setLate] = useState('');
   const [ot, setOt] = useState('');
   const [leaveTypeId, setLeaveTypeId] = useState('');
+  // ลาครึ่งวัน: docks half a day of salary + SC, never travel (see isHalfDayLeave).
+  const [halfDay, setHalfDay] = useState(false);
   const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -120,9 +122,11 @@ export function TimesheetEditModal({
         (lt) => lt.code === d.leave!.code && (lt.company_id === null || lt.company_id === target.companyId)
       );
       setLeaveTypeId(match?.id ?? '');
+      setHalfDay(d.leave.half_day === true);
     } else {
       setStatus(d.absent ? 'absent' : 'present');
       setLeaveTypeId('');
+      setHalfDay(false);
     }
   }, [isOpen, target, leaveTypes]);
 
@@ -174,7 +178,12 @@ export function TimesheetEditModal({
     try {
       if (status === 'leave') {
         const selected = availableTypes.find((lt) => lt.id === leaveTypeId);
-        const sameAsExisting = !!existingLeaveId && !!selected && selected.code === existingLeaveCode;
+        // Same type but switched between full and half day is a different leave — re-file it.
+        const sameAsExisting =
+          !!existingLeaveId &&
+          !!selected &&
+          selected.code === existingLeaveCode &&
+          (target.day.leave?.half_day === true) === halfDay;
         if (!sameAsExisting) {
           // Replace any existing leave (e.g. a type change) before creating the new one.
           if (existingLeaveId) {
@@ -196,6 +205,7 @@ export function TimesheetEditModal({
                 from_date: target.day.business_date,
                 to_date: target.day.business_date,
                 reason: trimmed,
+                ...(halfDay ? { half_day: true } : {}),
                 ...(override ? { override_quota: true, override_reason: override } : {}),
               }),
             });
@@ -349,6 +359,15 @@ export function TimesheetEditModal({
                   </option>
                 ))}
               </select>
+              <label className="mt-2 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                <input
+                  type="checkbox"
+                  checked={halfDay}
+                  onChange={(e) => setHalfDay(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 text-indigo-600"
+                />
+                {t('halfDay')}
+              </label>
             </div>
           )
         ) : (

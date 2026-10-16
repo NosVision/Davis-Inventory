@@ -9,7 +9,7 @@ import {
   type DaySummary,
   type TimesheetOverride,
 } from '@/lib/hr/time-engine';
-import { classifyLeaveEffect, enumerateDates } from '@/lib/hr/leaves';
+import { classifyLeaveEffect, enumerateDates, isHalfDayLeave, HALF_DAY } from '@/lib/hr/leaves';
 import { computePayslip, type LeaveSummaryEntry, type PayrollInput, type PayslipLine, type PayType, type TaxMode } from '@/lib/hr/payroll';
 import { refuseIfConfidentialInScope } from '@/lib/hr/pay-visibility';
 import { getHrPolicies } from '@/lib/hr/policy';
@@ -78,6 +78,8 @@ interface LeaveRow {
   leave_type_id: string;
   from_date: string;
   to_date: string;
+  /** 0.5 on a one-date leave = ลาครึ่งวัน (isHalfDayLeave). */
+  days: number | null;
   cert_path: string | null;
 }
 
@@ -378,7 +380,7 @@ export async function POST(request: NextRequest) {
         .lte('business_date', end),
       service
         .from('hr_leaves')
-        .select('id, user_id, leave_type_id, from_date, to_date, cert_path')
+        .select('id, user_id, leave_type_id, from_date, to_date, days, cert_path')
         .in('user_id', userIds)
         .eq('status', 'approved')
         .lte('from_date', end)
@@ -607,14 +609,18 @@ export async function POST(request: NextRequest) {
       // leave-approval timesheet path. Dates with no schedule row yet still count (can't assume a
       // future day off). Previously this counted every calendar day → over-docked a leave that
       // spanned a day off (e.g. 7 days docked instead of 6).
-      const daysInCycle = enumerateDates(from, to).filter(
+      const rosteredDays = enumerateDates(from, to).filter(
         (d) => inWindow(d) && schedByCell.get(`${uid}|${d}`)?.is_day_off !== true
       ).length;
+      // ลาครึ่งวัน docks half a day of salary and never the travel allowance — the person still
+      // came in (owner decision 2026-10-16).
+      const halfDay = isHalfDayLeave(lv);
+      const daysInCycle = halfDay ? rosteredDays * HALF_DAY : rosteredDays;
       return {
         leave_id: lv.id,
         label: t?.code ?? 'leave',
         salary_days: effect.deductSalary ? daysInCycle : 0,
-        travel_days: effect.deductTravel ? daysInCycle : 0,
+        travel_days: effect.deductTravel && !halfDay ? daysInCycle : 0,
         // For the slip's leave roll-up: the day count whatever the money effect, so a leave that
         // docks nothing (a paid ลางานศพ on a slip with no travel allowance) is still on the slip.
         days: daysInCycle,

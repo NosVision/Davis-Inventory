@@ -108,6 +108,8 @@ export default function MyLeavesPage() {
   const [typeId, setTypeId] = useState('');
   const [fromDate, setFromDate] = useState(today);
   const [toDate, setToDate] = useState(today);
+  // ลาครึ่งวัน — only offered for a single date; the API stores it as days = 0.5.
+  const [halfDay, setHalfDay] = useState(false);
   const [reason, setReason] = useState('');
   const [cert, setCert] = useState<File | null>(null);
 
@@ -137,7 +139,8 @@ export default function MyLeavesPage() {
   const requiresCert = Boolean(selectedType?.requires_cert);
   // reason mandatory unless the type opts out (requires_reason=false)
   const requiresReason = selectedType?.requires_reason !== false;
-  const dayCount = inclusiveDays(fromDate, toDate);
+  const isHalfDay = halfDay && fromDate === toDate;
+  const dayCount = isHalfDay ? 0.5 : inclusiveDays(fromDate, toDate);
 
   const fetchTypes = useCallback(async () => {
     try {
@@ -198,6 +201,7 @@ export default function MyLeavesPage() {
       fd.append('from_date', fromDate);
       fd.append('to_date', toDate);
       fd.append('reason', reason.trim());
+      if (isHalfDay) fd.append('half_day', '1');
       if (cert) fd.append('cert', cert);
       // NOTE: do not set Content-Type — the browser sets the multipart boundary.
       const res = await fetch('/api/hr/ess/leaves', { method: 'POST', body: fd });
@@ -208,13 +212,14 @@ export default function MyLeavesPage() {
       setCert(null);
       setFromDate(today);
       setToDate(today);
+      setHalfDay(false);
       await fetchRows();
     } catch (e) {
       toast({ type: 'error', title: e instanceof Error ? e.message : t('fileFailed') });
     } finally {
       setSubmitting(false);
     }
-  }, [typeId, fromDate, toDate, reason, dayCount, requiresCert, requiresReason, cert, t, today, fetchRows]);
+  }, [typeId, fromDate, toDate, isHalfDay, reason, dayCount, requiresCert, requiresReason, cert, t, today, fetchRows]);
 
   const cancel = useCallback(
     async (id: string) => {
@@ -415,6 +420,18 @@ export default function MyLeavesPage() {
             />
           </label>
         </div>
+
+        {fromDate === toDate && (
+          <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+            <input
+              type="checkbox"
+              checked={halfDay}
+              onChange={(e) => setHalfDay(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-indigo-600"
+            />
+            {t('halfDay')}
+          </label>
+        )}
 
         {dayCount > 0 && (
           <p className="text-xs text-gray-500 dark:text-gray-400">

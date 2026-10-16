@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { classifyLeaveEffect, enumerateDates } from '@/lib/hr/leaves';
+import { classifyLeaveEffect, enumerateDates, isHalfDayLeave, HALF_DAY } from '@/lib/hr/leaves';
 import { getHrPolicies } from '@/lib/hr/policy';
 import {
   computeWarningScDeduction,
@@ -31,7 +31,7 @@ function clampMin(a: string, b: string): string { return a < b ? a : b; }
 interface WarningRow { id: string; level: string; sc_deduct_percent: number | null; amount_satang: number | null }
 interface LeaveTypeEffect { code: string; paid: boolean; paid_with_cert: boolean; deduct_sc: boolean; deduct_travel: boolean }
 interface LeaveRow {
-  id: string; from_date: string; to_date: string; cert_path: string | null;
+  id: string; from_date: string; to_date: string; days: number | null; cert_path: string | null;
   leave_type: LeaveTypeEffect | LeaveTypeEffect[] | null;
 }
 
@@ -160,7 +160,7 @@ export async function recomputePoolDeductions(
 
     const { data: leaves, error: leaveErr } = await service
       .from('hr_leaves')
-      .select('id, from_date, to_date, cert_path, leave_type:hr_leave_types(code, paid, paid_with_cert, deduct_sc, deduct_travel)')
+      .select('id, from_date, to_date, days, cert_path, leave_type:hr_leave_types(code, paid, paid_with_cert, deduct_sc, deduct_travel)')
       .eq('user_id', userId).eq('status', 'approved')
       .lte('from_date', periodEnd).gte('to_date', periodStart);
     if (leaveErr) throw leaveErr;
@@ -180,7 +180,9 @@ export async function recomputePoolDeductions(
       if (!effect.deductSc) continue;
       const from = clampMax(lv.from_date, periodStart);
       const to = clampMin(lv.to_date, periodEnd);
-      const scDays = enumerateDates(from, to).filter((d) => !dayOffSet.has(d)).length;
+      const rosteredDays = enumerateDates(from, to).filter((d) => !dayOffSet.has(d)).length;
+      // ลาครึ่งวัน docks half a day of SC, like the salary (owner decision 2026-10-16).
+      const scDays = isHalfDayLeave(lv) ? rosteredDays * HALF_DAY : rosteredDays;
       const { amount_satang } = computeLeaveScDeduction(allocated, scDays, policies.sc_leave_divisor);
       if (amount_satang > 0) {
         lines.push({ allocation_id: allocId, source_type: 'leave', source_ref: lv.id, label: `Leave: ${lt.code} (${scDays}d)`, amount_satang, carry_satang: 0, auto: true, created_by: actorId });

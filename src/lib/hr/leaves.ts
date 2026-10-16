@@ -122,6 +122,20 @@ export function countLeaveDays(from: string, to: string, excluded: Iterable<stri
 }
 
 /**
+ * ลาครึ่งวัน (owner ask 2026-10-16): a one-date leave filed as 0.5 day. No column marks it — a
+ * single date carrying days = 0.5 IS the half day, so every reader decides it the same way here.
+ *
+ * Money (owner decision 2026-10-16): salary and Service Charge dock half a day; the travel
+ * allowance does not dock at all, because the person still came in to work. The day is not stamped
+ * absent on approval either — the punches for the half they worked stand.
+ */
+export const HALF_DAY = 0.5;
+
+export function isHalfDayLeave(lv: { from_date: string; to_date: string; days: number | string | null }): boolean {
+  return lv.from_date === lv.to_date && Number(lv.days) === HALF_DAY;
+}
+
+/**
  * Whether a medical/other certificate is required for this leave — driven by config (00169),
  * not by code. When `requires_cert` is set, a `cert_threshold_days` (e.g. 3 for sick) means the
  * cert is needed only beyond that many days; a null threshold means it is always required.

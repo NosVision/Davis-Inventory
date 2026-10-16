@@ -19,6 +19,8 @@ export interface DayLeave {
   code: string;
   name_th: string;
   name_en: string;
+  /** ลาครึ่งวัน — the day is half worked, half leave. */
+  half_day?: boolean;
 }
 
 export interface DaySummary {
@@ -123,7 +125,7 @@ function StatusCell({ d }: { d: DaySummary }) {
     const name = isTh ? d.leave.name_th : d.leave.name_en;
     badges.push(
       <Badge key="leave" variant="info" size="sm" className="bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">
-        {t('leave')}{name ? ` · ${name}` : ''}
+        {t('leave')}{name ? ` · ${name}` : ''}{d.leave.half_day ? ` · ${t('halfDay')}` : ''}
       </Badge>
     );
   }

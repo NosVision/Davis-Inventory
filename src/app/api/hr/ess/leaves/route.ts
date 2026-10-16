@@ -9,6 +9,7 @@ import {
   isCalendarDate,
   countLeaveDays,
   validateLeaveRequest,
+  HALF_DAY,
 } from '@/lib/hr/leaves';
 import type { LeaveType } from '@/lib/hr/leaves';
 
@@ -66,6 +67,7 @@ export async function POST(request: NextRequest) {
   const fromDate = typeof form.get('from_date') === 'string' ? String(form.get('from_date')) : '';
   const toDate = typeof form.get('to_date') === 'string' ? String(form.get('to_date')) : '';
   const reason = typeof form.get('reason') === 'string' ? String(form.get('reason')).trim() : '';
+  const halfDay = form.get('half_day') === '1';
   const certField = form.get('cert');
   const certFile = certField && typeof certField === 'object' && 'arrayBuffer' in certField
     ? (certField as File)
@@ -77,6 +79,9 @@ export async function POST(request: NextRequest) {
   }
   if (fromDate > toDate) {
     return NextResponse.json({ error: 'to_date must be on or after from_date' }, { status: 400 });
+  }
+  if (halfDay && fromDate !== toDate) {
+    return NextResponse.json({ error: 'ลาครึ่งวันเลือกได้ครั้งละ 1 วันเท่านั้น' }, { status: 400 });
   }
   // reason requirement is per leave type (requires_reason) — checked after the type loads below.
 
@@ -121,7 +126,8 @@ export async function POST(request: NextRequest) {
 
   // Raw calendar-day count. Roster day-offs are excluded at approval time (see the decide
   // route), because a leave filed for future dates has no roster row to check yet.
-  const days = countLeaveDays(fromDate, toDate);
+  // A half day is one date at 0.5 (isHalfDayLeave) — payroll docks it by that number.
+  const days = halfDay ? HALF_DAY : countLeaveDays(fromDate, toDate);
   if (days <= 0) {
     return NextResponse.json({ error: 'Leave range contains no working days' }, { status: 400 });
   }

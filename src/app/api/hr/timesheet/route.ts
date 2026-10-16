@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
+import { isHalfDayLeave } from '@/lib/hr/leaves';
 import { requireHrManagerForStore } from '@/lib/hr/route-auth';
 import { openBusinessDateBangkok } from '@/lib/utils/date';
 import {
@@ -52,6 +53,7 @@ interface LeaveRow {
   user_id: string;
   from_date: string;
   to_date: string;
+  days: number | null;
   leave_type: { code: string; name_th: string | null; name_en: string | null } | null;
 }
 /** The leave that covers a timesheet day, surfaced so the UI shows "ลา (type)" not "ขาด". */
@@ -60,6 +62,8 @@ export interface DayLeave {
   code: string;
   name_th: string;
   name_en: string;
+  /** ลาครึ่งวัน — the day is half worked, half leave (isHalfDayLeave). */
+  half_day: boolean;
 }
 
 function isCalendarDate(d: string): boolean {
@@ -208,7 +212,7 @@ export async function GET(request: NextRequest) {
     // scheduled-but-not-punched day on approved leave reads as leave, not absent (owner ask).
     service
       .from('hr_leaves')
-      .select('id, user_id, from_date, to_date, leave_type:hr_leave_types(code, name_th, name_en)')
+      .select('id, user_id, from_date, to_date, days, leave_type:hr_leave_types(code, name_th, name_en)')
       .in('user_id', userIds)
       .eq('status', 'approved')
       .lte('from_date', to)
@@ -231,6 +235,7 @@ export async function GET(request: NextRequest) {
       code: lv.leave_type?.code ?? 'leave',
       name_th: lv.leave_type?.name_th ?? lv.leave_type?.code ?? 'ลา',
       name_en: lv.leave_type?.name_en ?? lv.leave_type?.code ?? 'Leave',
+      half_day: isHalfDayLeave(lv),
     };
     for (const d of dates) {
       if (d >= lv.from_date && d <= lv.to_date) leaveByCell.set(`${lv.user_id}|${d}`, info);
