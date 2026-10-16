@@ -6,6 +6,7 @@ import { Loader2, Plus, Pencil, Save, Undo2, AlertTriangle } from 'lucide-react'
 import { SwapQueueLink } from '@/components/hr/swap-queue-link';
 import { Button, Modal, ModalFooter, PageHeader, StatusBadge, type StatusTone, toast, useConfirm } from '@/components/ui';
 import { EmployeeName } from '@/components/hr/employee-name';
+import { leaveCellStyle, glyphSizeClass } from '@/lib/hr/leave-style';
 import { PayrollScopeChips, dominantCompany, type PayrollScopeInfo } from '@/components/hr/payroll-scope-chips';
 import { todayBangkok } from '@/lib/utils/date';
 import { shiftMonth } from '../timesheet/_components/pay-window-bar';
@@ -45,6 +46,16 @@ interface Entry {
   is_day_off: boolean;
   status: string;
   note: string | null;
+}
+/** An approved leave — overlaid on the roster so nobody has to invent a 00:00–00:00 "SL" shift. */
+interface RosterLeave {
+  user_id: string;
+  from_date: string;
+  to_date: string;
+  code: string;
+  name_th: string;
+  name_en: string;
+  half_day: boolean;
 }
 type MonthStatus = 'empty' | 'draft' | 'submitted' | 'acknowledged' | 'mixed';
 
@@ -95,6 +106,7 @@ export default function SchedulePage({
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [leaves, setLeaves] = useState<RosterLeave[]>([]);
   const [monthStatus, setMonthStatus] = useState<MonthStatus>('empty');
   // Employees with NO roster row at all this month — "nobody thought about them", which an empty
   // grid line hides (HR ask 2026-08-07).
@@ -177,6 +189,7 @@ export default function SchedulePage({
       setEmployees((j.employees ?? []) as Employee[]);
       setTemplates((j.templates ?? []) as Template[]);
       setEntries((j.entries ?? []) as Entry[]);
+      setLeaves((j.leaves ?? []) as RosterLeave[]);
       setMonthStatus((j.monthStatus ?? 'empty') as MonthStatus);
       setUnscheduled((j.unscheduled ?? []) as { user_id: string; name: string; position_name: string | null }[]);
       setNeverPunched((j.never_punched ?? []) as { user_id: string; name: string }[]);
@@ -218,6 +231,21 @@ export default function SchedulePage({
 
   const days = useMemo(() => daysOfMonth(month), [month]);
   const tplById = useMemo(() => new Map(templates.map((x) => [x.id, x])), [templates]);
+  // (user|date) → the approved leave covering it. Dates are plain YYYY-MM-DD, so string compare
+  // is a date compare.
+  const leaveByCell = useMemo(() => {
+    const m = new Map<string, RosterLeave>();
+    for (const lv of leaves) {
+      for (const d of days) if (d >= lv.from_date && d <= lv.to_date) m.set(key(lv.user_id, d), lv);
+    }
+    return m;
+  }, [leaves, days]);
+  // Legend only the leave types actually on this month's roster.
+  const leaveLegend = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const lv of leaves) if (!seen.has(lv.code)) seen.set(lv.code, isTh ? lv.name_th : lv.name_en);
+    return [...seen.entries()];
+  }, [leaves, isTh]);
   const entryByCell = useMemo(() => {
     const m = new Map<string, Entry>();
     for (const e of entries) m.set(key(e.user_id, e.work_date), e);
@@ -715,6 +743,23 @@ export default function SchedulePage({
         </div>
       )}
 
+      {/* Leave legend — the roster now shows approved leave itself (SL / LWP / PH / VL …). */}
+      {!loading && leaveLegend.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-500 dark:text-gray-400">
+          <span className="font-semibold">{tt('ใบลาที่อนุมัติแล้ว', 'Approved leave')}:</span>
+          {leaveLegend.map(([code, name]) => {
+            const ls = leaveCellStyle(code);
+            return (
+              <span key={code} className="inline-flex items-center gap-1">
+                <i className={`h-2.5 w-2.5 rounded-sm ${ls.dot}`} />
+                {ls.glyph} {name}
+              </span>
+            );
+          })}
+          <span>· ½ = {tt('ลาครึ่งวัน', 'half day')}</span>
+        </div>
+      )}
+
       {/* roster grid */}
       {loading ? (
         <div className="flex items-center justify-center py-10 text-gray-400"><Loader2 className="h-5 w-5 animate-spin" /></div>
@@ -777,6 +822,27 @@ export default function SchedulePage({
                     const c = effectiveCell(emp.user_id, d);
                     const tpl = c?.shift_template_id ? tplById.get(c.shift_template_id) : null;
                     const isDirty = draft.has(key(emp.user_id, d));
+                    const lv = leaveByCell.get(key(emp.user_id, d));
+                    if (lv) {
+                      // An approved leave wins the cell: that is what the day actually is. The
+                      // underlying shift stays in the tooltip and is still editable by painting.
+                      const ls = leaveCellStyle(lv.code);
+                      const shiftNote = c?.is_day_off ? t('dayOff') : tpl ? `${tpl.label} ${hhmm(tpl.start_time)}–${hhmm(tpl.end_time)}` : null;
+                      return (
+                        <td key={d} className="p-0.5 text-center">
+                          <button type="button" onClick={() => paintCell(emp.user_id, d)}
+                            className={`relative flex h-8 w-full items-center justify-center rounded font-bold ring-1 ${ls.block} ${glyphSizeClass(ls.glyph)} ${isDirty ? 'ring-2 ring-amber-400' : ''}`}
+                            title={`${isTh ? lv.name_th : lv.name_en}${lv.half_day ? tt(' (ครึ่งวัน)', ' (half day)') : ''} · ${tt('อนุมัติแล้ว', 'approved')}${shiftNote ? ` · ${tt('กะ', 'shift')}: ${shiftNote}` : ''}`}>
+                            {ls.glyph}
+                            {lv.half_day && (
+                              <i className="absolute -bottom-1 -right-1 flex h-3 w-3 items-center justify-center rounded-full bg-white text-[8px] font-bold not-italic leading-none text-gray-700 ring-1 ring-gray-300 dark:bg-gray-900 dark:text-gray-200 dark:ring-gray-600">
+                                ½
+                              </i>
+                            )}
+                          </button>
+                        </td>
+                      );
+                    }
                     return (
                       <td key={d} className="p-0.5 text-center">
                         <button type="button" onClick={() => paintCell(emp.user_id, d)}

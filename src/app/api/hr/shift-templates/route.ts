@@ -5,6 +5,15 @@ import { isDateInFinalizedPeriod, isRangeInFinalizedPeriod, FINALIZED_PERIOD_ERR
 
 const TABLE = 'hr_shift_templates';
 const SELECT = 'id, label, start_time, end_time, color, active';
+
+// A shift that starts when it ends (00:00–00:00) has no hours. Captains were making them to mark
+// leave on the roster — "SL", "PH", "AL" — but payroll reads any shift as a rostered work day, so
+// with no punch each one became an absence that docked salary, travel and Service Charge
+// (HR report 2026-10-16: 44 such days at one venue, no leave behind them). Leave is filed as leave;
+// the roster now shows it on its own.
+const ZERO_LENGTH_ERROR =
+  'กะต้องมีเวลาเริ่มกับเวลาเลิกไม่เท่ากัน — ถ้าจะใส่วันลา (SL / PH / VL …) ให้ยื่นใบลาแทน ตารางงานจะแสดงวันลาให้เอง';
+const sameTime = (a: string, b: string) => a.slice(0, 5) === b.slice(0, 5);
 const TIME_RE = /^\d{2}:\d{2}$/;
 
 // A template can still be referenced by another store after an employee/roster transfer.
@@ -110,6 +119,7 @@ export async function POST(request: NextRequest) {
   if (!TIME_RE.test(startTime) || !TIME_RE.test(endTime)) {
     return NextResponse.json({ error: 'start_time/end_time must be HH:MM' }, { status: 400 });
   }
+  if (sameTime(startTime, endTime)) return NextResponse.json({ error: ZERO_LENGTH_ERROR }, { status: 400 });
 
   const service = createServiceClient();
   const { data, error } = await service
@@ -139,7 +149,7 @@ export async function PUT(request: NextRequest) {
   const service = createServiceClient();
   const { data: row, error: rowErr } = await service
     .from(TABLE)
-    .select('store_id')
+    .select('store_id, start_time, end_time')
     .eq('id', id)
     .maybeSingle();
   if (rowErr) return NextResponse.json({ error: 'Failed to load shift template' }, { status: 500 });
@@ -168,6 +178,12 @@ export async function PUT(request: NextRequest) {
   }
   if (typeof body.color === 'string') patch.color = body.color;
   if (typeof body.active === 'boolean') patch.active = body.active;
+  if (
+    ('start_time' in patch || 'end_time' in patch) &&
+    sameTime(String(patch.start_time ?? row.start_time), String(patch.end_time ?? row.end_time))
+  ) {
+    return NextResponse.json({ error: ZERO_LENGTH_ERROR }, { status: 400 });
+  }
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: 'No updatable fields provided' }, { status: 400 });
   }

@@ -11,6 +11,7 @@ import {
   type RosterMember,
 } from '@/lib/hr/roster';
 import { todayBangkok } from '@/lib/utils/date';
+import { isHalfDayLeave } from '@/lib/hr/leaves';
 
 const MONTH_RE = /^\d{4}-\d{2}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -144,7 +145,20 @@ export async function GET(request: NextRequest) {
     }
   };
 
-  const [templatesRes, loadedEntries] = await Promise.all([tplQuery, loadEntries()]);
+  // Approved leaves overlapping the month. The roster never showed them, so captains invented
+  // 00:00–00:00 "SL"/"PH" shifts to mark leave — which payroll reads as a rostered work day and,
+  // with no punch, docks as an absence (HR report 2026-10-16). The grid now overlays the real leave.
+  const leavesQuery = userIds.length
+    ? service
+        .from('hr_leaves')
+        .select('user_id, from_date, to_date, days, leave_type:hr_leave_types(code, name_th, name_en)')
+        .in('user_id', userIds)
+        .eq('status', 'approved')
+        .lte('from_date', last)
+        .gte('to_date', first)
+    : Promise.resolve({ data: [], error: null });
+
+  const [templatesRes, loadedEntries, leavesRes] = await Promise.all([tplQuery, loadEntries(), leavesQuery]);
 
   if (templatesRes.error || loadedEntries === null) {
     return NextResponse.json({ error: 'Failed to load schedule' }, { status: 500 });
@@ -264,9 +278,28 @@ export async function GET(request: NextRequest) {
   // quietly showing fewer people than last month.
   const inactive_here = inactiveMembers.map((m) => ({ user_id: m.profile_id, name: rosterMemberName(m) }));
 
+  type LeaveRow = {
+    user_id: string;
+    from_date: string;
+    to_date: string;
+    days: number | null;
+    leave_type: { code: string; name_th: string | null; name_en: string | null } | null;
+  };
+  // Best-effort: a failed leave read leaves the grid exactly as it was before this overlay existed.
+  const leaves = ((leavesRes.error ? [] : leavesRes.data ?? []) as unknown as LeaveRow[]).map((lv) => ({
+    user_id: lv.user_id,
+    from_date: lv.from_date,
+    to_date: lv.to_date,
+    code: lv.leave_type?.code ?? 'leave',
+    name_th: lv.leave_type?.name_th ?? 'ลา',
+    name_en: lv.leave_type?.name_en ?? 'Leave',
+    half_day: isHalfDayLeave(lv),
+  }));
+
   return NextResponse.json({
     employees: staff,
     templates,
+    leaves,
     entries,
     balance,
     monthStatus,
