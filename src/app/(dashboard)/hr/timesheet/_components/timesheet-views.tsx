@@ -117,6 +117,37 @@ export const STYLE_EN: Record<Exclude<DayStatus, 'empty'>, { block: string; glyp
 
 export const STYLE = STYLE_TH;
 
+/**
+ * One purple "ล" for every kind of leave made a sick day, a public holiday and a paid vacation
+ * look the same on the grid (HR ask 2026-10-16). Each type now gets the short code HR's own sheet
+ * used (SL, PH …) and a colour of its own; a type not listed here keeps the generic leave block.
+ * Colours avoid the attendance palette above so a leave can never be mistaken for a work status.
+ */
+const LEAVE_STYLE: Record<string, { glyph: string; block: string; dot: string }> = {
+  sick: { glyph: 'SL', block: 'bg-fuchsia-500 text-white ring-fuchsia-600', dot: 'bg-fuchsia-500' },
+  public_holiday: { glyph: 'PH', block: 'bg-lime-500 text-white ring-lime-600', dot: 'bg-lime-500' },
+  vacation: { glyph: 'AL', block: 'bg-teal-500 text-white ring-teal-600', dot: 'bg-teal-500' },
+  personal: { glyph: 'PL', block: 'bg-violet-500 text-white ring-violet-600', dot: 'bg-violet-500' },
+  unpaid: { glyph: 'UL', block: 'bg-purple-700 text-white ring-purple-800', dot: 'bg-purple-700' },
+  special: { glyph: 'SP', block: 'bg-violet-400/90 text-white ring-violet-500', dot: 'bg-violet-400' },
+  bereavement: { glyph: 'BL', block: 'bg-slate-500 text-white ring-slate-600', dot: 'bg-slate-500' },
+  maternity: { glyph: 'ML', block: 'bg-pink-400 text-white ring-pink-500', dot: 'bg-pink-400' },
+  paternity: { glyph: 'PT', block: 'bg-pink-400 text-white ring-pink-500', dot: 'bg-pink-400' },
+  marriage: { glyph: 'MR', block: 'bg-rose-400 text-white ring-rose-500', dot: 'bg-rose-400' },
+  ordination: { glyph: 'OR', block: 'bg-yellow-600 text-white ring-yellow-700', dot: 'bg-yellow-600' },
+  military: { glyph: 'MI', block: 'bg-stone-500 text-white ring-stone-600', dot: 'bg-stone-500' },
+  training: { glyph: 'TR', block: 'bg-cyan-600 text-white ring-cyan-700', dot: 'bg-cyan-600' },
+  health_check: { glyph: 'HC', block: 'bg-emerald-700 text-white ring-emerald-800', dot: 'bg-emerald-700' },
+};
+
+/** The block for a leave day: its type's code + colour, or the generic leave style. */
+export function leaveCellStyle(
+  code: string | null | undefined,
+  generic: { block: string; glyph: string; dot: string }
+): { block: string; glyph: string; dot: string } {
+  return (code && LEAVE_STYLE[code]) || generic;
+}
+
 const toH = (min: number) => (min / 60).toFixed(1);
 const WD_TH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
 const WD_EN = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
@@ -143,12 +174,23 @@ export function TimesheetBlockGrid({
   const isTh = useLocale() === 'th';
   const wd = isTh ? WD_TH : WD_EN;
   const localeStyle = isTh ? STYLE_TH : STYLE_EN;
-  const LEGEND: Exclude<DayStatus, 'empty'>[] = ['normal', 'working', 'late', 'absent', 'leave', 'wod', 'incomplete', 'dayoff'];
+  const LEGEND: Exclude<DayStatus, 'empty'>[] = ['normal', 'working', 'late', 'absent', 'wod', 'incomplete', 'dayoff'];
 
   // Bangkok business date (6am cutoff) — a night shift started at 22:00 stays "today" until 6am.
   const today = openBusinessDateBangkok();
 
   const dates = useMemo(() => employees[0]?.days.map((d) => d.business_date) ?? [], [employees]);
+
+  // Legend the leave types actually on screen, not all fourteen the company could configure.
+  const leaveLegend = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const e of employees) {
+      for (const d of e.days) {
+        if (d.leave && !seen.has(d.leave.code)) seen.set(d.leave.code, isTh ? d.leave.name_th : d.leave.name_en);
+      }
+    }
+    return [...seen.entries()];
+  }, [employees, isTh]);
 
   // The name column carries chips only when there is something to explain — widen it just then,
   // rather than permanently spending horizontal space the day blocks need.
@@ -172,6 +214,15 @@ export function TimesheetBlockGrid({
             {localeStyle[s].label}
           </span>
         ))}
+        {leaveLegend.map(([code, name]) => {
+          const ls = leaveCellStyle(code, localeStyle.leave);
+          return (
+            <span key={code} className="inline-flex items-center gap-1">
+              <i className={cn('h-2.5 w-2.5 rounded-sm', ls.dot)} />
+              {ls === localeStyle.leave ? name : `${ls.glyph} ${name}`}
+            </span>
+          );
+        })}
         <span className="inline-flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-full bg-violet-500" />OT</span>
       </div>
 
@@ -243,6 +294,13 @@ export function TimesheetBlockGrid({
                     // A past day can be late AND missing its clock-out; the block shows the
                     // payroll-relevant status, this badge keeps the data-quality flag visible.
                     const missingOut = !!day?.incomplete && status !== 'incomplete' && status !== 'working';
+                    const cellStyle =
+                      status === 'empty'
+                        ? null
+                        : status === 'leave'
+                          ? leaveCellStyle(day?.leave?.code, localeStyle.leave)
+                          : localeStyle[status];
+                    const halfDay = status === 'leave' && day?.leave?.half_day === true;
                     return (
                       <td key={date} className="border-b border-gray-100 p-0.5 text-center dark:border-gray-700/60">
                         <button
@@ -252,17 +310,24 @@ export function TimesheetBlockGrid({
                           title={
                             status === 'empty'
                               ? isTh ? 'คลิกเพื่อลงเวลา' : 'Click to log time'
-                              : `${localeStyle[status].label}${status === 'leave' && day?.leave ? ` · ${isTh ? day.leave.name_th : day.leave.name_en}` : ''}${missingOut ? ` · ${isTh ? 'ไม่ออกงาน' : 'no clock-out'}` : ''}${(day?.late_min ?? 0) > 0 ? ` · สาย ${day?.late_min}` : ''}${(day?.ot_min ?? 0) > 0 ? ` · OT ${toH(day?.ot_min ?? 0)}` : ''}`
+                              : `${localeStyle[status].label}${status === 'leave' && day?.leave ? ` · ${isTh ? day.leave.name_th : day.leave.name_en}${halfDay ? (isTh ? ' (ครึ่งวัน)' : ' (half day)') : ''}` : ''}${missingOut ? ` · ${isTh ? 'ไม่ออกงาน' : 'no clock-out'}` : ''}${(day?.late_min ?? 0) > 0 ? ` · สาย ${day?.late_min}` : ''}${(day?.ot_min ?? 0) > 0 ? ` · OT ${toH(day?.ot_min ?? 0)}` : ''}`
                           }
                           className={cn(
-                            'relative mx-auto flex h-7 w-7 items-center justify-center rounded-lg text-[11px] font-bold ring-1 transition-transform hover:scale-110',
-                            status === 'empty'
+                            'relative mx-auto flex h-7 w-7 items-center justify-center rounded-lg font-bold ring-1 transition-transform hover:scale-110',
+                            // Two-letter leave codes need a notch smaller than the one-letter glyphs.
+                            (cellStyle?.glyph.length ?? 1) > 1 ? 'text-[9px] tracking-tight' : 'text-[11px]',
+                            !cellStyle
                               ? 'cursor-pointer bg-gray-50 text-gray-300 ring-gray-200 hover:bg-indigo-50 hover:text-indigo-400 dark:bg-gray-800 dark:text-gray-600 dark:ring-gray-700 dark:hover:bg-indigo-900/20'
-                              : localeStyle[status].block,
+                              : cellStyle.block,
                             overridden && 'ring-2 ring-indigo-500 ring-offset-1 dark:ring-offset-gray-900'
                           )}
                         >
-                          {status === 'empty' ? '+' : localeStyle[status].glyph}
+                          {cellStyle ? cellStyle.glyph : '+'}
+                          {halfDay && (
+                            <i className="absolute -bottom-1 -right-1 flex h-3 w-3 items-center justify-center rounded-full bg-white text-[8px] font-bold not-italic leading-none text-gray-700 ring-1 ring-gray-300 dark:bg-gray-900 dark:text-gray-200 dark:ring-gray-600">
+                              ½
+                            </i>
+                          )}
                           {hasOt && <i className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-violet-500 ring-1 ring-white dark:ring-gray-900" />}
                           {missingOut && (
                             <i className="absolute -left-0.5 -top-0.5 flex h-2.5 w-2.5 items-center justify-center rounded-full bg-orange-500 text-[7px] font-bold not-italic leading-none text-white ring-1 ring-white dark:ring-gray-900">
