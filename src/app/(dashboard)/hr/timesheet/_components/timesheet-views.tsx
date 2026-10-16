@@ -171,7 +171,9 @@ export function TimesheetBlockGrid({
       ),
     [homeCompany, employees]
   );
-  const nameColWidth = hasScopeChips ? 'min-w-[13rem] max-w-[13rem]' : 'min-w-[9rem] max-w-[9rem]';
+  // Wide enough for a Thai full name AND the nickname that now trails it — at 9rem the nickname
+  // was always the part cut off (HR report 2026-10-16).
+  const nameColWidth = hasScopeChips ? 'min-w-[19rem] max-w-[19rem]' : 'min-w-[15rem] max-w-[15rem]';
 
   return (
     <div className="space-y-2">
