@@ -119,16 +119,19 @@ export const STYLE = STYLE_TH;
 
 /**
  * One purple "ล" for every kind of leave made a sick day, a public holiday and a paid vacation
- * look the same on the grid (HR ask 2026-10-16). Each type now gets the short code HR's own sheet
- * used (SL, PH …) and a colour of its own; a type not listed here keeps the generic leave block.
- * Colours avoid the attendance palette above so a leave can never be mistaken for a work status.
+ * look the same on the grid (HR ask 2026-10-16). Each type now gets the short code and colour HR
+ * chose — SL ม่วง · LWP แดง · PH น้ำเงิน · VL ฟ้า; a type not listed here keeps the generic block.
+ * HR's colours sit near the attendance palette (ขาด red, กำลังทำงาน blue, ทำวันหยุด sky), so each is
+ * a deeper shade than its neighbour and the two-/three-letter code tells them apart from the
+ * one-letter work statuses.
  */
 const LEAVE_STYLE: Record<string, { glyph: string; block: string; dot: string }> = {
-  sick: { glyph: 'SL', block: 'bg-fuchsia-500 text-white ring-fuchsia-600', dot: 'bg-fuchsia-500' },
-  public_holiday: { glyph: 'PH', block: 'bg-lime-500 text-white ring-lime-600', dot: 'bg-lime-500' },
-  vacation: { glyph: 'AL', block: 'bg-teal-500 text-white ring-teal-600', dot: 'bg-teal-500' },
-  personal: { glyph: 'PL', block: 'bg-violet-500 text-white ring-violet-600', dot: 'bg-violet-500' },
-  unpaid: { glyph: 'UL', block: 'bg-purple-700 text-white ring-purple-800', dot: 'bg-purple-700' },
+  sick: { glyph: 'SL', block: 'bg-purple-600 text-white ring-purple-700', dot: 'bg-purple-600' },
+  unpaid: { glyph: 'LWP', block: 'bg-red-700 text-white ring-red-800', dot: 'bg-red-700' },
+  // ลากิจ is unpaid in every company too, so it reads as LWP.
+  personal: { glyph: 'LWP', block: 'bg-red-700 text-white ring-red-800', dot: 'bg-red-700' },
+  public_holiday: { glyph: 'PH', block: 'bg-blue-700 text-white ring-blue-800', dot: 'bg-blue-700' },
+  vacation: { glyph: 'VL', block: 'bg-cyan-500 text-white ring-cyan-600', dot: 'bg-cyan-500' },
   special: { glyph: 'SP', block: 'bg-violet-400/90 text-white ring-violet-500', dot: 'bg-violet-400' },
   bereavement: { glyph: 'BL', block: 'bg-slate-500 text-white ring-slate-600', dot: 'bg-slate-500' },
   maternity: { glyph: 'ML', block: 'bg-pink-400 text-white ring-pink-500', dot: 'bg-pink-400' },
@@ -314,8 +317,12 @@ export function TimesheetBlockGrid({
                           }
                           className={cn(
                             'relative mx-auto flex h-7 w-7 items-center justify-center rounded-lg font-bold ring-1 transition-transform hover:scale-110',
-                            // Two-letter leave codes need a notch smaller than the one-letter glyphs.
-                            (cellStyle?.glyph.length ?? 1) > 1 ? 'text-[9px] tracking-tight' : 'text-[11px]',
+                            // Leave codes (SL, LWP) need a notch smaller than the one-letter glyphs.
+                            (cellStyle?.glyph.length ?? 1) > 2
+                              ? 'text-[8px] tracking-tighter'
+                              : (cellStyle?.glyph.length ?? 1) > 1
+                                ? 'text-[9px] tracking-tight'
+                                : 'text-[11px]',
                             !cellStyle
                               ? 'cursor-pointer bg-gray-50 text-gray-300 ring-gray-200 hover:bg-indigo-50 hover:text-indigo-400 dark:bg-gray-800 dark:text-gray-600 dark:ring-gray-700 dark:hover:bg-indigo-900/20'
                               : cellStyle.block,
