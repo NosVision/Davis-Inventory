@@ -5,6 +5,7 @@ import { useTranslations, useLocale } from 'next-intl';
 import { Loader2, Plus, Pencil, Save, Undo2, AlertTriangle } from 'lucide-react';
 import { SwapQueueLink } from '@/components/hr/swap-queue-link';
 import { Button, Modal, ModalFooter, PageHeader, StatusBadge, type StatusTone, toast, useConfirm } from '@/components/ui';
+import { EmployeeName } from '@/components/hr/employee-name';
 import { PayrollScopeChips, dominantCompany, type PayrollScopeInfo } from '@/components/hr/payroll-scope-chips';
 import { todayBangkok } from '@/lib/utils/date';
 import { shiftMonth } from '../timesheet/_components/pay-window-bar';
@@ -114,8 +115,9 @@ export default function SchedulePage({
   // named after a department — "ACC Baccarat", "ACC Upper House" — so a roster in nickname mode
   // could not tell you who had actually been scheduled.
   //
-  // The nickname is still what a venue calls someone, so it is not thrown away: it rides along in
-  // the row's tooltip, where it costs no width and misleads nobody.
+  // The nickname is still what a venue calls someone, so it trails the name in a muted
+  // "(ชื่อเล่น)", the same way every other HR screen shows a person (EmployeeName) — a tooltip
+  // alone could not be read at a glance, and never on a phone (owner ask 2026-10-16).
   //
   // Fallback follows the project-wide name rule — real name → nickname → login. `name` already
   // collapses to display_name||username server-side, so this degrades to the nickname rather than a
@@ -128,13 +130,6 @@ export default function SchedulePage({
       return nick && nick !== empName(emp) ? nick : null;
     },
     [empName],
-  );
-  const nickTitle = useCallback(
-    (emp: Employee) => {
-      const nick = empNick(emp);
-      return nick ? `${tt('ชื่อเล่น', 'Nickname')}: ${nick}` : undefined;
-    },
-    [empNick], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // Draft (unsaved) edits + the paint brush + which employees the bulk tools act on.
@@ -372,13 +367,16 @@ export default function SchedulePage({
   // Publishing is allowed even if some staff have no shift yet — but warn first (owner ask). An
   // "unassigned" employee has no shift AND no day-off anywhere this month.
   const attemptSubmit = useCallback(() => {
-    const unassigned = employees.filter((emp) => !days.some((d) => effectiveCell(emp.user_id, d))).map((e) => empName(e));
+    const unassigned = employees.filter((emp) => !days.some((d) => effectiveCell(emp.user_id, d))).map((e) => {
+      const nick = empNick(e);
+      return nick ? `${empName(e)} (${nick})` : empName(e);
+    });
     if (unassigned.length > 0) {
       setPublishWarn(unassigned);
       return;
     }
     publishRoster();
-  }, [employees, days, effectiveCell, publishRoster, empName]);
+  }, [employees, days, effectiveCell, publishRoster, empName, empNick]);
 
   // Live per-employee balance from the EFFECTIVE (draft-aware) cells, so day-off counts update as
   // you edit — before saving.
@@ -571,7 +569,21 @@ export default function SchedulePage({
                 `${neverPunched.length} here have never clocked in — rostered days become absences unless they punch`
               )}
             </p>
-            <p className="mt-0.5">{neverPunched.map((p) => p.name).join(' · ')}</p>
+            <p className="mt-0.5">
+              {neverPunched.map((p, i) => {
+                const emp = employees.find((e) => e.user_id === p.user_id);
+                return (
+                  <span key={p.user_id}>
+                    {i > 0 && ' · '}
+                    {emp ? (
+                      <EmployeeName name={empName(emp)} nickname={empNick(emp)} nicknameClassName="opacity-70" />
+                    ) : (
+                      p.name
+                    )}
+                  </span>
+                );
+              })}
+            </p>
           </div>
         </div>
       )}
@@ -747,9 +759,9 @@ export default function SchedulePage({
                     <label className="flex items-center gap-1.5">
                       <input type="checkbox" checked={selectedEmps.has(emp.user_id)} onChange={() => toggleEmp(emp.user_id)}
                         className="h-3.5 w-3.5 rounded border-gray-300 text-indigo-600" />
-                      {/* Nickname on hover — the venue's own word for this person, kept without
-                          letting it take the place of the name payroll and the law use. */}
-                      <span title={nickTitle(emp)}>{empName(emp)}</span>
+                      {/* Nickname trails the name — the venue's own word for this person, kept
+                          without letting it take the place of the name payroll and the law use. */}
+                      <EmployeeName name={empName(emp)} nickname={empNick(emp)} />
                       <PayrollScopeChips emp={emp} homeCompany={homeCompany} isTh={isTh} />
                       {emp.end_date && (
                         <span
@@ -817,7 +829,7 @@ export default function SchedulePage({
                   return (
                     <tr key={emp.user_id} className="border-t border-gray-100 dark:border-gray-700/50">
                       <td className="px-3 py-1.5 font-medium text-gray-800 dark:text-gray-200">
-                        <span title={nickTitle(emp)}>{empName(emp)}</span>
+                        <EmployeeName name={empName(emp)} nickname={empNick(emp)} />
                         <PayrollScopeChips emp={emp} homeCompany={homeCompany} isTh={isTh} />
                       </td>
                       <td className="px-3 py-1.5 tabular-nums text-gray-600 dark:text-gray-400">{b?.work_days ?? 0}</td>
