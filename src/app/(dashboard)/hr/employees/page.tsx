@@ -97,6 +97,31 @@ function employeeName(e: EmployeeRow): string {
 // 'managers' added 2026-08-07: who runs which venue (hr_manager_scopes) — decides who can
 // approve their team's leave and build their store's roster.
 // 'paygroups' added 2026-08-11: slices of a company's payroll that are run separately.
+// The whole register for a filter set. The API serves one page (default 50, max 1,000) and the
+// list here has no pager, so a bare fetch showed the 50 newest records while the subtitle counted
+// all of them — everyone older was reachable only by typing their name (HR report 2026-10-21).
+const REGISTER_PAGE = 1000; // the API's own ceiling (PostgREST's per-request cap)
+async function fetchAllEmployees(
+  params: URLSearchParams
+): Promise<{ data: EmployeeRow[]; count: number; hidden_disabled: number } | null> {
+  const data: EmployeeRow[] = [];
+  let count = 0;
+  let hidden = 0;
+  for (let offset = 0; ; offset += REGISTER_PAGE) {
+    const qs = new URLSearchParams(params);
+    qs.set('limit', String(REGISTER_PAGE));
+    qs.set('offset', String(offset));
+    const res = await fetch(`/api/hr/employees?${qs.toString()}`);
+    if (!res.ok) return null;
+    const json = await res.json();
+    const page = (json.data ?? []) as EmployeeRow[];
+    data.push(...page);
+    count = json.count ?? data.length;
+    hidden = Number(json.hidden_disabled) || 0;
+    if (page.length < REGISTER_PAGE || data.length >= count) return { data, count, hidden_disabled: hidden };
+  }
+}
+
 type PeopleTab = 'employees' | 'accounts' | 'unclaimed' | 'managers' | 'paygroups' | 'links';
 
 export default function EmployeesPage() {
@@ -250,15 +275,14 @@ export default function EmployeesPage() {
     if (columns.length === 0) return;
     setPrinting(true);
     try {
-      // Fresh fetch — the on-screen list is paginated (50) and may be company-filtered;
-      // the register prints the modal's company choice in full (API cap 200). A disabled login
-      // still marked employed is a duplicate, not a head — left off the printed register too.
-      const params = new URLSearchParams({ limit: '200', hide_disabled: '1' });
+      // Fresh fetch — the on-screen list may be filtered; the register prints the modal's company
+      // choice in full (every page — it used to stop at 200 while the venue had 250+). A disabled
+      // login still marked employed is a duplicate, not a head — left off the printed register too.
+      const params = new URLSearchParams({ hide_disabled: '1' });
       if (printCompany) params.set('company_id', printCompany);
-      const res = await fetch(`/api/hr/employees?${params.toString()}`);
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error();
-      const printRows = (json.data ?? []) as EmployeeRow[];
+      const all = await fetchAllEmployees(params);
+      if (!all) throw new Error();
+      const printRows = all.data;
       if (printRows.length === 0) {
         toast({ type: 'warning', title: t('register.emptyResult') });
         return;
@@ -343,12 +367,11 @@ export default function EmployeesPage() {
     if (payType) params.set('pay_type', payType);
     if (status) params.set('status', status);
     if (!showDisabled) params.set('hide_disabled', '1');
-    const res = await fetch(`/api/hr/employees?${params.toString()}`);
-    if (res.ok) {
-      const json = await res.json();
-      setRows(json.data ?? []);
-      setCount(json.count ?? 0);
-      setHiddenDisabled(Number(json.hidden_disabled) || 0);
+    const all = await fetchAllEmployees(params);
+    if (all) {
+      setRows(all.data);
+      setCount(all.count);
+      setHiddenDisabled(all.hidden_disabled);
     }
     setLoading(false);
   }, [q, companyId, storeId, positionId, departmentId, payType, status, showDisabled]);
