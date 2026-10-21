@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server';
 import { openBusinessDateBangkok } from '@/lib/utils/date';
 import { findUnclosedDays } from '@/lib/hr/open-attendance';
-import { closingInstantAfter } from '@/lib/hr/attendance-window';
+import { closingInstantAfter, BUSINESS_DAY_CUTOFF_HOUR } from '@/lib/hr/attendance-window';
 
 /**
  * GET /api/hr/ess/attendance/open-days — the caller's own days that have a check-IN and no
@@ -13,6 +13,17 @@ import { closingInstantAfter } from '@/lib/hr/attendance-window';
  * missing check-out meant knowing which day was broken, opening a blank form, picking the kind,
  * and typing a full timestamp — for a problem the server can already describe exactly.
  */
+/**
+ * The instant a shift on `businessDate` starts. A start before the 06:00 business-day cutoff (a
+ * 01:00 start) belongs to the small hours of the NEXT calendar day, as the business date does.
+ */
+function shiftStartInstant(businessDate: string, startTime: string): string {
+  const hhmm = startTime.slice(0, 5);
+  const d = new Date(`${businessDate}T${hhmm}:00+07:00`);
+  if (Number(hhmm.slice(0, 2)) < BUSINESS_DAY_CUTOFF_HOUR) d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString();
+}
+
 export async function GET() {
   const supabase = await createClient();
   const {
@@ -30,7 +41,7 @@ export async function GET() {
   const [schedRes, reqRes] = await Promise.all([
     service
       .from('hr_schedule')
-      .select('work_date, shift:hr_shift_templates(end_time, label)')
+      .select('work_date, shift:hr_shift_templates(start_time, end_time, label)')
       .eq('user_id', user.id)
       .in('work_date', dates),
     // An open day the employee has ALREADY filed for is waiting on a decision, not on them —
@@ -43,10 +54,10 @@ export async function GET() {
       .in('status', ['pending', 'approved']),
   ]);
 
-  const shiftByDate = new Map<string, { end_time: string; label: string | null }>();
+  const shiftByDate = new Map<string, { start_time: string; end_time: string; label: string | null }>();
   for (const r of (schedRes.data ?? []) as { work_date: string; shift: unknown }[]) {
     const sh = (Array.isArray(r.shift) ? r.shift[0] : r.shift) as
-      | { end_time: string; label: string | null }
+      | { start_time: string; end_time: string; label: string | null }
       | null;
     if (sh) shiftByDate.set(r.work_date, sh);
   }
@@ -60,6 +71,7 @@ export async function GET() {
       const shift = shiftByDate.get(d.business_date) ?? null;
       return {
         business_date: d.business_date,
+        attendance_id: d.attendance_id,
         in_ts: d.in_ts,
         // Pre-fill: the shift's scheduled end is the closest thing to "when you actually left"
         // that the system knows. null when the day had no rostered shift — the employee types it.
@@ -70,6 +82,9 @@ export async function GET() {
         suggested_out_ts: shift
           ? closingInstantAfter(d.business_date, shift.end_time, d.in_ts)
           : null,
+        // For "ลืมเช็คอิน — that check-in was my check-out": the shift's start on the business date
+        // is the sensible default for when they really arrived.
+        suggested_in_ts: shift ? shiftStartInstant(d.business_date, shift.start_time) : null,
         shift_label: shift?.label ?? null,
         existing_request: reqByDate.get(d.business_date) ?? null,
       };

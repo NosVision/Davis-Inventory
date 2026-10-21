@@ -19,6 +19,29 @@ const TYPE_TH: Record<string, string> = {
 };
 
 const BUCKET = 'hr-documents';
+
+/** Best-effort removal of a selfie uploaded for a punch that is then refused. */
+async function discardPhoto(service: ReturnType<typeof createServiceClient>, path: string) {
+  await service.storage
+    .from(BUCKET)
+    .remove([path])
+    .catch(() => {});
+}
+
+/**
+ * A rostered shift on `businessDate` as instants. A start before the 06:00 business-day cutoff
+ * belongs to the next calendar day (as the business date does); an end at or before the start
+ * wraps past midnight.
+ */
+function shiftWindow(businessDate: string, startTime: string, endTime: string): { start: number; end: number } {
+  const startD = new Date(`${businessDate}T${startTime.slice(0, 5)}:00+07:00`);
+  if (Number(startTime.slice(0, 2)) < 6) startD.setUTCDate(startD.getUTCDate() + 1);
+  const start = startD.getTime();
+  const startMin = Number(startTime.slice(0, 2)) * 60 + Number(startTime.slice(3, 5));
+  const endMin = Number(endTime.slice(0, 2)) * 60 + Number(endTime.slice(3, 5));
+  const lenMin = (endMin - startMin + 1440) % 1440 || 1440;
+  return { start, end: start + lenMin * 60_000 };
+}
 const VALID_TYPES = ['in', 'out', 'break_start', 'break_end'] as const;
 // ~3MB of base64 (a watermarked selfie JPEG is well under this).
 const MAX_PHOTO_B64 = 3 * 1024 * 1024;
@@ -393,6 +416,71 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // --- Wrong-button guard (HR report 2026-10-21) ---
+  // A cook pressed เริ่มพัก on arriving at 18:00 and เข้างาน on leaving at 03:10. Both were taken
+  // as asked, so the day read "checked in at 03:10, never out", the next check-in was blocked, and
+  // the close-the-day card could not take any check-out time (all of them came before 03:10).
+  //  - A break needs the day to be checked into.
+  //  - A check-in past the middle of the rostered shift is asked about first: arriving that late
+  //    happens, but pressing เข้างาน on the way out is the likelier story. Confirmed → recorded.
+  //  - A check-out with no check-in is still recorded (it is the real leaving time) and the app
+  //    is told, so it can ask the employee to file the missing check-in.
+  let missingIn = false;
+  {
+    const { data: dayPunches } = await service
+      .from('hr_attendance')
+      .select('type, ts')
+      .eq('user_id', user.id)
+      .eq('business_date', businessDate)
+      .order('ts', { ascending: true });
+    const inOut = ((dayPunches ?? []) as { type: string; ts: string }[]).filter(
+      (p) => p.type === 'in' || p.type === 'out'
+    );
+    const checkedIn = inOut.length > 0 && inOut[inOut.length - 1].type === 'in';
+
+    if ((type === 'break_start' || type === 'break_end') && !checkedIn) {
+      await discardPhoto(service, path);
+      return NextResponse.json(
+        {
+          error: 'ยังไม่ได้เช็คอิน — กด "Check in" ก่อน แล้วจึงเริ่มพัก/จบพักได้',
+          code: 'not_checked_in',
+        },
+        { status: 409 }
+      );
+    }
+
+    if (type === 'in' && !checkedIn && body.confirm_late_in !== true) {
+      const { data: cell } = await service
+        .from('hr_schedule')
+        .select('shift:hr_shift_templates(start_time, end_time)')
+        .eq('user_id', user.id)
+        .eq('work_date', businessDate)
+        .maybeSingle();
+      const rawShift = cell?.shift;
+      const shift = (Array.isArray(rawShift) ? rawShift[0] : rawShift) as
+        | { start_time: string; end_time: string }
+        | null
+        | undefined;
+      if (shift) {
+        const window = shiftWindow(businessDate, shift.start_time, shift.end_time);
+        if (Date.now() >= (window.start + window.end) / 2) {
+          await discardPhoto(service, path);
+          return NextResponse.json(
+            {
+              error: `ตอนนี้เลยครึ่งกะ (${shift.start_time.slice(0, 5)}–${shift.end_time.slice(0, 5)}) แล้ว — ถ้าจะเลิกงาน ให้กด Check out`,
+              code: 'late_in_confirm',
+              shift_start: shift.start_time.slice(0, 5),
+              shift_end: shift.end_time.slice(0, 5),
+            },
+            { status: 409 }
+          );
+        }
+      }
+    }
+
+    if (type === 'out' && !inOut.some((p) => p.type === 'in')) missingIn = true;
+  }
+
   // --- Unclosed-day gate (client decision 2026-08-25) ---
   // You cannot open a NEW day while an earlier one is still hanging. Until now the punch was let
   // through and the employee merely notified, on the reasoning that losing today's time record is
@@ -532,6 +620,8 @@ export async function POST(request: NextRequest) {
       ts,
       // Days still awaiting a check-out. The app raises a blocking banner on these.
       open_days: openDays.map((d) => ({ business_date: d.business_date, in_ts: d.in_ts })),
+      // A check-out on a day with no check-in: the app asks the employee to file the check-in.
+      missing_in: missingIn,
     },
     { status: 201 }
   );

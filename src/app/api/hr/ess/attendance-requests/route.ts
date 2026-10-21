@@ -11,6 +11,7 @@ import {
   OFF_BUSINESS_DATE_ERROR,
   OFF_BUSINESS_DATE_OUT_ERROR,
   OUT_BEFORE_IN_ERROR,
+  IN_AFTER_OUT_ERROR,
   SHIFT_TOO_LONG_ERROR,
 } from '@/lib/hr/attendance-window';
 import { businessDateBangkok } from '@/lib/utils/date';
@@ -117,6 +118,36 @@ export async function POST(request: NextRequest) {
         { error: closing ? OFF_BUSINESS_DATE_OUT_ERROR : OFF_BUSINESS_DATE_ERROR },
         { status: 400 }
       );
+    }
+    // "ลืมเช็คอิน — the check-in I pressed was really my check-out" (HR report 2026-10-21: a cook
+    // tapped เริ่มพัก on arrival and เข้างาน at 03:10 on leaving, so the day showed a check-in at
+    // 03:10 whose shift ended at 03:00 and no check-out time could ever be after it). The request
+    // names that punch; approving it adds the real check-in AND turns that punch into the out.
+    if (kind === 'missing_in' && targetAttendanceId) {
+      if (proposedType !== 'in') {
+        return NextResponse.json({ error: 'proposed_type must be in' }, { status: 400 });
+      }
+      const { data: target, error: targetErr } = await service
+        .from('hr_attendance')
+        .select('id, user_id, store_id, type, ts, business_date')
+        .eq('id', targetAttendanceId)
+        .maybeSingle();
+      if (targetErr) {
+        return NextResponse.json({ error: 'Failed to verify attendance record' }, { status: 500 });
+      }
+      if (!target || (target.user_id as string) !== user.id) {
+        return NextResponse.json({ error: 'not your attendance record' }, { status: 400 });
+      }
+      if (target.type !== 'in' || target.business_date !== businessDate) {
+        return NextResponse.json({ error: 'That punch is not this day’s check-in' }, { status: 400 });
+      }
+      if (new Date(proposedTs as string).getTime() >= new Date(target.ts as string).getTime()) {
+        return NextResponse.json({ error: IN_AFTER_OUT_ERROR }, { status: 400 });
+      }
+      if (isSpanTooLong(proposedTs as string, target.ts as string)) {
+        return NextResponse.json({ error: SHIFT_TOO_LONG_ERROR }, { status: 400 });
+      }
+      storeId = (target.store_id as string | null) ?? null;
     }
   } else if (kind === 'wrong_time') {
     if (!targetAttendanceId) {
@@ -237,7 +268,8 @@ export async function POST(request: NextRequest) {
       kind,
       proposed_type: kind === 'other' ? null : proposedType,
       proposed_ts: kind === 'other' ? null : proposedTs,
-      target_attendance_id: kind === 'wrong_time' ? targetAttendanceId : null,
+      // missing_in may name the mistaken check-in that approval turns into the check-out.
+      target_attendance_id: kind === 'wrong_time' || kind === 'missing_in' ? targetAttendanceId : null,
       reason,
       status: 'pending',
     })

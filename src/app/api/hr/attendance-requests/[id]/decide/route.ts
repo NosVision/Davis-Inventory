@@ -326,6 +326,41 @@ export async function POST(
       // 2026-10-08: 42 of 100 queued punches were days already closed this way).
       if (kind === 'missing_out') await settleHeldCheckIn(service, row, 'approved', auth.userId);
 
+      // "ลืมเช็คอิน — the check-in I pressed was my check-out": the punch the request names becomes
+      // the day's out. Settled first, while it is still an `in` the held-check-in rule can see.
+      if (kind === 'missing_in' && row.target_attendance_id) {
+        await settleHeldCheckIn(service, row, 'approved', auth.userId);
+        const { data: flipped, error: flipErr } = await service
+          .from(ATTENDANCE_TABLE)
+          .update({ type: 'out' })
+          .eq('id', row.target_attendance_id)
+          .eq('user_id', row.user_id)
+          .eq('type', 'in')
+          .select('id, user_id, store_id, type, ts, business_date')
+          .maybeSingle();
+        if (flipErr || !flipped) {
+          console.error('Attendance request approve: failed to turn the check-in into the check-out', {
+            attendanceRequestId: id,
+            targetAttendanceId: row.target_attendance_id,
+            error: flipErr?.message ?? 'punch is no longer a check-in',
+          });
+          return NextResponse.json({
+            data: { id, status: 'approved' },
+            warning:
+              'The check-in was added, but the mistaken punch could not be turned into the check-out. Manual follow-up required.',
+          });
+        }
+        await logHrAudit(service, {
+          actorId: auth.userId,
+          action: 'update',
+          table: ATTENDANCE_TABLE,
+          recordId: flipped.id as string,
+          before: { ...flipped, type: 'in' },
+          after: flipped,
+          reason: `${applyReason} — กดเข้างานผิด เปลี่ยนเป็นออกงาน`,
+        });
+      }
+
       return NextResponse.json({ data: { id, status: 'approved' } });
     }
 

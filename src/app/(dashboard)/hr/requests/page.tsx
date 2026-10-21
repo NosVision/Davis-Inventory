@@ -39,6 +39,8 @@ interface AttRow extends QueueMeta {
   kind: Kind;
   proposed_type: string | null;
   proposed_ts: string | null;
+  /** missing_in: the mistaken check-in that approving turns into the check-out */
+  target_attendance_id: string | null;
   reason: string;
   status: Status;
   applied: boolean;
@@ -435,6 +437,11 @@ export default function HrRequestsPage() {
                 <p>
                   {r.proposed_type ? `${r.proposed_type} · ` : ''}
                   {formatThaiDateTime(r.proposed_ts)}
+                </p>
+              )}
+              {r.kind === 'missing_in' && r.target_attendance_id && (
+                <p className="text-amber-700 dark:text-amber-400">
+                  {tAtt('mistakenInToOut')}
                 </p>
               )}
               <p>{r.reason}</p>

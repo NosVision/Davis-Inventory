@@ -56,6 +56,9 @@ export const OFF_BUSINESS_DATE_OUT_ERROR =
 export const OUT_BEFORE_IN_ERROR =
   'เวลาออกงานต้องอยู่หลังเวลาเข้างานของวันนั้น';
 
+/** The "I forgot to check in" form: the real check-in must come before the punch that was the out. */
+export const IN_AFTER_OUT_ERROR = 'เวลาเข้างานต้องอยู่ก่อนเวลาออกงาน';
+
 /**
  * The longest single stretch a check-in → check-out pair may claim.
  *

@@ -28,7 +28,11 @@ import {
 
 export interface OpenDay {
   business_date: string;
+  /** the dangling check-in punch — which "ลืมเช็คอิน" turns into the check-out */
+  attendance_id?: string;
   in_ts: string;
+  /** The rostered shift start — the default for "when did you really arrive". */
+  suggested_in_ts?: string | null;
   /** The rostered shift end — the closest thing to "when you actually left" the system knows. */
   suggested_out_ts: string | null;
   shift_label: string | null;
@@ -48,6 +52,16 @@ function toTimeInput(iso: string): string {
 /** The Bangkok calendar date an instant falls on — same arithmetic, same reason. */
 function toBangkokDate(iso: string): string {
   return new Date(new Date(iso).getTime() + 7 * 3_600_000).toISOString().slice(0, 10);
+}
+
+/**
+ * The instant 'HH:mm' means as an ARRIVAL on `businessDate`: that calendar day, or the small hours
+ * after it when the time is before the 06:00 business-day cutoff (a shift starting at 01:00).
+ */
+function openingInstantOn(businessDate: string, hhmm: string): string {
+  const d = new Date(`${businessDate}T${hhmm}:00+07:00`);
+  if (Number(hhmm.slice(0, 2)) < BUSINESS_DAY_CUTOFF_HOUR) d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString();
 }
 
 /** "16 ชม. 30 น." — the span the employee is about to claim, so a wrong time is obvious. */
@@ -87,6 +101,12 @@ function DayCloseForm({
   onFiled: () => void;
 }) {
   const [reason, setReason] = useState('');
+  // Which mistake this was. 'forgot_out' (the usual): they checked in and never checked out.
+  // 'forgot_in': they never checked in, and the punch shown here was them pressing เข้างาน on the
+  // way OUT — a check-in at 03:10 on a shift that ended at 03:00 (HR report 2026-10-21). Then no
+  // check-out time can be after it; what is missing is the real check-in.
+  const [mode, setMode] = useState<'forgot_out' | 'forgot_in'>('forgot_out');
+  const [inTime, setInTime] = useState(() => (day.suggested_in_ts ? toTimeInput(day.suggested_in_ts) : ''));
   // Time only. The DATE is not the employee's to choose — it is the day being closed, stated above
   // — and a full datetime picker made it theirs to get wrong: on a Thai phone it rendered as
   // "20 Jul BE 2569 at 19:00", too wide for the screen and reading like a field they had to type.
@@ -109,9 +129,72 @@ function DayCloseForm({
   // most of a day's work. Flag it here rather than let payroll pay it.
   const tooLong = !pastWindow && isSpanTooLong(day.in_ts, proposedTs);
 
+  // forgot_in: the typed arrival time, on the business date (or the small hours after it, as for
+  // a shift that starts after midnight). It must come before the punch that was really the out.
+  const proposedInTs = inTime ? openingInstantOn(day.business_date, inTime) : null;
+  const inNotBeforeOut =
+    proposedInTs !== null && new Date(proposedInTs).getTime() >= new Date(day.in_ts).getTime();
+  const inTooLong = proposedInTs !== null && !inNotBeforeOut && isSpanTooLong(proposedInTs, day.in_ts);
+  const canForgotIn = !!day.attendance_id;
+
+  const submitForgotIn = async () => {
+    if (!proposedInTs) {
+      toast({ type: 'error', title: 'กรุณาใส่เวลาเข้างานจริง' });
+      return;
+    }
+    if (inNotBeforeOut) {
+      toast({
+        type: 'error',
+        title: 'เวลาเข้างานต้องอยู่ก่อนเวลาออกงาน',
+        message: `เวลาออกงานคือ ${formatTimeBangkok(day.in_ts)}`,
+      });
+      return;
+    }
+    if (inTooLong) {
+      toast({
+        type: 'error',
+        title: `ช่วงเวลาทำงานยาวเกิน ${MAX_SHIFT_SPAN_HOURS} ชั่วโมง`,
+        message: 'ตรวจเวลาที่กรอกอีกครั้ง',
+      });
+      return;
+    }
+    setSending(true);
+    try {
+      const res = await fetch('/api/hr/ess/attendance-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          business_date: day.business_date,
+          kind: 'missing_in',
+          proposed_type: 'in',
+          proposed_ts: proposedInTs,
+          target_attendance_id: day.attendance_id,
+          reason: reason.trim(),
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || 'ส่งคำขอไม่สำเร็จ');
+      toast({
+        type: 'success',
+        title: 'ส่งให้ HR แล้ว',
+        message: 'ลงเวลาเข้างานวันนี้ได้เลย ไม่ต้องรออนุมัติ',
+      });
+      setReason('');
+      onFiled();
+    } catch (e) {
+      toast({ type: 'error', title: e instanceof Error ? e.message : 'ส่งคำขอไม่สำเร็จ' });
+    } finally {
+      setSending(false);
+    }
+  };
+
   const submit = async () => {
     if (!reason.trim()) {
       toast({ type: 'error', title: 'กรุณากรอกเหตุผล' });
+      return;
+    }
+    if (mode === 'forgot_in') {
+      await submitForgotIn();
       return;
     }
     if (pastWindow) {
@@ -201,6 +284,71 @@ function DayCloseForm({
         )}
       </div>
 
+      {canForgotIn && (
+        <div className="grid grid-cols-1 gap-1.5 text-xs">
+          {([
+            ['forgot_out', `ลืมเช็คเอาท์ — เข้างานจริงตอน ${formatTimeBangkok(day.in_ts)}`],
+            ['forgot_in', `ลืมเช็คอิน — ${formatTimeBangkok(day.in_ts)} คือตอนเลิกงาน (กดเช็คอินผิด)`],
+          ] as const).map(([m, label]) => (
+            <label
+              key={m}
+              className={`flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 ${
+                mode === m
+                  ? 'border-amber-500 bg-white font-medium text-amber-900 dark:bg-gray-800 dark:text-amber-200'
+                  : 'border-amber-200 text-amber-800 dark:border-amber-800 dark:text-amber-300'
+              }`}
+            >
+              <input
+                type="radio"
+                name="unclosed-mode"
+                checked={mode === m}
+                onChange={() => setMode(m)}
+                className="mt-0.5"
+              />
+              <span>{label}</span>
+            </label>
+          ))}
+        </div>
+      )}
+
+      {mode === 'forgot_in' ? (
+        <div>
+          <label
+            htmlFor="unclosed-in-time"
+            className="block text-xs font-medium text-amber-900 dark:text-amber-200"
+          >
+            เข้างานจริงกี่โมง — กะของวันที่ {formatDmy(day.business_date)}
+          </label>
+          <input
+            id="unclosed-in-time"
+            type="time"
+            value={inTime}
+            onChange={(e) => setInTime(e.target.value)}
+            className="control mt-1 w-auto max-w-full text-base tabular-nums"
+          />
+          <p
+            className={`mt-1 text-[11px] tabular-nums ${
+              inNotBeforeOut || inTooLong
+                ? 'font-medium text-red-600 dark:text-red-400'
+                : 'text-amber-800 dark:text-amber-300'
+            }`}
+          >
+            {proposedInTs
+              ? `เข้างาน ${formatDmy(toBangkokDate(proposedInTs))} ${inTime} · ออกงาน ${formatTimeBangkok(day.in_ts)} · รวม ${spanLabel(proposedInTs, day.in_ts)}${
+                  inNotBeforeOut
+                    ? ' — เวลาเข้างานต้องอยู่ก่อนเวลาออกงาน'
+                    : inTooLong
+                      ? ' — ยาวผิดปกติ ตรวจอีกครั้ง'
+                      : ''
+                }`
+              : 'ใส่เวลาที่เข้างานจริงของวันนั้น'}
+          </p>
+          <p className="mt-0.5 text-[11px] text-amber-700/80 dark:text-amber-400/80">
+            {day.suggested_in_ts ? 'เติมเวลาเริ่มกะตามตารางให้แล้ว — แก้ได้ถ้าเข้าจริงคนละเวลา · ' : ''}
+            HR อนุมัติแล้ว ระบบจะเปลี่ยนเวลา {formatTimeBangkok(day.in_ts)} เป็นเวลาออกงานให้
+          </p>
+        </div>
+      ) : (
       <div>
         <label
           htmlFor="unclosed-out-time"
@@ -236,6 +384,7 @@ function DayCloseForm({
             : 'ใส่เวลาที่ออกงานจริงของวันนั้น'}
         </p>
       </div>
+      )}
 
       <label className="block text-xs font-medium text-amber-900 dark:text-amber-200">
         เหตุผล <span className="text-red-500">*</span>
@@ -243,7 +392,7 @@ function DayCloseForm({
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           rows={2}
-          placeholder="เช่น ลืมกดเช็คเอาท์ก่อนกลับ"
+          placeholder={mode === 'forgot_in' ? 'เช่น ลืมกดเช็คอินตอนมาถึง กดผิดตอนกลับ' : 'เช่น ลืมกดเช็คเอาท์ก่อนกลับ'}
           className="control mt-1 w-full resize-none"
         />
       </label>

@@ -123,6 +123,9 @@ export default function CheckinPage() {
 
   const [type, setType] = useState<AttendanceType>('in');
   const [noGpsOpen, setNoGpsOpen] = useState(false);
+  // เช็คอินเลยครึ่งกะ — the server asks before taking it (HR report 2026-10-21: เข้างาน pressed on
+  // the way out). Holds the shift the question names.
+  const [lateIn, setLateIn] = useState<{ start: string; end: string } | null>(null);
   const [coords, setCoords] = useState<Coords | null>(null);
   const [locStatus, setLocStatus] = useState<LocStatus>('idle');
   const [locDenied, setLocDenied] = useState(false);
@@ -511,16 +514,18 @@ export default function CheckinPage() {
   // --- Submit ---
   // Post the punch. GPS is sent only when we have it; a punch with no coords is accepted server-side
   // but held for HR review, and the toast tells the employee it went to HR.
-  const doSubmit = useCallback(async () => {
+  const doSubmit = useCallback(async (opts?: { type?: AttendanceType; confirmLateIn?: boolean }) => {
     if (!photo) return;
+    const punchType = opts?.type ?? type;
     setSubmitting(true);
-    logDebug(`submit ${type} photo=${Math.round(photo.length / 1024)} KB gps=${coords ? 'yes' : 'none'}`);
+    logDebug(`submit ${punchType} photo=${Math.round(photo.length / 1024)} KB gps=${coords ? 'yes' : 'none'}`);
     try {
       const res = await fetch('/api/hr/ess/checkin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          type,
+          type: punchType,
+          ...(opts?.confirmLateIn ? { confirm_late_in: true } : {}),
           ...(coords ? { gps_lat: coords.lat, gps_lng: coords.lng } : {}),
           photo,
           device: typeof navigator !== 'undefined' ? navigator.userAgent : '',
@@ -536,6 +541,11 @@ export default function CheckinPage() {
         // The server refuses a new check-in while a day hangs open. Surfacing the card is more use
         // than the message alone — it is the thing that clears the block.
         if (json?.code === 'unclosed_day') fetchOpenDays();
+        // Not an error to show — a question to ask: is this really a check-in?
+        if (json?.code === 'late_in_confirm') {
+          setLateIn({ start: json.shift_start, end: json.shift_end });
+          return;
+        }
         if (json?.code === 'outside_geofence_not_allowed') {
           throw new Error(tx(
             'สาขานี้ไม่อนุญาตให้ลงเวลานอกพื้นที่ กรุณาเข้าพื้นที่สาขาแล้วลองอีกครั้ง',
@@ -578,6 +588,25 @@ export default function CheckinPage() {
               ? t('successOut')
               : t('success'),
       });
+      // A check-out on a day with no check-in: the out is the real leaving time and is kept, but
+      // the check-in still has to come from somewhere — say so while it is fresh.
+      if (json.missing_in) {
+        toast({
+          type: 'warning',
+          title: tx(
+            'วันนี้ยังไม่มีเวลาเข้างาน',
+            'No check-in on record today',
+            'ယနေ့ အလုပ်ဝင်ချိန် မရှိသေးပါ',
+            'ມື້ນີ້ຍັງບໍ່ມີເວລາເຂົ້າວຽກ'
+          ),
+          message: tx(
+            'บันทึกเวลาออกงานแล้ว — ไปที่ "คำขอแก้ไขเวลา" เพื่อส่งเวลาเข้างานจริงให้ HR',
+            'Check-out saved — file your real check-in time under attendance requests',
+            'အလုပ်ထွက်ချိန် သိမ်းပြီး — အလုပ်ဝင်ချိန်အမှန်ကို HR ထံ တောင်းဆိုချက်ဖြင့် ပို့ပါ',
+            'ບັນທຶກເວລາອອກວຽກແລ້ວ — ສົ່ງເວລາເຂົ້າວຽກແທ້ໃຫ້ HR ທີ່ "ຄຳຂໍແກ້ໄຂເວລາ"'
+          ),
+        });
+      }
       setPhoto(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
       await fetchToday();
@@ -1011,6 +1040,50 @@ export default function CheckinPage() {
       </div>
 
       <CheckinDebugModal isOpen={debugOpen} onClose={() => setDebugOpen(false)} getInput={getDebugInput} />
+
+      {/* Check-in past the middle of the shift — likely the wrong button on the way out. */}
+      <Modal
+        isOpen={lateIn !== null}
+        onClose={() => setLateIn(null)}
+        title={tx('จะเลิกงานหรือเปล่า?', 'Leaving work?', 'အလုပ်ဆင်းမှာလား?', 'ຈະເລີກວຽກບໍ?')}
+        size="sm"
+      >
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-50 dark:bg-amber-900/30">
+            <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+          </div>
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            {tx(
+              `ตอนนี้เลยครึ่งกะ (${lateIn?.start}–${lateIn?.end}) แล้ว ถ้าจะเลิกงาน ให้กด Check out — ถ้าเพิ่งมาถึงจริง กดยืนยัน Check in`,
+              `You are past the middle of your shift (${lateIn?.start}–${lateIn?.end}). Leaving? Press Check out. Only just arrived? Confirm Check in.`,
+              `အလုပ်ချိန်တစ်ဝက် (${lateIn?.start}–${lateIn?.end}) ကျော်နေပြီ။ အလုပ်ဆင်းမည်ဆိုလျှင် Check out ကိုနှိပ်ပါ — ယခုမှရောက်လျှင် Check in ကို အတည်ပြုပါ`,
+              `ຕອນນີ້ເລີຍເຄິ່ງກະ (${lateIn?.start}–${lateIn?.end}) ແລ້ວ ຖ້າຈະເລີກວຽກ ໃຫ້ກົດ Check out — ຖ້າຫາກໍມາຮອດແທ້ ກົດຢືນຢັນ Check in`
+            )}
+          </p>
+        </div>
+        <ModalFooter>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setLateIn(null);
+              void doSubmit({ confirmLateIn: true });
+            }}
+            disabled={submitting}
+          >
+            {tx('ยืนยัน Check in', 'Confirm Check in', 'Check in အတည်ပြု', 'ຢືນຢັນ Check in')}
+          </Button>
+          <Button
+            onClick={() => {
+              setLateIn(null);
+              setType('out');
+              void doSubmit({ type: 'out' });
+            }}
+            isLoading={submitting}
+          >
+            {tx('เปลี่ยนเป็น Check out', 'Check out instead', 'Check out သို့ပြောင်း', 'ປ່ຽນເປັນ Check out')}
+          </Button>
+        </ModalFooter>
+      </Modal>
 
       {/* No-GPS confirmation */}
       <Modal
