@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
-import { requireStoreManager } from '@/lib/hr/route-auth';
+import { requireHrManager, requireStoreManager } from '@/lib/hr/route-auth';
 import { buildEmployeeNameMap } from '@/lib/hr/employee-name-map';
 import { planDayoffSwap, swapCellsFrom } from '@/lib/hr/dayoff-swap';
 
@@ -16,6 +16,8 @@ interface SwapRow {
   note: string | null;
   decided_at: string | null;
   hr_acked_at: string | null;
+  store_id: string;
+  store: { store_name: string | null } | { store_name: string | null }[] | null;
 }
 interface CellRow {
   user_id: string;
@@ -32,8 +34,10 @@ export async function GET(request: NextRequest) {
   const sp = request.nextUrl.searchParams;
   const storeId = sp.get('store_id') ?? '';
   // A day-off swap is a roster change, so it belongs to whoever builds the roster — the captain
-  // as much as the manager (client request 2026-08-14).
-  const auth = await requireStoreManager(storeId, 'schedule');
+  // as much as the manager (client request 2026-08-14). No store_id = every store, company-wide HR
+  // only: the HR dashboard counts swaps across all venues, and a queue that opened on the first
+  // venue alone showed "no requests" for one waiting at another (HR report 2026-10-21).
+  const auth = storeId ? await requireStoreManager(storeId, 'schedule') : await requireHrManager();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const status = sp.get('status');
@@ -45,9 +49,9 @@ export async function GET(request: NextRequest) {
   let query = service
     .from('hr_dayoff_swaps')
     .select(
-      'id, requester_id, requester_date, counterpart_id, counterpart_date, status, note, decided_at, hr_acked_at'
-    )
-    .eq('store_id', storeId);
+      'id, requester_id, requester_date, counterpart_id, counterpart_date, status, note, decided_at, hr_acked_at, store_id, store:stores(store_name)'
+    );
+  if (storeId) query = query.eq('store_id', storeId);
   if (status) query = query.eq('status', status);
   const { data, error } = await query.order('created_at', { ascending: false });
   if (error) return NextResponse.json({ error: 'Failed to load swaps' }, { status: 500 });
@@ -86,10 +90,12 @@ export async function GET(request: NextRequest) {
     // A decided swap has already happened (or never will) — only a pending one has an outcome to show.
     const plan =
       s.status === 'pending'
-        ? planDayoffSwap(s.requester_date, s.counterpart_date, storeId, swapCellsFrom(cells, s))
+        ? planDayoffSwap(s.requester_date, s.counterpart_date, s.store_id, swapCellsFrom(cells, s))
         : null;
     return {
       id: s.id,
+      store_id: s.store_id,
+      store_name: (Array.isArray(s.store) ? s.store[0] : s.store)?.store_name ?? null,
       company_id: companyByUser.get(s.requester_id) ?? null,
       requester_name: nameById.get(s.requester_id)?.name ?? null,
       requester_nickname: nameById.get(s.requester_id)?.nickname ?? null,

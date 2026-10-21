@@ -4247,6 +4247,7 @@
       "approved": "Approved",
       "rejected": "Rejected",
       "applied": "Applied",
+      "mistakenInToOut": "Pressed check-in on leaving — approving turns that punch into the check-out",
       "notApplied": "Not auto-applied — HR will handle manually"
     },
     "swaps": {
@@ -4295,6 +4296,7 @@
       "actionFailed": "Action failed",
       "dayOff": "Day off",
       "noSwaps": "No swap requests",
+      "allStores": "All stores",
       "noCoworkers": "No coworkers available",
       "loading": "Loading…",
       "storeLabel": "Store",

@@ -16,6 +16,8 @@ interface StoreOpt {
 type SwapPreview = { ok: true; counterpart_trades: boolean } | { ok: false; reason: SwapBlockReason } | null;
 interface Swap {
   id: string;
+  store_id: string;
+  store_name: string | null;
   /** the requester's company */
   company_id: string | null;
   requester_name: string;
@@ -67,7 +69,10 @@ export function DayoffSwapQueue({ mode }: { mode: 'hr' | 'store' }) {
   const t = useTranslations('hr.swaps');
 
   const [stores, setStores] = useState<StoreOpt[]>([]);
+  // HR opens on every store ('' = ทุกสาขา): the dashboard counts swaps across all venues, so a queue
+  // opening on the first venue alone hid the one it was counting (HR report 2026-10-21).
   const [storeId, setStoreId] = useState('');
+  const allStores = mode === 'hr' && storeId === '';
   // A store approver comes here for what waits on them; HR comes to acknowledge what was decided.
   const [status, setStatus] = useState<string>(mode === 'store' ? 'pending' : 'all');
   const [view, setView] = useViewMode(mode === 'store' ? 'store-swaps' : 'hr-swaps');
@@ -105,25 +110,31 @@ export function DayoffSwapQueue({ mode }: { mode: 'hr' | 'store' }) {
         const json = await res.json();
         const list = (json.data ?? []) as StoreOpt[];
         setStores(list);
-        setStoreId((prev) => prev || list[0]?.id || '');
+        if (mode === 'store') setStoreId((prev) => prev || list[0]?.id || '');
       } catch {
         setStores([]);
       } finally {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [mode]);
 
   const load = useCallback(async () => {
-    if (!storeId) {
+    if (!storeId && mode === 'store') {
       setSwaps([]);
       return;
     }
     setLoading(true);
     try {
-      const params = new URLSearchParams({ store_id: storeId });
+      const params = new URLSearchParams();
+      if (storeId) params.set('store_id', storeId);
       if (status !== 'all') params.set('status', status);
       const res = await fetch(`/api/hr/dayoff-swaps?${params.toString()}`);
+      // ทุกสาขา is company-wide HR only; a store-scoped HR manager falls back to their first venue.
+      if (res.status === 403 && !storeId && stores[0]) {
+        setStoreId(stores[0].id);
+        return;
+      }
       if (!res.ok) throw new Error();
       const json = await res.json();
       setSwaps((json.data ?? []) as Swap[]);
@@ -134,7 +145,7 @@ export function DayoffSwapQueue({ mode }: { mode: 'hr' | 'store' }) {
       setRejectId(null);
       setRejectNote('');
     }
-  }, [storeId, status]);
+  }, [storeId, status, mode, stores]);
 
   useEffect(() => {
     load();
@@ -292,7 +303,10 @@ export function DayoffSwapQueue({ mode }: { mode: 'hr' | 'store' }) {
           label={t('storeLabel')}
           value={storeId}
           onChange={(e) => setStoreId(e.target.value)}
-          options={stores.map((s) => ({ value: s.id, label: s.store_name }))}
+          options={[
+            ...(mode === 'hr' ? [{ value: '', label: t('allStores') }] : []),
+            ...stores.map((s) => ({ value: s.id, label: s.store_name })),
+          ]}
         />
         <Select
           label={t('status')}
@@ -335,6 +349,7 @@ export function DayoffSwapQueue({ mode }: { mode: 'hr' | 'store' }) {
               status={<StatusBadge tone={STATUS_TONE[s.status]} label={statusLabel(s.status)} />}
               actions={renderActions(s)}
             >
+              {allStores && s.store_name && <p className="font-medium text-gray-600 dark:text-gray-300">{s.store_name}</p>}
               {renderOutcome(s)}
               {s.note && <p>{s.note}</p>}
             </DataCard>
