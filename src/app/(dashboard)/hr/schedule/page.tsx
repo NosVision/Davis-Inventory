@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
-import { Loader2, Plus, Pencil, Save, Undo2, AlertTriangle } from 'lucide-react';
+import { Loader2, Plus, Pencil, Save, Undo2, AlertTriangle, Lock, LockOpen } from 'lucide-react';
 import { SwapQueueLink } from '@/components/hr/swap-queue-link';
 import { Button, Modal, ModalFooter, PageHeader, StatusBadge, type StatusTone, toast, useConfirm } from '@/components/ui';
 import { EmployeeName } from '@/components/hr/employee-name';
@@ -136,6 +136,13 @@ export default function SchedulePage({
     }
   };
   const [monthStatus, setMonthStatus] = useState<MonthStatus>('empty');
+  // HR roster lock (HR ask 2026-10-21): HR locks a store's month once the supervisors are done.
+  // While locked the grid is read-only for everyone but company-wide HR; the API enforces it too.
+  const [lock, setLock] = useState<{ locked_at: string; locked_by_name: string | null } | null>(null);
+  const [canManageLock, setCanManageLock] = useState(false);
+  const [canEdit, setCanEdit] = useState(true);
+  const [lockBusy, setLockBusy] = useState(false);
+  const readOnly = !canEdit;
   // Employees with NO roster row at all this month — "nobody thought about them", which an empty
   // grid line hides (HR ask 2026-08-07).
   const [unscheduled, setUnscheduled] = useState<{ user_id: string; name: string; position_name: string | null }[]>([]);
@@ -219,6 +226,9 @@ export default function SchedulePage({
       setEntries((j.entries ?? []) as Entry[]);
       setLeaves((j.leaves ?? []) as RosterLeave[]);
       setMonthStatus((j.monthStatus ?? 'empty') as MonthStatus);
+      setLock(j.lock ?? null);
+      setCanManageLock(j.can_manage_lock === true);
+      setCanEdit(j.can_edit !== false);
       setUnscheduled((j.unscheduled ?? []) as { user_id: string; name: string; position_name: string | null }[]);
       setNeverPunched((j.never_punched ?? []) as { user_id: string; name: string }[]);
     } catch {
@@ -304,6 +314,10 @@ export default function SchedulePage({
   // Paint one cell with the active brush.
   const paintCell = useCallback(
     (userId: string, date: string) => {
+      if (readOnly) {
+        toast({ type: 'warning', title: tt('ตารางเดือนนี้ถูก HR ล็อกไว้', 'This month is locked by HR'), message: tt('ติดต่อ HR เพื่อปลดล็อกก่อนแก้ไข', 'Ask HR to unlock it first') });
+        return;
+      }
       const val = brushToDraft(brush);
       if (!val) {
         toast({ type: 'warning', title: tt('เลือกกะ (แปรง) ก่อน', 'Pick a shift (brush) first') });
@@ -311,7 +325,7 @@ export default function SchedulePage({
       }
       setDraft((prev) => new Map(prev).set(key(userId, date), val));
     },
-    [brush] // eslint-disable-line react-hooks/exhaustive-deps
+    [brush, readOnly] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // Bulk: fill the active brush for every selected employee on the chosen weekdays.
@@ -401,6 +415,39 @@ export default function SchedulePage({
       toast({ type: 'error', title: t('saveFailed'), message: error instanceof Error ? error.message : undefined });
     }
   }, [form, storeId, load, t]);
+
+  // --- HR roster lock ---
+  const toggleLock = useCallback(async () => {
+    const locking = !lock;
+    if (locking && dirty > 0) {
+      toast({ type: 'warning', title: tt('บันทึกหรือยกเลิกร่างก่อนล็อก', 'Save or discard the draft before locking') });
+      return;
+    }
+    if (!(await confirm({
+      title: locking ? tt(`ล็อกตารางกะเดือน ${month}?`, `Lock the ${month} roster?`) : tt(`ปลดล็อกตารางกะเดือน ${month}?`, `Unlock the ${month} roster?`),
+      message: locking
+        ? tt('หัวหน้างานจะแก้ไขตารางเดือนนี้ไม่ได้จนกว่า HR จะปลดล็อก (HR ยังแก้ได้ และการสลับวันหยุดที่อนุมัติยังเปลี่ยนตารางได้)', 'Supervisors cannot edit this month until HR unlocks it (HR can still edit; approved day-off swaps still apply).')
+        : tt('หัวหน้างานจะกลับมาแก้ไขตารางเดือนนี้ได้', 'Supervisors will be able to edit this month again.'),
+      confirmLabel: locking ? tt('ล็อก', 'Lock') : tt('ปลดล็อก', 'Unlock'),
+    }))) return;
+    setLockBusy(true);
+    try {
+      const res = await fetch('/api/hr/schedule/lock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ store_id: storeId, month, locked: locking }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        toast({ type: 'error', title: t('actionFailed'), message: j.error });
+        return;
+      }
+      toast({ type: 'success', title: locking ? tt('ล็อกตารางแล้ว', 'Roster locked') : tt('ปลดล็อกแล้ว', 'Roster unlocked') });
+      await load();
+    } finally {
+      setLockBusy(false);
+    }
+  }, [lock, dirty, month, storeId, confirm, load, t]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- publish ---
   // HQ publishes the roster (draft → submitted); employees see it immediately. The HR "acknowledge"
@@ -529,7 +576,7 @@ export default function SchedulePage({
             <Button
               size="sm"
               variant="outline"
-              disabled={!storeId || copying}
+              disabled={!storeId || copying || readOnly}
               isLoading={copying}
               onClick={async () => {
                 const prev = shiftMonth(month, -1);
@@ -599,7 +646,30 @@ export default function SchedulePage({
             {tt(`ยังไม่บันทึก ${dirty} ช่อง`, `${dirty} unsaved`)}
           </span>
         )}
+        {lock && (
+          <span
+            className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700 dark:bg-rose-900/40 dark:text-rose-300"
+            title={new Date(lock.locked_at).toLocaleString(isTh ? 'th-TH' : 'en-GB', { timeZone: 'Asia/Bangkok' })}
+          >
+            <Lock className="h-3 w-3" />
+            {tt('ล็อกโดย HR', 'Locked by HR')}
+            {lock.locked_by_name ? ` · ${lock.locked_by_name}` : ''}
+            {` · ${new Date(lock.locked_at).toLocaleDateString(isTh ? 'th-TH' : 'en-GB', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short' })}`}
+          </span>
+        )}
         <div className="flex-1" />
+        {canManageLock && storeId && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={toggleLock}
+            isLoading={lockBusy}
+            disabled={lockBusy}
+            icon={lock ? <LockOpen className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
+          >
+            {lock ? tt('ปลดล็อก', 'Unlock') : tt('ล็อกตาราง', 'Lock roster')}
+          </Button>
+        )}
         <Button size="sm" onClick={attemptSubmit} disabled={dirty > 0 || monthStatus === 'empty'}>
           {t('submitToHr')}
         </Button>
@@ -762,7 +832,14 @@ export default function SchedulePage({
       )}
 
       {/* bulk fill tools */}
-      {!loading && employees.length > 0 && (
+      {readOnly && (
+        <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50/70 px-3 py-2.5 text-xs text-rose-800 dark:border-rose-800/60 dark:bg-rose-900/15 dark:text-rose-300">
+          <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{tt('ตารางกะเดือนนี้ถูก HR ล็อกไว้ ดูได้อย่างเดียว — ติดต่อ HR หากต้องแก้ไข', 'HR has locked this month’s roster — view only. Contact HR to make changes.')}</span>
+        </div>
+      )}
+
+      {!loading && employees.length > 0 && !readOnly && (
         <ScheduleFillTools
           isTh={isTh}
           templates={templates}

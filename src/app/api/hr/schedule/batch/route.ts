@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireSchedulerForScope } from '@/lib/hr/route-auth';
+import { anyCellLocked, SCHEDULE_LOCKED_ERROR } from '@/lib/hr/schedule-lock';
 import { loadSchedulableProfileIds, findNotSchedulable } from '@/lib/hr/roster';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -120,6 +121,18 @@ export async function POST(request: NextRequest) {
   const templateSet = new Set((templatesRes.data ?? []).map((t) => t.id as string));
   const badTemplate = templateIds.find((t) => !templateSet.has(t));
   if (badTemplate) return NextResponse.json({ error: 'A shift template is invalid for this scope' }, { status: 400 });
+
+  // HR roster lock: refuse the whole save (not skip) — a manager whose edits half-vanish would not
+  // know which half. Company-wide HR still edits a locked month (owner decision 2026-10-21).
+  if (!auth.fullHr) {
+    try {
+      if (await anyCellLocked(service, scope.storeId, cells)) {
+        return NextResponse.json({ error: SCHEDULE_LOCKED_ERROR }, { status: 409 });
+      }
+    } catch {
+      return NextResponse.json({ error: 'Failed to verify roster lock' }, { status: 500 });
+    }
+  }
 
   // §Phase 0B: skip cells whose date is in a finalized pay period — company-wide OR scoped to ANY
   // store the employee works (matching the unique-key semantics + the period-lock convention).

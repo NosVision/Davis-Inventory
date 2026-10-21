@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { requireSchedulerForScope } from '@/lib/hr/route-auth';
 import { isDateInFinalizedPeriod, employeeStoreIds, FINALIZED_PERIOD_ERROR } from '@/lib/hr/period-lock';
+import { anyCellLocked, lockMonthKey, SCHEDULE_LOCKED_ERROR } from '@/lib/hr/schedule-lock';
 import { loadPunchedInRange, neverPunchedWindow } from '@/lib/hr/work-venues';
 import {
   resolveRoster,
@@ -296,7 +297,32 @@ export async function GET(request: NextRequest) {
     half_day: isHalfDayLeave(lv),
   }));
 
+  // HR roster lock for this store's month. Best-effort on read: a failed lookup shows the grid as
+  // unlocked, and every write path re-checks the lock itself before saving.
+  let lock: { locked_at: string; locked_by_name: string | null } | null = null;
+  if (scope.kind === 'store') {
+    const { data: lockRow } = await service
+      .from('hr_schedule_locks')
+      .select('locked_at, locker:profiles!hr_schedule_locks_locked_by_fkey(display_name, username)')
+      .eq('store_id', scope.storeId)
+      .eq('month', lockMonthKey(month))
+      .maybeSingle();
+    if (lockRow) {
+      const locker = (Array.isArray(lockRow.locker) ? lockRow.locker[0] : lockRow.locker) as
+        | { display_name: string | null; username: string | null }
+        | null;
+      lock = {
+        locked_at: lockRow.locked_at as string,
+        locked_by_name: locker?.display_name || locker?.username || null,
+      };
+    }
+  }
+
   return NextResponse.json({
+    lock,
+    // Company-wide HR locks/unlocks and keeps editing a locked month; everyone else is read-only.
+    can_manage_lock: auth.fullHr,
+    can_edit: !lock || auth.fullHr,
     employees: staff,
     templates,
     leaves,
@@ -405,6 +431,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to verify pay period' }, { status: 500 });
   }
 
+  // HR roster lock: a locked month is read-only to store managers / captains; company-wide HR
+  // still edits it (owner decision 2026-10-21).
+  if (!auth.fullHr) {
+    try {
+      if (await anyCellLocked(service, scope.storeId, [{ user_id: userId, work_date: workDate }])) {
+        return NextResponse.json({ error: SCHEDULE_LOCKED_ERROR }, { status: 409 });
+      }
+    } catch {
+      return NextResponse.json({ error: 'Failed to verify roster lock' }, { status: 500 });
+    }
+  }
+
   const { data, error } = await service
     .from('hr_schedule')
     .upsert(
@@ -453,6 +491,17 @@ export async function DELETE(request: NextRequest) {
     }
   } catch {
     return NextResponse.json({ error: 'Failed to verify pay period' }, { status: 500 });
+  }
+
+  if (!auth.fullHr) {
+    try {
+      const cell = { user_id: row.user_id as string, work_date: row.work_date as string };
+      if (row.store_id && (await anyCellLocked(service, row.store_id as string, [cell]))) {
+        return NextResponse.json({ error: SCHEDULE_LOCKED_ERROR }, { status: 409 });
+      }
+    } catch {
+      return NextResponse.json({ error: 'Failed to verify roster lock' }, { status: 500 });
+    }
   }
 
   const { error } = await service.from('hr_schedule').delete().eq('id', id);

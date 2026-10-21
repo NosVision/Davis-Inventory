@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { requireSchedulerForScope } from '@/lib/hr/route-auth';
 import { logHrAudit } from '@/lib/hr/audit';
 import { isRangeInFinalizedPeriod, FINALIZED_PERIOD_ERROR } from '@/lib/hr/period-lock';
+import { loadScheduleLocks, SCHEDULE_LOCKED_ERROR } from '@/lib/hr/schedule-lock';
 import { buildCopyPlan, monthDates, type CopySourceRow } from '@/lib/hr/schedule-copy';
 
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -50,6 +51,18 @@ export async function POST(request: NextRequest) {
     }
   } catch {
     return NextResponse.json({ error: 'ตรวจสอบงวดจ่ายไม่สำเร็จ' }, { status: 500 });
+  }
+
+  // HR roster lock — copy only inserts into this store's month, so this store's lock is the one
+  // that matters. Company-wide HR may still fill a locked month.
+  if (!auth.fullHr) {
+    try {
+      if ((await loadScheduleLocks(service, [storeId], [toDates[0]])).size > 0) {
+        return NextResponse.json({ error: SCHEDULE_LOCKED_ERROR }, { status: 409 });
+      }
+    } catch {
+      return NextResponse.json({ error: 'ตรวจสอบการล็อกตารางไม่สำเร็จ' }, { status: 500 });
+    }
   }
 
   // Source month, paged: a big venue's month (~65 people × 31 days ≈ 2,000 rows) overruns
