@@ -330,7 +330,7 @@ export function validateLeaveRequest(input: LeaveValidationInput): LeaveValidati
     return {
       ok: false,
       code: 'probation_blocked',
-      error: 'This leave type is not allowed during probation',
+      error: 'ประเภทการลานี้ใช้ไม่ได้ระหว่างทดลองงาน — เลือกประเภทอื่น หรือติดต่อ HR',
     };
   }
   if (isCertRequired(leaveType, days) && !hasCert) {
