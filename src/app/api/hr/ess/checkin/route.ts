@@ -42,7 +42,9 @@ function shiftWindow(businessDate: string, startTime: string, endTime: string): 
   const lenMin = (endMin - startMin + 1440) % 1440 || 1440;
   return { start, end: start + lenMin * 60_000 };
 }
-const VALID_TYPES = ['in', 'out', 'break_start', 'break_end'] as const;
+// เข้างาน / ออกงาน only — break punches were retired (HR ask 2026-10-22): hardly anyone took a real
+// break with them, and a เริ่มพัก tapped instead of เข้างาน left the day with no check-in.
+const VALID_TYPES = ['in', 'out'] as const;
 // ~3MB of base64 (a watermarked selfie JPEG is well under this).
 const MAX_PHOTO_B64 = 3 * 1024 * 1024;
 const PHOTO_PREFIX = /^data:image\/(jpe?g|png);base64,/;
@@ -182,6 +184,13 @@ export async function POST(request: NextRequest) {
 
   // --- Validate type ---
   const type = body.type;
+  if (type === 'break_start' || type === 'break_end') {
+    // An app still open from before the buttons were removed.
+    return NextResponse.json(
+      { error: 'ไม่ต้องลงเวลาพักแล้ว — ลงแค่เข้างานและออกงาน (รีเฟรชหน้านี้)', code: 'breaks_retired' },
+      { status: 400 }
+    );
+  }
   if (typeof type !== 'string' || !VALID_TYPES.includes(type as (typeof VALID_TYPES)[number])) {
     return NextResponse.json({ error: 'Invalid type' }, { status: 400 });
   }
@@ -336,8 +345,8 @@ export async function POST(request: NextRequest) {
   // is a real close; a punch hours later is a forgotten check-out and is left for HR to correct.
   const OVERNIGHT_GRACE_MS = 3 * 60 * 60 * 1000;
   let businessDate = openBusinessDateBangkok();
-  if (type === 'out' || type === 'break_end') {
-    const openerType = type === 'out' ? 'in' : 'break_start';
+  if (type === 'out') {
+    const openerType = 'in';
     const prevD = new Date(`${businessDate}T00:00:00Z`);
     prevD.setUTCDate(prevD.getUTCDate() - 1);
     const prev = prevD.toISOString().slice(0, 10);
@@ -420,7 +429,6 @@ export async function POST(request: NextRequest) {
   // A cook pressed เริ่มพัก on arriving at 18:00 and เข้างาน on leaving at 03:10. Both were taken
   // as asked, so the day read "checked in at 03:10, never out", the next check-in was blocked, and
   // the close-the-day card could not take any check-out time (all of them came before 03:10).
-  //  - A break needs the day to be checked into.
   //  - A check-in past the middle of the rostered shift is asked about first: arriving that late
   //    happens, but pressing เข้างาน on the way out is the likelier story. Confirmed → recorded.
   //  - A check-out with no check-in is still recorded (it is the real leaving time) and the app
@@ -437,17 +445,6 @@ export async function POST(request: NextRequest) {
       (p) => p.type === 'in' || p.type === 'out'
     );
     const checkedIn = inOut.length > 0 && inOut[inOut.length - 1].type === 'in';
-
-    if ((type === 'break_start' || type === 'break_end') && !checkedIn) {
-      await discardPhoto(service, path);
-      return NextResponse.json(
-        {
-          error: 'ยังไม่ได้เช็คอิน — กด "Check in" ก่อน แล้วจึงเริ่มพัก/จบพักได้',
-          code: 'not_checked_in',
-        },
-        { status: 409 }
-      );
-    }
 
     if (type === 'in' && !checkedIn && body.confirm_late_in !== true) {
       const { data: cell } = await service

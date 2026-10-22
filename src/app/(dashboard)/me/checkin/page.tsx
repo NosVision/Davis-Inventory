@@ -40,11 +40,12 @@ type AttendanceType = 'in' | 'out' | 'break_start' | 'break_end';
 
 type TypeKey = 'in' | 'out' | 'breakStart' | 'breakEnd';
 
+// เข้างาน / ออกงาน only. The break buttons came out (HR ask 2026-10-22): almost nobody used them
+// for a real break, and a เริ่มพัก tapped instead of เข้างาน left a day with no check-in at all.
+// The break types stay in AttendanceType so an older day's break punches still render below.
 const TYPE_OPTIONS: { value: AttendanceType; key: TypeKey }[] = [
   { value: 'in', key: 'in' },
   { value: 'out', key: 'out' },
-  { value: 'break_start', key: 'breakStart' },
-  { value: 'break_end', key: 'breakEnd' },
 ];
 
 const TYPE_KEY: Record<AttendanceType, TypeKey> = {

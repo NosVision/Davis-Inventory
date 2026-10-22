@@ -19,7 +19,8 @@ import { businessDateBangkok } from '@/lib/utils/date';
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_OPEN_ATTENDANCE_REQUESTS = 20;
 const KINDS = ['missing_in', 'missing_out', 'wrong_time', 'other'];
-const PROPOSED_TYPES = ['in', 'out', 'break_start', 'break_end'];
+// Break punches were retired (2026-10-22), so a missing one is nothing to request.
+const PROPOSED_TYPES = ['in', 'out'];
 
 const COLS =
   'id, user_id, store_id, business_date, kind, proposed_type, proposed_ts, target_attendance_id, reason, status, decided_by, decided_at, decision_note, applied, created_at';

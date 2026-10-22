@@ -54,7 +54,8 @@ const STATUS_TONE: Record<AttReq['status'], 'neutral' | 'good' | 'warn' | 'criti
 };
 
 const KINDS: Kind[] = ['missing_in', 'missing_out', 'wrong_time', 'other'];
-const PUNCH_TYPES: PunchType[] = ['in', 'out', 'break_start', 'break_end'];
+// เข้างาน / ออกงาน only — break punches were retired (2026-10-22).
+const PUNCH_TYPES: PunchType[] = ['in', 'out'];
 
 export default function MyAttendanceRequestsPage() {
   const t = useTranslations('hr.attendanceRequests');
