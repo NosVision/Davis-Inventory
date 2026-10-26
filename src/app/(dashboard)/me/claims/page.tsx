@@ -18,6 +18,7 @@ import {
   toast,
 } from '@/components/ui';
 import { todayBangkok } from '@/lib/utils/date';
+import { compressImage } from '@/lib/utils/image-compress';
 
 type ClaimType = 'travel' | 'medical' | 'supplies' | 'equipment' | 'other';
 type Status = 'pending' | 'approved' | 'rejected' | 'paid' | 'cancelled';
@@ -122,9 +123,11 @@ export default function MyClaimsPage() {
       fd.append('amount_satang', String(satang));
       fd.append('description', description.trim());
       fd.append('claim_date', claimDate);
-      fd.append('receipt', receipt);
+      // Shrink phone photos under the host's 4.5 MB request limit (see me/leaves).
+      fd.append('receipt', await compressImage(receipt, { maxDimension: 2000, quality: 0.85, format: 'jpeg' }));
       // NOTE: do not set Content-Type — the browser sets the multipart boundary.
       const res = await fetch('/api/hr/ess/claims', { method: 'POST', body: fd });
+      if (res.status === 413) throw new Error('ไฟล์ใหญ่เกินไป — ลองถ่ายรูปใหม่ หรือเลือกรูปที่เล็กลง');
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json?.error || json?.message || t('fileFailed'));
       toast({ type: 'success', title: t('filed') });

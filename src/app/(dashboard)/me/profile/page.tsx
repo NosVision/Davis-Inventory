@@ -9,6 +9,7 @@ import { TileNotices } from '../_components/tile-notices';
 import { AccountSettings } from './_components/account-settings';
 import { EmployeeName } from '@/components/hr/employee-name';
 import { normalizeFullName } from '@/lib/hr/employee-name';
+import { compressImage } from '@/lib/utils/image-compress';
 import { useAuthStore } from '@/stores/auth-store';
 
 type Status = 'pending' | 'approved' | 'rejected' | 'cancelled';
@@ -184,8 +185,9 @@ export default function MyProfilePage() {
     setAvatarBusy(true);
     try {
       const fd = new FormData();
-      fd.append('file', file);
+      fd.append('file', await compressImage(file, { maxDimension: 1024, quality: 0.85, format: 'jpeg' }));
       const res = await fetch('/api/hr/ess/avatar', { method: 'POST', body: fd });
+      if (res.status === 413) throw new Error('ไฟล์ใหญ่เกินไป — ลองถ่ายรูปใหม่ หรือเลือกรูปที่เล็กลง');
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(typeof json.error === 'string' ? json.error : undefined);
       setProfile((p) => (p ? { ...p, avatar_url: (json.data?.avatar_url as string) ?? p.avatar_url } : p));

@@ -16,6 +16,7 @@ import {
   useConfirm,
 } from '@/components/ui';
 import { todayBangkok } from '@/lib/utils/date';
+import { compressImage } from '@/lib/utils/image-compress';
 import { formatThaiDate } from '@/lib/utils/format';
 
 type Status = 'pending' | 'approved' | 'rejected' | 'cancelled';
@@ -202,9 +203,12 @@ export default function MyLeavesPage() {
       fd.append('to_date', toDate);
       fd.append('reason', reason.trim());
       if (isHalfDay) fd.append('half_day', '1');
-      if (cert) fd.append('cert', cert);
+      // Phone photos run 4–8 MB, past the 4.5 MB request limit of the host, which then answers
+      // with a bare 413 page. Shrink first; 2000px JPEG keeps a medical certificate readable.
+      if (cert) fd.append('cert', await compressImage(cert, { maxDimension: 2000, quality: 0.85, format: 'jpeg' }));
       // NOTE: do not set Content-Type — the browser sets the multipart boundary.
       const res = await fetch('/api/hr/ess/leaves', { method: 'POST', body: fd });
+      if (res.status === 413) throw new Error('ไฟล์ใหญ่เกินไป — ลองถ่ายรูปใหม่ หรือเลือกรูปที่เล็กลง');
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json?.error || json?.message || t('fileFailed'));
       toast({ type: 'success', title: t('filed') });
