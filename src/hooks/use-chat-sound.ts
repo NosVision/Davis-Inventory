@@ -14,9 +14,23 @@ import { useCallback, useEffect, useRef } from 'react';
 let sharedCtx: AudioContext | null = null;
 let unlocked = false;
 
-function getOrCreateContext(): AudioContext {
-  if (!sharedCtx) {
-    sharedCtx = new AudioContext();
+/**
+ * The shared context, or null where Web Audio is missing or refused. iOS before 14.5 only has
+ * `webkitAudioContext`; a bare `new AudioContext()` there threw during mount and took the whole
+ * app down to "Application error" on every page (HR report 2026-10-27). Sound is optional — no
+ * context just means no chime.
+ */
+function getOrCreateContext(): AudioContext | null {
+  if (sharedCtx) return sharedCtx;
+  if (typeof window === 'undefined') return null;
+  const Ctor =
+    window.AudioContext ??
+    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!Ctor) return null;
+  try {
+    sharedCtx = new Ctor();
+  } catch {
+    return null;
   }
   return sharedCtx;
 }
@@ -28,15 +42,21 @@ function getOrCreateContext(): AudioContext {
 function unlockAudio() {
   if (unlocked) return;
   const ctx = getOrCreateContext();
-  if (ctx.state === 'suspended') {
-    ctx.resume().catch(() => {});
+  if (ctx) {
+    try {
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+      // เล่น silent buffer เพื่อ unlock บน iOS
+      const buffer = ctx.createBuffer(1, 1, 22050);
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(ctx.destination);
+      source.start(0);
+    } catch {
+      // Audio not available
+    }
   }
-  // เล่น silent buffer เพื่อ unlock บน iOS
-  const buffer = ctx.createBuffer(1, 1, 22050);
-  const source = ctx.createBufferSource();
-  source.buffer = buffer;
-  source.connect(ctx.destination);
-  source.start(0);
   unlocked = true;
   // ถอด listeners หลัง unlock สำเร็จ
   for (const evt of ['touchstart', 'touchend', 'click', 'keydown'] as const) {
@@ -71,6 +91,7 @@ export function useChatSound() {
   /** เตรียม AudioContext ก่อนเล่น — resume ถ้า suspended */
   const readyCtx = useCallback((): AudioContext | null => {
     const ctx = ctxRef.current ?? getOrCreateContext();
+    if (!ctx) return null;
     if (ctx.state === 'suspended') {
       ctx.resume().catch(() => {});
     }
