@@ -460,7 +460,22 @@ export default function EmployeesPage() {
         header: t('col.venue'),
         sortable: true,
         sortValue: (e) => (e.stores.length ? e.stores.map((s) => s.store_name).join(', ') : null),
-        render: (e) => (e.stores.length ? e.stores.map((s) => s.store_name).join(', ') : '—'),
+        // First venue + "+N" (full list on hover). Joining them all in a nowrap cell let one
+        // six-venue employee push ประเภทการจ่าย/เรต/สถานะ off the right edge (HR report 2026-10-28).
+        render: (e) => {
+          if (!e.stores.length) return '—';
+          const names = e.stores.map((s) => s.store_name);
+          return (
+            <span title={names.join(', ')} className="inline-flex items-center gap-1">
+              {names[0]}
+              {names.length > 1 && (
+                <span className="rounded-full bg-gray-100 px-1.5 text-[11px] text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                  +{names.length - 1}
+                </span>
+              )}
+            </span>
+          );
+        },
       },
       {
         key: 'payType',
