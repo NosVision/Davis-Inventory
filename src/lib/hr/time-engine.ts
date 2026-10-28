@@ -210,7 +210,9 @@ export function computeDaySummary(input: DaySummaryInput): DaySummary {
   let lateMin: number | null = null;
   if (scheduled && input.shift && firstIn) {
     const startInstant = scheduledStartInstant(input.businessDate, input.shift.start_time);
-    lateMin = Math.max(0, Math.round(minutesBetween(firstIn, startInstant)));
+    // Whole minutes only: the employee sees 18:00 on screen, so 18:00:31 must not read as 1 min
+    // late (HR report 2026-10-28). Late starts at 18:01:00.
+    lateMin = Math.max(0, Math.floor(minutesBetween(firstIn, startInstant)));
   }
 
   // A future (or still-running) rostered day is NOT an absence — the shift simply hasn't happened.
