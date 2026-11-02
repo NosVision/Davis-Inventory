@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server';
 import { notifyStoreSchedulers } from '@/lib/hr/notify';
 import { planDayoffSwap, swapCellsFrom, type SwapBlockReason } from '@/lib/hr/dayoff-swap';
+import { loadSwapCoworkers } from '@/lib/hr/swap-coworkers';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_OPEN_SWAPS = 20;
@@ -129,16 +130,18 @@ export async function POST(request: NextRequest) {
   );
   if (!plan.ok) return NextResponse.json({ error: BLOCK_MESSAGE[plan.reason] }, { status: 400 });
 
-  // And the counterpart must belong to that store.
-  const { data: member, error: memberErr } = await service
-    .from('user_stores')
-    .select('user_id')
-    .eq('store_id', storeId)
-    .eq('user_id', counterpartId)
-    .maybeSingle();
-  if (memberErr) return NextResponse.json({ error: 'Failed to verify coworker' }, { status: 500 });
-  if (!member) {
-    return NextResponse.json({ error: 'เพื่อนร่วมงานไม่ได้อยู่สาขาเดียวกับคุณ' }, { status: 400 });
+  // Match the picker, including HR-assigned staff without a login-access grant.
+  try {
+    const coworkers = await loadSwapCoworkers(
+      service, [storeId], user.id,
+      requesterDate < counterpartDate ? requesterDate : counterpartDate,
+      requesterDate > counterpartDate ? requesterDate : counterpartDate,
+    );
+    if (!coworkers.some((person) => person.user_id === counterpartId)) {
+      return NextResponse.json({ error: 'เพื่อนร่วมงานไม่ได้อยู่สาขาเดียวกับคุณ หรือบัญชีไม่พร้อมใช้งาน' }, { status: 400 });
+    }
+  } catch {
+    return NextResponse.json({ error: 'Failed to verify coworker' }, { status: 500 });
   }
 
   // Abuse / duplicate guard: cap open requests, and reject an identical still-pending

@@ -1,16 +1,11 @@
 import { NextResponse } from 'next/server';
 import { createClient, createServiceClient, getSessionUser } from '@/lib/supabase/server';
-
-interface ProfileRow {
-  id: string;
-  username: string | null;
-  display_name: string | null;
-}
+import { loadSwapCoworkers } from '@/lib/hr/swap-coworkers';
+import { todayBangkok } from '@/lib/utils/date';
 
 // GET /api/hr/ess/coworkers — the caller's store-mates, so a requester can pick a
-// day-off swap counterpart (§C, P2.3a). Returns the distinct set of profiles who
-// share ANY store with the caller (caller's stores → other members of those stores),
-// excluding the caller. Auth-any: any authenticated employee reads their own peers.
+// day-off swap counterpart. Use the HR roster rather than raw login-access grants:
+// disabled/retired/system accounts are not coworkers, and HR work assignments count.
 export async function GET() {
   const supabase = await createClient();
   const {
@@ -26,29 +21,22 @@ export async function GET() {
     .select('store_id')
     .eq('user_id', user.id);
   if (myErr) return NextResponse.json({ error: 'Failed to load coworkers' }, { status: 500 });
-  const storeIds = [...new Set((myStores ?? []).map((r) => r.store_id as string))];
+  const { data: employee, error: employeeErr } = await service
+    .from('hr_employees')
+    .select('work_store_id')
+    .eq('profile_id', user.id)
+    .maybeSingle();
+  if (employeeErr) return NextResponse.json({ error: 'Failed to load coworkers' }, { status: 500 });
+  const storeIds = [...new Set([
+    ...(myStores ?? []).map((r) => r.store_id as string),
+    ...(employee?.work_store_id ? [employee.work_store_id as string] : []),
+  ])];
   if (!storeIds.length) return NextResponse.json({ data: [] });
 
-  // Everyone assigned to any of those stores → distinct, minus the caller.
-  const { data: members, error: membersErr } = await service
-    .from('user_stores')
-    .select('user_id')
-    .in('store_id', storeIds);
-  if (membersErr) return NextResponse.json({ error: 'Failed to load coworkers' }, { status: 500 });
-  const userIds = [...new Set((members ?? []).map((r) => r.user_id as string))].filter(
-    (id) => id !== user.id
-  );
-  if (!userIds.length) return NextResponse.json({ data: [] });
-
-  const { data: profiles, error: profErr } = await service
-    .from('profiles')
-    .select('id, username, display_name')
-    .in('id', userIds);
-  if (profErr) return NextResponse.json({ error: 'Failed to load coworkers' }, { status: 500 });
-
-  const out = ((profiles ?? []) as ProfileRow[])
-    .map((p) => ({ user_id: p.id, name: p.display_name || p.username || '—' }))
-    .sort((a, b) => a.name.localeCompare(b.name));
-
-  return NextResponse.json({ data: out });
+  try {
+    const data = await loadSwapCoworkers(service, storeIds, user.id, todayBangkok());
+    return NextResponse.json({ data });
+  } catch {
+    return NextResponse.json({ error: 'Failed to load coworkers' }, { status: 500 });
+  }
 }
